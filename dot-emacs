@@ -1,0 +1,105 @@
+;; If on Gentoo, let Gentoo package management automate loading
+;; of various e-lisp packages
+(let ((site-gentoo "/usr/share/emacs/site-lisp/site-gentoo.el"))
+  (when (file-exists-p site-gentoo)
+    (load site-gentoo)))
+
+;; In case there are any 'local' machine specific personal settings,
+;; load them
+(let ((settings-local "~/.emacs-local"))
+  (when (file-exists-p settings-local)
+    (load settings-local)))
+
+;; Function to initialize ruby-mode
+(defun init-ruby-mode ()
+  (autoload 'ruby-mode "ruby-mode" "Load ruby-mode")
+  (add-to-list 'auto-mode-alist '("\\.rb\\'" . ruby-mode)))
+
+;; Function to initialize slime
+(defun init-slime ()
+  (slime-setup)
+  (let* ((favorite-cls (list (list "/usr/local/bin/sbcl" "/usr/local/bin/sbcl --noinform --no-linedit")
+			     (list "/usr/bin/sbcl" "/usr/bin/sbcl --noinform --no-linedit")
+			     (list "/usr/pkg/bin/sbcl" "/usr/pkg/bin/sbcl --noinform --no-linedit")))
+	 (available-cls (delete-if #'(lambda (cl) (not (file-exists-p (if (listp cl) (car cl) cl)))) favorite-cls))
+	 (selected-cl (if available-cls (car available-cls) nil)))
+    (when selected-cl (setq inferior-lisp-program (if (listp selected-cl) (cadr selected-cl) selected-cl)))))
+
+;; Load known-to-be-common packages if installed and not already loaded. Each
+;; item in the list of libraries must be either the name of the library, or
+;; a list containing the name of the library and an initialization function
+;; to call after loading it (or if it is already loaded).
+(dolist (lib (list "erc-auto"
+		   (list "slime" #'init-slime)
+		   (list "ruby-mode" #'init-ruby-mode)))
+  (let ((lib-name (if (listp lib) (car lib) lib))
+	(lib-init-fn (if (listp lib) (cadr lib) nil)))
+    (when (locate-library lib-name)
+      (let ((lib-sym (intern lib-name)))
+	(when (not (featurep lib-sym))
+	  (require lib-sym))
+	(when lib-init-fn (funcall lib-init-fn))))))
+
+;; Add proper extension -> mode mappings
+(setq auto-mode-alist (cons '("\\.icc$" . c++-mode) auto-mode-alist))
+(setq auto-mode-alist (cons '("\\.ih$"  . c++-mode) auto-mode-alist))
+
+;; Always enable font-lock-mode when supported
+(global-font-lock-mode 1)
+
+;; Show paren matching indicators
+(show-paren-mode t)
+
+;; Always show line number and column number in status bar
+(line-number-mode t)
+(column-number-mode t)
+
+;; Highlight region when selecting
+(setq-default transient-mark-mode t)
+
+;; Enable shift-selection
+(pc-selection-mode)
+
+;; For purposes of paragraph filling
+(setq fill-column 80)
+
+;; Set 8-bit input
+(set-input-mode (car (current-input-mode)) ; Interupt
+                (nth 1 (current-input-mode)) ; Flow control
+                '8bit           ; Meta
+                (nth 3 (current-input-mode))) ; Quit
+
+;; When in X, paste at cursor instead of mouse pointer (*drool*)
+(setq mouse-yank-at-point t)
+
+;; When in X, get rid of unnecessary clutter
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+
+;; When in X, enable mouse wheel
+(defun mwheel-up () (interactive) (scroll-up 5))
+(defun mwheel-down () (interactive) (scroll-down 5))
+(global-set-key [mouse-5] 'mwheel-up)
+(global-set-key [mouse-4] 'mwheel-down)
+
+;; Switch to sane non-ambiguous date format
+(setq european-calendar-style t)
+
+;; Scroll one line at a time when moving cursor off-screen,
+;; instead of half a page.
+(setq scroll-step 1)
+
+;; More useful title name please, containing buffer name.
+(setq frame-title-format "Emacs - %b")
+
+;; Always preserve case during dynamic abbrev expansion
+(setq dabbrev-case-replace nil)
+
+;; Disable the world's most annoying indentation standard - DIE DIE DIE
+(add-hook 'c-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
+(add-hook 'c++-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
+
+;; Key bindings
+(global-set-key "\C-xr" 'revert-buffer)
+(global-set-key "\C-xg" 'goto-line)
+(global-set-key "\C-xf" 'fill-paragraph)
