@@ -99,7 +99,16 @@
 (add-hook 'c-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
 (add-hook 'c++-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
 
+;; Sort the paragraph surrounding the point.
+(defun sort-paragraph-at-point ()
+  (interactive)
+  (let ((line-before-sort (line-number-at-pos)))
+    (mark-paragraph)
+    (sort-lines nil (region-beginning) (region-end))
+    (goto-line line-before-sort)))
+
 ;; Key bindings
 (global-set-key "\C-xr" 'revert-buffer)
 (global-set-key "\C-xg" 'goto-line)
 (global-set-key "\C-xf" 'fill-paragraph)
+(global-set-key "\M-s"  'sort-paragraph-at-point)
