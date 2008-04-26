@@ -1,3 +1,12 @@
+;; Set - but only if already bound.
+(defun set-if-bound (sym val)
+  (when (boundp sym)
+    (set sym val)))
+
+;; Likewise, setq - but only if already bound.
+(defmacro setq-if-bound (sym val)
+  `(set-if-bound ',sym ,val))
+
 ;; If on Gentoo, let Gentoo package management automate loading
 ;; of various e-lisp packages
 (let ((site-gentoo "/usr/share/emacs/site-lisp/site-gentoo.el"))
@@ -73,9 +82,9 @@
 (setq mouse-yank-at-point t)
 
 ;; When in X, get rid of unnecessary clutter
-(custom-set-variables 
- '(menu-bar-mode -1)
- '(tool-bar-mode -1))
+(setq-if-bound menu-bar-mode -1)
+(setq-if-bound tool-bar-mode -1)
+
 
 ;; When in X, enable mouse wheel
 (defun mwheel-up () (interactive) (scroll-up 5))
