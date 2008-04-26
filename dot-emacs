@@ -81,10 +81,9 @@
 ;; When in X, paste at cursor instead of mouse pointer (*drool*)
 (setq mouse-yank-at-point t)
 
-;; When in X, get rid of unnecessary clutter
-(setq-if-bound menu-bar-mode -1)
-(setq-if-bound tool-bar-mode -1)
-
+;; When in X, get rid of unnecessary clutter.
+(when (functionp 'menu-bar-mode) (menu-bar-mode 0))
+(when (functionp 'tool-bar-mode) (tool-bar-mode 0))
 
 ;; When in X, enable mouse wheel
 (defun mwheel-up () (interactive) (scroll-up 5))
