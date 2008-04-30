@@ -108,6 +108,13 @@
 (add-hook 'c-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
 (add-hook 'c++-mode-hook '(lambda () (c-set-offset 'substatement-open '0)))
 
+;; When keeping several files of the same name open (from different
+;; directories), display enough information in the buffer name for a
+;; human to distinguish them.
+(require 'uniquify)
+(setq uniquify-buffer-name-style 'post-forward-angle-brackets)
+(setq uniquify-after-kill-buffer-p t)
+
 ;; Sort the paragraph surrounding the point.
 (defun sort-paragraph-at-point ()
   (interactive)
