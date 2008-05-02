@@ -40,7 +40,8 @@
 ;; to call after loading it (or if it is already loaded).
 (dolist (lib (list "erc-auto"
 		   (list "slime" #'init-slime)
-		   (list "ruby-mode" #'init-ruby-mode)))
+		   (list "ruby-mode" #'init-ruby-mode)
+		   "doc-mode"))
   (let ((lib-name (if (listp lib) (car lib) lib))
 	(lib-init-fn (if (listp lib) (cadr lib) nil)))
     (when (locate-library lib-name)
