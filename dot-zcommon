@@ -1,0 +1,17 @@
+# Keep cursor at constant position and show current directory on the
+# right. This nicely aligns commands, and does not cause problems when
+# indeep directories as the left prompt will override the right
+# prompt, avoiding line wrapping.
+export PS1='%% '
+export RPS1='%m:%~%(..(%?%)%'
+
+# Enable intelligent completion.
+autoload -U compinit
+compinit
+
+export PAGER=less
+export EDITOR=emacs
+
+alias mplayer='mplayer -lavdopts fast:threads=2 -monitoraspect 16:10 -cache-min 1 -cache 50000'
+alias irb='irb --readline -r irb/completion'
+

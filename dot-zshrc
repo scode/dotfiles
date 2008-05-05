@@ -1,0 +1,11 @@
+if [ -e ~/.zcommon ]
+then
+  source ~/.zcommon
+fi
+
+if [ -e ~/.zinteractive ]
+then
+  source ~/.zinteractive
+fi
+
+

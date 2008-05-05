@@ -1,0 +1,5 @@
+if [ -e ~/.zcommon ]
+then
+  source ~/.zcommon
+fi
+
