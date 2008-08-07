@@ -116,6 +116,9 @@
 (setq uniquify-buffer-name-style 'post-forward-angle-brackets)
 (setq uniquify-after-kill-buffer-p t)
 
+;; Don't show splash screen on every start-up
+(setq inhibit-splash-screen t)
+
 ;; Sort the paragraph surrounding the point.
 (defun sort-paragraph-at-point ()
   (interactive)
