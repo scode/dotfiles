@@ -135,3 +135,6 @@
 (global-set-key "\C-x>" 'increase-left-margin)
 (global-set-key "\C-x<" 'decrease-left-margin)
 (global-set-key "\C-xp" 'compile)
+
+;; Disable interactive warning when scralling left
+(put 'scroll-left 'disabled nil)
