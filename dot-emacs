@@ -134,3 +134,4 @@
 (global-set-key "\M-s"  'sort-paragraph-at-point)
 (global-set-key "\C-x>" 'increase-left-margin)
 (global-set-key "\C-x<" 'decrease-left-margin)
+(global-set-key "\C-xp" 'compile)
