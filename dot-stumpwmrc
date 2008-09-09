@@ -20,7 +20,8 @@
 (define-key *top-map* (kbd "s-quoteright") "gselect")
 (define-key *top-map* (kbd "s-g") "gnew")
 
-(define-key *top-map* (kbd "s-c") "exec /usr/local/bin/xt")
+(define-key *top-map* (kbd "s-c") "delete")
+(define-key *top-map* (kbd "s-v") "exec /usr/local/bin/xt")
 (define-key *top-map* (kbd "s-i") "move-focus up")
 (define-key *top-map* (kbd "s-m") "move-focus down")
 (define-key *top-map* (kbd "s-j") "move-focus left")
