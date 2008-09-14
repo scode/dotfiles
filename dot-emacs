@@ -92,6 +92,9 @@
 (global-set-key [mouse-5] 'mwheel-up)
 (global-set-key [mouse-4] 'mwheel-down)
 
+;; When in X, move mouse when cursor approaches it
+(mouse-avoidance-mode 'animate)
+
 ;; Switch to sane non-ambiguous date format
 (setq european-calendar-style t)
 
