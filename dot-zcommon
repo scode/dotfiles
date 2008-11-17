@@ -10,7 +10,7 @@ autoload -U compinit
 compinit
 
 # Don't start background jobs niced
-export BG_NICE=0
+setopt no_bg_nice
 
 export PAGER=less
 export EDITOR=emacs
