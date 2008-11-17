@@ -9,6 +9,9 @@ export RPS1='%m:%~%(..(%?%)%'
 autoload -U compinit
 compinit
 
+# Don't start background jobs niced
+export BG_NICE=0
+
 export PAGER=less
 export EDITOR=emacs
 
