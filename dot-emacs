@@ -8,7 +8,7 @@
   `(set-if-bound ',sym ,val))
 
 ;; Allow us to keep user specific code in ~/.el
-(setq load-path (cons "~/.el/" load-path))
+(add-to-list 'load-path "~/.el/")
 
 ;; If on Gentoo, let Gentoo package management automate loading
 ;; of various e-lisp packages
@@ -64,8 +64,8 @@
 	(when lib-init-fn (funcall lib-init-fn))))))
 
 ;; Add proper extension -> mode mappings
-(setq auto-mode-alist (cons '("\\.icc$" . c++-mode) auto-mode-alist))
-(setq auto-mode-alist (cons '("\\.ih$"  . c++-mode) auto-mode-alist))
+(add-to-list 'auto-mode-alist '("\\.icc$" . c++-mode) auto-mode-alist)
+(add-to-list 'auto-mode-alist '("\\.ih$"  . c++-mode) auto-mode-alist)
 (add-to-list 'auto-mode-alist '("\\.as[123]?$" . ecmascript-mode))
 
 ;; Always enable font-lock-mode when supported
