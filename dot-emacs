@@ -7,6 +7,9 @@
 (defmacro setq-if-bound (sym val)
   `(set-if-bound ',sym ,val))
 
+;; Allow us to keep user specific code in ~/.el
+(setq load-path (cons "~/.el/" load-path))
+
 ;; If on Gentoo, let Gentoo package management automate loading
 ;; of various e-lisp packages
 (let ((site-gentoo "/usr/share/emacs/site-lisp/site-gentoo.el"))
@@ -121,6 +124,10 @@
 
 ;; Don't show splash screen on every start-up
 (setq inhibit-splash-screen t)
+
+;; Prevent overzealous sysadmin/operating system from forcing
+;; localization on flyspell's choice of default dictionary.
+(setq ispell-local-dictionary "american")
 
 ;; Sort the paragraph surrounding the point.
 (defun sort-paragraph-at-point ()
