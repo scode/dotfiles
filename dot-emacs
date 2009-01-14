@@ -7,6 +7,9 @@
 (defmacro setq-if-bound (sym val)
   `(set-if-bound ',sym ,val))
 
+;; Allow us to keep user specific code in ~/.el
+(setq load-path (cons "~/.el/" load-path))
+
 ;; If on Gentoo, let Gentoo package management automate loading
 ;; of various e-lisp packages
 (let ((site-gentoo "/usr/share/emacs/site-lisp/site-gentoo.el"))
