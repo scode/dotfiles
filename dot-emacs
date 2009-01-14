@@ -37,6 +37,15 @@
 	  (clisp ("/usr/local/bin/clisp"))))
   (slime-setup))
 
+;; When doing ecmascript/actionscript, modify style to match the
+;; default used by Adobe's CS and FlashDevelop.
+(defun init-ecmascript-mode ()
+  (add-hook 'ecmascript-mode-hook
+	    (lambda ()
+	      (setq intend-tabs-mode t)
+	      (setq c-basic-offset 4)
+	      (setq default-tab-width 4))))
+
 ;; Load known-to-be-common packages if installed and not already loaded. Each
 ;; item in the list of libraries must be either the name of the library, or
 ;; a list containing the name of the library and an initialization function
@@ -44,7 +53,8 @@
 (dolist (lib (list "erc-auto"
 		   (list "slime" #'init-slime)
 		   (list "ruby-mode" #'init-ruby-mode)
-		   "doc-mode"))
+		   "doc-mode"
+		   (list "ecmascript-mode" #'init-ecmascript-mode)))
   (let ((lib-name (if (listp lib) (car lib) lib))
 	(lib-init-fn (if (listp lib) (cadr lib) nil)))
     (when (locate-library lib-name)
@@ -56,6 +66,7 @@
 ;; Add proper extension -> mode mappings
 (setq auto-mode-alist (cons '("\\.icc$" . c++-mode) auto-mode-alist))
 (setq auto-mode-alist (cons '("\\.ih$"  . c++-mode) auto-mode-alist))
+(add-to-list 'auto-mode-alist '("\\.as[123]?$" . ecmascript-mode))
 
 ;; Always enable font-lock-mode when supported
 (global-font-lock-mode 1)
