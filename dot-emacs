@@ -64,8 +64,8 @@
 	(when lib-init-fn (funcall lib-init-fn))))))
 
 ;; Add proper extension -> mode mappings
-(add-to-list 'auto-mode-alist '("\\.icc$" . c++-mode) auto-mode-alist)
-(add-to-list 'auto-mode-alist '("\\.ih$"  . c++-mode) auto-mode-alist)
+(add-to-list 'auto-mode-alist '("\\.icc$" . c++-mode))
+(add-to-list 'auto-mode-alist '("\\.ih$"  . c++-mode))
 (add-to-list 'auto-mode-alist '("\\.as[123]?$" . ecmascript-mode))
 
 ;; Always enable font-lock-mode when supported
