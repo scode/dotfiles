@@ -38,11 +38,12 @@
   (slime-setup))
 
 ;; When doing ecmascript/actionscript, modify style to match the
-;; default used by Adobe's CS and FlashDevelop.
+;; default used by Adobe's CS and FlashDevelop - with the exception of
+;; using spaces instead of tabs.
 (defun init-ecmascript-mode ()
   (add-hook 'ecmascript-mode-hook
 	    (lambda ()
-	      (setq intend-tabs-mode t)
+	      (setq intend-tabs-mode nil)
 	      (setq c-basic-offset 4)
 	      (setq default-tab-width 4))))
 
