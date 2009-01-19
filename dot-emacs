@@ -43,6 +43,7 @@
 (defun init-ecmascript-mode ()
   (add-hook 'ecmascript-mode-hook
 	    (lambda ()
+	      (c-set-offset 'substatement-open 0)
 	      (setq intend-tabs-mode nil)
 	      (setq c-basic-offset 4)
 	      (setq default-tab-width 4))))
