@@ -31,10 +31,9 @@
 (defun init-slime ()
   ;; List potential Common Lisps. Use of other than default is
   ;; possible by M-- M-x slime, giving the symbolic name as argument.
-  (setq slime-lisp-implementations
-	'((sbcl ("/usr/local/bin/sbcl"))
-	  (ccl ("~/ccl/fx86cl64"))
-	  (clisp ("/usr/local/bin/clisp"))))
+  (add-to-list 'slime-lisp-implementations '(sbcl ("/usr/local/bin/sbcl")))
+  (add-to-list 'slime-lisp-implementations '(ccl ("~/ccl/fx86cl64")))
+  (add-to-list 'slime-lisp-implementations '(clisp ("/usr/local/bin/clisp")))
   (slime-setup))
 
 ;; When doing ecmascript/actionscript, modify style to match the
