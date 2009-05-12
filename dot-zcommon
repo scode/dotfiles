@@ -18,6 +18,11 @@ export EDITOR=emacs
 alias mplayer='mplayer -lavdopts fast:threads=2 -monitoraspect 16:10 -cache-min 1 -cache 50000'
 alias irb='irb --readline -r irb/completion'
 
+if [ "$(uname)" = "Linux" ]
+then
+        alias spotify='wine "C:\Program Files\Spotify\spotify.exe"'
+fi
+
 # rxvt-unicode is not well-known in termcaps
 if [ "$TERM" = "rxvt-unicode" ]
 then
