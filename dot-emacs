@@ -79,6 +79,10 @@
 (line-number-mode t)
 (column-number-mode t)
 
+;; Disable tabs by default unless overridden for
+;; some particular mode.
+(setq-default indent-tabs-mode nil)
+
 ;; Highlight region when selecting
 (setq-default transient-mark-mode t)
 
