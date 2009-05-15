@@ -1,3 +1,12 @@
+;; Primordal settings.
+(setq settings-local "~/.emacs-local")
+(setq settings-local-pre "~/.emacs-local-pre")
+(setq settings-local-post "~/.emacs-local-post")
+
+;; Local settings to be evaluated before ourselves.
+(when (file-exists-p settings-local-pre)
+    (load settings-local-pre))
+
 ;; Set - but only if already bound.
 (defun set-if-bound (sym val)
   (when (boundp sym)
@@ -16,8 +25,7 @@
   (when (file-exists-p site-gentoo)
     (load site-gentoo)))
 
-;; In case there are any 'local' machine specific personal settings,
-;; load them
+;; Backwards compatible (neither pre nor post) local settings.
 (let ((settings-local "~/.emacs-local"))
   (when (file-exists-p settings-local)
     (load settings-local)))
@@ -164,3 +172,8 @@
 
 ;; Disable interactive warning when scralling left
 (put 'scroll-left 'disabled nil)
+
+;; Local settings to be evaluated after ourselves.
+(when (file-exists-p settings-local-post)
+    (load settings-local-post))
+
