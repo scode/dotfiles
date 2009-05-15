@@ -17,6 +17,7 @@ export EDITOR=emacs
 
 alias mplayer='mplayer -lavdopts fast:threads=2 -monitoraspect 16:10 -cache-min 1 -cache 50000'
 alias irb='irb --readline -r irb/completion'
+alias svns='svn status'
 
 if [ "$(uname)" = "Linux" ]
 then
