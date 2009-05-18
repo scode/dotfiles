@@ -24,6 +24,8 @@ then
         alias spotify='wine "C:\Program Files\Spotify\spotify.exe"'
 fi
 
+alias stackless='/home/scode/stackless/bin/python2.6'
+
 # rxvt-unicode is not well-known in termcaps
 if [ "$TERM" = "rxvt-unicode" ]
 then
