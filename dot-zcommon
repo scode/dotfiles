@@ -32,3 +32,9 @@ then
 	export TERM="rxvt"
 fi
 
+if [ -e ~/.zcomon-local ]
+then
+	source ~/.zcommon-local
+fi
+
+
