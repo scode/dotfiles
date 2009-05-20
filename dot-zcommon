@@ -42,6 +42,14 @@ then
 	export TERM="rxvt"
 fi
 
+# BEGIN subversion
+svnbase=${svnbase:=https://localhost/svnbase-not-set}
+
+function svnrel {
+	echo "${svnbase}$1"
+}
+# END subversion
+
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
 
