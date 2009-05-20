@@ -1,3 +1,13 @@
+function source_if_exists {
+	fname=$1         
+	if [ -e $fname ]
+	then
+		source $fname
+	fi
+}
+
+source_if_exists ~/.zcommon-local-pre
+
 # Keep cursor at constant position and show current directory on the
 # right. This nicely aligns commands, and does not cause problems when
 # indeep directories as the left prompt will override the right
@@ -32,9 +42,6 @@ then
 	export TERM="rxvt"
 fi
 
-if [ -e ~/.zcommon-local ]
-then
-	source ~/.zcommon-local
-fi
-
+source_if_exists ~/.zcommon-local
+source_if_exists ~/.zcommon-local-post
 
