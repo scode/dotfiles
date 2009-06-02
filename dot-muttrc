@@ -1,7 +1,8 @@
 set mark_old="no"
 set copy=yes			# always save a copy of outgoing messages
 set editor="emacs -nw"		# editor to use when composing messages
-set mail_check=10		# how often to poll for new mail
+set mail_check=3		# how often to poll for new mail
+set timeout=10                  # how often to e
 set pager_stop			# don't move to the next message on next-page
 set sort=date-received		# primary sorting method
 set header_cache=/home/scode/mutt-header-cache
