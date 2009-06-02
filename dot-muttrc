@@ -11,6 +11,12 @@ set pager_index_lines=6		# how many index lines to show in the pager
 set charset=iso-8859-1
 set mime_forward=ask-yes
 
+set sidebar_visible="yes"
+set sidebar_width="30"
+set sidebar_delim="| "
+#set sidebar_shorten_hierarchy
+color sidebar_new yellow default
+
 set pgp_decode_command="gpg %?p?--passphrase-fd 0? --no-verbose --batch --output - %f"
 set pgp_verify_command="gpg --no-verbose --batch --output - --verify %s %f"
 set pgp_decrypt_command="gpg --passphrase-fd 0 --no-verbose --batch --output - %f"
@@ -39,3 +45,10 @@ color signature cyan black
 color status    brightblue black
 color tilde     blue black
 color tree      red black
+
+bind index \CP sidebar-prev
+bind index \CN sidebar-next
+bind index \CO sidebar-open
+bind pager \CP sidebar-prev
+bind pager \CN sidebar-next
+bind pager \CO sidebar-open
