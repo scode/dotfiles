@@ -52,3 +52,8 @@ bind index \CO sidebar-open
 bind pager \CP sidebar-prev
 bind pager \CN sidebar-next
 bind pager \CO sidebar-open
+
+# Source things from other files either for privacy reasons (since
+# this file is public), or for reasons of including automatically
+# generated/maintained content. TODO: Can we do an if-exists-source?
+source ~/.muttrc-aliases
