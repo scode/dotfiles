@@ -161,6 +161,16 @@
     (sort-lines nil (region-beginning) (region-end))
     (goto-line line-before-sort)))
 
+;; Allow insertion of characters by specifying its unicode code point (thanks
+;; to http://www.emacswiki.org/cgi-bin/wiki/UnicodeEncoding#toc2).
+(setq read-quoted-char-radix 16)
+(defun unicode-insert (char)
+  "Read a unicode code point and insert said character.
+    Input uses `read-quoted-char-radix'.  If you want to copy
+    the values from the Unicode charts, you should set it to 16."
+  (interactive (list (read-quoted-char "Char: ")))
+  (ucs-insert char))
+
 ;; Key bindings
 (global-set-key "\C-xr" 'revert-buffer)
 (global-set-key "\C-xg" 'goto-line)
