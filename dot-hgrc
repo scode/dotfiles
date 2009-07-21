@@ -3,4 +3,5 @@ username = Peter Schuller <peter.schuller@infidyne.com>
 
 [extensions]
 hgext.convert=
+hgext.record=
 
