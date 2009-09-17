@@ -173,6 +173,10 @@
 ;; Disable interactive warning when scralling left
 (put 'scroll-left 'disabled nil)
 
+;; Prominently show trailing whitespace at the end of lines when
+;; editing them.
+(custom-set-variables '(show-trailing-whitespace t))
+
 ;; Local settings to be evaluated after ourselves.
 (when (file-exists-p settings-local-post)
     (load settings-local-post))
