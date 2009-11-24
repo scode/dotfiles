@@ -1,0 +1,10 @@
+# C-o is a nice prefix that does not tend to clash with anything else.
+escape ^oo
+
+# Default is visual bell; turn that off to allow e.g. urgent
+# propagation to window managers.
+vbell off
+
+startup_message off
+hardstatus alwayslastline "%{wb}%?%-w%?[%n*%f %t]%?%+Lw%?%="
+
