@@ -1,5 +1,8 @@
 #!/usr/bin/env zsh
 
+# Trivial helper to quickly populate $(pwd) with symlinks to the dot
+# files in the repository.
+
 rcfiles_path=$(dirname $0)
 
 function die {
