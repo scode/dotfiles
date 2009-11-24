@@ -4,7 +4,7 @@ rcfiles_path=$(dirname $0)
 
 function die {
     echo "$*" 1>&2
-    exit 
+    exit
 }
 
 case $(uname)
@@ -27,7 +27,7 @@ fi
 for dotfile in $rcfiles_path/dot-*
 do
     name=$(basename $dotfile)
-    
+
     stripped=$(echo $name | ${=SED} -e 's,dot-(.+)$,\1,g')
     symname=".${stripped}"
 
