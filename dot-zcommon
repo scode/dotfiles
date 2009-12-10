@@ -15,6 +15,9 @@ source_if_exists ~/.zcommon-local-pre
 export PS1='%% '
 export RPS1='%m:%~%(..(%?%)%'
 
+# The year is > 2000. We have memory.
+HISTSIZE=500
+
 # Enable intelligent completion.
 autoload -U compinit
 compinit
