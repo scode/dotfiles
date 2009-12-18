@@ -171,6 +171,23 @@
   (interactive (list (read-quoted-char "Char: ")))
   (ucs-insert char))
 
+;; Make dealing with dns-mode easier.
+(defun maybe-set-dns-soa-serial-auto-increment ()
+  "If the buffer seems to contain a SOA record, enable automatic
+increment of serial. If not, disable it. This is useful because
+dns-mode will otherwise refuse to let you save a file if SOA is
+missing."
+  (interactive)
+  (save-excursion
+    (beginning-of-buffer)
+    (if (search-forward-regexp "IN[ ''\t'']+SOA" nil t)
+        (progn
+          (setq dns-mode-soa-auto-increment-serial t)
+          (message "dns-mode-soa-auto-increment-serial t"))
+      (progn
+        (setq dns-mode-soa-auto-increment-serial nil)
+        (message "dns-mode-soa-auto-increment-serial nil")))))
+
 ;; Key bindings
 (global-set-key "\C-xr" 'revert-buffer)
 (global-set-key "\C-xg" 'goto-line)
