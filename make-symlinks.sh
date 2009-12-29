@@ -18,6 +18,9 @@ in
     FreeBSD)
         SED="sed -E"
         ;;
+    Darwin)
+        SED="sed -E"
+        ;;
     *)
         die "unknown uname"
 esac
