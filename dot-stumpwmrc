@@ -32,6 +32,8 @@
 
 (define-key *top-map* (kbd "s-f") "fnext")
 
+(define-key *top-map* (kbd "s-u") "next-urgent")
+
 ;; Configure and turn on the modeline
 (setf *mode-line-foreground-color* "White")
 (if (not (head-mode-line (current-head)))
