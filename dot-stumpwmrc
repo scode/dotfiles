@@ -38,3 +38,7 @@
 (setf *mode-line-foreground-color* "White")
 (if (not (head-mode-line (current-head)))
     (toggle-mode-line (current-screen) (current-head)))
+
+;; Set mode line format. The main purpose here is to include the list
+;; of urgent windows (%u) in bright red. Default is [^B%n^b] %W.
+(setf *screen-mode-line-format* "^7*^b[%n] [^1*^B%u^7*^b] %W")
