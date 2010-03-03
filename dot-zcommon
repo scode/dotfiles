@@ -28,7 +28,7 @@ setopt no_bg_nice
 export PAGER=less
 export EDITOR=emacs
 
-alias mplayer='mplayer -lavdopts fast:threads=2 -monitoraspect 16:10 -cache-min 1 -cache 50000 -ao oss:/dev/dsp4:mixer-device=/dev/mixer4'
+alias mplayer='mplayer -lavdopts fast:threads=4 -monitoraspect 16:10 -cache-min 1 -cache 50000 -ao oss:/dev/dsp4:mixer-device=/dev/mixer4'
 alias irb='irb --readline -r irb/completion'
 alias svns='svn status'
 
