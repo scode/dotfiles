@@ -53,7 +53,7 @@ do
         fi
     elif ! [ -e "$symname" ]
     then
-        echo "C $symname -> $dotfile"
+        echo "A $symname -> $dotfile"
         ln -sf $dotfile $symname
     else
         echo "! $symname - exists but is not symlink, not touching"
