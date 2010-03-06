@@ -40,7 +40,7 @@ do
     if ! [ -e $symname ]
     then
         echo "$symname <- $dotfile"
-        ln -s $dotfile $symname
+        ln -sf $dotfile $symname
     else
         echo "$symname exists"
     fi
