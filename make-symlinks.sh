@@ -37,11 +37,20 @@ do
     stripped=$(echo $name | ${=SED} -e 's,dot-(.+)$,\1,g')
     symname=".${stripped}"
 
-    if ! [ -e $symname ]
+    if [ -L $symname ]
     then
-        echo "$symname <- $dotfile"
+        if ! [ "$(readlink $symname)" = "$dotfile" ]
+        then
+            echo "M $symname -> $dotfile (used to be $(readlink $symname))"
+            ln -sf $dotfile $symname
+        else
+            echo "  $symname"
+        fi
+    elif ! [ -e "$symname" ]
+    then
+        echo "C $symname -> $dotfile"
         ln -sf $dotfile $symname
     else
-        echo "$symname exists"
+        echo "! $symname - exists but is not symlink, not touching"
     fi
 done
