@@ -41,8 +41,13 @@ do
     then
         if ! [ "$(readlink $symname)" = "$dotfile" ]
         then
-            echo "M $symname -> $dotfile (used to be $(readlink $symname))"
-            ln -sf $dotfile $symname
+            if [ -d "$symname" ]
+            then
+                echo "! $symname - is symlink pointing to directory; not touching"
+            else
+                echo "M $symname -> $dotfile (used to be $(readlink $symname))"
+                ln -sf $dotfile $symname
+            fi
         else
             echo "  $symname"
         fi
