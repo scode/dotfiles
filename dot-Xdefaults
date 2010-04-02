@@ -1,0 +1,16 @@
+URxvt.urgentOnBell:  true
+
+XEmacs.default.attributeFont: -ttf-verdana-medium-r-normal-*-17-*-75-75-*-*-iso8859-1
+URxvt.font: 7x13bold,\
+	    -misc-fixed-bold-r-normal--15-140-75-75-c-90-iso10646-1,\
+            -misc-fixed-medium-r-normal--15-140-75-75-c-90-iso10646-1, \
+            [codeset=JISX0208]xft:Kochi Gothic:antialias=false, \
+            xft:Code2000:antialias=false
+
+URxvt*cutchars: "`\"()'*<>[]{|}"
+urxvt*perl-lib:         /usr/local/lib/urxvt/perl/
+urxvt*perl-ext-common:  default,matcher
+urxvt*matcher.button:   1
+urxvt*urlLauncher:      /home/scode/symbolic-bin/chrome
+
+
