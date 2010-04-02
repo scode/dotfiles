@@ -8,3 +8,5 @@ vbell off
 startup_message off
 hardstatus alwayslastline "%{wb}%?%-w%?[%n*%f %t]%?%+Lw%?%="
 
+defutf8 on
+
