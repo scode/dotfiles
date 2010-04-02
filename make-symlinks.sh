@@ -30,8 +30,9 @@ then
     die 'must say --force to confirm that you understand that we are going to put symlinks in the current directory'
 fi
 
-for dotfile in $rcfiles_path/dot-*
-do
+function checkout_dotfile {
+    dotfile=$1
+
     name=$(basename $dotfile)
 
     stripped=$(echo $name | ${=SED} -e 's,dot-(.+)$,\1,g')
@@ -57,5 +58,14 @@ do
         ln -sf $dotfile $symname
     else
         echo "! $symname - exists but is not symlink, not touching"
+    fi
+}
+
+for dotfile in $rcfiles_path/dot-*
+do
+    # Ignore emacs backup files.
+    if echo $dotfile | egrep -v '.*~$' >/dev/null
+    then
+        checkout_dotfile $dotfile
     fi
 done
