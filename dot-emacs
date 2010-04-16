@@ -172,31 +172,22 @@
   (ucs-insert char))
 
 ;; Make dealing with dns-mode easier.
-(defun maybe-set-dns-soa-serial-auto-increment ()
-  "If the buffer seems to contain a SOA record, enable automatic
-increment of serial. If not, disable it. This is useful because
-dns-mode will otherwise refuse to let you save a file if SOA is
-missing."
-  (interactive)
-  (save-excursion
-    (beginning-of-buffer)
-    (if (search-forward-regexp "IN[ ''\t'']+SOA" nil t)
-        (progn
-          (setq dns-mode-soa-auto-increment-serial t)
-          (message "dns-mode-soa-auto-increment-serial t"))
-      (progn
-        (setq dns-mode-soa-auto-increment-serial nil)
-        (message "dns-mode-soa-auto-increment-serial nil")))))
-
-;; Make automatic determination when dns-mode is enabled. Ideally we
-;; should evaluate in the before-save-hook, however dns-mode's own
-;; before-save-hook runs before any before-save-hook we register
-;; here. It would be nice to have dns-mode have a
-;; before-serial-auto-increment-hook that we could use, but that
-;; requires pushing such a thing upstream. Does anyone know of another
-;; solution? For now, this is enough for very common cases where you
-;; neither add nor remove a SOA.
-(add-hook 'dns-mode-hook 'maybe-set-dns-soa-serial-auto-increment nil t)
+;; NOTE: Doesn't work (doesn't run), not sure why. Has to be investigated.
+(defadvice maybe-set-dns-soa-serial-auto-increment (before maybe-set-increment)
+ "If the buffer seems to contain a SOA record, enable automatic
+updating. else disable it. This prevents dns-mode refusing to
+save a file when there is no SOA record."
+ (save-excursion
+   (beginning-of-buffer)
+   (if (and (search-forward-regexp "IN[ ''\t'']+SOA" nil t)
+            (not (search-forward-regexp "@SERIAL@" nil t)))
+       (progn
+         (setq dns-mode-soa-auto-increment-serial t)
+         (message "dns-mode-soa-auto-increment-serial t"))
+     (progn
+       (setq dns-mode-soa-auto-increment-serial nil)
+       (message "dns-mode-soa-auto-increment-serial nil")))))
+(ad-activate 'maybe-set-dns-soa-serial-auto-increment)
 
 ;; Key bindings
 (global-set-key "\C-xr" 'revert-buffer)
