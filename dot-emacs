@@ -60,7 +60,7 @@
 ;; a list containing the name of the library and an initialization function
 ;; to call after loading it (or if it is already loaded).
 (dolist (lib (list "erc-auto"
-		   (list "slime" #'init-slime)
+		   ;(list "slime" #'init-slime)
 		   (list "ruby-mode" #'init-ruby-mode)
 		   "doc-mode"
 		   (list "ecmascript-mode" #'init-ecmascript-mode)))
