@@ -51,6 +51,20 @@ then
 	export TERM="rxvt"
 fi
 
+# Convenience function to allocate a temporary directoy and go to that
+# directory.
+function tmpdir {
+    dname=$(mktemp -t randtmp)
+    # mkdir has nice atomic semantics, so rm+mdir is race-free
+    if rm $dname && mkdir $dname
+    then
+        cd $dname
+        echo "now in $(pwd)"
+    else
+        echo "unable to securely allocate $dname" >&2
+    fi
+}
+
 # BEGIN subversion
 svnbase=${svnbase:=https://localhost/svnbase-not-set}
 
