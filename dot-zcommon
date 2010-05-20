@@ -71,6 +71,14 @@ svnbase=${svnbase:=https://localhost/svnbase-not-set}
 function svnrel {
 	echo "${svnbase}$1"
 }
+
+# DANGEROUS: obliterates non-tracked information from a subversion working copy
+function svnclean {
+    for f in $(svn status --no-ignore | egrep '^I.*$' | awk '{print $2}')
+    do
+        rm -rf $f
+    done
+}
 # END subversion
 
 source_if_exists ~/.zcommon-local
