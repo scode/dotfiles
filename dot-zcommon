@@ -81,6 +81,16 @@ function svnclean {
 }
 # END subversion
 
+# BEGIN git
+# DANGEROUS: obliterates non-tracked information from a git working copy
+function gitclean {
+    for f in $(git status -s | egrep '^\?\? .*$' | awk '{print $2;}')
+    do
+        rm -rf $f
+    done
+}
+# END git
+
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
 
