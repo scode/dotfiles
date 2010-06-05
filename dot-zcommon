@@ -28,6 +28,11 @@ fi
 autoload -U compinit
 compinit
 
+# It sucks to not have a core dump after a crash, but it sucks even
+# more to have multi-gigabyte core dumps happen when you don't want
+# them.
+ulimit -c 0
+
 # Don't start background jobs niced
 setopt no_bg_nice
 
