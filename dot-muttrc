@@ -22,6 +22,7 @@ set pgp_verify_command="gpg --no-verbose --batch --output - --verify %s %f"
 set pgp_decrypt_command="gpg --passphrase-fd 0 --no-verbose --batch --output - %f"
 set pgp_sign_command="gpg --no-verbose --batch --output - --passphrase-fd 0 --armor --detach-sign --textmode %?a?-u %a? %f"
 set pgp_clearsign_command="gpg --no-verbose --batch --output - --passphrase-fd 0 --armor --textmode --clearsign %?a?-u %a? %f"
+# NOTE: Anyone using this for their own config, make sure to replace your key id in the two following lines.
 set pgp_encrypt_only_command="pgpewrap gpg --batch --quiet --no-verbose --output - --encrypt --textmode --armor --always-trust --encrypt-to 0xE9758B7D -- -r %r -- %f"
 set pgp_encrypt_sign_command="pgpewrap gpg --passphrase-fd 0 --batch --quiet --no-verbose --textmode --output - --encrypt --sign %?a?-u %a? --armor --always-trust --encrypt-to 0xE9758B7D -- -r %r -- %f"
 set pgp_import_command="gpg --no-verbose --import -v %f"
