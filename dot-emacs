@@ -209,3 +209,10 @@ save a file when there is no SOA record."
 (when (file-exists-p settings-local-post)
     (load settings-local-post))
 
+;;; This is for ELPA, the packaging system. Modified to not bork when
+;;; elpa is not installed.
+(let ((elpa-package-el (expand-file-name "~/.emacs.d/elpa/package.el")))
+  (when (file-exists-p elpa-package-el)
+    (when (load
+           (expand-file-name "~/.emacs.d/elpa/package.el"))
+      (package-initialize))))
