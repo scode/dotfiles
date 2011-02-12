@@ -8,6 +8,11 @@ function source_if_exists {
 
 source_if_exists ~/.zcommon-local-pre
 
+if [ -d ~/bin ]
+then
+        export PATH=$PATH:~/bin
+fi
+
 # Keep cursor at constant position and show current directory on the
 # right. This nicely aligns commands, and does not cause problems when
 # indeep directories as the left prompt will override the right
