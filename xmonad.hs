@@ -5,13 +5,21 @@
 --
 -- DynamicWorkspaces is the contrib module that gives stumpwm/ion style named
 -- workspaces that I cannot live without.
+--
+-- TODO: The urgency hook is kinda useless since it only pops up for a while,
+-- but better than nothing. I want something that stays up until I visit the
+-- window. If you're reading this and know how, please let me know :)
 
 import XMonad
 import XMonad.Actions.DynamicWorkspaces
+import XMonad.Hooks.ICCCMFocus
+import XMonad.Hooks.SetWMName
+import XMonad.Hooks.UrgencyHook
 import XMonad.Prompt
 import XMonad.Prompt.Shell
 import XMonad.Prompt.XMonad
 import qualified Data.Map as M
+import XMonad.Hooks.UrgencyHook
 
 myKeys conf@(XConfig {XMonad.modMask = modm}) =
      [ ((modm, xK_BackSpace), removeWorkspace)
@@ -23,8 +31,10 @@ myKeys conf@(XConfig {XMonad.modMask = modm}) =
 
 newKeys x = M.union (keys defaultConfig x) (M.fromList (myKeys x))
 
-main = xmonad $ defaultConfig
+main = xmonad $ withUrgencyHook dzenUrgencyHook { args = ["-bg", "darkgreen", "-xs", "1"] }
+     $ defaultConfig
      { modMask = mod4Mask
-     , terminal = "/home/scode/bin/xt"
+     , terminal = "/usr/local/bin/xt"
      , keys = newKeys
+     , startupHook = setWMName "LG3D"
      }
