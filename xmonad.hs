@@ -31,7 +31,7 @@ myKeys conf@(XConfig {XMonad.modMask = modm}) =
 
 newKeys x = M.union (keys defaultConfig x) (M.fromList (myKeys x))
 
-main = xmonad $ withUrgencyHook dzenUrgencyHook { args = ["-bg", "darkgreen", "-xs", "1"] }
+main = xmonad $ withUrgencyHook dzenUrgencyHook { args = [ "-fg", "white", "-bg", "red", "-xs", "1"] }
      $ defaultConfig
      { modMask = mod4Mask
      , terminal = "/usr/local/bin/xt"
