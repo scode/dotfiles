@@ -1,4 +1,5 @@
 URxvt.urgentOnBell:  true
+URxvt.saveLines:     8192
 
 XEmacs.default.attributeFont: -ttf-verdana-medium-r-normal-*-17-*-75-75-*-*-iso8859-1
 URxvt.font: 7x13bold,\
