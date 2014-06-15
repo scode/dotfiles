@@ -94,9 +94,6 @@
 ;; Highlight region when selecting
 (setq-default transient-mark-mode t)
 
-;; Enable shift-selection
-(pc-selection-mode)
-
 ;; For purposes of paragraph filling
 (setq fill-column 80)
 
