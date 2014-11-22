@@ -34,7 +34,7 @@ newKeys x = M.union (keys defaultConfig x) (M.fromList (myKeys x))
 main = xmonad $ withUrgencyHook dzenUrgencyHook { args = [ "-fg", "white", "-bg", "red", "-xs", "1"] }
      $ defaultConfig
      { modMask = mod4Mask
-     , terminal = "/usr/local/bin/xt"
+     , terminal = "/home/scode/bin/xt"
      , keys = newKeys
      , startupHook = setWMName "LG3D"
      }
