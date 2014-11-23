@@ -23,26 +23,26 @@ DOTFILES_SUBDIR = 'dotfiles'
 # regular expression that filenames must match in order to be picked up (not applied to directories)
 DOTFILES_RE = re.compile('^[0-9a-zA-Z-.]$')
 
+# enable/disable side-effects to easy debugging
 DRY_RUN = False
 
 def ensure_symlink_installed(source_path, dest_path):
-    if os.path.exists(dest_path) and not os.path.islink(dest_path):
+    if os.path.islink(dest_path):
+        existing_link = os.readlink(dest_path)
+        if existing_link == source_path:
+            log.debug('OK  %s -> %s', dest_path, source_path)
+        else:
+            log.info('SM! %s -> %s', dest_path, source_path)
+            if not DRY_RUN:
+                # XXX(scode): Maybe bother with temp file and atomic rename.
+                os.unlink(dest_path)
+                os.symlink(source_path, dest_path)
+    elif os.path.exists(dest_path):
         log.warn('WRN path exists but is not a symlink, not touching: %s', dest_path)
     else:
-        if os.path.exists(dest_path):
-            existing_link = os.readlink(dest_path)
-            if existing_link == source_path:
-                log.debug('OK  %s -> %s', dest_path, source_path)
-            else:
-                log.info('SM! %s -> %s', dest_path, source_path)
-                if not DRY_RUN:
-                    # XXX(scode): Maybe bother with temp file and atomic rename.
-                    os.unlink(dest_path)
-                    os.symlink(source_path, dest_path)
-        else:
-            log.info('SM+ %s -> %s', dest_path, source_path)
-            if not DRY_RUN:
-                os.symlink(source_path, dest_path)
+        log.info('SM+ %s -> %s', dest_path, source_path)
+        if not DRY_RUN:
+            os.symlink(source_path, dest_path)
 
 def ensure_directory_exists(path):
     """
@@ -71,7 +71,11 @@ def install_dotfiles(rcfiles_home, user_home):
                 if ensure_directory_exists(source_path):
                     recur(source_path, dest_path)
             else:
-                ensure_symlink_installed(source_path, dest_path)
+                # dot files don't have a leading "." in the source, for human purposes so mangle
+                # the destination path to have one.
+                dotfile_path = os.path.join(os.path.split(dest_path)[0],
+                                            '.' + os.path.split(source_path)[1],)
+                ensure_symlink_installed(source_path, dotfile_path)
 
     dotfile_dir = os.path.join(rcfiles_home, DOTFILES_SUBDIR)
     recur(dotfile_dir, user_home)
@@ -80,14 +84,14 @@ def setup_env(rcfiles_home, user_home):
     install_dotfiles(rcfiles_home, user_home)
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
     rel_rcfiles_home, _ = os.path.split(sys.argv[0])
     rcfiles_home = os.path.abspath(rel_rcfiles_home)
     user_home = os.path.expanduser("~")
 
-    log.info('rcfiles home: %s', rcfiles_home)
-    log.info('user home:    %s', user_home)
+    log.debug('rcfiles home: %s', rcfiles_home)
+    log.debug('user home:    %s', user_home)
 
     setup_env(rcfiles_home, user_home)
 
