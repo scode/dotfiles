@@ -1,2 +1,5 @@
-These are some startup/configuration files and the like that I like to
-keep on my various accounts.
+Partially automates setting up my personally preferred environment in
+*nix environments I am likely to encounter.
+
+If you use this directly, audit all changes before using them. No
+attempt at release engineering/backwards compatibility is made.
