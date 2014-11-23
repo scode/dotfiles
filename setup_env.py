@@ -21,7 +21,7 @@ log = logging.getLogger('scode/rcfiles')
 DOTFILES_SUBDIR = 'dotfiles'
 
 # regular expression that filenames must match in order to be picked up (not applied to directories)
-DOTFILES_RE = re.compile('^[0-9a-zA-Z-.]$')
+DOTFILES_RE = re.compile('^[0-9a-zA-Z-.]*$')
 
 # enable/disable side-effects to easy debugging
 DRY_RUN = False
@@ -71,6 +71,9 @@ def install_dotfiles(rcfiles_home, user_home):
                 if ensure_directory_exists(source_path):
                     recur(source_path, dest_path)
             else:
+                if not DOTFILES_RE.match(base_name):
+                    log.warn('WRN skipping because of filename: %s', source_path)
+                    continue
                 # dot files don't have a leading "." in the source, for human purposes so mangle
                 # the destination path to have one.
                 dotfile_path = os.path.join(os.path.split(dest_path)[0],
