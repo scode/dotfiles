@@ -3,3 +3,12 @@ Partially automates setting up my personally preferred environment in
 
 If you use this directly, audit all changes before using them. No
 attempt at release engineering/backwards compatibility is made.
+
+Intended use is to run, from your home directory (with the path to
+your checkout appropriately substituted):
+
+  ./git/rcfiles/setup_env.py
+
+It will set up symlinks to configuration files (and in the future, or
+now depending on whether I updated the config file in case of changes,
+possibly other things).
