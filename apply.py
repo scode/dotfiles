@@ -36,6 +36,8 @@ def ensure_symlink_installed(source_path, dest_path):
             else:
                 log.info('SM! %s -> %s', dest_path, source_path)
                 if not DRY_RUN:
+                    # XXX(scode): Maybe bother with temp file and atomic rename.
+                    os.unlink(dest_path)
                     os.symlink(source_path, dest_path)
         else:
             log.info('SM+ %s -> %s', dest_path, source_path)
