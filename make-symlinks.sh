@@ -35,7 +35,7 @@ function checkout_dotfile {
 
     name=$(basename $dotfile)
 
-    stripped=$(echo $name | ${=SED} -e 's,dot-(.+)$,\1,g')
+    stripped=$(echo $name | ${=SED} -e 's,dot_(.+)$,\1,g')
     symname=".${stripped}"
 
     if [ -L $symname ]
@@ -61,7 +61,7 @@ function checkout_dotfile {
     fi
 }
 
-for dotfile in $rcfiles_path/dot-*
+for dotfile in $rcfiles_path/dot_*
 do
     # Ignore emacs backup files.
     if echo $dotfile | egrep -v '.*~$' >/dev/null
