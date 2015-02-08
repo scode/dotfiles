@@ -219,5 +219,27 @@ save a file when there is no SOA record."
   (autoload 'rust-mode "rust-mode" nil t)
   (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode)))
 
-(add-to-list 'default-frame-alist '(font . "DejaVu Sans Mono 8"))
-(set-face-attribute 'default t :font "DejaVu Sans Mono 8")
+;;; Given a list of candidate fonts, return (font-name . font) - else nil.
+(defun find-first-available-font (candidates)
+  (when candidates
+    (let* ((candidate (car candidates))
+           (found-font (find-font (font-spec :name candidate))))
+      (if found-font
+          (cons candidate found-font)
+          (find-first-available-font (cdr candidates))))))
+
+(defun pick-best-font ()
+  (let ((preferred-fonts (list "DejaVu Sans Mono 12"
+                               "Droid Sans Mono 12"
+                               "Anonymous Pro 10")))
+    (let ((best-available (find-first-available-font preferred-fonts)))
+      (when best-available
+        (add-to-list 'default-frame-alist
+                     (cons 'font (car best-available)))))))
+
+;; Two reasons why we don't just set the font outright; (a) a fallback
+;; in case some fonts are not available is nice, and (b) when running
+;; in non-X11 mode (emacs -nw) no fonts are available (or at least
+;; some aren't) - so let's avoid generating errors during init by only
+;; requesting a font when appropriate.
+(pick-best-font)
