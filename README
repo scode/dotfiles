@@ -1,8 +1,10 @@
-Partially automates setting up my personally preferred environment in
-*nix environments I am likely to encounter.
+Unix home directory configuration files for my personal prefernces,
+along with a script that partially automates setting up my
+environment.
 
-If you use this directly, audit all changes before using them. No
-attempt at release engineering/backwards compatibility is made.
+If you use this and you're not me, audit all changes before using
+them. No attempt at release engineering/backwards compatibility is
+made.
 
 Intended use is to run, from your home directory (with the path to
 your checkout appropriately substituted):
