@@ -9,6 +9,6 @@ your checkout appropriately substituted):
 
   ./git/rcfiles/setup_env.py
 
-It will set up symlinks to configuration files (and in the future, or
-now depending on whether I updated the config file in case of changes,
-possibly other things).
+It will set up symlinks to configuration files (and in the future,
+possibly due addition things, if it isn't already and I just failed to
+update the README to match).
