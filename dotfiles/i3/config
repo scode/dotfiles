@@ -26,6 +26,9 @@ floating_modifier $mod
 # xmonad style dynamic workspaces.
 bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu)
 
+# interactive prompt for an i3 command
+bindsym $mod+i exec i3-input
+
 # start a terminal
 bindsym $mod+v exec i3-sensible-terminal
 
