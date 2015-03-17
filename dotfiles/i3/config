@@ -24,7 +24,7 @@ font -misc-fixed-medium-r-normal--13-120-75-75-C-70-iso10646-1
 floating_modifier $mod
 
 # xmonad style dynamic workspaces.
-bindsym $mod+apostrophe exec i3-msg workspace $(echo $(i3-msg -t get_workspaces | jq -r '.[].name') | dmenu)
+bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu)
 
 # start a terminal
 bindsym $mod+Return exec i3-sensible-terminal
