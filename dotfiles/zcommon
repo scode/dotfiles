@@ -114,6 +114,14 @@ function gitclean {
 }
 # END git
 
+if [[ -e ~/go ]]; then
+    export GOROOT=${GOROOT:-~/go}
+fi
+
+if [[ -e ~/gopath ]]; then
+    export GOPATH=${GOPATH:-~/gopath}
+fi
+
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
 
