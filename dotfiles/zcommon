@@ -1,6 +1,6 @@
 source_if_exists() {
   fname=$1
-  if [ -e $fname ]
+  if [[ -e $fname ]]
   then
     source $fname
   fi
@@ -46,7 +46,7 @@ zstyle ':vcs_info:*' enable git cvs svn hg
 
 vcs_info_wrapper() {
   vcs_info
-  if [ -n "$vcs_info_msg_0_" ]; then
+  if [[ -n "$vcs_info_msg_0_" ]]; then
     echo "%{$fg[grey]%}${vcs_info_msg_0_}%{$reset_color%}$del"
   fi
 }
@@ -58,7 +58,7 @@ export RPS1='%m:%~%(..(%?%)%'
 HISTSIZE=500
 
 # Default to UTF-8.
-if [ -z "$LANG" ]
+if [[ -z "$LANG" ]]
 then
   LANG=en_US.UTF_8
 fi
@@ -82,7 +82,7 @@ alias mplayer='mplayer -lavdopts fast:threads=4 -monitoraspect 16:10 -cache-min 
 alias irb='irb --readline -r irb/completion'
 alias svns='svn status'
 
-if [ "$(uname)" = "Linux" ]
+if [[ "$(uname)" = "Linux" ]]
 then
   alias spotify='wine "C:\Program Files\Spotify\spotify.exe"'
 fi
@@ -90,7 +90,7 @@ fi
 alias stackless='/home/scode/stackless/bin/python2.6'
 
 # rxvt-unicode is not well-known in termcaps
-if [ "$TERM" = "rxvt-unicode" ]
+if [[ "$TERM" == "rxvt-unicode" ]]
 then
   export TERM="rxvt"
 fi
