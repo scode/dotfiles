@@ -9,8 +9,11 @@ function source_if_exists {
 # If $1 contains $2, return success. Else, return failure.
 # $1 is assumed to be a PATH stule string (colon separated).
 contains_path() {
-    set -e
-    [[ ":$1:" == *":$2:"* ]]
+    if [[ ":$1:" == *":$2:"* ]]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Add a directory to the end of $PATH, unless it already appears in $PATH.
