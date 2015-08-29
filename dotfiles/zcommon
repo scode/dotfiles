@@ -122,6 +122,11 @@ if [[ -e ~/gopath ]]; then
     export GOPATH=${GOPATH:-~/gopath}
 fi
 
+if [[ -e ~/go_appengine ]] && [[ -z "$_zcommon_appengine_path" ]]; then
+    export PATH=$PATH:~/go_appengine
+    export _zcommon_appengine_path="1"
+fi
+
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
 
