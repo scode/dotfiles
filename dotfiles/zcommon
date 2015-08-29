@@ -1,35 +1,35 @@
 source_if_exists() {
-	fname=$1
-	if [ -e $fname ]
-	then
-		source $fname
-	fi
+  fname=$1
+  if [ -e $fname ]
+  then
+    source $fname
+  fi
 }
 
 # If $1 contains $2, return success. Else, return failure.
 # $1 is assumed to be a PATH stule string (colon separated).
 contains_path() {
-    if [[ ":$1:" == *":$2:"* ]]; then
-        return 0
-    else
-        return 1
-    fi
+  if [[ ":$1:" == *":$2:"* ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Add a directory to the end of $PATH, unless it already appears in $PATH.
 # If the path is not an existing directory, do not modify PATH.
 path_add_postfix() {
-    if ! contains_path $PATH $1; then
-        PATH="${PATH}:$1"
-    fi
+  if ! contains_path $PATH $1; then
+    PATH="${PATH}:$1"
+  fi
 }
 
 # Add a directory to the beginning of $PATH, unless it already appears in $PATH.
 # If the path is not an existing directory, do not modify PATH.
 path_add_prefix() {
-    if ! contains_path $PATH $1; then
-        PATH="$1:${PATH}"
-    fi
+  if ! contains_path $PATH $1; then
+    PATH="$1:${PATH}"
+  fi
 }
 
 source_if_exists ~/.zcommon-local-pre
@@ -62,7 +62,7 @@ HISTSIZE=500
 # Default to UTF-8.
 if [ -z "$LANG" ]
 then
-        LANG=en_US.UTF_8
+  LANG=en_US.UTF_8
 fi
 
 # Enable intelligent completion.
@@ -86,7 +86,7 @@ alias svns='svn status'
 
 if [ "$(uname)" = "Linux" ]
 then
-        alias spotify='wine "C:\Program Files\Spotify\spotify.exe"'
+  alias spotify='wine "C:\Program Files\Spotify\spotify.exe"'
 fi
 
 alias stackless='/home/scode/stackless/bin/python2.6'
@@ -94,29 +94,29 @@ alias stackless='/home/scode/stackless/bin/python2.6'
 # rxvt-unicode is not well-known in termcaps
 if [ "$TERM" = "rxvt-unicode" ]
 then
-	export TERM="rxvt"
+  export TERM="rxvt"
 fi
 
 # Convenience functiony to allocate a temporary directoy and go to that
 # directory.
 tmpdir() {
-    dname=$(mktemp -t randtmp)
-    # mkdir has nice atomic semantics, so rm+mdir is race-free
-    if rm $dname && mkdir $dname
-    then
-        cd $dname
-        echo "now in $(pwd)"
-    else
-        echo "unable to securely allocate $dname" >&2
-    fi
+  dname=$(mktemp -t randtmp)
+  # mkdir has nice atomic semantics, so rm+mdir is race-free
+  if rm $dname && mkdir $dname
+  then
+    cd $dname
+    echo "now in $(pwd)"
+  else
+    echo "unable to securely allocate $dname" >&2
+  fi
 }
 
 if [[ -e ~/go ]]; then
-    export GOROOT=${GOROOT:-~/go}
+  export GOROOT=${GOROOT:-~/go}
 fi
 
 if [[ -e ~/gopath ]]; then
-    export GOPATH=${GOPATH:-~/gopath}
+  export GOPATH=${GOPATH:-~/gopath}
 fi
 
 path_add_postfix ~/go_appengine
