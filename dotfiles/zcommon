@@ -1,4 +1,4 @@
-function source_if_exists {
+source_if_exists() {
 	fname=$1
 	if [ -e $fname ]
 	then
@@ -97,9 +97,9 @@ then
 	export TERM="rxvt"
 fi
 
-# Convenience function to allocate a temporary directoy and go to that
+# Convenience functiony to allocate a temporary directoy and go to that
 # directory.
-function tmpdir {
+tmpdir() {
     dname=$(mktemp -t randtmp)
     # mkdir has nice atomic semantics, so rm+mdir is race-free
     if rm $dname && mkdir $dname
@@ -114,12 +114,12 @@ function tmpdir {
 # BEGIN subversion
 svnbase=${svnbase:=https://localhost/svnbase-not-set}
 
-function svnrel {
+svnrel() {
 	echo "${svnbase}$1"
 }
 
 # DANGEROUS: obliterates non-tracked information from a subversion working copy
-function svnclean {
+svnclean() {
     for f in $(svn status --no-ignore | egrep '^I.*$' | awk '{print $2}')
     do
         rm -rf $f
@@ -129,7 +129,7 @@ function svnclean {
 
 # BEGIN git
 # DANGEROUS: obliterates non-tracked information from a git working copy
-function gitclean {
+gitclean() {
     for f in $(git status -s | egrep '^\?\? .*$' | awk '{print $2;}')
     do
         rm -rf $f
