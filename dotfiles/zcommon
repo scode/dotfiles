@@ -6,12 +6,32 @@ function source_if_exists {
 	fi
 }
 
+# If $1 contains $2, return success. Else, return failure.
+# $1 is assumed to be a PATH stule string (colon separated).
+contains_path() {
+    set -e
+    [[ ":$1:" == *":$2:"* ]]
+}
+
+# Add a directory to the end of $PATH, unless it already appears in $PATH.
+# If the path is not an existing directory, do not modify PATH.
+path_add_postfix() {
+    if ! contains_path $PATH $1; then
+        PATH="${PATH}:$1"
+    fi
+}
+
+# Add a directory to the beginning of $PATH, unless it already appears in $PATH.
+# If the path is not an existing directory, do not modify PATH.
+path_add_prefix() {
+    if ! contains_path $PATH $1; then
+        PATH="$1:${PATH}"
+    fi
+}
+
 source_if_exists ~/.zcommon-local-pre
 
-if [ -d ~/bin ]
-then
-        export PATH=$PATH:~/bin
-fi
+path_add_postfix ~/bin
 
 setopt prompt_subst
 autoload -Uz vcs_info
@@ -122,10 +142,7 @@ if [[ -e ~/gopath ]]; then
     export GOPATH=${GOPATH:-~/gopath}
 fi
 
-if [[ -e ~/go_appengine ]] && [[ -z "$_zcommon_appengine_path" ]]; then
-    export PATH=$PATH:~/go_appengine
-    export _zcommon_appengine_path="1"
-fi
+path_add_postfix ~/go_appengine
 
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
