@@ -34,8 +34,6 @@ path_add_prefix() {
 
 source_if_exists ~/.zcommon-local-pre
 
-path_add_postfix ~/bin
-
 setopt prompt_subst
 autoload -Uz vcs_info
 zstyle ':vcs_info:*' actionformats \
@@ -119,6 +117,7 @@ if [[ -e ~/gopath ]]; then
   export GOPATH=${GOPATH:-~/gopath}
 fi
 
+path_add_postfix ~/bin
 path_add_postfix ~/go_appengine
 
 source_if_exists ~/.zcommon-local
