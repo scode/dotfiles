@@ -95,10 +95,9 @@ then
   export TERM="rxvt"
 fi
 
-# Convenience functiony to allocate a temporary directoy and go to that
-# directory.
+# Allocate a temp directory and cd into it.
 tmpdir() {
-  dname=$(mktemp -t randtmp)
+  dname=$(mktemp -t randtmpXXXXXXXX)
   # mkdir has nice atomic semantics, so rm+mdir is race-free
   if rm $dname && mkdir $dname
   then
@@ -106,6 +105,7 @@ tmpdir() {
     echo "now in $(pwd)"
   else
     echo "unable to securely allocate $dname" >&2
+    return 1
   fi
 }
 
