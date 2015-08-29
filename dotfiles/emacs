@@ -16,8 +16,11 @@
 (defmacro setq-if-bound (sym val)
   `(set-if-bound ',sym ,val))
 
-;; Allow us to keep user specific code in ~/.el
-(add-to-list 'load-path "~/.el/")
+;; Load path for our own stuff.
+(add-to-list 'load-path "~/.emacs.d/load-path/")
+
+;; Load path for 3rd party stuff we've inlined in our rcfiles.
+(add-to-list 'load-path "~/.emacs.d/3rd-party-load-path/")
 
 ;; If on Gentoo, let Gentoo package management automate loading
 ;; of various e-lisp packages
@@ -243,3 +246,7 @@ save a file when there is no SOA record."
 ;; some aren't) - so let's avoid generating errors during init by only
 ;; requesting a font when appropriate.
 (pick-best-font)
+
+;; Go
+(require 'go-mode-autoloads)
+(add-hook 'before-save-hook #'gofmt-before-save)
