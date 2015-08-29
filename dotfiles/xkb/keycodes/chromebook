@@ -1,0 +1,3 @@
+xkb_keycodes "chromebook" {
+  <CAPS> = 37;
+};
