@@ -217,11 +217,6 @@ save a file when there is no SOA record."
            (expand-file-name "~/.emacs.d/elpa/package.el"))
       (package-initialize))))
 
-(when (file-exists-p "~/.emacs.d/rust-mode/")
-  (add-to-list 'load-path "~/.emacs.d/rust-mode/")
-  (autoload 'rust-mode "rust-mode" nil t)
-  (add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode)))
-
 ;;; Given a list of candidate fonts, return (font-name . font) - else nil.
 (defun find-first-available-font (candidates)
   (when candidates
@@ -246,6 +241,10 @@ save a file when there is no SOA record."
 ;; some aren't) - so let's avoid generating errors during init by only
 ;; requesting a font when appropriate.
 (pick-best-font)
+
+;; Rust
+(autoload 'rust-mode "rust-mode" nil t)
+(add-to-list 'auto-mode-alist '("\\.rs\\'" . rust-mode))
 
 ;; Go
 (require 'go-mode-autoloads)
