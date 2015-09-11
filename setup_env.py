@@ -42,6 +42,9 @@ def ensure_symlink_installed(source_path, dest_path):
             os.symlink(source_path, dest_path)
 
 def install_symlinks(src_dir, dst_dir, prefix=''):
+    if not os.path.exists(src_dir):
+        return None
+
     for src_name in os.listdir(src_dir):
         src_path = os.path.join(src_dir, src_name)
         dst_path = os.path.join(dst_dir, prefix + src_name)
