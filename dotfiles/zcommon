@@ -119,13 +119,11 @@ fi
 
 path_add_postfix ~/bin
 path_add_postfix ~/go_appengine
-path_add_postfix ~/.gem/ruby/1.9.0/bin
-path_add_postfix ~/.gem/ruby/1.9.1/bin
-path_add_postfix ~/.gem/ruby/1.9.2/bin
-path_add_postfix ~/.gem/ruby/1.9.3/bin
-path_add_postfix ~/.gem/ruby/1.9.4/bin
-path_add_postfix ~/.gem/ruby/1.9.5/bin
-path_add_postfix ~/.gem/ruby/1.9.6/bin
+
+for ruby_gem_dir in ~/.gem/ruby/*
+do
+  path_add_postfix $ruby_gem_dir/bin
+done
 
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
