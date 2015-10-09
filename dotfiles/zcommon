@@ -120,7 +120,7 @@ fi
 path_add_postfix ~/bin
 path_add_postfix ~/go_appengine
 
-for ruby_gem_dir in ~/.gem/ruby/*
+for ruby_gem_dir in ~/.gem/ruby/*(N)
 do
   path_add_postfix $ruby_gem_dir/bin
 done
