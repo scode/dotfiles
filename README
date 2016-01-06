@@ -1,6 +1,5 @@
-Unix home directory configuration files for my personal prefernces,
-along with a script that partially automates setting up my
-environment.
+dotfiles (and similar) along with scripting to set up my personal
+preferences.
 
 If you use this and you're not me, audit all changes before using
 them. No attempt at release engineering/backwards compatibility is
