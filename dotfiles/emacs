@@ -240,7 +240,11 @@ save a file when there is no SOA record."
 ;; in non-X11 mode (emacs -nw) no fonts are available (or at least
 ;; some aren't) - so let's avoid generating errors during init by only
 ;; requesting a font when appropriate.
-(pick-best-font)
+;;
+;; XXX(scode): Disabled for now because it consistently segfaults emacs
+;;             with a smashed stack on modern Ubuntus and I have no patience
+;;             to debug it.
+;(pick-best-font)
 
 ;; Rust
 (autoload 'rust-mode "rust-mode" nil t)
