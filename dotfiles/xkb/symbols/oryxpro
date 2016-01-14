@@ -1,0 +1,10 @@
+partial xkb_symbols "oryxpro" {
+  key <CAPS> { [ Control_L ] };
+  key <LCTL> { [ Overlay1_Enable ], overlay1=<LCTL> };
+  key <LEFT> { overlay1=<HOME> };
+  key <RGHT> { overlay1=<END> };
+  key <UP>   { overlay1=<PGUP> };
+  key <DOWN> { overlay1=<PGDN> };
+  key <BKSP> { overlay1=<DELE> };
+  key <RALT> { type[Group1] = "ONE_LEVEL", symbols[Group1] = [ Super_R ] };
+};
