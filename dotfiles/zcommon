@@ -91,6 +91,12 @@ alias stackless='/home/scode/stackless/bin/python2.6'
 alias fetch_dropbox='cd ~ && wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar xzf -'
 alias fetch_dropbox_script='cd ~ && mkdir -p bin && wget -O bin/dropbox.py "https://www.dropbox.com/download?dl=packages/dropbox.py"'
 
+configure_git() {
+  set -eux
+  git config --global user.email peter.schuller@infidyne.com
+  git config --global user.name "Peter Schuller"
+}
+
 # rxvt-unicode is not well-known in termcaps
 if [[ "${TERM}" == "rxvt-unicode" ]]
 then
