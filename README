@@ -13,3 +13,15 @@ your checkout appropriately substituted):
 It will set up symlinks to configuration files (and in the future,
 possibly due addition things, if it isn't already and I just failed to
 update the README to match).
+
+The following files affect the behavior of either the setup script or
+the scripts it installs:
+
+  ~/.config/scode/dotfiles/kbdtype
+
+    Contains the keyboard type. See dotfiles/xkb/*.xkb for available
+    types.
+
+  ~/.config/scode/dotfiles/profile
+
+    Name of host profile (oryxpro, chromebook, ...).

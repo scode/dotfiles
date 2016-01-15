@@ -1,0 +1,38 @@
+#!/usr/bin/zsh
+
+PROFILE_FILE=~/.config/scode/dotfiles/profile
+if [[ -e $PROFILE_FILE ]]; then
+    PROFILE=$(cat $PROFILE_FILE)
+else
+    PROFILE=generic
+fi
+
+if [[ "$PROFILE" == "oryxpro" ]]; then
+    # Disable edges (except bottom) of the touch pad to lessen chances of
+    # accidental mouse activity while typing.
+    synclient LeftEdge=1400
+    synclient RightEdge=5580
+    synclient TopEdge=1260
+    synclient BottomEdge=4530
+    synclient VertEdgeScroll=0
+    synclient HorizEdgeScroll=0
+    synclient AreaLeftEdge=2000
+    synclient AreaRightEdge=4800
+    synclient AreaTopEdge=2170
+    synclient AreaBottomEdge=0
+fi
+
+# Enable natural scrolling.
+xmodmap -e "pointer = 1 2 3 5 4 7 6 8 9 10 11 12"
+
+KBD_TYPE_FILE=~/.config/scode/dotfiles/kbdtype
+if [[ -e $KBD_TYPE_FILE ]]; then
+    KBD_TYPE=$(cat $KBD_TYPE_FILE)
+else
+    KBD_TYPE=generic
+fi
+
+
+xkbcomp -w0 -I$HOME/.xkb $HOME/.xkb/$KBD_TYPE.xkb $DISPLAY
+
+exec i3
