@@ -15,7 +15,7 @@ import os.path
 import re
 import sys
 
-log = logging.getLogger('scode/rcfiles')
+log = logging.getLogger('scode/dottools')
 
 DOTFILES_SUBDIR = 'dotfiles'
 FILES_SUBDIR = 'files'
