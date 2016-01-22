@@ -33,6 +33,9 @@ else
     KBD_TYPE=generic
 fi
 
+if which nm-applet >/dev/null; then
+    nm-applet &
+fi
 
 xkbcomp -w0 -I$HOME/.xkb $HOME/.xkb/$KBD_TYPE.xkb $DISPLAY
 
