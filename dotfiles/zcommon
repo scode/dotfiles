@@ -133,6 +133,8 @@ do
   path_add_postfix $ruby_gem_dir/bin
 done
 
+# https://nixos.org/nix/
+source_if_exists ~/.nix-profile/etc/profile.d/nix.sh
+
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
-
