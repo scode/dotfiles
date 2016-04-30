@@ -253,3 +253,9 @@ save a file when there is no SOA record."
 ;; Go
 (require 'go-mode-autoloads)
 (add-hook 'before-save-hook #'gofmt-before-save)
+
+;; Funny story. In 15+ years I never once, that I can recall, actually
+;; used a backup file but have been constantly annoyed by them. On
+;; this day, 2016-04-29, I finally decided to spend 2 minute disabling
+;; it.
+(setq make-backup-files nil)
