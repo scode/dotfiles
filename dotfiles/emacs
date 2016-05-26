@@ -259,3 +259,7 @@ save a file when there is no SOA record."
 ;; all this time.  Let it be known that on this day, 2016-04-29, I
 ;; finally decided to spend the 2 minutes disabling it.
 (setq make-backup-files nil)
+
+;; And these are just annoying to me so bye bye. These lock files are
+;; broken symlinks that confuse certain tools.
+(setq create-lockfiles nil)
