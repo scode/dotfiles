@@ -117,10 +117,6 @@ tmpdir() {
   fi
 }
 
-if [[ -e ~/go ]]; then
-  export GOROOT=${GOROOT:-~/go}
-fi
-
 if [[ -e ~/gopath ]]; then
   export GOPATH=${GOPATH:-~/gopath}
 fi
