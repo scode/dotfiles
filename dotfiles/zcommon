@@ -117,6 +117,10 @@ tmpdir() {
   fi
 }
 
+if [[ -d /usr/local/go/bin ]]; then
+  path_add_postfix /usr/local/go/bin
+fi
+
 if [[ -e ~/gopath ]]; then
   export GOPATH=${GOPATH:-~/gopath}
 fi
