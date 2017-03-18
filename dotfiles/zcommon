@@ -138,3 +138,15 @@ source_if_exists ~/.nix-profile/etc/profile.d/nix.sh
 
 source_if_exists ~/.zcommon-local
 source_if_exists ~/.zcommon-local-post
+
+# On OS X only, watch a diretory for file changes and trigger the
+# active Chrome tab to refresh when changes are detected. Requires
+# fswatch (brew install fswatch).
+#
+# Usage: watchnload /path/to/tree
+watchnload() {
+  fswatch -o "$1" | xargs -n1 -I{} osascript \
+    -e 'tell application "Google Chrome"' \
+    -e '   reload active tab of window 1' \
+    -e 'end tell'
+}
