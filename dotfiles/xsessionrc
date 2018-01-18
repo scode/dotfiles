@@ -25,6 +25,13 @@ if [[ "$PROFILE" == "oryxpro" ]]; then
     xmodmap -e "pointer = 1 2 3 5 4 7 6 8 9 10 11 12"
 fi
 
+if [[ "$PROFILE" == "xps13" ]]; then
+    export GDK_SCALE=2
+    gsettings set org.gnome.desktop.interface scaling-factor 2
+
+    # Enable natural scrolling.
+    xinput set-prop 12 290 1
+fi
 
 KBD_TYPE_FILE=~/.config/scode/dotfiles/kbdtype
 if [[ -e $KBD_TYPE_FILE ]]; then
@@ -38,8 +45,3 @@ if which nm-applet >/dev/null; then
 fi
 
 xkbcomp -w0 -I$HOME/.xkb $HOME/.xkb/$KBD_TYPE.xkb $DISPLAY
-
-if [[ "$PROFILE" == "xps13" ]]; then
-    export GDK_SCALE=2
-    gsettings set org.gnome.desktop.interface scaling-factor 2
-fi
