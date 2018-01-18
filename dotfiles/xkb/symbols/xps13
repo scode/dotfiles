@@ -6,5 +6,5 @@ partial xkb_symbols "oryxpro" {
   key <UP>   { overlay1=<PGUP> };
   key <DOWN> { overlay1=<PGDN> };
   key <BKSP> { overlay1=<DELE> };
-  key <RALT> { type[Group1] = "ONE_LEVEL", symbols[Group1] = [ Super_R ] };
+  key <RALT> { type[Group1] = "ONE_LEVEL", symbols[Group1] = [ Super_L ] };
 };
