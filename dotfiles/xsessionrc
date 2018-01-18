@@ -39,4 +39,7 @@ fi
 
 xkbcomp -w0 -I$HOME/.xkb $HOME/.xkb/$KBD_TYPE.xkb $DISPLAY
 
-exec i3
+if [[ "$PROFILE" == "xps13" ]]; then
+    export GDK_SCALE=2
+    gsettings set org.gnome.desktop.interface scaling-factor 2
+fi
