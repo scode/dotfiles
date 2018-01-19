@@ -3,15 +3,15 @@ Xft.dpi: 210
 
 XEmacs.default.attributeFont: -ttf-verdana-medium-r-normal-*-17-*-75-75-*-*-iso8859-1
 
-URxvt.urgentOnBell:  true
-URxvt.saveLines:     8192
-URxvt.pastableTabs:  false
+urxvt.urgentOnBell:  true
+urxvt.saveLines:     8192
+urxvt.pastableTabs:  false
 
-URxvt.font: xft:DejaVu Sans Mono:size=10
-URxvt*cutchars: "`\"()'*<>[]{|}"
+urxvt.font: xft:DejaVu Sans Mono:size=10
+urxvt*cutchars: "`\"()'*<>[]{|}"
 urxvt*perl-lib:         /usr/local/lib/urxvt/perl/
 urxvt*perl-ext-common:  default,matcher
 urxvt*matcher.button:   1
 urxvt*urlLauncher:      /home/scode/symbolic-bin/chrome
-URxvt.foreground: white
-URxvt.background: rgb:30/20/20
+urxvt.foreground: white
+urxvt.background: rgb:30/20/20
