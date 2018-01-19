@@ -13,3 +13,5 @@ urxvt*perl-lib:         /usr/local/lib/urxvt/perl/
 urxvt*perl-ext-common:  default,matcher
 urxvt*matcher.button:   1
 urxvt*urlLauncher:      /home/scode/symbolic-bin/chrome
+URxvt.foreground: white
+URxvt.background: rgb:30/20/20
