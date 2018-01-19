@@ -8,7 +8,8 @@ bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r
 # interactive prompt for an i3 command
 bindsym $mod+i exec i3-input
 
-bindsym $mod+v exec i3-sensible-terminal
+#bindsym $mod+v exec i3-sensible-terminal
+bindsym $mod+v exec urxvt
 bindsym $mod+Shift+c kill
 
 # vim style bindings rather than the almost-vim default
