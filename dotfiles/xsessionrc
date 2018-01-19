@@ -26,8 +26,9 @@ if [[ "$PROFILE" == "oryxpro" ]]; then
 fi
 
 if [[ "$PROFILE" == "xps13" ]]; then
-    export GDK_SCALE=2
-    gsettings set org.gnome.desktop.interface scaling-factor 2
+    # TODO: let's see if this is required given Xft.dpi in Xresources
+    #export GDK_SCALE=2
+    #gsettings set org.gnome.desktop.interface scaling-factor 2
 
     # Enable natural scrolling.
     xinput set-prop 12 290 1
