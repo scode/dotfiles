@@ -30,8 +30,10 @@ if [[ "$PROFILE" == "xps13" ]]; then
     #export GDK_SCALE=2
     #gsettings set org.gnome.desktop.interface scaling-factor 2
 
-    # Enable natural scrolling.
-    xinput set-prop 12 290 1
+    # Enable natural scrolling. The id of the touchpad changes depending on peripherals
+    # connected, so extract the appropriate ID by regexp.
+    touchpad_id=$(xinput list | grep Touchpad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
+    xinput set-prop "${touchpad_id}" 290 1
 fi
 
 KBD_TYPE_FILE=~/.config/scode/dotfiles/kbdtype
