@@ -1,2 +1,15 @@
 ; TODO: paramaterize based on profile
 Xft.dpi: 210
+
+XEmacs.default.attributeFont: -ttf-verdana-medium-r-normal-*-17-*-75-75-*-*-iso8859-1
+
+URxvt.urgentOnBell:  true
+URxvt.saveLines:     8192
+URxvt.pastableTabs:  false
+
+URxvt.font: xft:DejaVu Sans Mono:size=10
+URxvt*cutchars: "`\"()'*<>[]{|}"
+urxvt*perl-lib:         /usr/local/lib/urxvt/perl/
+urxvt*perl-ext-common:  default,matcher
+urxvt*matcher.button:   1
+urxvt*urlLauncher:      /home/scode/symbolic-bin/chrome
