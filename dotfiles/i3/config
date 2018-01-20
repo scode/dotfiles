@@ -5,6 +5,9 @@ set $mod Mod4
 # xmonad style dynamic workspaces addressed by name.
 bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu)
 
+# https://github.com/lupoDharkael/flameshot
+bindsym $mod+p exec ~/bin/flameshot gui
+
 # interactive prompt for an i3 command
 bindsym $mod+i exec i3-input
 
