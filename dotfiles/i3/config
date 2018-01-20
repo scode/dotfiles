@@ -8,6 +8,8 @@ bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r
 # https://github.com/lupoDharkael/flameshot
 bindsym $mod+p exec ~/bin/flameshot gui
 
+bindsym $mod+q exec i3lock
+
 # interactive prompt for an i3 command
 bindsym $mod+i exec i3-input
 
