@@ -49,8 +49,12 @@ else
     KBD_TYPE=generic
 fi
 
-if which nm-applet >/dev/null; then
+if which nm-applet >/dev/null 2>/dev/null; then
     nm-applet &
+fi
+
+if [[ -e ~/bin/flameshot ]]; then
+    ~/bin/flameshot &
 fi
 
 xkbcomp -w0 -I$HOME/.xkb $HOME/.xkb/$KBD_TYPE.xkb $DISPLAY
