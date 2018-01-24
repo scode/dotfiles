@@ -1,7 +1,7 @@
 self: super:
 
 {
-  # Install overlay by copying/symlinking this to ~/.config/nixpkgs/overlays/scode.nix
+  # Install overlay by symlinking the containing directory as  ~/.config/nixpkgs/overlays/scode
   # and for initial install run nix-env -f '<nixpkgs>' -iA userPackages
   #
   # Note that nix-rebuild-scode will remove any packages not part of userPackages.
