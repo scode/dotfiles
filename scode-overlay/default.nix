@@ -38,6 +38,7 @@ self: super:
     nix = super.nix;
 
     ripgrep = super.ripgrep;
+    jq = super.jq;
 
     # Demonstration use of scriptFromTree:
     #
