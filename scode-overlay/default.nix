@@ -52,6 +52,12 @@ self: super:
         exec nix-env -f '<nixpkgs>' -r -iA userPackages
       '';
 
+    google-chrome-slack = super.writeScriptBin "google-chrome-slack"
+      ''
+        #!${super.stdenv.shell}
+        exec google-chrome --user-data-dir=/home/scode/.config/google-chrome-slack
+      '';
+
     saltybox = super.buildGoPackage rec {
       name = "saltybox-${version}";
       version = "1.0.0";
