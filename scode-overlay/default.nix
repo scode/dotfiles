@@ -39,6 +39,7 @@ self: super:
 
     ripgrep = super.ripgrep;
     jq = super.jq;
+    dmenu = super.dmenu;
 
     # Demonstration use of scriptFromTree:
     #
