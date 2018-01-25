@@ -18,8 +18,8 @@ bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume alsa_out
 bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo -5%
 bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo toggle
 
-# interactive prompt for an i3 command
-bindsym $mod+i exec i3-input
+# interactive prompt for an i3 command (i3-input didn't correctly do pango fonts)
+bindsym $mod+i exec i3-msg $(dmenu -fn 'xft:DejaVu Sans Mono:size=15')
 
 #bindsym $mod+v exec i3-sensible-terminal
 bindsym $mod+v exec urxvt
