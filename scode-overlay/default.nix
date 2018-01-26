@@ -80,7 +80,7 @@ self: super:
       '';
   };
 
-  userPackages = if super.stdenv.isLinux
-    then self.userPackagesForAllPlatforms // self.userPackagesForLinux
-    else self.userPackagesForAllPlatforms;
+  userPackages = super.userPackages or {} //
+    (if super.stdenv.isLinux then self.userPackagesForLinux else {}) //
+    self.userPackagesForAllPlatforms;
 }
