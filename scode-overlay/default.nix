@@ -33,13 +33,12 @@ self: super:
       '';
     };
 
-  userPackages = super.userPackages or {} // {
+  userPackagesForAllPlatforms = super.userPackages or {} // {
     # Must not forget nix itself or nix-env will disappear when nix-rebuild-scode is called.
     nix = super.nix;
 
     ripgrep = super.ripgrep;
     jq = super.jq;
-    dmenu = super.dmenu;
 
     # Demonstration use of scriptFromTree:
     #
@@ -52,12 +51,6 @@ self: super:
       ''
         #!${super.stdenv.shell}
         exec nix-env -f '<nixpkgs>' -r -iA userPackages
-      '';
-
-    google-chrome-slack = super.writeScriptBin "google-chrome-slack"
-      ''
-        #!${super.stdenv.shell}
-        exec google-chrome --user-data-dir=/home/scode/.config/google-chrome-slack
       '';
 
     saltybox = super.buildGoPackage rec {
@@ -76,4 +69,18 @@ self: super:
       buildFlags = "--tags release";
      };
   };
+
+  userPackagesForLinux = {
+    dmenu = super.dmenu;
+
+    google-chrome-slack = super.writeScriptBin "google-chrome-slack"
+      ''
+        #!${super.stdenv.shell}
+        exec google-chrome --user-data-dir=/home/scode/.config/google-chrome-slack
+      '';
+  };
+
+  userPackages = if super.stdenv.isLinux
+    then self.userPackagesForAllPlatforms // self.userPackagesForLinux
+    else self.userPackagesForAllPlatforms;
 }
