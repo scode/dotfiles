@@ -14,8 +14,8 @@ bindsym $mod+p exec ~/bin/flameshot gui
 bindsym $mod+period exec i3lock
 
 # TODO: Don't hard code name of sink.
-bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo +5%
-bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo -5%
+bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo +3%
+bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo -3%
 bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo toggle
 
 # interactive prompt for an i3 command (i3-input didn't correctly do pango fonts)
