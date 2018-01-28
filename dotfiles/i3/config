@@ -17,6 +17,8 @@ bindsym $mod+period exec i3lock
 bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo +3%
 bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo -3%
 bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo toggle
+bindsym XF86MonBrightnessUp exec --no-startup-id backlight.py +5%
+bindsym XF86MonBrightnessDown exec --no-startup-id backlight.py -5%
 
 # interactive prompt for an i3 command (i3-input didn't correctly do pango fonts)
 bindsym $mod+i exec i3-msg $(dmenu -fn 'xft:DejaVu Sans Mono:size=15')
