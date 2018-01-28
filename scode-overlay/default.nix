@@ -42,13 +42,6 @@ self: super:
     python3 = super.python3;
     mypy = super.mypy;
 
-    # Demonstration use of scriptFromTree:
-    #
-    #scode-helloworld = self.scriptFromTree {
-    #  name = "scode-helloworld";
-    #  treePath = "${./scode-helloworld.py}";
-    #};
-
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
         #!${super.stdenv.shell}
@@ -74,6 +67,11 @@ self: super:
 
   userPackagesForLinux = {
     dmenu = super.dmenu;
+
+    backlight_py = self.scriptFromTree {
+      name = "backlight.py";
+      treePath = "${./backlight.py}";
+    };
 
     google-chrome-slack = super.writeScriptBin "google-chrome-slack"
       ''
