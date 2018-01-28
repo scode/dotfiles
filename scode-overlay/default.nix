@@ -39,6 +39,8 @@ self: super:
 
     ripgrep = super.ripgrep;
     jq = super.jq;
+    python3 = super.python3;
+    mypy = super.mypy;
 
     # Demonstration use of scriptFromTree:
     #
