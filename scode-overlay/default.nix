@@ -68,6 +68,7 @@ self: super:
 
   userPackagesForLinux = {
     dmenu = super.dmenu;
+    evince = super.evince;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
