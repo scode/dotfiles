@@ -46,7 +46,7 @@ self: super:
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
         #!${super.stdenv.shell}
-        exec nix-env -f '<nixpkgs>' -r -iA userPackages
+        exec nix-env -f '<nixpkgs>' -r -iA userPackages "''${@}"
       '';
 
     saltybox = super.buildGoPackage rec {
