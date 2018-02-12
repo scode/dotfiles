@@ -81,6 +81,12 @@ self: super:
         #!${super.stdenv.shell}
         exec google-chrome --user-data-dir=/home/scode/.config/google-chrome-slack
       '';
+
+    open = super.writeScriptBin "open"
+      ''
+        #!${super.stdenv.shell}
+        exec xdg-open "''${@}"
+      '';
   };
 
   userPackages = super.userPackages or {} //
