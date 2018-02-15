@@ -42,6 +42,7 @@ self: super:
     python3 = super.python3;
     mypy = super.mypy;
     pwgen = super.pwgen;
+    tree = super.tree;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
