@@ -72,6 +72,7 @@ self: super:
     dmenu = super.dmenu;
     evince = super.evince;
     mpv = super.mpv;
+    powertop = super.powertop;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
