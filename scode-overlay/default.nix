@@ -44,6 +44,7 @@ self: super:
     pwgen = super.pwgen;
     tree = super.tree;
     httpie = super.httpie;
+    bazel = super.bazel;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
