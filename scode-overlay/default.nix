@@ -75,6 +75,7 @@ self: super:
     evince = super.evince;
     mpv = super.mpv;
     powertop = super.powertop;
+    i7z = super.i7z;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
