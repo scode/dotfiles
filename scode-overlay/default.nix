@@ -47,6 +47,7 @@ self: super:
     bazel = super.bazel;
     openjdk = super.openjdk;
     shellcheck = super.shellcheck;
+    maven = super.maven;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
