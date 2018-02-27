@@ -46,6 +46,7 @@ self: super:
     httpie = super.httpie;
     bazel = super.bazel;
     openjdk = super.openjdk;
+    shellcheck = super.shellcheck;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
