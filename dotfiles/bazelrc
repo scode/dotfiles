@@ -1,0 +1,3 @@
+# Disable generation of symlinks in workspace directory (`/` is
+# special), aside from `bazel-out`.
+common --symlink_prefix=/
