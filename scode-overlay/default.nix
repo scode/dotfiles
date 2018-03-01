@@ -78,6 +78,7 @@ self: super:
     mpv = super.mpv;
     powertop = super.powertop;
     i7z = super.i7z;
+    sysstat = super.sysstat;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
