@@ -9,7 +9,7 @@ bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r
 bindsym $mod+Shift+m exec i3-msg move container to workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu -fn 'xft:DejaVu Sans Mono:size=15')
 
 # https://github.com/lupoDharkael/flameshot
-bindsym $mod+p exec ~/bin/flameshot gui
+bindsym $mod+p exec flameshot gui
 
 bindsym $mod+period exec i3lock
 
