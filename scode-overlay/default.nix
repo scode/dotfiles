@@ -49,6 +49,7 @@ self: super:
     shellcheck = super.shellcheck;
     maven = super.maven;
     fzf = super.fzf;
+    mosh = super.mosh;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
