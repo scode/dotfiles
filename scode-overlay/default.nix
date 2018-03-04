@@ -48,6 +48,7 @@ self: super:
     openjdk = super.openjdk;
     shellcheck = super.shellcheck;
     maven = super.maven;
+    fzf = super.fzf;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
