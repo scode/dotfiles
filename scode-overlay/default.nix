@@ -37,19 +37,19 @@ self: super:
     # Must not forget nix itself or nix-env will disappear when nix-rebuild-scode is called.
     nix = super.nix;
 
-    ripgrep = super.ripgrep;
-    jq = super.jq;
-    python3 = super.python3;
-    mypy = super.mypy;
-    pwgen = super.pwgen;
-    tree = super.tree;
-    httpie = super.httpie;
     bazel = super.bazel;
-    openjdk = super.openjdk;
-    shellcheck = super.shellcheck;
-    maven = super.maven;
     fzf = super.fzf;
+    httpie = super.httpie;
+    jq = super.jq;
+    maven = super.maven;
     mosh = super.mosh;
+    mypy = super.mypy;
+    openjdk = super.openjdk;
+    pwgen = super.pwgen;
+    python3 = super.python3;
+    ripgrep = super.ripgrep;
+    shellcheck = super.shellcheck;
+    tree = super.tree;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
@@ -77,11 +77,11 @@ self: super:
   userPackagesForLinux = {
     dmenu = super.dmenu;
     evince = super.evince;
+    flameshot = super.flameshot;
+    i7z = super.i7z;
     mpv = super.mpv;
     powertop = super.powertop;
-    i7z = super.i7z;
     sysstat = super.sysstat;
-    flameshot = super.flameshot;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
