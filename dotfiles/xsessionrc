@@ -53,7 +53,9 @@ if which nm-applet >/dev/null 2>/dev/null; then
     nm-applet &
 fi
 
-if [[ -e ~/bin/flameshot ]]; then
+if which flameshot >/dev/null 2>/dev/null; then
+    flameshot &
+elif [[ -e ~/bin/flameshot ]]; then
     ~/bin/flameshot &
 fi
 
