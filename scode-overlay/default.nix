@@ -41,6 +41,7 @@ self: super:
     fzf = super.fzf;
     dep = super.dep;
     go = super.go;
+    graphviz = super.graphviz;
     httpie = super.httpie;
     jq = super.jq;
     maven = super.maven;
