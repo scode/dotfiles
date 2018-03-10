@@ -39,6 +39,7 @@ self: super:
 
     bazel = super.bazel;
     fzf = super.fzf;
+    dep = super.dep;
     httpie = super.httpie;
     jq = super.jq;
     maven = super.maven;
