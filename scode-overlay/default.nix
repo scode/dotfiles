@@ -40,6 +40,7 @@ self: super:
     bazel = super.bazel;
     fzf = super.fzf;
     dep = super.dep;
+    go = super.go;
     httpie = super.httpie;
     jq = super.jq;
     maven = super.maven;
