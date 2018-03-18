@@ -41,8 +41,14 @@ bindsym $mod+n split h
 bindsym $mod+m split v
 bindsym $mod+Shift+d reload
 
+# xps13:
+#font pango:DejaVu Sans Mono 18
+
+# t580:
+font pango:DejaVu Sans Mono 10
+
+
 ### Mostly defaults follow:
-font pango:DejaVu Sans Mono 18
 floating_modifier $mod
 bindsym $mod+d exec dmenu_run
 bindsym $mod+Left focus left
