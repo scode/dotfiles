@@ -45,11 +45,11 @@ fi
 if [[ "$PROFILE" == "t580" ]]; then
     touchpad_id=$(xinput list | grep TouchPad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
 
-    # Enable natural scrolling.
-    xinput set-prop "${touchpad_id}" 286 1
+    natural_scrolling_property=$(xinput list-props 12 | grep 'Natural Scrolling Enabled (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
+    xinput set-prop "${touchpad_id}" "${natural_scrolling_property}" 1
 
-    # Acceleration
-    xinput set-prop "${touchpad_id}" 284 0.6
+    accel_speed_property=$(xinput list-props 12 | grep 'Accel Speed (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
+    xinput set-prop "${touchpad_id}" "${accel_speed_property}" 0.6
 fi
 
 
