@@ -85,6 +85,7 @@ self: super:
     flameshot = super.flameshot;
     i7z = super.i7z;
     mpv = super.mpv;
+    pavucontrol = super.pavucontrol;
     powertop = super.powertop;
     sysstat = super.sysstat;
 
