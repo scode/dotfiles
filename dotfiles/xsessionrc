@@ -42,6 +42,17 @@ if [[ "$PROFILE" == "xps13" ]]; then
     xinput set-prop "${touchpad_id}" 288 0.8
 fi
 
+if [[ "$PROFILE" == "t580" ]]; then
+    touchpad_id=$(xinput list | grep TouchPad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
+
+    # Enable natural scrolling.
+    xinput set-prop "${touchpad_id}" 286 1
+
+    # Acceleration
+    xinput set-prop "${touchpad_id}" 284 0.6
+fi
+
+
 KBD_TYPE_FILE=~/.config/scode/dotfiles/kbdtype
 if [[ -e $KBD_TYPE_FILE ]]; then
     KBD_TYPE=$(cat $KBD_TYPE_FILE)

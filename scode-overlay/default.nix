@@ -42,6 +42,8 @@ self: super:
     dep = super.dep;
     go = super.go;
     graphviz = super.graphviz;
+    emacs = super.emacs;
+    i3 = super.i3;
     httpie = super.httpie;
     jq = super.jq;
     maven = super.maven;
