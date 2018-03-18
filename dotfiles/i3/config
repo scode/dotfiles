@@ -11,7 +11,7 @@ bindsym $mod+Shift+m exec i3-msg move container to workspace $(i3-msg -t get_wor
 # https://github.com/lupoDharkael/flameshot
 bindsym $mod+p exec flameshot gui
 
-bindsym $mod+period exec i3lock
+bindsym $mod+period exec i3lock -c 000000
 
 # TODO: Don't hard code name of sink.
 bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume alsa_output.usb-0a12_Avantree_Leaf-00.analog-stereo +3%
