@@ -50,6 +50,7 @@ self: super:
     mosh = super.mosh;
     mypy = super.mypy;
     openjdk = super.openjdk;
+    par2cmdline = super.par2cmdline;
     pwgen = super.pwgen;
     python3 = super.python3;
     ripgrep = super.ripgrep;
