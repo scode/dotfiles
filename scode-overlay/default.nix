@@ -83,10 +83,12 @@ self: super:
     dmenu = super.dmenu;
     evince = super.evince;
     flameshot = super.flameshot;
+    htop = super.htop;
     i7z = super.i7z;
     mpv = super.mpv;
     pavucontrol = super.pavucontrol;
     powertop = super.powertop;
+    signal-desktop = super.signal-desktop;
     sysstat = super.sysstat;
 
     backlight_py = self.scriptFromTree {
