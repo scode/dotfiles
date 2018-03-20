@@ -1,5 +1,5 @@
 ; TODO: paramaterize based on profile
-Xft.dpi: 200
+Xft.dpi: 210
 
 XEmacs.default.attributeFont: -ttf-verdana-medium-r-normal-*-17-*-75-75-*-*-iso8859-1
 
