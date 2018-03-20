@@ -53,6 +53,7 @@ self: super:
     par2cmdline = super.par2cmdline;
     pwgen = super.pwgen;
     python3 = super.python3;
+    rclone = super.rclone;
     ripgrep = super.ripgrep;
     shellcheck = super.shellcheck;
     tree = super.tree;
