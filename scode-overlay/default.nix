@@ -46,6 +46,7 @@ self: super:
     i3 = super.i3;
     httpie = super.httpie;
     jq = super.jq;
+    lzop = super.lzop;
     maven = super.maven;
     mosh = super.mosh;
     mypy = super.mypy;
