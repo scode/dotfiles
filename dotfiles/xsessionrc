@@ -44,9 +44,13 @@ fi
 
 if [[ "$PROFILE" == "t580" ]]; then
     touchpad_id=$(xinput list | grep TouchPad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
+    trackpoint_id=$(xinput list | grep TrackPoint | sed -r -e 's/.*id=([0-9]+).*/\1/g')
 
-    natural_scrolling_property=$(xinput list-props 12 | grep 'Natural Scrolling Enabled (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
-    xinput set-prop "${touchpad_id}" "${natural_scrolling_property}" 1
+    touchpad_natural_scrolling_property=$(xinput list-props ${touchpad_id} | grep 'Natural Scrolling Enabled (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
+    xinput set-prop "${touchpad_id}" "${touchpad_natural_scrolling_property}" 1
+
+    trackpoint_natural_scrolling_property=$(xinput list-props ${trackpoint_id} | grep 'Natural Scrolling Enabled (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
+    xinput set-prop "${trackpoint_id}" "${trackpoint_natural_scrolling_property}" 1
 
     accel_speed_property=$(xinput list-props 12 | grep 'Accel Speed (' | sed -r -e 's/^.*\(([0-9]+)\):.*$/\1/g')
     xinput set-prop "${touchpad_id}" "${accel_speed_property}" 0.6
