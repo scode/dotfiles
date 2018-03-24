@@ -47,7 +47,8 @@ class IntelBacklight(IBacklight):
 
 def main(argv):
     backlights = {
-        'xps13': IntelBacklight()
+        'xps13': IntelBacklight(),
+        't580': IntelBacklight(),
     }
     bl = backlights[profile()]
 
