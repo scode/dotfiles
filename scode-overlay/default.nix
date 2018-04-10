@@ -47,6 +47,7 @@ self: super:
     i3 = super.i3;
     httpie = super.httpie;
     jq = super.jq;
+    lastpass-cli = super.lastpass-cli;
     lzop = super.lzop;
     maven = super.maven;
     mosh = super.mosh;
