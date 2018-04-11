@@ -54,6 +54,7 @@ self: super:
     mypy = super.mypy;
     openjdk = super.openjdk;
     par2cmdline = super.par2cmdline;
+    pdftk = super.pdftk;
     pwgen = super.pwgen;
     python3 = super.python3;
     rclone = super.rclone;
