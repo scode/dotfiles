@@ -87,6 +87,7 @@ self: super:
 
   userPackagesForLinux = {
     dmenu = super.dmenu;
+    dunst = super.dunst;
     evince = super.evince;
     firefox = super.firefox;
     flameshot = super.flameshot;
