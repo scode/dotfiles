@@ -37,7 +37,6 @@ self: super:
     # Must not forget nix itself or nix-env will disappear when nix-rebuild-scode is called.
     nix = super.nix;
 
-    asciidoctor = super.asciidoctor;
     bazel = super.bazel;
     fzf = super.fzf;
     dep = super.dep;
