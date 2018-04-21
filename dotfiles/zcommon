@@ -125,8 +125,9 @@ if [[ -d ~/.cargo/bin ]]; then
    path_add_postfix ~/.cargo/bin
 fi
 
-if [[ -e ~/gopath ]]; then
+if [[ -e ~/go ]]; then
   export GOPATH=${GOPATH:-~/gopath}
+  path_add_postfix ~/go/bin
 fi
 
 path_add_postfix ~/bin
