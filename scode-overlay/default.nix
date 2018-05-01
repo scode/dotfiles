@@ -104,6 +104,11 @@ self: super:
       treePath = "${./backlight.py}";
     };
 
+    op_export_py = self.scriptFromTree {
+      name = "op-export.py";
+      treePath = "${./op-export.py}";
+    };
+
     google-chrome-slack = super.writeScriptBin "google-chrome-slack"
       ''
         #!${super.stdenv.shell}
