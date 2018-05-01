@@ -131,6 +131,7 @@ if [[ -e ~/go ]]; then
 fi
 
 path_add_postfix ~/bin
+path_add_postfix ~/bin.local
 path_add_postfix ~/go_appengine
 
 for ruby_gem_dir in ~/.gem/ruby/*(N)
