@@ -104,6 +104,11 @@ self: super:
       treePath = "${./backlight.py}";
     };
 
+    xkbcomp_sh = self.scriptFromTree {
+      name = "scode-xkbcomp.sh";
+      treePath = "${./scode-xkbcomp.sh}";
+    };
+
     op_export_py = self.scriptFromTree {
       name = "op-export.py";
       treePath = "${./op-export.py}";
