@@ -130,6 +130,10 @@ if [[ -e ~/go ]]; then
   path_add_postfix ~/go/bin
 fi
 
+if [[ -e ~/node_modules/.bin ]]; then
+  path_add_postfix ~/node_modules/.bin
+fi
+
 path_add_postfix ~/bin
 path_add_postfix ~/bin.local
 path_add_postfix ~/.local/bin
