@@ -8,6 +8,8 @@ set $mod Mod4
 #bindsym $mod+apostrophe exec i3-msg workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu -fn 'xft:DejaVu Sans Mono:size=15')
 bindsym $mod+apostrophe exec i3-msg workspace $(dmenu -fn 'xft:DejaVu Sans Mono:size=15')
 
+bindsym $mod+comma exec --no-startup-id /home/scode/git/randrman/run.sh
+
 # move container to workspace by name
 bindsym $mod+Shift+m exec i3-msg move container to workspace $(i3-msg -t get_workspaces | jq -r '.[].name' | dmenu -fn 'xft:DejaVu Sans Mono:size=15')
 
