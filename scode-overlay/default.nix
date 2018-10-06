@@ -93,11 +93,14 @@ self: super:
     flameshot = super.flameshot;
     htop = super.htop;
     i7z = super.i7z;
+    minikube = super.minikube;
     mpv = super.mpv;
+    kubernetes = super.kubernetes;
     pavucontrol = super.pavucontrol;
     powertop = super.powertop;
     signal-desktop = super.signal-desktop;
     sysstat = super.sysstat;
+    virtualbox = super.virtualbox;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
