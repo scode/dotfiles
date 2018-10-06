@@ -100,7 +100,6 @@ self: super:
     powertop = super.powertop;
     signal-desktop = super.signal-desktop;
     sysstat = super.sysstat;
-    virtualbox = super.virtualbox;
 
     backlight_py = self.scriptFromTree {
       name = "backlight.py";
