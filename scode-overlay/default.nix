@@ -61,6 +61,7 @@ self: super:
     ripgrep = super.ripgrep;
     shellcheck = super.shellcheck;
     tree = super.tree;
+    wrk = super.wrk;
 
     nix-rebuild-scode = super.writeScriptBin "nix-rebuild-scode"
       ''
