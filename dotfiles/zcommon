@@ -130,6 +130,10 @@ if [[ -e ~/go ]]; then
   path_add_postfix ~/go/bin
 fi
 
+if [[ -e ~/google-cloud-sdk ]]; then
+  path_add_postfix ~/google-cloud-sdk/bin
+fi
+
 if [[ -e ~/node_modules/.bin ]]; then
   path_add_postfix ~/node_modules/.bin
 fi
