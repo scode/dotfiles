@@ -36,7 +36,7 @@ def op_list_items() -> List[object]:
 
 def op_get_item(uuid) -> object:
     output = subprocess.check_output(
-        "op get item '{}'".format(uuid),
+        "op get item '{}' 2>/dev/null".format(uuid),
         shell=True,
     )
 
@@ -65,14 +65,14 @@ class GetItemThread(threading.Thread):
                         if n > 0:
                             # Empirically we fail a lot when attempting several requests in rapid succession, so
                             # back off a lot (and randomize for jitter).
-                            logging.error('op failed, retrying: %s', e)
+                            logging.debug('op failed, retrying: %s', e)
                             time.sleep(5 + (random.random() * 5))
                         else:
                             raise
                 self.output_q.put(item)
 
                 self.input_q.task_done()
-                logging.info('got item %s', uuid)
+                logging.debug('got item %s', uuid)
         except queue.Empty:
             pass
 
@@ -81,6 +81,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
     uuids = [item['uuid'] for item in op_list_items()]
+
+    logging.info('total items in vault: %s', len(uuids))
 
     uuid_queue = queue.Queue()  # type: queue.Queue[str]
     item_queue = queue.Queue()  # type: queue.Queue[object]
@@ -92,7 +94,11 @@ def main() -> None:
     for t in threads:
         t.start()
 
-    uuid_queue.join()
+    while not uuid_queue.empty():
+        time.sleep(5)
+        logging.info('still in queue: %s', uuid_queue.qsize())
+
+    logging.info('waiting for in-flight items to complete')
     for t in threads:
         t.join()
 
