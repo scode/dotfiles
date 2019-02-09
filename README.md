@@ -31,11 +31,14 @@ types.
 
 Name of host profile (oryxpro, chromebook, ...).
 
-# Machine bootstrap notes
+# Other machine bootstrap notes
 
+(not covered by `setup_env.py`)
+
+* [install nix](https://nixos.org/nix/) then follow instructions in `scode-overlay/default.nix`
 * ubuntu: either install native i3 to trigger gdm3 autoconf, or [do this](https://askubuntu.com/questions/1103722/how-to-use-custom-xsession-with-gdm3-in-ubuntu-18-04-bionic)
   to convince gdm3. if latter, make ~/.xsession that starts i3; if former, xsessionrc shipped with this repo is fine
 * urxvt
-* echo t580 > ./.config/scode/dotfiles/kbdtype
-* echo t580 > ./.config/scode/dotfiles/profile
+* `echo t580 > ./.config/scode/dotfiles/kbdtype`
+* `echo t580 > ./.config/scode/dotfiles/profile`
 * install pavucontrol. reboot with leaf. start chrome/youtube; pavucontrol now works after pa autostarted on device use.
