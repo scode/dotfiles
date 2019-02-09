@@ -42,3 +42,4 @@ Name of host profile (oryxpro, chromebook, ...).
 * `echo t580 > ./.config/scode/dotfiles/kbdtype`
 * `echo t580 > ./.config/scode/dotfiles/profile`
 * install pavucontrol. reboot with leaf. start chrome/youtube; pavucontrol now works after pa autostarted on device use.
+* t580: [fix screen tearing](http://scode.github.io/docs/hardware/thinkpad_t580_linux.html#xorg-driver-avoiding-screen-tearing)
