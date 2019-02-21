@@ -32,7 +32,7 @@ if [[ "$PROFILE" == "xps13" ]]; then
 
     # The id of the touchpad changes depending on peripherals
     # connected, so extract the appropriate ID by regexp.
-    touchpad_id=$(xinput list | grep Touchpad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
+    touchpad_id=$(xinput list | grep -i TouchPad | sed -r -e 's/.*id=([0-9]+).*/\1/g')
 
     # Enable natural scrolling.
     xinput set-prop "${touchpad_id}" 290 1
