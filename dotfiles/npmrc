@@ -1,0 +1,2 @@
+# Cause "global installs" to actually be home directory installs.
+prefix = ~/.npm
