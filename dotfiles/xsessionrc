@@ -60,14 +60,20 @@ if [[ "$PROFILE" == "t580" ]]; then
 fi
 
 
-if which nm-applet >/dev/null 2>/dev/null; then
-    nm-applet &
+# pgrep to be idempotent
+if ! pgrep nm-applet > /dev/null; then
+    if which nm-applet >/dev/null 2>/dev/null; then
+        nm-applet &
+    fi
 fi
 
-if which flameshot >/dev/null 2>/dev/null; then
-    flameshot &
-elif [[ -e ~/bin/flameshot ]]; then
-    ~/bin/flameshot &
+# pgrep to be idempotent
+if ! pgrep flameshot > /dev/null; then
+    if which flameshot >/dev/null 2>/dev/null; then
+        flameshot &
+    elif [[ -e ~/bin/flameshot ]]; then
+        ~/bin/flameshot &
+    fi
 fi
 
 # Installed by nix overlay.
