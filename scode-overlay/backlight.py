@@ -24,13 +24,13 @@ def barf(path, s) -> None:
 
 class IBacklight(abc.ABC):
     def max_brightness(self) -> int:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def current_brightness(self) -> int:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     def set_brightness(self, new_brightness: int):
-        raise NotImplemented()
+        raise NotImplementedError()
 
 
 class IntelBacklight(IBacklight):

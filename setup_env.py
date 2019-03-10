@@ -2,8 +2,6 @@
 
 """
 Sets up the local environment to match my preferences.
-
-pylint:  pylint --max-line-length 120 --no-docstring-rgx '.*'
 """
 
 from __future__ import absolute_import
@@ -12,7 +10,6 @@ from __future__ import with_statement
 import logging
 import os
 import os.path
-import re
 import sys
 
 log = logging.getLogger("scode/dottools")
