@@ -28,16 +28,14 @@ def pretty_json(json_object) -> str:
 
 
 def op_list_items() -> List[object]:
-    output = subprocess.check_output("op list items",
-                                     shell=True)
+    output = subprocess.check_output("op list items", shell=True)
 
     return json.loads(output)
 
 
 def op_get_item(uuid) -> object:
     output = subprocess.check_output(
-        "op get item '{}' 2>/dev/null".format(uuid),
-        shell=True,
+        "op get item '{}' 2>/dev/null".format(uuid), shell=True
     )
 
     return json.loads(output)
@@ -65,14 +63,14 @@ class GetItemThread(threading.Thread):
                         if n > 0:
                             # Empirically we fail a lot when attempting several requests in rapid succession, so
                             # back off a lot (and randomize for jitter).
-                            logging.debug('op failed, retrying: %s', e)
+                            logging.debug("op failed, retrying: %s", e)
                             time.sleep(5 + (random.random() * 5))
                         else:
                             raise
                 self.output_q.put(item)
 
                 self.input_q.task_done()
-                logging.debug('got item %s', uuid)
+                logging.debug("got item %s", uuid)
         except queue.Empty:
             pass
 
@@ -80,9 +78,9 @@ class GetItemThread(threading.Thread):
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
 
-    uuids = [item['uuid'] for item in op_list_items()]
+    uuids = [item["uuid"] for item in op_list_items()]
 
-    logging.info('total items in vault: %s', len(uuids))
+    logging.info("total items in vault: %s", len(uuids))
 
     uuid_queue = queue.Queue()  # type: queue.Queue[str]
     item_queue = queue.Queue()  # type: queue.Queue[object]
@@ -96,9 +94,9 @@ def main() -> None:
 
     while not uuid_queue.empty():
         time.sleep(5)
-        logging.info('still in queue: %s', uuid_queue.qsize())
+        logging.info("still in queue: %s", uuid_queue.qsize())
 
-    logging.info('waiting for in-flight items to complete')
+    logging.info("waiting for in-flight items to complete")
     for t in threads:
         t.join()
 
@@ -110,15 +108,15 @@ def main() -> None:
             break
 
     if len(items) != len(uuids):
-        raise AssertionError('bug: unexpected number of items obtained')
+        raise AssertionError("bug: unexpected number of items obtained")
 
-    items_by_uuid = dict((item['uuid'], item) for item in items)
+    items_by_uuid = dict((item["uuid"], item) for item in items)
     for uuid in uuids:
         if uuid not in items_by_uuid:
-            raise AssertionError('bug: expected item {} in item results'.format(uuid))
+            raise AssertionError("bug: expected item {} in item results".format(uuid))
 
     print(pretty_json(items_by_uuid))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
