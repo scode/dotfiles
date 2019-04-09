@@ -97,8 +97,12 @@ configure_git() {
   git config --global user.name "Peter Schuller"
 }
 
-# rxvt-unicode is not well-known in termcaps
+# avoid selection of TERM values that aren't well known in termcaps
 if [[ "${TERM}" == "rxvt-unicode" ]]
+then
+  export TERM="rxvt"
+fi
+if [[ "${TERM}" == "rxvt-unicode-256color" ]]
 then
   export TERM="rxvt"
 fi
