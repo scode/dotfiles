@@ -173,3 +173,17 @@ watchnload() {
     echo "fswatch required; brew install fswatch?"
   fi
 }
+
+pdfnopassword() {
+  if [ -z $1 ] || [ -z $2 ]; then
+    echo "usage: pdfnopassword FILENAME PASSWORD" >&2
+    return 1
+  fi
+
+  local ifile="${1}"
+  local bakfile="${1}.bak"
+  local password="${2}"
+
+  (set -x; mv ${ifile} ${bakfile})
+  (set -x; pdftk ${bakfile} input_pw ${password} output $ifile)
+}
