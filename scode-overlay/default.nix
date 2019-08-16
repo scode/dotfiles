@@ -69,20 +69,20 @@ self: super:
         exec nix-env -f '<nixpkgs>' -r -iA userPackages "''${@}"
       '';
 
-    saltybox = super.buildGoPackage rec {
+    saltybox = super.buildGoModule rec {
       name = "saltybox-${version}";
-      version = "1.0.0";
-
-      goPackagePath = "github.com/scode/saltybox";
+      version = "1.2.1";
 
       src = super.fetchFromGitHub {
         owner = "scode";
         repo = "saltybox";
         rev = "v${version}";
-        sha256 = "0a2p2hicw71vzycxg4xafl7xj4y3ky7h9v67g1b1ai1pwabx08sc";
+        sha256 = "1vfgz6gpap5c189wrqv749sjm24w99xmyhc6jpj24hpwbpfdba2a";
       };
 
-      buildFlags = "--tags release";
+      modSha256 = "19h3a36ja9hr83ya3zziggkbcxqskfd2ysflisaanlsr5rhh5zlh";
+
+      subPackages = [ "." ];
      };
   };
 
