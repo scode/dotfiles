@@ -71,16 +71,16 @@ self: super:
 
     saltybox = super.buildGoModule rec {
       name = "saltybox-${version}";
-      version = "1.2.1";
+      version = "1.2.2";
 
       src = super.fetchFromGitHub {
         owner = "scode";
         repo = "saltybox";
         rev = "v${version}";
-        sha256 = "1vfgz6gpap5c189wrqv749sjm24w99xmyhc6jpj24hpwbpfdba2a";
+        sha256 = "1p9a5bcg6c72kpsby3314l4qrvcdv2g611pp5c2psxwjrh8962r1";
       };
 
-      modSha256 = "19h3a36ja9hr83ya3zziggkbcxqskfd2ysflisaanlsr5rhh5zlh";
+      modSha256 = "14c1ak43abkih54lhi8479l6b86qdhrbb7k8hf5rpgqh0ns4fhbs";
 
       subPackages = [ "." ];
      };
