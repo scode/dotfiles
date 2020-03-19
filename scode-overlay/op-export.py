@@ -4,7 +4,7 @@
 #
 #  https://app-updates.agilebits.com/product_history/CLI
 #
-# At the time of this writing, tested using 0.4
+# At the time of this writing, tested using 0.9.3
 #
 # Usage, assuming you're logged in:
 #
