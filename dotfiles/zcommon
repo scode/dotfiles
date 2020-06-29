@@ -191,3 +191,12 @@ pdfnopassword() {
   (set -x; mv ${ifile} ${bakfile})
   (set -x; pdftk ${bakfile} input_pw ${password} output $ifile)
 }
+
+git_canary() {
+    if ! test -d .git; then
+       echo "not in a git checkout" >&2
+       return 1
+    fi
+    find . -exec touch {} \;
+    git status
+}
