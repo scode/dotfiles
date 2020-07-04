@@ -200,3 +200,7 @@ git_canary() {
     find . -exec touch {} \;
     git status
 }
+
+watch_cargo() {
+    fswatch -0 src | while read -d "" event ; do cargo fmt && cargo clippy && cargo check && cargo test ; done
+}
