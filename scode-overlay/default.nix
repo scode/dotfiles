@@ -70,21 +70,22 @@ self: super:
         exec nix-env -f '<nixpkgs>' -r -iA userPackages "''${@}"
       '';
 
-    saltybox = super.buildGoModule rec {
-      name = "saltybox-${version}";
-      version = "1.2.2";
-
-      src = super.fetchFromGitHub {
-        owner = "scode";
-        repo = "saltybox";
-        rev = "v${version}";
-        sha256 = "1p9a5bcg6c72kpsby3314l4qrvcdv2g611pp5c2psxwjrh8962r1";
-      };
-
-      modSha256 = "14c1ak43abkih54lhi8479l6b86qdhrbb7k8hf5rpgqh0ns4fhbs";
-
-      subPackages = [ "." ];
-     };
+    # disabled - something changed about buildGoModule, needs fixing
+    #saltybox = super.buildGoModule rec {
+    #  name = "saltybox-${version}";
+    #  version = "1.2.2";
+    #
+    #  src = super.fetchFromGitHub {
+    #    owner = "scode";
+    #    repo = "saltybox";
+    #    rev = "v${version}";
+    #    sha256 = "1p9a5bcg6c72kpsby3314l4qrvcdv2g611pp5c2psxwjrh8962r1";
+    #  };
+    #
+    #  modSha256 = "14c1ak43abkih54lhi8479l6b86qdhrbb7k8hf5rpgqh0ns4fhbs";
+    #
+    #  subPackages = [ "." ];
+    # };
   };
 
   userPackagesForLinux = {
