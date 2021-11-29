@@ -23,8 +23,13 @@ bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
 bindsym $mod+l focus right
+bindsym $mod+period exec swaylock
 
+bindsym XF86AudioRaiseVolume exec pactl set-sink-volume $(pactl get-default-sink) +3%
+bindsym XF86AudioLowerVolume exec pactl set-sink-volume $(pactl get-default-sink) -3%
 
+bindsym XF86MonBrightnessUp exec sudo light -A 5
+bindsym XF86MonBrightnessDown exec sudo light -U 5
 
 ### Output configuration
 #
