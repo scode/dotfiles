@@ -5,10 +5,10 @@ A personal dotfiles manager that installs and uninstalls personal configuration.
 ## Usage
 
 ```bash
-# Install all configuration symlinks
+# Install all features
 cargo run -- install
 
-# Remove all configuration symlinks
+# Uninstall all features
 cargo run -- uninstall
 ```
 
