@@ -1,0 +1,8 @@
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-k": ["task::Spawn", { "task_name": "claude-copy-context" }]
+    }
+  }
+]

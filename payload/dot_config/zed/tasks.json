@@ -1,0 +1,9 @@
+[
+  {
+    "label": "claude-copy-context",
+    "command": "~/.config/zed/scripts/zed_claude_ctx.sh",
+    "use_new_terminal": false,
+    "reveal": "never",
+    "hide": "on_success"
+  }
+]
