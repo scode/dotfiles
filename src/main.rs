@@ -22,6 +22,10 @@ fn features() -> Vec<FileSymlink> {
             "payload/dot_config/zed/scripts/zed_claude_ctx.sh",
             "~/.config/zed/scripts/zed_claude_ctx.sh",
         ),
+        FileSymlink::new(
+            "payload/Library/Application Support/com.mitchellh.ghostty/config",
+            "~/Library/Application Support/com.mitchellh.ghostty/config",
+        ),
     ]
 }
 
