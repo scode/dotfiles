@@ -6,26 +6,26 @@ use clap::{Parser, Subcommand};
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
-use features::{Feature, FeatureResult, FileSymlink};
+use features::{Feature, FeatureResult, PayloadSymlink};
 
-fn features() -> Vec<FileSymlink> {
+fn features() -> Vec<Box<dyn Feature>> {
     vec![
-        FileSymlink::new(
+        Box::new(PayloadSymlink::new(
             "payload/dot_config/zed/keymap.json",
             "~/.config/zed/keymap.json",
-        ),
-        FileSymlink::new(
+        )),
+        Box::new(PayloadSymlink::new(
             "payload/dot_config/zed/tasks.json",
             "~/.config/zed/tasks.json",
-        ),
-        FileSymlink::new(
+        )),
+        Box::new(PayloadSymlink::new(
             "payload/dot_config/zed/scripts/zed_claude_ctx.sh",
             "~/.config/zed/scripts/zed_claude_ctx.sh",
-        ),
-        FileSymlink::new(
+        )),
+        Box::new(PayloadSymlink::new(
             "payload/Library/Application Support/com.mitchellh.ghostty/config",
             "~/Library/Application Support/com.mitchellh.ghostty/config",
-        ),
+        )),
     ]
 }
 
