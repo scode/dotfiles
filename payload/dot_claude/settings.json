@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(scode-graphite)",
+      "Bash(cargo build)",
+      "Bash(cargo fmt)",
+      "Bash(cargo clippy)",
+      "Bash(gt log:*)",
+      "Bash(gt add:*)",
+      "Bash(gt sync:*)",
+      "Bash(gt restack:*)",
+      "Bash(gt create:*)",
+      "Bash(gt submit:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  }
+}
