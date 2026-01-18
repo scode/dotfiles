@@ -40,6 +40,14 @@ fn features() -> Vec<Box<dyn Feature>> {
             "~/.claude/commands/tasks-to-prs.md",
         )),
         Box::new(PayloadSymlink::new(
+            "payload/dot_claude/commands/gt-new.md",
+            "~/.claude/commands/gt-new.md",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/commands/gt-update.md",
+            "~/.claude/commands/gt-update.md",
+        )),
+        Box::new(PayloadSymlink::new(
             "payload/dot_claude/agents/code-review-specialist.md",
             "~/.claude/agents/code-review-specialist.md",
         )),
