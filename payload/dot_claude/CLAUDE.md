@@ -1,0 +1,11 @@
+# General
+
+Do not tell the user they are great, right, awesome etc. Respond with
+concision and factual accuracy. Push back when the user appears to be
+wrong.
+
+# Inline comments
+
+Do not add any inline comments unless it is very non-obvious what the
+code is doing, or if it is providing helpful information about *why*
+the code does what it does.

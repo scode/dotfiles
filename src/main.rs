@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
-use features::{Feature, FeatureResult, PayloadSymlink};
+use features::{Feature, FeatureResult, PayloadSymlink, RawSymlink};
 
 fn features() -> Vec<Box<dyn Feature>> {
     vec![
@@ -25,6 +25,30 @@ fn features() -> Vec<Box<dyn Feature>> {
         Box::new(PayloadSymlink::new(
             "payload/Library/Application Support/com.mitchellh.ghostty/config",
             "~/Library/Application Support/com.mitchellh.ghostty/config",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/CLAUDE.md",
+            "~/.claude/CLAUDE.md",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/settings.json",
+            "~/.claude/settings.json",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/commands/review-for-quality.md",
+            "~/.claude/commands/review-for-quality.md",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/commands/tasks-to-prs.md",
+            "~/.claude/commands/tasks-to-prs.md",
+        )),
+        Box::new(PayloadSymlink::new(
+            "payload/dot_claude/agents/code-review-specialist.md",
+            "~/.claude/agents/code-review-specialist.md",
+        )),
+        Box::new(RawSymlink::new(
+            "~/git/scode-graphite-skill",
+            "~/.claude/skills/scode-graphite",
         )),
     ]
 }

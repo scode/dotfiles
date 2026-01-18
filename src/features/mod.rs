@@ -2,7 +2,6 @@ mod payload_symlink;
 mod raw_symlink;
 
 pub use payload_symlink::PayloadSymlink;
-#[allow(unused_imports)]
 pub use raw_symlink::RawSymlink;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

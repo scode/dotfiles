@@ -17,7 +17,6 @@ use crate::util::fs::{compute_relative_path, expand_tilde};
 /// The symlink is created using a relative path.
 /// The parent directory of the destination must already exist.
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct RawSymlink {
     source: String,
     destination: String,
@@ -30,7 +29,6 @@ impl fmt::Display for RawSymlink {
 }
 
 impl RawSymlink {
-    #[allow(dead_code)]
     pub fn new(source: impl Into<String>, destination: impl Into<String>) -> Self {
         Self {
             source: source.into(),
