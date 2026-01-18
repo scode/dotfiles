@@ -1,61 +1,96 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::{debug, error, info};
+use tracing::error;
 use tracing_subscriber::EnvFilter;
 
-use dotfiles::{Feature, FeatureResult, PayloadSymlink, RawSymlink};
+use dotfiles::{FeatureGraph, PayloadSymlink, RawSymlink};
 
-fn features() -> Vec<Box<dyn Feature>> {
-    vec![
-        Box::new(PayloadSymlink::new(
+fn features() -> FeatureGraph {
+    let mut g = FeatureGraph::new();
+
+    g.add(
+        "zed-keymap",
+        PayloadSymlink::new(
             "payload/dot_config/zed/keymap.json",
             "~/.config/zed/keymap.json",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "zed-tasks",
+        PayloadSymlink::new(
             "payload/dot_config/zed/tasks.json",
             "~/.config/zed/tasks.json",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "zed-scripts-claude-ctx",
+        PayloadSymlink::new(
             "payload/dot_config/zed/scripts/zed_claude_ctx.sh",
             "~/.config/zed/scripts/zed_claude_ctx.sh",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "ghostty-config",
+        PayloadSymlink::new(
             "payload/Library/Application Support/com.mitchellh.ghostty/config",
             "~/Library/Application Support/com.mitchellh.ghostty/config",
-        )),
-        Box::new(PayloadSymlink::new(
-            "payload/dot_claude/CLAUDE.md",
-            "~/.claude/CLAUDE.md",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-md",
+        PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.claude/CLAUDE.md"),
+    );
+    g.add(
+        "claude-settings",
+        PayloadSymlink::new(
             "payload/dot_claude/settings.json",
             "~/.claude/settings.json",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-cmd-review-for-quality",
+        PayloadSymlink::new(
             "payload/dot_claude/commands/review-for-quality.md",
             "~/.claude/commands/review-for-quality.md",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-cmd-tasks-to-prs",
+        PayloadSymlink::new(
             "payload/dot_claude/commands/tasks-to-prs.md",
             "~/.claude/commands/tasks-to-prs.md",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-cmd-gt-new",
+        PayloadSymlink::new(
             "payload/dot_claude/commands/gt-new.md",
             "~/.claude/commands/gt-new.md",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-cmd-gt-update",
+        PayloadSymlink::new(
             "payload/dot_claude/commands/gt-update.md",
             "~/.claude/commands/gt-update.md",
-        )),
-        Box::new(PayloadSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-agent-code-review-specialist",
+        PayloadSymlink::new(
             "payload/dot_claude/agents/code-review-specialist.md",
             "~/.claude/agents/code-review-specialist.md",
-        )),
-        Box::new(RawSymlink::new(
+        ),
+    );
+    g.add(
+        "claude-skill-scode-graphite",
+        RawSymlink::new(
             "~/git/scode-graphite-skill",
             "~/.claude/skills/scode-graphite",
-        )),
-    ]
+        ),
+    );
+
+    g
 }
 
 #[derive(Parser)]
@@ -79,52 +114,12 @@ fn run() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let features = features();
-
-    let mut had_errors = false;
+    let graph = features();
 
     match cli.command {
-        Command::Install => {
-            for feature in &features {
-                debug!("installing feature: {:?}", feature);
-                match feature.install() {
-                    Ok(FeatureResult::Changed) => {
-                        info!("✅ changed: {}", feature);
-                    }
-                    Ok(FeatureResult::NoOp) => {
-                        info!("⏭️ noop:    {}", feature);
-                    }
-                    Err(e) => {
-                        error!("❌ {}: {}", feature, e);
-                        had_errors = true;
-                    }
-                }
-            }
-        }
-        Command::Uninstall => {
-            for feature in &features {
-                debug!("uninstalling feature: {:?}", feature);
-                match feature.uninstall() {
-                    Ok(FeatureResult::Changed) => {
-                        info!("✅ changed: {}", feature);
-                    }
-                    Ok(FeatureResult::NoOp) => {
-                        info!("⏭️ noop:    {}", feature);
-                    }
-                    Err(e) => {
-                        error!("❌ {}: {}", feature, e);
-                        had_errors = true;
-                    }
-                }
-            }
-        }
+        Command::Install => graph.install(),
+        Command::Uninstall => graph.uninstall(),
     }
-
-    if had_errors {
-        bail!("one or more features failed");
-    }
-
-    Ok(())
 }
 
 fn main() {
