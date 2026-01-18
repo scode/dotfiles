@@ -9,27 +9,31 @@ use tracing::debug;
 use super::{Feature, FeatureResult};
 use crate::util::fs::{compute_relative_path, expand_tilde};
 
-/// A feature that creates a symlink from a destination path to a source file.
+/// A feature that creates a symlink from a destination path to a source file
+/// within the dotfiles repository (typically in the `payload/` directory).
 ///
-/// The symlink is created using a relative path, making it resilient to moves
-/// of the entire dotfiles directory. The source path is relative to the project
-/// root (current working directory), while the destination supports `~` expansion.
+/// The source path is relative to the project root (current working directory),
+/// while the destination supports `~` expansion. The symlink is created using
+/// a relative path, making it resilient to moves of the entire dotfiles directory.
 ///
 /// The parent directory of the destination must already exist; it will not be
 /// created automatically.
+///
+/// Use `RawSymlink` instead when the source is an external file not managed
+/// by this repository (e.g., linking to a file in another location on disk).
 #[derive(Debug)]
-pub struct FileSymlink {
+pub struct PayloadSymlink {
     source: String,
     destination: String,
 }
 
-impl fmt::Display for FileSymlink {
+impl fmt::Display for PayloadSymlink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "symlink: {} -> {}", self.source, self.destination)
     }
 }
 
-impl FileSymlink {
+impl PayloadSymlink {
     pub fn new(source: impl Into<String>, destination: impl Into<String>) -> Self {
         Self {
             source: source.into(),
@@ -107,7 +111,7 @@ impl FileSymlink {
     }
 }
 
-impl Feature for FileSymlink {
+impl Feature for PayloadSymlink {
     fn install(&self) -> Result<FeatureResult> {
         self.install_with_base_dir(&std::env::current_dir()?)
     }
@@ -130,7 +134,7 @@ mod tests {
         ctx.create_source_file("testfile", "hello");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("testfile", dest_str);
+        let feature = PayloadSymlink::new("testfile", dest_str);
 
         let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
         assert_eq!(result, FeatureResult::Changed);
@@ -147,7 +151,7 @@ mod tests {
         ctx.create_source_file("testfile", "content");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("testfile", dest_str);
+        let feature = PayloadSymlink::new("testfile", dest_str);
 
         feature.install_with_base_dir(ctx.base_dir()).unwrap();
 
@@ -164,7 +168,7 @@ mod tests {
         let ctx = TestContext::new();
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("nonexistent", dest_str);
+        let feature = PayloadSymlink::new("nonexistent", dest_str);
 
         let result = feature.install_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -177,7 +181,7 @@ mod tests {
         ctx.create_source_file("source", "content");
         let dest_str = ctx.dest_path_str("nonexistent/subdir/link");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         let result = feature.install_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -191,7 +195,7 @@ mod tests {
         File::create(&dest).unwrap();
         let dest_str = ctx.dest_path_str("existing");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         let result = feature.install_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -207,7 +211,7 @@ mod tests {
         symlink(ctx.source_dir.path().join("wrong"), &dest).unwrap();
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("correct", dest_str);
+        let feature = PayloadSymlink::new("correct", dest_str);
 
         let result = feature.install_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -220,12 +224,12 @@ mod tests {
         ctx.create_source_file("source", "content");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("source", dest_str.clone());
+        let feature = PayloadSymlink::new("source", dest_str.clone());
 
         let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
         assert_eq!(result, FeatureResult::Changed);
 
-        let feature2 = FileSymlink::new("source", dest_str);
+        let feature2 = PayloadSymlink::new("source", dest_str);
         let result = feature2.install_with_base_dir(ctx.base_dir()).unwrap();
         assert_eq!(result, FeatureResult::NoOp);
     }
@@ -237,7 +241,7 @@ mod tests {
         let dest = ctx.dest_path("link");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
         feature.install_with_base_dir(ctx.base_dir()).unwrap();
 
         let result = feature.uninstall_with_base_dir(ctx.base_dir()).unwrap();
@@ -251,7 +255,7 @@ mod tests {
         let ctx = TestContext::new();
         let dest_str = ctx.dest_path_str("nonexistent");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         let result = feature.uninstall_with_base_dir(ctx.base_dir()).unwrap();
         assert_eq!(result, FeatureResult::NoOp);
@@ -264,7 +268,7 @@ mod tests {
         File::create(&dest).unwrap();
         let dest_str = ctx.dest_path_str("regular");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         let result = feature.uninstall_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -278,7 +282,7 @@ mod tests {
         fs::create_dir(&dest).unwrap();
         let dest_str = ctx.dest_path_str("dir");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         let result = feature.uninstall_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -294,7 +298,7 @@ mod tests {
         symlink(ctx.source_dir.path().join("wrong"), &dest).unwrap();
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("correct", dest_str);
+        let feature = PayloadSymlink::new("correct", dest_str);
 
         let result = feature.uninstall_with_base_dir(ctx.base_dir());
         assert!(result.is_err());
@@ -312,7 +316,7 @@ mod tests {
         ctx.create_source_file("config/settings", "nested content");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("config/settings", dest_str);
+        let feature = PayloadSymlink::new("config/settings", dest_str);
 
         feature.install_with_base_dir(ctx.base_dir()).unwrap();
 
@@ -326,7 +330,7 @@ mod tests {
         let source_path = ctx.create_source_file("source", "original");
         let dest_str = ctx.dest_path_str("link");
 
-        let feature = FileSymlink::new("source", dest_str);
+        let feature = PayloadSymlink::new("source", dest_str);
 
         feature.install_with_base_dir(ctx.base_dir()).unwrap();
 

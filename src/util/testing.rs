@@ -76,6 +76,15 @@ impl TestContext {
     pub fn base_dir(&self) -> &Path {
         self.source_dir.path()
     }
+
+    /// Returns the absolute path for a file in the source directory as a String.
+    pub fn source_path_str(&self, name: &str) -> String {
+        self.source_dir
+            .path()
+            .join(name)
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 #[cfg(test)]
