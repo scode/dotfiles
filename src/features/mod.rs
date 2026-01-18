@@ -1,6 +1,8 @@
+mod managed_directory;
 mod payload_symlink;
 mod raw_symlink;
 
+pub use managed_directory::ManagedDirectory;
 pub use payload_symlink::PayloadSymlink;
 pub use raw_symlink::RawSymlink;
 
