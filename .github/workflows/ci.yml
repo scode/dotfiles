@@ -17,6 +17,12 @@ jobs:
       - run: rustup component add rustfmt
       - run: cargo fmt --check
 
+  dprint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dprint/check@v2.2
+
   clippy:
     runs-on: ubuntu-latest
     steps:
