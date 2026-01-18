@@ -1,12 +1,9 @@
-mod features;
-pub mod util;
-
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
-use features::{Feature, FeatureResult, PayloadSymlink, RawSymlink};
+use dotfiles::{Feature, FeatureResult, PayloadSymlink, RawSymlink};
 
 fn features() -> Vec<Box<dyn Feature>> {
     vec![
