@@ -4,7 +4,7 @@
       "Skill(scode-graphite)",
       "Bash(cargo build)",
       "Bash(cargo clippy:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
       "Bash(gt log:*)",
       "Bash(gt add:*)",
       "Bash(gt sync:*)",
