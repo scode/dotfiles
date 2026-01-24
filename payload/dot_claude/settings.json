@@ -1,27 +1,27 @@
 {
+  "enabledPlugins": {
+    "code-simplifier@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
   "permissions": {
     "allow": [
-      "Skill(scode-graphite)",
       "Bash(cargo build)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
       "Bash(dprint check:*)",
       "Bash(dprint fmt:*)",
-      "Bash(gt log:*)",
       "Bash(gt add:*)",
-      "Bash(gt sync:*)",
-      "Bash(gt restack:*)",
       "Bash(gt create:*)",
-      "Bash(gt submit:*)"
+      "Bash(gt log:*)",
+      "Bash(gt restack:*)",
+      "Bash(gt submit:*)",
+      "Bash(gt sync:*)",
+      "Skill(scode-graphite)"
     ]
   },
-  "enabledPlugins": {
-    "rust-analyzer-lsp@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true
-  },
   "sandbox": {
-    "enabled": true,
-    "autoAllowBashIfSandboxed": true
+    "autoAllowBashIfSandboxed": true,
+    "enabled": true
   }
 }
