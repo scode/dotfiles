@@ -5,6 +5,8 @@
       "Bash(cargo build)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
+      "Bash(dprint check:*)",
+      "Bash(dprint fmt:*)",
       "Bash(gt log:*)",
       "Bash(gt add:*)",
       "Bash(gt sync:*)",
