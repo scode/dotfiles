@@ -116,6 +116,22 @@ fn features() -> FeatureGraph {
         ),
     )
     .depends_on("claude-agents-dir");
+    g.add(
+        "claude-agent-codex-code-review",
+        PayloadSymlink::new(
+            "payload/dot_claude/agents/codex-code-review.md",
+            "~/.claude/agents/codex-code-review.md",
+        ),
+    )
+    .depends_on("claude-agents-dir");
+    g.add(
+        "claude-agent-gemini-code-review",
+        PayloadSymlink::new(
+            "payload/dot_claude/agents/gemini-code-review.md",
+            "~/.claude/agents/gemini-code-review.md",
+        ),
+    )
+    .depends_on("claude-agents-dir");
 
     // Claude skills directory + files
     g.add(
