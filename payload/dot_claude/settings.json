@@ -21,8 +21,9 @@
       "Bash(gt restack:*)",
       "Bash(gt submit:*)",
       "Bash(gt sync:*)",
-      "Skill(scode-graphite)"
-      "WebFetch(domain:index.crates.io)"    ]
+      "Skill(scode-graphite)",
+      "WebFetch(domain:index.crates.io)"
+    ]
   },
   "sandbox": {
     "autoAllowBashIfSandboxed": true,
