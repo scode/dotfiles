@@ -1,0 +1,16 @@
+{
+  "name": "dotfiles",
+  "owner": {
+    "name": "scode"
+  },
+  "plugins": [
+    {
+      "name": "codex-code-review",
+      "source": "./claude-code-marketplace/codex-code-review"
+    },
+    {
+      "name": "gemini-code-review",
+      "source": "./claude-code-marketplace/gemini-code-review"
+    }
+  ]
+}

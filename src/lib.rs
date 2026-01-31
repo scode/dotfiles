@@ -4,5 +4,7 @@ pub mod graph;
 pub mod util;
 
 pub use condition::{Condition, PathExists};
-pub use features::{Feature, FeatureResult, ManagedDirectory, PayloadSymlink, RawSymlink};
+pub use features::{
+    DeleteSymlink, Feature, FeatureResult, ManagedDirectory, PayloadSymlink, RawSymlink,
+};
 pub use graph::FeatureGraph;
