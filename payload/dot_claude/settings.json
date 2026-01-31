@@ -1,9 +1,4 @@
 {
-  "enabledPlugins": {
-    "code-simplifier@claude-plugins-official": true,
-    "ralph-loop@claude-plugins-official": true,
-    "rust-analyzer-lsp@claude-plugins-official": true
-  },
   "permissions": {
     "allow": [
       "Bash(cargo build)",
@@ -25,8 +20,16 @@
       "WebFetch(domain:index.crates.io)"
     ]
   },
+  "enabledPlugins": {
+    "code-simplifier@claude-plugins-official": true,
+    "ralph-loop@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "codex-code-review@dotfiles": true,
+    "gemini-code-review@dotfiles": true
+  },
   "sandbox": {
-    "autoAllowBashIfSandboxed": true,
-    "enabled": true
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
   }
 }

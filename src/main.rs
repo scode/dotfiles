@@ -3,7 +3,9 @@ use clap::{Parser, Subcommand};
 use tracing::error;
 use tracing_subscriber::EnvFilter;
 
-use dotfiles::{FeatureGraph, ManagedDirectory, PathExists, PayloadSymlink, RawSymlink};
+use dotfiles::{
+    DeleteSymlink, FeatureGraph, ManagedDirectory, PathExists, PayloadSymlink, RawSymlink,
+};
 
 fn features() -> FeatureGraph {
     let mut g = FeatureGraph::new();
@@ -116,20 +118,16 @@ fn features() -> FeatureGraph {
         ),
     )
     .depends_on("claude-agents-dir");
+
+    // Delete old agent symlinks that have been moved into the plugin
     g.add(
-        "claude-agent-codex-code-review",
-        PayloadSymlink::new(
-            "payload/dot_claude/agents/codex-code-review.md",
-            "~/.claude/agents/codex-code-review.md",
-        ),
+        "delete-claude-agent-codex-code-review",
+        DeleteSymlink::new("~/.claude/agents/codex-code-review.md"),
     )
     .depends_on("claude-agents-dir");
     g.add(
-        "claude-agent-gemini-code-review",
-        PayloadSymlink::new(
-            "payload/dot_claude/agents/gemini-code-review.md",
-            "~/.claude/agents/gemini-code-review.md",
-        ),
+        "delete-claude-agent-gemini-code-review",
+        DeleteSymlink::new("~/.claude/agents/gemini-code-review.md"),
     )
     .depends_on("claude-agents-dir");
 
