@@ -15,7 +15,8 @@ fn add_zed_features(g: &mut FeatureGraph) {
             "~/.config/zed/keymap.json",
         ),
     )
-    .condition(PathExists::new("~/.config/zed"));
+    .condition(PathExists::new("~/.config/zed"))
+    .build();
     g.add(
         "zed-tasks",
         PayloadSymlink::new(
@@ -23,12 +24,15 @@ fn add_zed_features(g: &mut FeatureGraph) {
             "~/.config/zed/tasks.json",
         ),
     )
-    .condition(PathExists::new("~/.config/zed"));
-    g.add(
-        "zed-scripts-dir",
-        ManagedDirectory::new("~/.config/zed/scripts"),
-    )
-    .condition(PathExists::new("~/.config/zed"));
+    .condition(PathExists::new("~/.config/zed"))
+    .build();
+    let zed_scripts_dir = g
+        .add(
+            "zed-scripts-dir",
+            ManagedDirectory::new("~/.config/zed/scripts"),
+        )
+        .condition(PathExists::new("~/.config/zed"))
+        .build();
     g.add(
         "zed-scripts-claude-ctx",
         PayloadSymlink::new(
@@ -36,15 +40,18 @@ fn add_zed_features(g: &mut FeatureGraph) {
             "~/.config/zed/scripts/zed_claude_ctx.sh",
         ),
     )
-    .depends_on("zed-scripts-dir");
+    .depends_on(&zed_scripts_dir)
+    .build();
 }
 
 fn add_ghostty_features(g: &mut FeatureGraph) {
-    g.add(
-        "ghostty-parent-dir",
-        ManagedDirectory::new("~/Library/Application Support/com.mitchellh.ghostty"),
-    )
-    .condition(PathExists::new("~/Library/Application Support"));
+    let ghostty_parent_dir = g
+        .add(
+            "ghostty-parent-dir",
+            ManagedDirectory::new("~/Library/Application Support/com.mitchellh.ghostty"),
+        )
+        .condition(PathExists::new("~/Library/Application Support"))
+        .build();
     g.add(
         "ghostty-config",
         PayloadSymlink::new(
@@ -52,7 +59,8 @@ fn add_ghostty_features(g: &mut FeatureGraph) {
             "~/Library/Application Support/com.mitchellh.ghostty/config",
         ),
     )
-    .depends_on("ghostty-parent-dir");
+    .depends_on(&ghostty_parent_dir)
+    .build();
 }
 
 fn add_claude_features(g: &mut FeatureGraph) {
@@ -60,7 +68,8 @@ fn add_claude_features(g: &mut FeatureGraph) {
         "claude-md",
         PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.claude/CLAUDE.md"),
     )
-    .condition(PathExists::new("~/.claude"));
+    .condition(PathExists::new("~/.claude"))
+    .build();
     g.add(
         "claude-settings",
         PayloadSymlink::new(
@@ -68,14 +77,17 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/settings.json",
         ),
     )
-    .condition(PathExists::new("~/.claude"));
+    .condition(PathExists::new("~/.claude"))
+    .build();
 
     // Commands directory + files
-    g.add(
-        "claude-commands-dir",
-        ManagedDirectory::new("~/.claude/commands"),
-    )
-    .condition(PathExists::new("~/.claude"));
+    let claude_commands_dir = g
+        .add(
+            "claude-commands-dir",
+            ManagedDirectory::new("~/.claude/commands"),
+        )
+        .condition(PathExists::new("~/.claude"))
+        .build();
     g.add(
         "claude-cmd-review-for-quality",
         PayloadSymlink::new(
@@ -83,7 +95,8 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/commands/review-for-quality.md",
         ),
     )
-    .depends_on("claude-commands-dir");
+    .depends_on(&claude_commands_dir)
+    .build();
     g.add(
         "claude-cmd-tasks-to-prs",
         PayloadSymlink::new(
@@ -91,7 +104,8 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/commands/tasks-to-prs.md",
         ),
     )
-    .depends_on("claude-commands-dir");
+    .depends_on(&claude_commands_dir)
+    .build();
     g.add(
         "claude-cmd-gt-new",
         PayloadSymlink::new(
@@ -99,7 +113,8 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/commands/gt-new.md",
         ),
     )
-    .depends_on("claude-commands-dir");
+    .depends_on(&claude_commands_dir)
+    .build();
     g.add(
         "claude-cmd-gt-update",
         PayloadSymlink::new(
@@ -107,14 +122,17 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/commands/gt-update.md",
         ),
     )
-    .depends_on("claude-commands-dir");
+    .depends_on(&claude_commands_dir)
+    .build();
 
     // Agents directory + files
-    g.add(
-        "claude-agents-dir",
-        ManagedDirectory::new("~/.claude/agents"),
-    )
-    .condition(PathExists::new("~/.claude"));
+    let claude_agents_dir = g
+        .add(
+            "claude-agents-dir",
+            ManagedDirectory::new("~/.claude/agents"),
+        )
+        .condition(PathExists::new("~/.claude"))
+        .build();
     g.add(
         "claude-agent-code-review-specialist",
         PayloadSymlink::new(
@@ -122,26 +140,31 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/agents/code-review-specialist.md",
         ),
     )
-    .depends_on("claude-agents-dir");
+    .depends_on(&claude_agents_dir)
+    .build();
 
     // Delete old agent symlinks that have been moved into the plugin
     g.add(
         "delete-claude-agent-codex-code-review",
         DeleteSymlink::new("~/.claude/agents/codex-code-review.md"),
     )
-    .depends_on("claude-agents-dir");
+    .depends_on(&claude_agents_dir)
+    .build();
     g.add(
         "delete-claude-agent-gemini-code-review",
         DeleteSymlink::new("~/.claude/agents/gemini-code-review.md"),
     )
-    .depends_on("claude-agents-dir");
+    .depends_on(&claude_agents_dir)
+    .build();
 
     // Skills directory + files
-    g.add(
-        "claude-skills-dir",
-        ManagedDirectory::new("~/.claude/skills"),
-    )
-    .condition(PathExists::new("~/.claude"));
+    let claude_skills_dir = g
+        .add(
+            "claude-skills-dir",
+            ManagedDirectory::new("~/.claude/skills"),
+        )
+        .condition(PathExists::new("~/.claude"))
+        .build();
     g.add(
         "claude-skill-scode-graphite",
         RawSymlink::new(
@@ -149,7 +172,8 @@ fn add_claude_features(g: &mut FeatureGraph) {
             "~/.claude/skills/scode-graphite",
         ),
     )
-    .depends_on("claude-skills-dir");
+    .depends_on(&claude_skills_dir)
+    .build();
 }
 
 fn features() -> FeatureGraph {
