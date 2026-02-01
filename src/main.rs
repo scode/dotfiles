@@ -7,10 +7,7 @@ use dotfiles::{
     DeleteSymlink, FeatureGraph, ManagedDirectory, PathExists, PayloadSymlink, RawSymlink,
 };
 
-fn features() -> FeatureGraph {
-    let mut g = FeatureGraph::new();
-
-    // === Zed features (conditional on ~/.config/zed existing) ===
+fn add_zed_features(g: &mut FeatureGraph) {
     g.add(
         "zed-keymap",
         PayloadSymlink::new(
@@ -40,8 +37,9 @@ fn features() -> FeatureGraph {
         ),
     )
     .depends_on("zed-scripts-dir");
+}
 
-    // === Ghostty (conditional on Application Support existing) ===
+fn add_ghostty_features(g: &mut FeatureGraph) {
     g.add(
         "ghostty-parent-dir",
         ManagedDirectory::new("~/Library/Application Support/com.mitchellh.ghostty"),
@@ -55,8 +53,9 @@ fn features() -> FeatureGraph {
         ),
     )
     .depends_on("ghostty-parent-dir");
+}
 
-    // === Claude features (conditional on ~/.claude existing) ===
+fn add_claude_features(g: &mut FeatureGraph) {
     g.add(
         "claude-md",
         PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.claude/CLAUDE.md"),
@@ -71,7 +70,7 @@ fn features() -> FeatureGraph {
     )
     .condition(PathExists::new("~/.claude"));
 
-    // Claude commands directory + files
+    // Commands directory + files
     g.add(
         "claude-commands-dir",
         ManagedDirectory::new("~/.claude/commands"),
@@ -110,7 +109,7 @@ fn features() -> FeatureGraph {
     )
     .depends_on("claude-commands-dir");
 
-    // Claude agents directory + files
+    // Agents directory + files
     g.add(
         "claude-agents-dir",
         ManagedDirectory::new("~/.claude/agents"),
@@ -137,7 +136,7 @@ fn features() -> FeatureGraph {
     )
     .depends_on("claude-agents-dir");
 
-    // Claude skills directory + files
+    // Skills directory + files
     g.add(
         "claude-skills-dir",
         ManagedDirectory::new("~/.claude/skills"),
@@ -151,7 +150,13 @@ fn features() -> FeatureGraph {
         ),
     )
     .depends_on("claude-skills-dir");
+}
 
+fn features() -> FeatureGraph {
+    let mut g = FeatureGraph::new();
+    add_zed_features(&mut g);
+    add_ghostty_features(&mut g);
+    add_claude_features(&mut g);
     g
 }
 
