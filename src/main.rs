@@ -41,14 +41,20 @@ fn features() -> FeatureGraph {
     )
     .depends_on("zed-scripts-dir");
 
-    // === Ghostty (unconditional) ===
+    // === Ghostty (conditional on Application Support existing) ===
+    g.add(
+        "ghostty-parent-dir",
+        ManagedDirectory::new("~/Library/Application Support/com.mitchellh.ghostty"),
+    )
+    .condition(PathExists::new("~/Library/Application Support"));
     g.add(
         "ghostty-config",
         PayloadSymlink::new(
             "payload/Library/Application Support/com.mitchellh.ghostty/config",
             "~/Library/Application Support/com.mitchellh.ghostty/config",
         ),
-    );
+    )
+    .depends_on("ghostty-parent-dir");
 
     // === Claude features (conditional on ~/.claude existing) ===
     g.add(
