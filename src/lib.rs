@@ -7,4 +7,4 @@ pub use condition::{Condition, PathExists};
 pub use features::{
     DeleteSymlink, Feature, FeatureResult, ManagedDirectory, PayloadSymlink, RawSymlink,
 };
-pub use graph::FeatureGraph;
+pub use graph::{FeatureBuilder, FeatureGraph, FeatureHandle};
