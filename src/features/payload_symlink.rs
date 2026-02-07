@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use tracing::debug;
 
 use super::{Feature, FeatureResult};
-use crate::util::fs::{compute_relative_path, expand_tilde};
+use crate::util::fs::{compute_relative_path, expand_tilde, normalize_path};
 
 /// A feature that creates a symlink from a destination path to a source file
 /// within the dotfiles repository (typically in the `payload/` directory).
@@ -94,15 +94,17 @@ impl PayloadSymlink {
         }
 
         let source_path = base_dir.join(&self.source);
-        if let Ok(source_canonical) = source_path.canonicalize()
-            && let Ok(link_target) = fs::read_link(&dest_path)
-        {
-            let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
-            if let Ok(resolved) = dest_dir.join(&link_target).canonicalize()
-                && resolved != source_canonical
-            {
-                bail!("symlink {} points to unexpected target", self.destination);
-            }
+        let link_target = fs::read_link(&dest_path)?;
+        let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
+        let resolved = dest_dir.join(&link_target);
+
+        let targets_match = match (resolved.canonicalize(), source_path.canonicalize()) {
+            (Ok(resolved_canonical), Ok(source_canonical)) => resolved_canonical == source_canonical,
+            _ => normalize_path(&resolved) == normalize_path(&source_path),
+        };
+
+        if !targets_match {
+            bail!("symlink {} points to unexpected target", self.destination);
         }
 
         fs::remove_file(&dest_path)?;
@@ -308,6 +310,46 @@ mod tests {
                 .to_string()
                 .contains("unexpected target")
         );
+    }
+
+    /// Regression test: when payload source is missing, uninstall must fail for
+    /// symlinks that point to an unexpected target.
+    #[test]
+    fn uninstall_fails_for_wrong_target_when_source_missing() {
+        let ctx = TestContext::new();
+        ctx.create_source_file("wrong", "other");
+        let dest = ctx.dest_path("link");
+        symlink(ctx.source_dir.path().join("wrong"), &dest).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("missing", dest_str);
+
+        let result = feature.uninstall_with_base_dir(ctx.base_dir());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unexpected target")
+        );
+        assert!(dest.symlink_metadata().unwrap().file_type().is_symlink());
+    }
+
+    /// Regression test: lexical fallback should allow uninstall when source and
+    /// destination resolve to the same non-existent payload path.
+    #[test]
+    fn uninstall_succeeds_when_source_missing_but_target_matches_lexically() {
+        let ctx = TestContext::new();
+        let source_path = ctx.source_dir.path().join("missing");
+        let dest = ctx.dest_path("link");
+        symlink(&source_path, &dest).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("missing", dest_str);
+
+        let result = feature.uninstall_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+        assert!(dest.symlink_metadata().is_err());
     }
 
     #[test]

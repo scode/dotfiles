@@ -1,29 +1,12 @@
 use std::fmt;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Result, bail};
 use tracing::debug;
 
 use super::{Feature, FeatureResult};
-use crate::util::fs::expand_tilde;
-
-/// Lexically normalizes a path by resolving `.` and `..` components without
-/// filesystem access. This is useful for checking path containment when the
-/// target may not exist.
-fn normalize_path(path: &Path) -> PathBuf {
-    let mut result = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                result.pop();
-            }
-            c => result.push(c),
-        }
-    }
-    result
-}
+use crate::util::fs::{expand_tilde, normalize_path};
 
 /// A feature that deletes a symlink if it exists and points to a file within
 /// the payload directory.
