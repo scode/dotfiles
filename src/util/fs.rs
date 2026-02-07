@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
 
@@ -15,6 +15,25 @@ pub fn expand_tilde(path: &str) -> Result<PathBuf> {
     } else {
         Ok(PathBuf::from(path))
     }
+}
+
+/// Lexically normalizes a path by collapsing `.` and `..` components.
+///
+/// This function does not access the filesystem and does not resolve symlinks.
+/// It is useful when `canonicalize()` cannot be used (for example, if a path
+/// does not exist yet) but you still need stable path comparisons.
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                result.pop();
+            }
+            c => result.push(c),
+        }
+    }
+    result
 }
 
 /// Computes a relative path from one directory to another path.
@@ -103,5 +122,21 @@ mod tests {
         let to = Path::new("/x/y/z");
         let result = compute_relative_path(from, to);
         assert_eq!(result, PathBuf::from("../../../x/y/z"));
+    }
+
+    /// Ensures lexical normalization collapses `.`/`..` in relative paths.
+    #[test]
+    fn normalize_path_removes_dots_and_parents_relative() {
+        let path = Path::new("a/./b/../c/file.txt");
+        let result = normalize_path(path);
+        assert_eq!(result, PathBuf::from("a/c/file.txt"));
+    }
+
+    /// Ensures lexical normalization collapses `.`/`..` in absolute paths.
+    #[test]
+    fn normalize_path_removes_dots_and_parents_absolute() {
+        let path = Path::new("/tmp/./a/../b/file.txt");
+        let result = normalize_path(path);
+        assert_eq!(result, PathBuf::from("/tmp/b/file.txt"));
     }
 }
