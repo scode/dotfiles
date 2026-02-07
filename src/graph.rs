@@ -129,12 +129,21 @@ impl FeatureGraph {
     /// The feature is registered immediately. Use the returned builder to
     /// add dependencies and conditions, then call [`FeatureBuilder::build`]
     /// to get a handle for use in other features' dependencies.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` is already present in the graph.
     pub fn add(
         &mut self,
         id: impl Into<String>,
         feature: impl Feature + 'static,
     ) -> FeatureBuilder<'_> {
         let id = id.into();
+        assert!(
+            !self.nodes.contains_key(&id),
+            "feature '{}' already exists",
+            id
+        );
         let node = FeatureNode {
             id: id.clone(),
             feature: Box::new(feature),
@@ -485,5 +494,17 @@ mod tests {
             .add("b", MockFeature::new("b", log))
             .depends_on(&handle_from_graph1)
             .build();
+    }
+
+    #[test]
+    #[should_panic(expected = "feature 'a' already exists")]
+    fn duplicate_feature_id_panics() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+
+        graph
+            .add("a", MockFeature::new("first", log.clone()))
+            .build();
+        graph.add("a", MockFeature::new("second", log)).build();
     }
 }
