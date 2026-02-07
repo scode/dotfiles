@@ -96,7 +96,9 @@ impl Feature for RawSymlink {
         let resolved = dest_dir.join(&link_target);
 
         let targets_match = match (resolved.canonicalize(), source_path.canonicalize()) {
-            (Ok(resolved_canonical), Ok(source_canonical)) => resolved_canonical == source_canonical,
+            (Ok(resolved_canonical), Ok(source_canonical)) => {
+                resolved_canonical == source_canonical
+            }
             _ => normalize_path(&resolved) == normalize_path(&source_path),
         };
 
