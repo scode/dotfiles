@@ -1,0 +1,37 @@
+---
+name: pre-pr-review-swarm
+description: Run a concurrent multi-angle review immediately before proposing PR creation. Use when implementation and tests are complete and you are about to ask for PR creation or submission. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, and README or equivalent documentation drift.
+---
+
+# Pre-PR Review Swarm
+
+Run this skill as the final quality gate after implementation work and before asking to create a PR.
+
+## Workflow
+
+1. Collect review scope from the current change set (diff, touched files, tests, and user requirements).
+2. Spawn five reviewers concurrently. Use parallel execution rather than sequential execution whenever the environment
+   supports it.
+3. Keep each reviewer scoped to its charter:
+   - `docs-comments-reviewer`: Check that any changed or newly added docstrings and inline comments are accurate,
+     current, and not contradicted by code behavior.
+   - `simplification-reviewer`: Identify safe opportunities to simplify control flow, data flow, and abstractions
+     without changing behavior.
+   - `idiomaticity-reviewer`: Flag code that is non-idiomatic for the target language, framework, or repository
+     conventions.
+   - `correctness-reviewer`: Search for bugs, edge-case failures, regressions, and unsafe assumptions.
+   - `readme-drift-reviewer`: Validate `README.md` (or equivalent user-facing docs) against the current changes; propose
+     additions when behavior changed materially.
+4. Require each reviewer to return only actionable findings with file references and a short rationale.
+5. Merge and deduplicate findings. Prioritize in this order: correctness, docs drift, non-idiomatic patterns,
+   simplification opportunities.
+6. Resolve high-confidence/high-severity issues before asking for PR creation when feasible in the current turn.
+7. If no actionable findings remain, state that explicitly before asking for PR creation.
+
+## Output Contract
+
+Report results in this structure:
+
+- `Findings`: ordered by severity, each with file path and concise rationale.
+- `README Impact`: whether docs are still accurate; include specific proposed additions when needed.
+- `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready.

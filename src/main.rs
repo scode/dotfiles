@@ -166,6 +166,15 @@ fn add_claude_features(g: &mut FeatureGraph) {
         .condition(PathExists::new("~/.claude"))
         .build();
     g.add(
+        "claude-skill-pre-pr-review-swarm",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/pre-pr-review-swarm",
+            "~/.claude/skills/pre-pr-review-swarm",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-graphite",
         RawSymlink::new(
             "~/git/scode-graphite-skill",

@@ -202,6 +202,13 @@ fn test_dependency_ordering() {
             .is_symlink(),
         "agent symlink should exist"
     );
+    assert!(
+        fake_home
+            .path()
+            .join(".claude/skills/pre-pr-review-swarm")
+            .is_symlink(),
+        "skill symlink should exist"
+    );
 }
 
 #[test]
@@ -224,6 +231,7 @@ fn test_all_symlinks_are_relative() {
     let symlinks_to_check = [
         ".claude/CLAUDE.md",
         ".claude/settings.json",
+        ".claude/skills/pre-pr-review-swarm",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
     ];
