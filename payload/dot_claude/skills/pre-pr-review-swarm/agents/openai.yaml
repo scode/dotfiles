@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pre-PR Review Swarm"
+  short_description: "Run a concurrent multi-angle review before PR creation."
+  default_prompt: "Use $pre-pr-review-swarm to run a final concurrent review pass before asking for PR creation."
