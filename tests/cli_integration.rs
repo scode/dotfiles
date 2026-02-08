@@ -6,6 +6,7 @@ fn setup_fake_home() -> TempDir {
     // Create parent directories that conditions check for
     std::fs::create_dir_all(home.path().join(".config/zed")).unwrap();
     std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+    std::fs::create_dir_all(home.path().join(".codex")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
@@ -47,6 +48,21 @@ fn test_install_creates_symlinks() {
         "symlink should be relative, got: {:?}",
         target
     );
+
+    // Verify codex gets the same skill/agent symlinks as claude
+    let codex_agent = fake_home
+        .path()
+        .join(".codex/agents/code-review-specialist.md");
+    assert!(
+        codex_agent.is_symlink(),
+        "expected .codex/agents/code-review-specialist.md symlink"
+    );
+
+    let codex_skill = fake_home.path().join(".codex/skills/pre-pr-review-swarm");
+    assert!(
+        codex_skill.is_symlink(),
+        "expected .codex/skills/pre-pr-review-swarm symlink"
+    );
 }
 
 #[test]
@@ -67,7 +83,14 @@ fn test_uninstall_removes_symlinks() {
 
     // Verify symlink exists before uninstall
     let claude_md = fake_home.path().join(".claude/CLAUDE.md");
+    let codex_agent = fake_home
+        .path()
+        .join(".codex/agents/code-review-specialist.md");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
+    assert!(
+        codex_agent.is_symlink(),
+        "codex symlink should exist after install"
+    );
 
     // Then uninstall
     let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
@@ -86,6 +109,10 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !claude_md.exists() && !claude_md.is_symlink(),
         "symlink should be removed after uninstall"
+    );
+    assert!(
+        !codex_agent.exists() && !codex_agent.is_symlink(),
+        "codex symlink should be removed after uninstall"
     );
 }
 
@@ -114,12 +141,19 @@ fn test_install_idempotent() {
         claude_md.is_symlink(),
         "symlink should exist after double install"
     );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/pre-pr-review-swarm")
+            .is_symlink(),
+        "codex skill symlink should exist after double install"
+    );
 }
 
 #[test]
 fn test_conditional_features_skipped_when_parent_missing() {
     let fake_home = tempfile::tempdir().unwrap();
-    // Don't create .config/zed or .claude - those features should be skipped
+    // Don't create .config/zed, .claude, or .codex - those features should be skipped
     // But do create ghostty's parent since it's unconditional
     std::fs::create_dir_all(
         fake_home
@@ -148,6 +182,13 @@ fn test_conditional_features_skipped_when_parent_missing() {
     assert!(
         !fake_home.path().join(".config/zed/keymap.json").exists(),
         ".config/zed/keymap.json should not exist when .config/zed doesn't exist"
+    );
+    assert!(
+        !fake_home
+            .path()
+            .join(".codex/agents/code-review-specialist.md")
+            .exists(),
+        ".codex agent should not exist when .codex doesn't exist"
     );
 
     // Unconditional feature should still work
@@ -186,6 +227,14 @@ fn test_dependency_ordering() {
         fake_home.path().join(".claude/skills").is_dir(),
         ".claude/skills should be a directory"
     );
+    assert!(
+        fake_home.path().join(".codex/agents").is_dir(),
+        ".codex/agents should be a directory"
+    );
+    assert!(
+        fake_home.path().join(".codex/skills").is_dir(),
+        ".codex/skills should be a directory"
+    );
 
     // Verify symlinks that depend on those directories exist
     assert!(
@@ -208,6 +257,20 @@ fn test_dependency_ordering() {
             .join(".claude/skills/pre-pr-review-swarm")
             .is_symlink(),
         "skill symlink should exist"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/agents/code-review-specialist.md")
+            .is_symlink(),
+        "codex agent symlink should exist"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/pre-pr-review-swarm")
+            .is_symlink(),
+        "codex skill symlink should exist"
     );
 }
 
@@ -232,6 +295,8 @@ fn test_all_symlinks_are_relative() {
         ".claude/CLAUDE.md",
         ".claude/settings.json",
         ".claude/skills/pre-pr-review-swarm",
+        ".codex/agents/code-review-specialist.md",
+        ".codex/skills/pre-pr-review-swarm",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
     ];
