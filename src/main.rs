@@ -185,11 +185,67 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .build();
 }
 
+fn add_codex_features(g: &mut FeatureGraph) {
+    // Agents directory + files
+    let codex_agents_dir = g
+        .add("codex-agents-dir", ManagedDirectory::new("~/.codex/agents"))
+        .condition(PathExists::new("~/.codex"))
+        .build();
+    g.add(
+        "codex-agent-code-review-specialist",
+        PayloadSymlink::new(
+            "payload/dot_claude/agents/code-review-specialist.md",
+            "~/.codex/agents/code-review-specialist.md",
+        ),
+    )
+    .depends_on(&codex_agents_dir)
+    .build();
+
+    // Delete old agent symlinks that have been moved into the plugin
+    g.add(
+        "delete-codex-agent-codex-code-review",
+        DeleteSymlink::new("~/.codex/agents/codex-code-review.md"),
+    )
+    .depends_on(&codex_agents_dir)
+    .build();
+    g.add(
+        "delete-codex-agent-gemini-code-review",
+        DeleteSymlink::new("~/.codex/agents/gemini-code-review.md"),
+    )
+    .depends_on(&codex_agents_dir)
+    .build();
+
+    // Skills directory + files
+    let codex_skills_dir = g
+        .add("codex-skills-dir", ManagedDirectory::new("~/.codex/skills"))
+        .condition(PathExists::new("~/.codex"))
+        .build();
+    g.add(
+        "codex-skill-pre-pr-review-swarm",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/pre-pr-review-swarm",
+            "~/.codex/skills/pre-pr-review-swarm",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-graphite",
+        RawSymlink::new(
+            "~/git/scode-graphite-skill",
+            "~/.codex/skills/scode-graphite",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+}
+
 fn features() -> FeatureGraph {
     let mut g = FeatureGraph::new();
     add_zed_features(&mut g);
     add_ghostty_features(&mut g);
     add_claude_features(&mut g);
+    add_codex_features(&mut g);
     g
 }
 
