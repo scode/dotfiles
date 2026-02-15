@@ -43,3 +43,6 @@ keybind = shift+enter=text:\x1b\r
 # Tab switching (iTerm2-style)
 keybind = cmd+left=previous_tab
 keybind = cmd+right=next_tab
+
+# Automatically fix termcap on initial connection to a host
+shell-integration-features = ssh-terminfo,ssh-env
