@@ -168,6 +168,19 @@ mod tests {
     }
 
     #[test]
+    fn install_fails_when_dest_parent_missing() {
+        let ctx = TestContext::new();
+        ctx.create_source_file("source", "content");
+        let source_str = ctx.source_path_str("source");
+        let dest_str = ctx.dest_path_str("nonexistent/subdir/link");
+
+        let feature = RawSymlink::new(source_str, dest_str);
+
+        let result = feature.install();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn install_fails_when_dest_is_regular_file() {
         let ctx = TestContext::new();
         ctx.create_source_file("source", "content");
