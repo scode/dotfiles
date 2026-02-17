@@ -185,6 +185,19 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .build();
 }
 
+fn add_bin_features(g: &mut FeatureGraph) {
+    let bin_dir = g.add("bin-dir", ManagedDirectory::new("~/bin")).build();
+    g.add(
+        "bin-claude-statusline",
+        PayloadSymlink::new(
+            "payload/bin/claude-statusline.sh",
+            "~/bin/claude-statusline.sh",
+        ),
+    )
+    .depends_on(&bin_dir)
+    .build();
+}
+
 fn add_codex_features(g: &mut FeatureGraph) {
     // Agents directory + files
     let codex_agents_dir = g
@@ -244,6 +257,7 @@ fn features() -> FeatureGraph {
     let mut g = FeatureGraph::new();
     add_zed_features(&mut g);
     add_ghostty_features(&mut g);
+    add_bin_features(&mut g);
     add_claude_features(&mut g);
     add_codex_features(&mut g);
     g
