@@ -26,6 +26,11 @@ if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
     [ "$staged" -gt 0 ] && counts="+$staged"
     [ "$modified" -gt 0 ] && counts="$counts ~$modified"
 
+    max_branch=25
+    if [ "${#branch}" -gt "$max_branch" ]; then
+      branch="$(echo "$branch" | cut -c1-$max_branch)…"
+    fi
+
     git_info=" git:($branch)$counts"
   fi
 fi
