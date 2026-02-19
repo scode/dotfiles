@@ -1,0 +1,11 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Editor settings
+.idea/
+.vscode/
+
+# OS noise
+.DS_Store
+Thumbs.db
