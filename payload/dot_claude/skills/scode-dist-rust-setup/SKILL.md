@@ -1,0 +1,152 @@
+---
+name: scode-dist-rust-setup
+description: Set up or standardize a Rust repository with cargo-dist release automation, Linux-focused CI with macOS release-plan tag gates, git-cliff changelog generation, Conventional Commit PR title enforcement, and Homebrew publishing to scode/homebrew-dist-tap. Use when creating a new Rust release pipeline or migrating an existing repo to this exact distribution model.
+---
+
+# Scode Dist Rust Setup
+
+Set up a Rust repository to match the release/distribution pattern used in juggler: dist-generated release workflow,
+Homebrew publishing through `scode/homebrew-dist-tap`, Linux-focused CI, macOS release-plan gating on tags, and
+git-cliff changelog governance.
+
+## Required Inputs
+
+Collect these values before making changes:
+
+- `crate_name`: Required. Read from `Cargo.toml` (`[package].name`).
+- `github_owner/repo`: Derive from `git remote get-url origin`. Prompt only if parsing is ambiguous.
+- `cargo_dist_version`: Install/update dist first, then pin the discovered version in `dist-workspace.toml`.
+
+## Hard Defaults
+
+Apply these defaults unless the user explicitly asks to diverge:
+
+- Homebrew tap repository: `scode/homebrew-dist-tap`
+- Homebrew token secret: `HOMEBREW_TAP_TOKEN`
+- Homebrew install command namespace: `scode/dist-tap/<crate_name>`
+- Dist installers: `homebrew` only
+- Dist targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`
+- Dist plan hook: `plan-jobs = ["./release-plan-tests"]`
+- CI platform focus: Linux for standard CI, macOS only as tag-gated release-plan test
+
+## Workflow
+
+### Phase A: Discover Project Facts
+
+1. Confirm the repository root contains `Cargo.toml`.
+2. Extract `crate_name` from `Cargo.toml`.
+3. Derive `github_owner/repo` from `git remote get-url origin`.
+4. Detect existing files that may need updates instead of replacement:
+   - `dist-workspace.toml`
+   - `.github/workflows/ci.yml`
+   - `.github/workflows/release.yml`
+   - `.github/workflows/release-plan-tests.yml`
+   - `.github/workflows/conventional-commit-pr-title.yml`
+   - `cliff.toml`
+   - `CONTRIBUTING.md`
+   - `README.md`
+
+### Phase B: Install or Update cargo-dist and Capture Version
+
+1. Install or update dist using your preferred method.
+2. Capture the version from `dist --version`.
+3. Pin that exact version string as `cargo-dist-version` in `dist-workspace.toml`.
+4. Do not leave `cargo-dist-version` unpinned.
+
+### Phase C: Configure dist-workspace.toml
+
+1. Create or update `dist-workspace.toml` using `references/dist-workspace-template.md`.
+2. Keep these values exact unless the user explicitly asks otherwise:
+   - `ci = "github"`
+   - `installers = ["homebrew"]`
+   - `install-path = "CARGO_HOME"`
+   - `install-updater = true`
+   - `tap = "scode/homebrew-dist-tap"`
+   - `publish-jobs = ["homebrew"]`
+   - `plan-jobs = ["./release-plan-tests"]`
+3. Use the discovered dist version from Phase B for `cargo-dist-version`.
+
+### Phase D: Ensure [profile.dist] in Cargo.toml
+
+1. Ensure `Cargo.toml` has a `[profile.dist]` section.
+2. Use:
+   - `inherits = "release"`
+   - `lto = "thin"`
+
+### Phase E: Generate Dist Release Workflow
+
+1. Run `dist init` after writing or modifying `dist-workspace.toml`.
+2. Commit generated workflow updates from dist.
+3. Treat `.github/workflows/release.yml` as dist-managed.
+4. Do not hand-edit `.github/workflows/release.yml`.
+5. Any later change to `dist-workspace.toml` must be followed by another `dist init`.
+
+### Phase F: Install Linux/macOS CI Pattern
+
+1. Create or update `.github/workflows/ci.yml` using `references/ci-linux-macos-pattern.md`.
+2. Keep standard CI Linux-focused.
+3. Keep a macOS job disabled in standard CI for cost control.
+4. Omit Windows baseline jobs unless explicitly requested.
+
+### Phase G: Add Release Plan Test Workflow
+
+1. Create or update `.github/workflows/release-plan-tests.yml` using `references/release-plan-tests-template.md`.
+2. Run Linux tests on workflow call.
+3. Run macOS tests only when `github.ref` is a tag ref.
+4. Ensure `dist-workspace.toml` includes `plan-jobs = ["./release-plan-tests"]`.
+
+### Phase H: Enforce Conventional Commit PR Titles
+
+1. Create or update `.github/workflows/conventional-commit-pr-title.yml` using
+   `references/conventional-commit-pr-title-workflow.md`.
+2. Enforce these allowed types:
+   - `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`
+3. Keep scope optional.
+
+### Phase I: Set Up git-cliff and Release Documentation
+
+1. If `cliff.toml` is missing, initialize it with:
+   - `git cliff --init keepachangelog`
+2. If `cliff.toml` already exists, avoid replacing it with a hardcoded template unless the user explicitly requests that
+   migration.
+3. Keep the config compatible with Conventional Commit-driven changelogs (for example, `conventional_commits = true`).
+4. Update `CONTRIBUTING.md` with:
+   - Conventional Commit requirements for commit messages and PR titles.
+   - Changelog generation flow using git-cliff.
+   - Release flow that generates `CHANGELOG.md` before tagging.
+5. Keep this release command explicit:
+   - `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
+6. Keep heading verification explicit:
+   - `rg -n "^## \\[$VERSION\\]" CHANGELOG.md`
+
+### Phase J: Wire Homebrew Distribution
+
+1. Ensure dist config uses `tap = "scode/homebrew-dist-tap"`.
+2. Ensure the repository has secret `HOMEBREW_TAP_TOKEN` for release publishing.
+3. Verify generated release workflow includes `publish-homebrew-formula` and checks out `scode/homebrew-dist-tap`.
+4. Document installation in `README.md` as:
+   - `brew install scode/dist-tap/<crate_name>`
+
+## Verification Checklist
+
+Run these checks after setup:
+
+1. `rg -n 'cargo-dist-version|tap = "scode/homebrew-dist-tap"|plan-jobs' dist-workspace.toml`
+2. `rg -n '^\[profile\.dist\]' Cargo.toml`
+3. `rg -n 'custom-release-plan-tests|publish-homebrew-formula|HOMEBREW_TAP_TOKEN' .github/workflows/release.yml`
+4. `rg -n 'test-linux|test-macos' .github/workflows/release-plan-tests.yml`
+5. `rg -n 'action-semantic-pull-request|types:' .github/workflows/conventional-commit-pr-title.yml`
+6. `rg -n 'conventional_commits = true' cliff.toml`
+7. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits' CONTRIBUTING.md`
+8. `rg -n 'brew install scode/dist-tap/' README.md`
+
+## Resources
+
+Use these files to avoid rewriting long templates:
+
+- `references/dist-workspace-template.md`
+- `references/ci-linux-macos-pattern.md`
+- `references/release-plan-tests-template.md`
+- `references/conventional-commit-pr-title-workflow.md`
+- `references/git-cliff-and-changelog-flow.md`
+- `references/release-checklist.md`
