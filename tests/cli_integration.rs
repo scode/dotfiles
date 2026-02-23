@@ -63,6 +63,18 @@ fn test_install_creates_symlinks() {
         codex_skill.is_symlink(),
         "expected .codex/skills/pre-pr-review-swarm symlink"
     );
+    let claude_dist_skill = fake_home
+        .path()
+        .join(".claude/skills/scode-dist-rust-setup");
+    assert!(
+        claude_dist_skill.is_symlink(),
+        "expected .claude/skills/scode-dist-rust-setup symlink"
+    );
+    let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
+    assert!(
+        codex_dist_skill.is_symlink(),
+        "expected .codex/skills/scode-dist-rust-setup symlink"
+    );
 }
 
 #[test]
@@ -86,10 +98,15 @@ fn test_uninstall_removes_symlinks() {
     let codex_agent = fake_home
         .path()
         .join(".codex/agents/code-review-specialist.md");
+    let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
     assert!(
         codex_agent.is_symlink(),
         "codex symlink should exist after install"
+    );
+    assert!(
+        codex_dist_skill.is_symlink(),
+        "codex dist skill symlink should exist after install"
     );
 
     // Then uninstall
@@ -113,6 +130,10 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !codex_agent.exists() && !codex_agent.is_symlink(),
         "codex symlink should be removed after uninstall"
+    );
+    assert!(
+        !codex_dist_skill.exists() && !codex_dist_skill.is_symlink(),
+        "codex dist skill symlink should be removed after uninstall"
     );
 }
 
@@ -147,6 +168,13 @@ fn test_install_idempotent() {
             .join(".codex/skills/pre-pr-review-swarm")
             .is_symlink(),
         "codex skill symlink should exist after double install"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/scode-dist-rust-setup")
+            .is_symlink(),
+        "codex dist skill symlink should exist after double install"
     );
 }
 
@@ -261,6 +289,13 @@ fn test_dependency_ordering() {
     assert!(
         fake_home
             .path()
+            .join(".claude/skills/scode-dist-rust-setup")
+            .is_symlink(),
+        "claude dist skill symlink should exist"
+    );
+    assert!(
+        fake_home
+            .path()
             .join(".codex/agents/code-review-specialist.md")
             .is_symlink(),
         "codex agent symlink should exist"
@@ -271,6 +306,13 @@ fn test_dependency_ordering() {
             .join(".codex/skills/pre-pr-review-swarm")
             .is_symlink(),
         "codex skill symlink should exist"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/scode-dist-rust-setup")
+            .is_symlink(),
+        "codex dist skill symlink should exist"
     );
 }
 
@@ -295,8 +337,10 @@ fn test_all_symlinks_are_relative() {
         ".claude/CLAUDE.md",
         ".claude/settings.json",
         ".claude/skills/pre-pr-review-swarm",
+        ".claude/skills/scode-dist-rust-setup",
         ".codex/agents/code-review-specialist.md",
         ".codex/skills/pre-pr-review-swarm",
+        ".codex/skills/scode-dist-rust-setup",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
     ];

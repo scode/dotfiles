@@ -175,6 +175,15 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-dist-rust-setup",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/scode-dist-rust-setup",
+            "~/.claude/skills/scode-dist-rust-setup",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-graphite",
         RawSymlink::new(
             "~/git/scode-graphite-skill",
@@ -238,6 +247,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "payload/dot_claude/skills/pre-pr-review-swarm",
             "~/.codex/skills/pre-pr-review-swarm",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-dist-rust-setup",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/scode-dist-rust-setup",
+            "~/.codex/skills/scode-dist-rust-setup",
         ),
     )
     .depends_on(&codex_skills_dir)
