@@ -113,6 +113,19 @@ verify `release.yml` references it correctly.
 2. Enforce these allowed types:
    - `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`
 3. Keep scope optional.
+4. Update `CLAUDE.md` to require Conventional Commit style PR titles. Add a section like:
+
+   ```
+   # PR titles
+
+   PR titles must follow [Conventional Commits](https://www.conventionalcommits.org/) style. This is enforced by CI
+   and used by git-cliff for changelog generation.
+
+   Allowed types: `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`.
+   Scope is optional. Examples: `feat: add user login`, `fix(parser): handle empty input`.
+   ```
+
+   If `CLAUDE.md` already has a section about commit messages or PR titles, extend it rather than duplicating.
 
 ### Phase I: Set Up git-cliff and Release Documentation
 
@@ -147,9 +160,10 @@ Run these checks after setup:
 3. `rg -n 'custom-release-plan-tests|publish-homebrew-formula|HOMEBREW_TAP_TOKEN' .github/workflows/release.yml`
 4. `rg -n 'test-linux|test-macos' .github/workflows/release-plan-tests.yml`
 5. `rg -n 'action-semantic-pull-request|types:' .github/workflows/conventional-commit-pr-title.yml`
-6. `rg -n 'conventional_commits = true' cliff.toml`
-7. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits' CONTRIBUTING.md`
-8. `rg -n 'brew install scode/dist-tap/' README.md`
+6. `rg -n 'Conventional Commits|PR titles' CLAUDE.md`
+7. `rg -n 'conventional_commits = true' cliff.toml`
+8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits' CONTRIBUTING.md`
+9. `rg -n 'brew install scode/dist-tap/' README.md`
 
 ## Resources
 
