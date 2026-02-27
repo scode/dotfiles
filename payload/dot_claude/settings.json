@@ -20,20 +20,45 @@
       "WebFetch(domain:index.crates.io)"
     ]
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter context"
+          },
+          {
+            "type": "command",
+            "command": "leiter nudge"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter session-end"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/bin/claude-statusline.sh"
+  },
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true,
     "codex-code-review@dotfiles": true,
     "gemini-code-review@dotfiles": true
   },
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "~/bin/claude-statusline.sh"
   }
 }

@@ -23,7 +23,7 @@ Run this skill as the final quality gate after implementation work and before as
    - `correctness-reviewer`: Search for bugs, edge-case failures, regressions, and unsafe assumptions.
    - `readme-drift-reviewer`: Validate `README.md` (or equivalent user-facing docs) against the current changes; propose
      additions when behavior changed materially.
-   - `spec-compliance-reviewer` *(only when `SPEC.md` exists)*: Read `SPEC.md` in full. Compare the current changes
+   - `spec-compliance-reviewer` _(only when `SPEC.md` exists)_: Read `SPEC.md` in full. Compare the current changes
      against the spec and report any divergences—features the spec requires but the change omits, behaviors that
      contradict the spec, or new behavior not covered by the spec. For each divergence, state whether the implementation
      or the spec appears to be wrong, so the parent agent can decide whether to fix the code or update the spec.
@@ -38,7 +38,7 @@ Run this skill as the final quality gate after implementation work and before as
 Report results in this structure:
 
 - `Findings`: ordered by severity, each with file path and concise rationale.
-- `Spec Compliance` *(only when `SPEC.md` exists)*: list of divergences, each stating whether the implementation or the
+- `Spec Compliance` _(only when `SPEC.md` exists)_: list of divergences, each stating whether the implementation or the
   spec appears to need updating.
 - `README Impact`: whether docs are still accurate; include specific proposed additions when needed.
 - `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready.
