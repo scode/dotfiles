@@ -136,12 +136,20 @@ verify `release.yml` references it correctly.
 3. Keep the config compatible with Conventional Commit-driven changelogs (for example, `conventional_commits = true`).
 4. Update `CONTRIBUTING.md` with:
    - Conventional Commit requirements for commit messages and PR titles.
-   - Changelog generation flow using git-cliff.
-   - Release flow that generates `CHANGELOG.md` before tagging.
-5. Keep this release command explicit:
-   - `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
-6. Keep heading verification explicit:
-   - `rg -n "^## \\[$VERSION\\]" CHANGELOG.md`
+   - Note that PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
+   - Changelog generation uses git-cliff and root `CHANGELOG.md`.
+   - An agent-centric **Releasing** section using the content from `references/release-checklist.md`. This section is
+     written as instructions for an AI agent so that a user can say "cut a release" and the agent guides them through
+     the entire version bump, changelog, PR, merge, tag, and release watch flow.
+5. Update `CLAUDE.md` with a Releasing section that tells agents to follow CONTRIBUTING.md:
+
+   ```
+   # Releasing
+
+   When the user asks to "make a release" or "cut a release", follow the Releasing section of `CONTRIBUTING.md`.
+   ```
+
+   If `CLAUDE.md` already has a releasing section, update it rather than duplicating.
 
 ### Phase J: Wire Homebrew Distribution
 
@@ -160,9 +168,9 @@ Run these checks after setup:
 3. `rg -n 'custom-release-plan-tests|publish-homebrew-formula|HOMEBREW_TAP_TOKEN' .github/workflows/release.yml`
 4. `rg -n 'test-linux|test-macos' .github/workflows/release-plan-tests.yml`
 5. `rg -n 'action-semantic-pull-request|types:' .github/workflows/conventional-commit-pr-title.yml`
-6. `rg -n 'Conventional Commits|PR titles' CLAUDE.md`
+6. `rg -n 'Conventional Commits|PR titles|Releasing|CONTRIBUTING.md' CLAUDE.md`
 7. `rg -n 'conventional_commits = true' cliff.toml`
-8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits' CONTRIBUTING.md`
+8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits|cut a release|bump' CONTRIBUTING.md`
 9. `rg -n 'brew install scode/dist-tap/' README.md`
 
 ## Resources

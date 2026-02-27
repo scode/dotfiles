@@ -1,31 +1,40 @@
-# Release Checklist
+# Releasing (CONTRIBUTING.md Section)
 
-Use this checklist for each stable release.
+Include this section verbatim in `CONTRIBUTING.md` under a `## Releasing` heading. It provides agent-centric
+instructions so that when a user says "cut a release", an agent can guide them through the entire flow.
 
-1. Set version in `Cargo.toml` (`X.Y.Z`).
-2. Refresh lockfile:
-   - `cargo update --workspace`
-3. Validate lockfile consistency:
-   - `cargo metadata --format-version 1 --locked > /dev/null`
-4. Regenerate changelog entry:
-   - `VERSION=X.Y.Z`
-   - `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
-5. Verify changelog heading exists:
-   - `rg -n "^## \[$VERSION\]" CHANGELOG.md`
-6. Ensure release PR contains:
-   - `Cargo.toml`
-   - `Cargo.lock`
-   - `CHANGELOG.md`
-7. Merge PR.
-8. Tag merge commit as `vX.Y.Z` and push tag.
-9. Confirm GitHub Actions release pipeline succeeds:
-   - Dist plan
-   - Release-plan tests (Linux always, macOS on tags)
-   - Artifact builds
-   - Homebrew formula publish
-10. Verify Homebrew install path:
+---
 
-- `brew install scode/dist-tap/<crate_name>`
+## Releasing
+
+Ask the user what version to bump to. Read the current version from `Cargo.toml`, then offer three options showing the
+resulting version for each:
+
+- Bump bugfix (e.g. 0.1.0 → 0.1.1)
+- Bump minor, reset bugfix (e.g. 0.1.1 → 0.2.0)
+- Bump major, reset minor+bugfix (e.g. 0.2.0 → 1.0.0)
+
+Then proceed:
+
+1. Ensure you're on a fresh main with a clean working copy: `gt sync --all`, `gt checkout main`, then verify
+   `git status` shows no uncommitted or untracked changes. Abort if dirty.
+2. Set the version in `Cargo.toml`.
+3. Refresh the lockfile: `cargo update --workspace`
+4. Validate lockfile consistency: `cargo metadata --format-version 1 --locked > /dev/null`
+5. Generate the changelog: `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
+6. Run `dprint fmt` to fix any formatting issues in the generated changelog.
+7. Verify the changelog heading exists: `rg -n "^## \[$VERSION\]" CHANGELOG.md`
+8. Create a release PR with commit message `chore: release $VERSION`. The PR must include `Cargo.toml`, `Cargo.lock`,
+   and `CHANGELOG.md` (CHANGELOG.md will be untracked on first release — `gt add` it before committing).
+9. **Stop and explicitly ask the user for confirmation before merging and tagging.** Do not silently wait — tell the
+   user you are ready to merge and tag, and ask them to confirm.
+10. Merge the PR: `gh pr merge <number> --squash`
+11. Sync and checkout main: `gt sync --all`, `gt checkout main`.
+12. Tag the merge commit and push: `git tag v$VERSION && git push origin v$VERSION`
+13. Watch the Release workflow: `gh run watch <run-id>`. Confirm it succeeds (dist plan, release-plan tests, artifact
+    builds, Homebrew formula publish).
+
+---
 
 ## Preflight Checklist (One-Time Per Repository)
 

@@ -24,14 +24,4 @@ Keep these sections explicit in CONTRIBUTING:
 - Commit and PR titles must follow Conventional Commit headers.
 - PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
 - Changelog generation uses git-cliff and root `CHANGELOG.md`.
-- Release process requires changelog generation before tagging.
-
-## Release Commands
-
-```bash
-VERSION=X.Y.Z
-git-cliff --tag "v$VERSION" -o CHANGELOG.md
-rg -n "^## \[$VERSION\]" CHANGELOG.md
-```
-
-Ensure the release PR includes `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`.
+- Agent-centric Releasing section (see Phase I in `SKILL.md` for the template).
