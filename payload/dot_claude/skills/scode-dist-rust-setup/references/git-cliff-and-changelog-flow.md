@@ -19,8 +19,8 @@ git cliff --init keepachangelog
 - Default changelog policy to user-visible entries only:
   - Include by default: `feat`, `fix`, `perf`, `revert`.
   - Skip by default: `refactor`, `style`, `test`, `chore`, `ci`, `docs`, `doc`.
-  - Parse override tags first: `[changelog include]` forces inclusion and `[changelog skip]` forces exclusion.
-  - If both tags are present, `[changelog skip]` wins.
+  - Parse override tags first: `changelog: include` forces inclusion and `changelog: skip` forces exclusion.
+  - If both tags are present, `changelog: skip` wins.
 
 ## CONTRIBUTING.md Content Requirements
 
@@ -31,5 +31,5 @@ Keep these sections explicit in CONTRIBUTING:
   (`!` when breaking).
 - PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
 - Changelog generation uses git-cliff and root `CHANGELOG.md`.
-- Changelog override tags: `[changelog include]` and `[changelog skip]` (skip wins when both are present).
+- Changelog override tags: `changelog: include` and `changelog: skip` (skip wins when both are present).
 - Agent-centric Releasing section (see Phase I in `SKILL.md` for the template).
