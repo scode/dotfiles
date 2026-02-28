@@ -1,5 +1,11 @@
 # Dotfiles Installer
 
+## Keeping main.rs in sync
+
+This repo is a dotfiles installer. Files under `payload/` are installed to the home directory via symlinks registered in
+`src/main.rs`. When you add, remove, rename, or move a payload file, you must update `src/main.rs` to match — otherwise
+the file won't actually be installed. Look at existing entries in `main.rs` for the pattern.
+
 ## Migrating features in main.rs
 
 Previous versions of this tool have been used to install symlinks, directories, etc. on real systems. When modifying
