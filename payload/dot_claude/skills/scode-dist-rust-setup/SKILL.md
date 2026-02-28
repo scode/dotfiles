@@ -144,14 +144,14 @@ verify `release.yml` references it correctly.
 3. Keep the config compatible with Conventional Commit-driven changelogs and default it to user-visible entries only.
    - Include by default: `feat`, `fix`, `perf`, `revert`.
    - Skip by default: `refactor`, `style`, `test`, `chore`, `ci`, `docs`, `doc`.
-   - Parse override tags first: `[changelog include]` forces inclusion, `[changelog skip]` forces exclusion.
-   - If both tags are present, `[changelog skip]` wins.
+   - Parse override tags first: `changelog: include` forces inclusion, `changelog: skip` forces exclusion.
+   - If both tags are present, `changelog: skip` wins.
 4. Update `CONTRIBUTING.md` with:
    - Conventional Commit requirements for commit messages and PR titles.
    - Classification policy: type reflects user-visible behavior; CLI interface changes are never `refactor`.
    - Note that PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
    - Changelog generation uses git-cliff and root `CHANGELOG.md`.
-   - Override tag behavior for `[changelog include]` / `[changelog skip]`.
+   - Override tag behavior for `changelog: include` / `changelog: skip`.
    - An agent-centric **Releasing** section using the content from `references/release-checklist.md`. This section is
      written as instructions for an AI agent so that a user can say "cut a release" and the agent guides them through
      the entire version bump, changelog, PR, merge, tag, and release watch flow.
