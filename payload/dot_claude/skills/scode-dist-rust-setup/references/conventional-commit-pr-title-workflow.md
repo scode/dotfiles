@@ -45,3 +45,7 @@ jobs:
 
 - Keep type list aligned with Conventional Commit policy used by changelog tooling.
 - Keep scope optional to avoid unnecessary PR friction.
+- Enforce this classification rule in CONTRIBUTING/agent instructions:
+  - Type reflects user-visible behavior, not implementation activity.
+  - CLI interface/behavior changes (commands, flags/options, arguments, output contract, exit codes, docs usage) are
+    `feat`, `fix`, or `perf` (`!` when breaking), never `refactor`.
