@@ -71,6 +71,8 @@ overviews are redundant — an agent can read the code — and they rot as the c
 - Remove sections that merely describe the project structure, list directories and their purposes, summarize the tech
   stack, or restate what `README.md` already covers.
 - Keep any sections that express preferences, constraints, workflow instructions, or non-obvious conventions.
+- Keep required checks and commands (e.g. "run `cargo fmt`", "run `cargo test`", "run `cargo clippy`"). These are
+  intentional guardrails, not architecture descriptions, even if they appear alongside structural overviews.
 - If the entire file is architecture overview with no preference/intent content, delete it.
 - If only some sections are bloat, remove those sections and keep the rest.
 
