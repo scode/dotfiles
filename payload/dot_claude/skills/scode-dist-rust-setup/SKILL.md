@@ -113,7 +113,12 @@ verify `release.yml` references it correctly.
 2. Enforce these allowed types:
    - `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`
 3. Keep scope optional.
-4. Update `CLAUDE.md` to require Conventional Commit style PR titles. Add a section like:
+4. Enforce classification policy in repository docs:
+   - Type must reflect user-visible behavior, not implementation activity.
+   - CLI interface/behavior changes (commands, flags/options, arguments, output contract, exit codes, documented usage)
+     must be `feat`, `fix`, or `perf` (use `!` when breaking), not `refactor`.
+   - `refactor`, `style`, `test`, `chore`, `ci`, `docs`, and `doc` are for non-user-visible changes only.
+5. Update `CLAUDE.md` to require Conventional Commit style PR titles. Add a section like:
 
    ```
    # PR titles
@@ -123,6 +128,9 @@ verify `release.yml` references it correctly.
 
    Allowed types: `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`.
    Scope is optional. Examples: `feat: add user login`, `fix(parser): handle empty input`.
+
+   Type must reflect user-visible behavior, not implementation activity.
+   CLI interface/behavior changes must be `feat`, `fix`, or `perf` (use `!` when breaking), not `refactor`.
    ```
 
    If `CLAUDE.md` already has a section about commit messages or PR titles, extend it rather than duplicating.
@@ -133,11 +141,17 @@ verify `release.yml` references it correctly.
    - `git cliff --init keepachangelog`
 2. If `cliff.toml` already exists, avoid replacing it with a hardcoded template unless the user explicitly requests that
    migration.
-3. Keep the config compatible with Conventional Commit-driven changelogs (for example, `conventional_commits = true`).
+3. Keep the config compatible with Conventional Commit-driven changelogs and default it to user-visible entries only.
+   - Include by default: `feat`, `fix`, `perf`, `revert`.
+   - Skip by default: `refactor`, `style`, `test`, `chore`, `ci`, `docs`, `doc`.
+   - Parse override tags first: `[changelog include]` forces inclusion, `[changelog skip]` forces exclusion.
+   - If both tags are present, `[changelog skip]` wins.
 4. Update `CONTRIBUTING.md` with:
    - Conventional Commit requirements for commit messages and PR titles.
+   - Classification policy: type reflects user-visible behavior; CLI interface changes are never `refactor`.
    - Note that PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
    - Changelog generation uses git-cliff and root `CHANGELOG.md`.
+   - Override tag behavior for `[changelog include]` / `[changelog skip]`.
    - An agent-centric **Releasing** section using the content from `references/release-checklist.md`. This section is
      written as instructions for an AI agent so that a user can say "cut a release" and the agent guides them through
      the entire version bump, changelog, PR, merge, tag, and release watch flow.
