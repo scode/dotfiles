@@ -9,6 +9,9 @@
       "Bash(dprint fmt:*)",
       "Bash(gemini -s -p*)",
       "Bash(git diff*)",
+      "Bash(gh run list*)",
+      "Bash(gh run view*)",
+      "Bash(gh run watch*)",
       "Bash(git show*)",
       "Bash(gt add:*)",
       "Bash(gt create:*)",
@@ -19,8 +22,35 @@
       "Skill(scode-graphite)",
       "WebFetch(domain:index.crates.io)",
       "Bash(leiter:*)",
-      "Edit(/Users/scode/.leiter/soul.md)",
-      "Write(/Users/scode/.leiter/soul.md)"
+      "Read(~/.leiter/soul.md)",
+      "Edit(~/.leiter/soul.md)",
+      "Write(~/.leiter/soul.md)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook context"
+          },
+          {
+            "type": "command",
+            "command": "leiter hook nudge --auto-distill"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook session-end"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -37,31 +67,5 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "leiter hook context"
-          },
-          {
-            "type": "command",
-            "command": "leiter hook nudge"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "leiter hook session-end"
-          }
-        ]
-      }
-    ]
   }
 }
