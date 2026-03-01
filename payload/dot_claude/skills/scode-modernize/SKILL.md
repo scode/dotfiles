@@ -78,3 +78,44 @@ overviews are redundant — an agent can read the code — and they rot as the c
 
 **Verify:** Read the resulting file (if it still exists) and confirm every remaining section expresses an intent,
 preference, or constraint that cannot be trivially inferred from the repository contents.
+
+### 3. Migrate from `log` crate to `tracing` (Rust projects)
+
+**Detect:** `Cargo.toml` (including workspace and member `Cargo.toml` files) lists `log` as a dependency, or the source
+code uses `log::info!`, `log::debug!`, `log::warn!`, `log::error!`, `log::trace!`, or the corresponding unqualified
+macros imported from `log`. Also detect `env_logger`, `simple_logger`, `pretty_env_logger`, `fern`, or `simplelog` as
+dependencies — these are `log`-ecosystem logger implementations that should be replaced.
+
+**Skip if:** No logging dependency (`log`, `tracing`, or any logger implementation) exists in any `Cargo.toml` and no
+logging macros are used in the source code. The project simply doesn't do logging — leave it alone.
+
+**Why:** The `tracing` crate is the modern Rust logging/diagnostics standard. It is a superset of `log` — all `log`
+macros (`info!`, `debug!`, etc.) have direct `tracing` equivalents with the same syntax. `tracing` additionally supports
+structured fields, spans for contextual diagnostics, and `async`-aware instrumentation. The ecosystem has converged on
+`tracing`; most major libraries and frameworks (tokio, axum, etc.) emit `tracing` events natively.
+
+**Replace with:**
+
+- In `Cargo.toml`: replace `log` with `tracing`. Remove `env_logger` / `simple_logger` / `pretty_env_logger` / `fern` /
+  `simplelog` and add `tracing-subscriber` instead.
+- In source files: replace `use log::{...}` with `use tracing::{...}`. The macro names (`info!`, `debug!`, `warn!`,
+  `error!`, `trace!`) are identical — most call sites need only the import change.
+- For logger initialization (e.g. `env_logger::init()`), replace with a `tracing-subscriber` setup. A minimal
+  equivalent:
+  ```rust
+  tracing_subscriber::fmt::init();
+  ```
+  If the project was using `env_logger` with `RUST_LOG` filtering, `tracing-subscriber`'s `EnvFilter` provides the same
+  behavior:
+  ```rust
+  use tracing_subscriber::EnvFilter;
+  tracing_subscriber::fmt()
+      .with_env_filter(EnvFilter::from_default_env())
+      .init();
+  ```
+- If the project has library crates that use `log` but no logger initialization, just swap the dependency and imports —
+  library crates should not initialize a subscriber.
+- If any dependency emits `log` events and the project wants to capture them, add the `tracing-log` bridge or enable
+  `tracing`'s `log` feature (`tracing = { version = "...", features = ["log"] }`).
+
+**Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.

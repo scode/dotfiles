@@ -17,33 +17,10 @@
       "Bash(gt submit:*)",
       "Bash(gt sync:*)",
       "Skill(scode-graphite)",
-      "WebFetch(domain:index.crates.io)"
-    ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "leiter context"
-          },
-          {
-            "type": "command",
-            "command": "leiter nudge"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "leiter session-end"
-          }
-        ]
-      }
+      "WebFetch(domain:index.crates.io)",
+      "Bash(leiter:*)",
+      "Edit(/Users/scode/.leiter/soul.md)",
+      "Write(/Users/scode/.leiter/soul.md)"
     ]
   },
   "statusLine": {
@@ -60,5 +37,31 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook context"
+          },
+          {
+            "type": "command",
+            "command": "leiter hook nudge"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook session-end"
+          }
+        ]
+      }
+    ]
   }
 }
