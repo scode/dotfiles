@@ -201,6 +201,13 @@ fn add_claude_features(g: &mut FeatureGraph) {
     )
     .depends_on(&claude_skills_dir)
     .build();
+    g.add(
+        "claude-skill-scode-voice",
+        RawSymlink::new("~/git/voice", "~/.claude/skills/scode-voice"),
+    )
+    .depends_on(&claude_skills_dir)
+    .condition(PathExists::new("~/git/voice"))
+    .build();
 }
 
 fn add_bin_features(g: &mut FeatureGraph) {
@@ -286,6 +293,13 @@ fn add_codex_features(g: &mut FeatureGraph) {
         ),
     )
     .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-voice",
+        RawSymlink::new("~/git/voice", "~/.codex/skills/scode-voice"),
+    )
+    .depends_on(&codex_skills_dir)
+    .condition(PathExists::new("~/git/voice"))
     .build();
 }
 
