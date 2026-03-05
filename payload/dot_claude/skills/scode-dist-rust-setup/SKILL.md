@@ -41,7 +41,7 @@ Apply these defaults unless the user explicitly asks to diverge:
    - `.github/workflows/ci.yml`
    - `.github/workflows/release.yml`
    - `.github/workflows/release-plan-tests.yml`
-   - `.github/workflows/conventional-commit-pr-title.yml`
+   - `.github/workflows/conventional-commit-pr-title.yml` (PR title + changelog decision validation)
    - `cliff.toml`
    - `CONTRIBUTING.md`
    - `README.md`
@@ -106,19 +106,22 @@ verify `release.yml` references it correctly.
 4. Ensure `dist-workspace.toml` includes `plan-jobs = ["./release-plan-tests"]`.
 5. Verify the generated `release.yml` contains a `custom-release-plan-tests` job that calls this workflow.
 
-### Phase H: Enforce Conventional Commit PR Titles
+### Phase H: Enforce Conventional Commit PR Titles and Changelog Decision Tags
 
 1. Create or update `.github/workflows/conventional-commit-pr-title.yml` using
    `references/conventional-commit-pr-title-workflow.md`.
-2. Enforce these allowed types:
+2. This workflow contains two jobs:
+   - `conventional-commit`: validates PR title against allowed Conventional Commit types.
+   - `changelog-decision`: validates PR body contains exactly one of `changelog: include` or `changelog: skip`.
+3. Enforce these allowed types:
    - `feat`, `fix`, `docs`, `doc`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`
-3. Keep scope optional.
-4. Enforce classification policy in repository docs:
+4. Keep scope optional.
+5. Enforce classification policy in repository docs:
    - Type must reflect user-visible behavior, not implementation activity.
    - CLI interface/behavior changes (commands, flags/options, arguments, output contract, exit codes, documented usage)
      must be `feat`, `fix`, or `perf` (use `!` when breaking), not `refactor`.
    - `refactor`, `style`, `test`, `chore`, `ci`, `docs`, and `doc` are for non-user-visible changes only.
-5. Update `CLAUDE.md` to require Conventional Commit style PR titles. Add a section like:
+6. Update `CLAUDE.md` to require Conventional Commit style PR titles and changelog decision tags. Add a section like:
 
    ```
    # PR titles
@@ -131,6 +134,8 @@ verify `release.yml` references it correctly.
 
    Type must reflect user-visible behavior, not implementation activity.
    CLI interface/behavior changes must be `feat`, `fix`, or `perf` (use `!` when breaking), not `refactor`.
+
+   Every PR body must contain exactly one of `changelog: include` or `changelog: skip`. This is enforced by CI.
    ```
 
    If `CLAUDE.md` already has a section about commit messages or PR titles, extend it rather than duplicating.
@@ -141,7 +146,12 @@ verify `release.yml` references it correctly.
    - `git cliff --init keepachangelog`
 2. If `cliff.toml` already exists, avoid replacing it with a hardcoded template unless the user explicitly requests that
    migration.
-3. Keep the config compatible with Conventional Commit-driven changelogs and default it to user-visible entries only.
+3. Customize the generated config following `references/git-cliff-and-changelog-flow.md`:
+   - Replace `commit_parsers` with the robust version that checks message, body, and footer for changelog tags, uses
+     case-insensitive word-boundary regexes, and matches full Conventional Commit syntax with optional scope and `!`.
+   - Set `filter_unconventional = true` and `filter_commits = true`.
+   - Update the body template to strip `changelog: include` / `changelog: skip` from rendered entries.
+   - Use distinct group names: "Added" for feat, "Fixed" for fix, "Performance" for perf, "Reverted" for revert.
    - Include by default: `feat`, `fix`, `perf`, `revert`.
    - Skip by default: `refactor`, `style`, `test`, `chore`, `ci`, `docs`, `doc`.
    - Parse override tags first: `changelog: include` forces inclusion, `changelog: skip` forces exclusion.
@@ -149,7 +159,9 @@ verify `release.yml` references it correctly.
 4. Update `CONTRIBUTING.md` with:
    - Conventional Commit requirements for commit messages and PR titles.
    - Classification policy: type reflects user-visible behavior; CLI interface changes are never `refactor`.
-   - Note that PR title enforcement is implemented in `.github/workflows/conventional-commit-pr-title.yml`.
+   - Note that PR title enforcement and changelog decision tag validation are in
+     `.github/workflows/conventional-commit-pr-title.yml`.
+   - Every PR body must contain exactly one of `changelog: include` or `changelog: skip`.
    - Changelog generation uses git-cliff and root `CHANGELOG.md`.
    - Override tag behavior for `changelog: include` / `changelog: skip`.
    - An agent-centric **Releasing** section using the content from `references/release-checklist.md`. This section is
@@ -181,7 +193,7 @@ Run these checks after setup:
 2. `rg -n '^\[profile\.dist\]' Cargo.toml`
 3. `rg -n 'custom-release-plan-tests|publish-homebrew-formula|HOMEBREW_TAP_TOKEN' .github/workflows/release.yml`
 4. `rg -n 'test-linux|test-macos' .github/workflows/release-plan-tests.yml`
-5. `rg -n 'action-semantic-pull-request|types:' .github/workflows/conventional-commit-pr-title.yml`
+5. `rg -n 'action-semantic-pull-request|changelog-decision|github-script' .github/workflows/conventional-commit-pr-title.yml`
 6. `rg -n 'Conventional Commits|PR titles|Releasing|CONTRIBUTING.md' CLAUDE.md`
 7. `rg -n 'conventional_commits = true' cliff.toml`
 8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits|cut a release|bump' CONTRIBUTING.md`
