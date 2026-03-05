@@ -1,6 +1,6 @@
 ---
 name: scode-modernize
-description: Scan a software project for deprecated or outdated patterns and replace them with modern equivalents. Run on any project to catch and fix known anti-patterns. Currently targets Rust projects with GitHub Actions CI.
+description: Scan a software project for deprecated or outdated patterns and replace them with modern equivalents. Run on any project to catch and fix known anti-patterns. Currently targets Rust projects with GitHub Actions CI, and dprint formatting for any project with JSON/TOML/Markdown files.
 ---
 
 # Scode Modernize
@@ -119,3 +119,57 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
   `tracing`'s `log` feature (`tracing = { version = "...", features = ["log"] }`).
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
+
+### 4. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+
+**Detect:** The project has any `.json`, `.toml`, or `.md` files but does not have a `dprint.json` at the repository
+root.
+
+**Skip if:** A `dprint.json` already exists at the repository root.
+
+**Why:** `dprint` enforces consistent formatting for JSON, TOML, and Markdown files. Without it, formatting drift
+accumulates across contributors and tools. It is fast, pluggable, and easy to add to CI.
+
+**Replace with:**
+
+- Create `dprint.json` at the repository root:
+
+```json
+{
+  "json": {
+  },
+  "markdown": {
+    "lineWidth": 120,
+    "newLineKind": "lf",
+    "textWrap": "always"
+  },
+  "toml": {
+  },
+  "excludes": [
+    "**/*-lock.json"
+  ],
+  "plugins": [
+    "https://plugins.dprint.dev/json-0.21.0.wasm",
+    "https://plugins.dprint.dev/markdown-0.20.0.wasm",
+    "https://plugins.dprint.dev/toml-0.7.0.wasm"
+  ]
+}
+```
+
+- Only include plugins for file types that actually exist in the project. For example, if the project has no `.toml`
+  files, omit the `toml` plugin and its config section.
+
+- If the project has a `.github/workflows/ci.yml` (or similar CI workflow), add a `dprint` job:
+
+```yaml
+dprint:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - name: Check formatting with dprint
+      uses: dprint/check@v2.2
+```
+
+- Run `dprint fmt` to fix any existing formatting issues.
+
+**Verify:** `dprint check` passes. If CI was updated, confirm the `dprint` job exists in the workflow file.
