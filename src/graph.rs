@@ -17,6 +17,15 @@ use tracing::{debug, error, info};
 use crate::condition::Condition;
 use crate::features::{Feature, FeatureResult};
 
+/// Aggregate outcome of an install or uninstall run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunStats {
+    pub changed: u32,
+    pub unchanged: u32,
+    pub skipped: u32,
+    pub failed: u32,
+}
+
 static NEXT_GRAPH_ID: AtomicU64 = AtomicU64::new(0);
 
 struct FeatureNode {
@@ -109,7 +118,8 @@ impl<'a> FeatureBuilder<'a> {
 /// g.add("config-file", PayloadSymlink::new("payload/config", "~/.config/app/config"))
 ///     .depends_on(&parent)
 ///     .build();
-/// g.install()?;
+/// let stats = g.install()?;
+/// assert_eq!(stats.failed, 0);
 /// ```
 pub struct FeatureGraph {
     nodes: HashMap<String, FeatureNode>,
@@ -209,10 +219,18 @@ impl FeatureGraph {
         Ok(result)
     }
 
-    pub fn install(&self) -> Result<()> {
+    /// Install all features in dependency order, skipping any whose
+    /// conditions are unmet or whose dependencies failed.
+    ///
+    /// Individual feature failures are counted in [`RunStats::failed`],
+    /// not returned as `Err`. `Err` is only returned for structural
+    /// problems like dependency cycles.
+    pub fn install(&self) -> Result<RunStats> {
         let order = self.topological_sort()?;
         let mut skipped: HashSet<String> = HashSet::new();
         let mut failed: HashSet<String> = HashSet::new();
+        let mut changed: u32 = 0;
+        let mut noop: u32 = 0;
 
         for id in order {
             let node = &self.nodes[&id];
@@ -239,9 +257,11 @@ impl FeatureGraph {
             match node.feature.install() {
                 Ok(FeatureResult::Changed) => {
                     info!("✅ changed: {}", node.feature);
+                    changed += 1;
                 }
                 Ok(FeatureResult::NoOp) => {
-                    info!("⏭️ noop:    {}", node.feature);
+                    debug!("⏭️ noop:    {}", node.feature);
+                    noop += 1;
                 }
                 Err(e) => {
                     error!("❌ {}: {}", node.feature, e);
@@ -250,15 +270,25 @@ impl FeatureGraph {
             }
         }
 
-        if !failed.is_empty() {
-            bail!("one or more features failed");
-        }
-        Ok(())
+        let stats = RunStats {
+            changed,
+            unchanged: noop,
+            skipped: skipped.len() as u32,
+            failed: failed.len() as u32,
+        };
+
+        Ok(stats)
     }
 
-    pub fn uninstall(&self) -> Result<()> {
+    /// Uninstall all features in reverse dependency order.
+    ///
+    /// Individual feature failures are counted in [`RunStats::failed`],
+    /// not returned as `Err`.
+    pub fn uninstall(&self) -> Result<RunStats> {
         let order = self.topological_sort()?;
         let mut failed: HashSet<String> = HashSet::new();
+        let mut changed: u32 = 0;
+        let mut noop: u32 = 0;
 
         for id in order.into_iter().rev() {
             let node = &self.nodes[&id];
@@ -267,9 +297,11 @@ impl FeatureGraph {
             match node.feature.uninstall() {
                 Ok(FeatureResult::Changed) => {
                     info!("✅ changed: {}", node.feature);
+                    changed += 1;
                 }
                 Ok(FeatureResult::NoOp) => {
-                    info!("⏭️ noop:    {}", node.feature);
+                    debug!("⏭️ noop:    {}", node.feature);
+                    noop += 1;
                 }
                 Err(e) => {
                     error!("❌ {}: {}", node.feature, e);
@@ -278,10 +310,14 @@ impl FeatureGraph {
             }
         }
 
-        if !failed.is_empty() {
-            bail!("one or more features failed");
-        }
-        Ok(())
+        let stats = RunStats {
+            changed,
+            unchanged: noop,
+            skipped: 0,
+            failed: failed.len() as u32,
+        };
+
+        Ok(stats)
     }
 }
 
@@ -302,7 +338,7 @@ mod tests {
     struct MockFeature {
         name: String,
         install_log: Arc<Mutex<Vec<String>>>,
-        should_fail: bool,
+        result: Result<FeatureResult, &'static str>,
     }
 
     impl MockFeature {
@@ -310,7 +346,15 @@ mod tests {
             Self {
                 name: name.to_string(),
                 install_log,
-                should_fail: false,
+                result: Ok(FeatureResult::Changed),
+            }
+        }
+
+        fn noop(name: &str, install_log: Arc<Mutex<Vec<String>>>) -> Self {
+            Self {
+                name: name.to_string(),
+                install_log,
+                result: Ok(FeatureResult::NoOp),
             }
         }
 
@@ -318,7 +362,7 @@ mod tests {
             Self {
                 name: name.to_string(),
                 install_log,
-                should_fail: true,
+                result: Err("mock failure"),
             }
         }
     }
@@ -331,25 +375,29 @@ mod tests {
 
     impl Feature for MockFeature {
         fn install(&self) -> Result<FeatureResult> {
-            if self.should_fail {
-                bail!("mock failure");
+            match self.result {
+                Ok(r) => {
+                    self.install_log
+                        .lock()
+                        .unwrap()
+                        .push(format!("install:{}", self.name));
+                    Ok(r)
+                }
+                Err(msg) => bail!("{msg}"),
             }
-            self.install_log
-                .lock()
-                .unwrap()
-                .push(format!("install:{}", self.name));
-            Ok(FeatureResult::Changed)
         }
 
         fn uninstall(&self) -> Result<FeatureResult> {
-            if self.should_fail {
-                bail!("mock failure");
+            match self.result {
+                Ok(r) => {
+                    self.install_log
+                        .lock()
+                        .unwrap()
+                        .push(format!("uninstall:{}", self.name));
+                    Ok(r)
+                }
+                Err(msg) => bail!("{msg}"),
             }
-            self.install_log
-                .lock()
-                .unwrap()
-                .push(format!("uninstall:{}", self.name));
-            Ok(FeatureResult::Changed)
         }
     }
 
@@ -417,8 +465,16 @@ mod tests {
             .depends_on(&a)
             .build();
 
-        let result = graph.install();
-        assert!(result.is_err());
+        let stats = graph.install().unwrap();
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 0,
+                unchanged: 0,
+                skipped: 1,
+                failed: 1,
+            }
+        );
         assert!(log.lock().unwrap().is_empty());
     }
 
@@ -506,5 +562,92 @@ mod tests {
             .add("a", MockFeature::new("first", log.clone()))
             .build();
         graph.add("a", MockFeature::new("second", log)).build();
+    }
+
+    #[test]
+    fn install_stats_all_changed() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        graph.add("a", MockFeature::new("a", log.clone())).build();
+        graph.add("b", MockFeature::new("b", log)).build();
+
+        let stats = graph.install().unwrap();
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 2,
+                unchanged: 0,
+                skipped: 0,
+                failed: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn install_stats_mixed() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        graph.add("a", MockFeature::new("a", log.clone())).build();
+        graph.add("b", MockFeature::noop("b", log.clone())).build();
+        graph
+            .add("c", MockFeature::new("c", log))
+            .condition(PathExists::new("/nonexistent/path/that/does/not/exist"))
+            .build();
+
+        let stats = graph.install().unwrap();
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 1,
+                unchanged: 1,
+                skipped: 1,
+                failed: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn install_stats_with_failure() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        graph.add("a", MockFeature::new("a", log.clone())).build();
+        let b = graph
+            .add("b", MockFeature::failing("b", log.clone()))
+            .build();
+        // c is skipped because b failed
+        graph
+            .add("c", MockFeature::new("c", log))
+            .depends_on(&b)
+            .build();
+
+        let stats = graph.install().unwrap();
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 1,
+                unchanged: 0,
+                skipped: 1,
+                failed: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn uninstall_stats_mixed() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        graph.add("a", MockFeature::new("a", log.clone())).build();
+        graph.add("b", MockFeature::noop("b", log)).build();
+
+        let stats = graph.uninstall().unwrap();
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 1,
+                unchanged: 1,
+                skipped: 0,
+                failed: 0,
+            }
+        );
     }
 }

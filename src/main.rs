@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use dotfiles::{
@@ -336,10 +336,20 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     let graph = features();
 
-    match cli.command {
+    let stats = match cli.command {
         Command::Install => graph.install(),
         Command::Uninstall => graph.uninstall(),
+    }?;
+
+    info!(
+        "{} changed, {} unchanged, {} skipped, {} failed",
+        stats.changed, stats.unchanged, stats.skipped, stats.failed
+    );
+
+    if stats.failed > 0 {
+        anyhow::bail!("one or more features failed");
     }
+    Ok(())
 }
 
 fn main() {
