@@ -193,6 +193,15 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-todo",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/scode-todo",
+            "~/.claude/skills/scode-todo",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-graphite",
         RawSymlink::new(
             "~/git/scode-graphite-skill",
@@ -281,6 +290,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "payload/dot_claude/skills/scode-modernize",
             "~/.codex/skills/scode-modernize",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-todo",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/scode-todo",
+            "~/.codex/skills/scode-todo",
         ),
     )
     .depends_on(&codex_skills_dir)

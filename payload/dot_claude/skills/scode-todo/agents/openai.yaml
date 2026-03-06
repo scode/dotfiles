@@ -1,0 +1,6 @@
+interface:
+  display_name: "scode Todo"
+  short_description: "Run and initialize TODO workspace repos."
+  default_prompt: "Use $scode-todo to initialize this repo as a TODO project or manage TODO.md / DONE.md / T_max.md with the repo-local wrapper scripts."
+policy:
+  allow_implicit_invocation: false
