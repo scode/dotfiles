@@ -3,6 +3,15 @@
 Do not tell the user they are great, right, awesome etc. Respond with concision and factual accuracy. Push back when the
 user appears to be wrong.
 
+# Docstrings
+
+Be liberal in writing docstrings. But stick to the _what_ and the _why_, don't document the how. Three purposes of
+docstrings:
+
+- Make the code skimmable to human readers.
+- Provide SPEC-like declaration of intent ("what") to catch bugs.
+- Provide the _why_ because it cannot be directly inferred from the what nor how.
+
 # Inline comments
 
 Do not add any inline comments unless it is very non-obvious what the code is doing, or if it is providing helpful
