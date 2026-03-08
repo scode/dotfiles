@@ -1,6 +1,6 @@
 ---
 name: scode-modernize
-description: Scan a software project for deprecated or outdated patterns and replace them with modern equivalents. Run on any project to catch and fix known anti-patterns. Currently targets Rust projects with GitHub Actions CI, dprint formatting for any project with JSON/TOML/Markdown files, and conventional commit instructions for projects with agent config files.
+# No description — this skill is invoked directly via slash command, not by natural language matching.
 ---
 
 # Scode Modernize
