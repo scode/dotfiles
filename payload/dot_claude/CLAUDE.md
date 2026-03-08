@@ -25,3 +25,8 @@ For the remainder of the commit message and/or PR descriptions, focus on _why_ t
 the change is, unless the change is particularly large and a brief TLDR overview is helpful.
 
 Do not make lists of things changed.
+
+# Testability and tests
+
+DO NOT write, or accept during code review, tests that modify environment variables of the process running the test.
+Most likely there is a clean way of making the underlying code testable by dependency injection instead.
