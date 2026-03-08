@@ -1,6 +1,6 @@
 ---
 name: scode-modernize
-description: Scan a software project for deprecated or outdated patterns and replace them with modern equivalents. Run on any project to catch and fix known anti-patterns. Currently targets Rust projects with GitHub Actions CI, and dprint formatting for any project with JSON/TOML/Markdown files.
+description: Scan a software project for deprecated or outdated patterns and replace them with modern equivalents. Run on any project to catch and fix known anti-patterns. Currently targets Rust projects with GitHub Actions CI, dprint formatting for any project with JSON/TOML/Markdown files, and conventional commit instructions for projects with agent config files.
 ---
 
 # Scode Modernize
@@ -184,3 +184,38 @@ dprint:
 **Verify:** `dprint check` passes. If `dprint.json` already existed, confirm `dprint config update` was still run and
 the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
 the workflow file.
+
+### 5. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
+
+**Detect:** The project has a `CLAUDE.md` or `AGENTS.md` (at the repo root or in `.claude/`) that does not already
+contain conventional commit guidance (search for "conventional commit" case-insensitively).
+
+**Why:** Conventional Commits give commit messages and PR titles a machine-parseable, human-scannable structure. Tools
+like `git-cliff`, `release-please`, and `semantic-release` rely on the prefix to generate changelogs and pick version
+bumps automatically. Even without automation, a consistent prefix makes `git log --oneline` trivially scannable.
+
+**Replace with:**
+
+- Add the following section to the project's `CLAUDE.md` (preferred) or `AGENTS.md`. Place it near any existing commit
+  message or PR guidance. If the file already has a commit-message section, merge the conventional commit rules into it
+  rather than creating a duplicate section.
+
+```markdown
+# Conventional Commits
+
+All commit messages and PR titles must use Conventional Commit format: `<type>: <short summary>`
+
+Allowed types: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`.
+
+Append `!` after the type for breaking changes (e.g. `feat!: remove legacy endpoint`). Scope is optional.
+
+Rules:
+
+- Type reflects the user-visible effect, not the implementation activity. A bug fix that requires heavy refactoring is
+  `fix`, not `refactor`. A new CLI flag is `feat`, not `chore`.
+- The summary after the colon is lowercase, imperative mood, no trailing period.
+- Keep the first line under 72 characters.
+```
+
+**Verify:** The target file contains a conventional commit section. Read it back and confirm the types list and rules
+are present.
