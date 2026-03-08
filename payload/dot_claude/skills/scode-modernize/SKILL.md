@@ -122,17 +122,16 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 ### 4. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
 
-**Detect:** The project has any `.json`, `.toml`, or `.md` files but does not have a `dprint.json` at the repository
-root.
-
-**Skip if:** A `dprint.json` already exists at the repository root.
+**Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
+repository root, but do not treat an existing config as "already done".
 
 **Why:** `dprint` enforces consistent formatting for JSON, TOML, and Markdown files. Without it, formatting drift
 accumulates across contributors and tools. It is fast, pluggable, and easy to add to CI.
 
 **Replace with:**
 
-- Create `dprint.json` at the repository root:
+- If `dprint.json` does not exist yet, create it at the repository root with the desired formatter settings, but do not
+  hand-write versioned plugin URLs:
 
 ```json
 {
@@ -148,16 +147,26 @@ accumulates across contributors and tools. It is fast, pluggable, and easy to ad
   "excludes": [
     "**/*-lock.json"
   ],
-  "plugins": [
-    "https://plugins.dprint.dev/json-0.21.0.wasm",
-    "https://plugins.dprint.dev/markdown-0.20.0.wasm",
-    "https://plugins.dprint.dev/toml-0.7.0.wasm"
-  ]
+  "plugins": []
 }
 ```
 
-- Only include plugins for file types that actually exist in the project. For example, if the project has no `.toml`
-  files, omit the `toml` plugin and its config section.
+- Populate the plugin list by asking `dprint` for the current latest plugin URLs at execution time instead of copying
+  pinned URLs from this skill:
+
+```sh
+dprint config add json
+dprint config add markdown
+dprint config add toml
+dprint config update
+```
+
+- If `dprint.json` already exists, keep the project's existing dprint settings, add any missing core plugins with
+  `dprint config add ...`, and still run `dprint config update` so plugin URLs upgrade when newer versions are
+  available.
+
+- `dprint config add` / `dprint config update` should leave `dprint.json` with whatever plugin versions are latest at
+  the time the skill is used. Do not replace those generated URLs with older hard-coded examples.
 
 - If the project has a `.github/workflows/ci.yml` (or similar CI workflow), add a `dprint` job:
 
@@ -167,9 +176,11 @@ dprint:
   steps:
     - uses: actions/checkout@v4
     - name: Check formatting with dprint
-      uses: dprint/check@v2.2
+      uses: dprint/check@v2.3
 ```
 
 - Run `dprint fmt` to fix any existing formatting issues.
 
-**Verify:** `dprint check` passes. If CI was updated, confirm the `dprint` job exists in the workflow file.
+**Verify:** `dprint check` passes. If `dprint.json` already existed, confirm `dprint config update` was still run and
+the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
+the workflow file.
