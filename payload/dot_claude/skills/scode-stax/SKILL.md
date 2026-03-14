@@ -66,8 +66,8 @@ stax ss --no-prompt
 Submits the full stack — creates PRs for branches that don't have one, updates PRs for branches that do. Each branch
 becomes its own PR, linked in a stack.
 
-Note: `--no-prompt` creates new PRs as drafts. If the user wants non-draft PRs, they will need to mark them ready on
-GitHub after creation.
+Note: `--no-prompt` creates new PRs as drafts. Before merging with `stax merge`, mark PRs ready with
+`gh pr ready <number>`. Draft PRs cannot be merged.
 
 Use `stax cascade` as an alternative that also restacks before submitting.
 
