@@ -30,6 +30,12 @@ to skip prompts:
 3. **NEVER switch to trunk between stacked branches** — always stack on the current branch.
 4. **Do not run `stax` with `--help` or exploratory commands** unless a command fails with an unexpected error.
 
+## Starting a session
+
+Before creating new branches or doing any stax work, **always run `stax rs -f`** to sync with remote. This cleans up
+branches whose PRs were merged outside stax (e.g., via the GitHub UI) and prevents stale local state from causing
+submission failures.
+
 ## Core Operations
 
 ### Create a stacked branch
