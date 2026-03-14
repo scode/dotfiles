@@ -1,6 +1,6 @@
 ---
 name: pre-pr-review-swarm
-description: Run a concurrent multi-angle review immediately before proposing PR creation. Use when implementation and tests are complete and you are about to ask for PR creation or submission. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, README or equivalent documentation drift, and SPEC.md compliance (when a SPEC.md exists at the project root).
+description: Run a concurrent multi-angle review immediately before proposing PR creation. Use when implementation and tests are complete and you are about to ask for PR creation or submission. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, README or equivalent documentation drift, and SPEC.md compliance (when a SPEC.md exists at the project root).
 ---
 
 # Pre-PR Review Swarm
@@ -12,14 +12,14 @@ Run this skill as the final quality gate after implementation work and before as
 1. Determine review scope. Default: uncommitted changes in the working copy. The user may override this (e.g., "review
    the last commit"). Collect the relevant code and touched files.
 2. Check whether a `SPEC.md` exists at the project root.
-3. Spawn reviewers concurrently (seven always, plus an eighth if `SPEC.md` exists). Use parallel execution rather than
+3. Spawn reviewers concurrently (eight always, plus a ninth if `SPEC.md` exists). Use parallel execution rather than
    sequential execution whenever the environment supports it.
 4. Keep each reviewer scoped to its charter (see Reviewer Charters below).
 5. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
    references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
    observations.
 6. Merge and deduplicate findings using these rules:
-   - Priority order: correctness, security, spec compliance, test quality, docs drift, non-idiomatic patterns,
+   - Priority order: correctness, security, spec compliance, test quality, AI slop, docs drift, non-idiomatic patterns,
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
@@ -98,6 +98,51 @@ Evaluate whether the changed code has adequate, meaningful test coverage.
 - Don't flag missing tests for unchanged code, trivial getters/setters, or simple delegations.
 - Don't suggest specific test implementations—identify the gaps and let the parent agent decide how to fill them.
 
+### `ai-slop-reviewer`
+
+Detect patterns characteristic of AI-generated code that was produced without genuine understanding of the codebase or
+problem domain.
+
+**General patterns (all languages):**
+
+- **Hallucinated APIs**: calls to functions, methods, constants, or modules that don't exist in the dependency or
+  standard library being used. Verify the API actually exists before flagging—don't guess.
+- **Cargo cult code**: structures copied without understanding—unused parameters, no-op branches, config options that
+  are never read, defensive checks against conditions that provably can't occur in context.
+- **Over-engineering**: wrapper types, factory patterns, abstraction layers, or indirection that serves no purpose for
+  the current use case. Especially suspicious when surrounding code solves similar problems more directly.
+- **Reinvented wheels**: reimplementing functionality that already exists in the codebase or its direct dependencies.
+  Check the same module and imported crates/packages before flagging.
+- **Vacuous comments**: comments that restate the next line of code in prose (`// increment counter` above
+  `counter += 1`), or docstrings that just rephrase the function signature. Distinct from docs-comments-reviewer which
+  checks accuracy—this checks for zero-information commentary.
+- **Silent failure paths**: error handling that swallows errors, returns plausible-looking defaults, or
+  logs-and-continues where the caller needs to know about the failure.
+- **Unnecessary dependencies**: importing a crate or package for trivial functionality that's a few lines to implement,
+  or that's already available through an existing dependency.
+- **Proportionality violations**: solutions dramatically larger than the problem warrants—50 lines for a 5-line problem,
+  entire modules for single-use functionality, test infrastructure more complex than the code under test.
+
+**Rust-specific patterns:**
+
+- **Gratuitous `.clone()`**: cloning to silence the borrow checker when a reference or borrow would work, especially in
+  loops or on large types.
+- **`Arc<Mutex<T>>` by default**: reaching for shared-ownership with locking when the data has a single owner, or when
+  channels or simpler patterns would be clearer.
+- **`.unwrap()` outside tests**: using `unwrap()` or `expect()` in library or application code where the error is not
+  provably impossible. Especially on I/O, parsing, or external input.
+- **Fighting the type system**: liberal `as` casts, long `.into()` chains, or unnecessary turbofish annotations that
+  paper over design problems rather than fixing them.
+- **Collecting when streaming would do**: `.collect::<Vec<_>>()` followed by iteration over the collected vec, where the
+  intermediate collection serves no purpose.
+
+**What NOT to flag:**
+
+- Patterns consistent with the surrounding codebase—if the whole repo clones liberally, individual clones aren't slop.
+- Code that is merely verbose but correct and clear—the simplification reviewer handles that.
+- Style preferences—the idiomaticity reviewer handles that.
+- Pre-existing patterns in unchanged code.
+
 ### `readme-drift-reviewer`
 
 Validate `README.md` (or equivalent user-facing docs) against the code under review; propose additions when behavior
@@ -126,6 +171,7 @@ Report results in this structure. Each finding in every section should be tagged
 - `Spec Compliance` _(only when `SPEC.md` exists)_: list of divergences, each stating whether the implementation or the
   spec appears to need updating.
 - `Test Quality`: findings from the test-quality reviewer.
+- `AI Slop`: findings from the ai-slop-reviewer.
 - `Docs/README Drift`: findings from the docs-comments and readme-drift reviewers.
 - `Idiomaticity`: non-idiomatic patterns found.
 - `Simplification`: safe simplification opportunities.
