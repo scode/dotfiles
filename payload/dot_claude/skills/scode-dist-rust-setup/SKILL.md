@@ -164,6 +164,9 @@ verify `release.yml` references it correctly.
    - Every PR body must contain exactly one of `changelog: include` or `changelog: skip`.
    - Changelog generation uses git-cliff and root `CHANGELOG.md`.
    - Override tag behavior for `changelog: include` / `changelog: skip`.
+   - A **Release Notes** section documenting the `release-notes/X.Y.Z.md` convention: custom release commentary can be
+     added by creating this file before cutting a release; its contents are inserted into `CHANGELOG.md` between the
+     version heading and the auto-generated entries as part of the changelog generation step.
    - An agent-centric **Releasing** section using the content from `references/release-checklist.md`. This section is
      written as instructions for an AI agent so that a user can say "cut a release" and the agent guides them through
      the entire version bump, changelog, PR, merge, tag, and release watch flow.
@@ -196,7 +199,7 @@ Run these checks after setup:
 5. `rg -n 'action-semantic-pull-request|changelog-decision|github-script' .github/workflows/conventional-commit-pr-title.yml`
 6. `rg -n 'Conventional Commits|PR titles|Releasing|CONTRIBUTING.md' CLAUDE.md`
 7. `rg -n 'conventional_commits = true' cliff.toml`
-8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits|cut a release|bump' CONTRIBUTING.md`
+8. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits|cut a release|bump|release-notes/' CONTRIBUTING.md`
 9. `rg -n 'brew install scode/dist-tap/' README.md`
 
 ## Resources

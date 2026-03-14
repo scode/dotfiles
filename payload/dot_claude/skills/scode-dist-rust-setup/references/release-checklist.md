@@ -21,7 +21,11 @@ Then proceed:
 2. Set the version in `Cargo.toml`.
 3. Refresh the lockfile: `cargo update --workspace`
 4. Validate lockfile consistency: `cargo metadata --format-version 1 --locked > /dev/null`
-5. Generate the changelog: `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
+5. Generate the changelog and insert any custom release notes:
+   1. Run `git-cliff --tag "v$VERSION" -o CHANGELOG.md`
+   2. Ask the user if they want to add custom release notes. Tell them to create `release-notes/$VERSION.md` and confirm
+      when ready (or decline to skip). If the file exists, insert its contents into `CHANGELOG.md` immediately after the
+      `## [$VERSION]` heading line (before the first `###` group)
 6. Run `dprint fmt` to fix any formatting issues in the generated changelog.
 7. Verify the changelog heading exists: `rg -n "^## \[$VERSION\]" CHANGELOG.md`
 8. Create a release PR with commit message `chore: release $VERSION`. The PR must include `Cargo.toml`, `Cargo.lock`,
