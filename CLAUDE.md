@@ -22,6 +22,11 @@ Examples:
 
 The general rule: never assume a clean slate. If a path was previously installed, emit a removal feature for it.
 
+## Skills
+
+Claude Code skills live in `payload/dot_claude/skills/`. When the user asks to view, modify, or discuss a skill, look
+there — not in `~/.claude/skills/` or elsewhere.
+
 ## Before finishing work
 
 The following must all pass before creating a PR or claiming work is done:
