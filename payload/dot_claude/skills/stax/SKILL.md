@@ -66,11 +66,16 @@ stax ss --no-prompt
 Submits the full stack — creates PRs for branches that don't have one, updates PRs for branches that do. Each branch
 becomes its own PR, linked in a stack.
 
-`--no-prompt` creates new PRs as drafts. After submitting, immediately mark each newly created PR as ready:
+`--no-prompt` creates new PRs as drafts. After submitting:
+
+1. For each newly created PR, clear the auto-generated body (stax fills it with noise) and mark it as ready:
 
 ```bash
+gh pr edit <number> --body ""
 gh pr ready <number>
 ```
+
+2. If the commit body contains meaningful content, use that as the PR body instead of empty string.
 
 Use `stax cascade` as an alternative that also restacks before submitting.
 
