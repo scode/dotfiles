@@ -160,3 +160,13 @@ For the body, explain _why_ the change was made when the reasoning is non-obviou
 
 - `stax undo` — undo the last stax operation.
 - `stax redo` — reapply an undone operation.
+
+## Installing Permissions
+
+When the user says `/stax install permissions`, configure the agent's **user-global** (not project-specific) settings to
+always allow the following shell commands without prompting:
+
+- `stax` with any arguments
+- `gh pr` with any arguments
+
+Both must be allowed to run outside the sandbox (they write to `.git/` and make network requests to GitHub).
