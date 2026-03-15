@@ -1,5 +1,5 @@
 ---
-name: scode-stax
+name: stax
 # No description — this skill is invoked directly via slash command, not by natural language matching.
 ---
 

@@ -202,11 +202,14 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
-        "claude-skill-scode-stax",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-stax",
-            "~/.claude/skills/scode-stax",
-        ),
+        "claude-skill-stax",
+        PayloadSymlink::new("payload/dot_claude/skills/stax", "~/.claude/skills/stax"),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
+        "delete-claude-skill-scode-stax",
+        DeleteSymlink::new("~/.claude/skills/scode-stax"),
     )
     .depends_on(&claude_skills_dir)
     .build();
