@@ -19,12 +19,14 @@ information about _why_ the code does what it does.
 
 # Commit messages and PR titles/descriptions
 
+Never add a `Co-Authored-By:` line to commits or PRs.
+
 Keep the first line of commit messages, and PR titles, very concise.
 
-For the remainder of the commit message and/or PR descriptions, focus on _why_ the change is made. Do not state _what_
-the change is, unless the change is particularly large and a brief TLDR overview is helpful.
-
-Do not make lists of things changed.
+The default commit message is ONLY the one-line title — no body at all. Only add a body when the change is complex enough
+to need a brief overview, or when there is something important about _why_ that isn't obvious. Do not add boilerplate,
+commentary about tests run, summaries of what changed, or lists of things changed. If the title says it all (e.g.,
+"chore: cargo update"), stop there.
 
 # Testability and tests
 
