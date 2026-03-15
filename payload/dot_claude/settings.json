@@ -19,6 +19,8 @@
       "Bash(gt restack:*)",
       "Bash(gt submit:*)",
       "Bash(gt sync:*)",
+      "Bash(stax:*)",
+      "Bash(gh pr:*)",
       "Skill(scode-graphite)",
       "WebFetch(domain:index.crates.io)",
       "Bash(leiter:*)",
