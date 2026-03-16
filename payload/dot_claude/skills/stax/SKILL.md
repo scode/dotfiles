@@ -42,18 +42,14 @@ submission failures.
 
 ```bash
 stax create <branch-name>
+git add <files>
+git commit -m "commit message"
 ```
 
 Creates a new branch stacked on the current one. `stax create` only creates the branch — it does not stage or commit
-anything. After creating, stage and commit your changes with `git add` + `git commit`.
+anything. **Always stage and commit separately after creating the branch.**
 
-If you already have staged changes and want to commit them as part of branch creation:
-
-```bash
-stax create <branch-name> -m "commit message"
-```
-
-Note: `-m` only commits already-staged changes. Unstaged or untracked files must be `git add`'ed first.
+Do not use `stax create -m` — it has been unreliable in practice (silently producing empty branches).
 
 ### Submit / make PRs
 
