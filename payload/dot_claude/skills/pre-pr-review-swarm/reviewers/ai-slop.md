@@ -25,6 +25,13 @@ problem domain.
 - **Vacuous comments**: comments that restate the next line of code in prose (`// increment counter` above
   `counter += 1`), or docstrings that just rephrase the function signature. Distinct from docs-comments-reviewer which
   checks accuracy—this checks for zero-information commentary.
+- **Raw print instead of logging**: using `println!`/`eprintln!` in Rust, `print()`/`sys.stdout` in Python,
+  `console.log` in JS/TS, `fmt.Println` in Go, or equivalent raw I/O for operational messages (status, progress,
+  diagnostics, errors) in library or application code that has a logging framework available. Check whether the project
+  uses a logging crate/package (e.g. `log`, `tracing`, `slog` in Rust; `logging`, `structlog` in Python; `winston`,
+  `pino` in JS/TS; `log/slog` in Go) and flag new code that bypasses it. **Do not flag**: CLI tools whose primary
+  purpose is terminal output, test code, build scripts, or code in projects that have no logging framework in their
+  dependencies.
 - **Silent failure paths**: error handling that swallows errors, returns plausible-looking defaults, or
   logs-and-continues where the caller needs to know about the failure.
 - **Unnecessary dependencies**: importing a crate or package for trivial functionality that's a few lines to implement,
