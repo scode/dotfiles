@@ -64,7 +64,8 @@
     "ralph-loop@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "codex-code-review@dotfiles": true,
-    "gemini-code-review@dotfiles": true
+    "gemini-code-review@dotfiles": true,
+    "telegram@claude-plugins-official": true
   },
   "sandbox": {
     "enabled": true,
