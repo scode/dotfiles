@@ -62,18 +62,21 @@ stax ss --no-prompt
 Submits the full stack — creates PRs for branches that don't have one, updates PRs for branches that do. Each branch
 becomes its own PR, linked in a stack.
 
-`--no-prompt` creates new PRs as drafts. After submitting:
+`--no-prompt` creates new PRs as drafts. After submitting, for each newly created PR:
 
-1. For each newly created PR, replace the auto-generated body (stax fills it with noise) with a proper PR description,
-   then mark it as ready:
+1. **Replace the stax-generated body** — stax auto-populates PRs with an opinionated format. Overwrite it with your own
+   description. Explain _why_ the change was made, not _what_ changed. If the commit body already contains a good
+   description, use that. Do not use any content from the stax-generated body as a starting point.
 
 ```bash
 gh pr edit <number> --body "<PR description>"
-gh pr ready <number>
 ```
 
-2. Write the PR description yourself based on the changes — explain _why_ the change was made, not _what_ changed. If
-   the commit body already contains a good description, use that.
+2. **Mark the PR as ready:**
+
+```bash
+gh pr ready <number>
+```
 
 Use `stax cascade` as an alternative that also restacks before submitting.
 
