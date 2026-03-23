@@ -64,14 +64,16 @@ becomes its own PR, linked in a stack.
 
 `--no-prompt` creates new PRs as drafts. After submitting:
 
-1. For each newly created PR, clear the auto-generated body (stax fills it with noise) and mark it as ready:
+1. For each newly created PR, replace the auto-generated body (stax fills it with noise) with a proper PR description,
+   then mark it as ready:
 
 ```bash
-gh pr edit <number> --body ""
+gh pr edit <number> --body "<PR description>"
 gh pr ready <number>
 ```
 
-2. If the commit body contains meaningful content, use that as the PR body instead of empty string.
+2. Write the PR description yourself based on the changes — explain _why_ the change was made, not _what_ changed. If
+   the commit body already contains a good description, use that.
 
 Use `stax cascade` as an alternative that also restacks before submitting.
 
