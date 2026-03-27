@@ -1,6 +1,16 @@
 use std::process::Command;
 use tempfile::TempDir;
 
+const CODEX_COMMANDS: &[&str] = &[
+    "pre-pr-review-swarm.md",
+    "scode-dist-rust-setup.md",
+    "scode-graphite.md",
+    "scode-modernize.md",
+    "scode-todo.md",
+    "scode-voice.md",
+    "stax.md",
+];
+
 fn setup_fake_home() -> TempDir {
     let home = tempfile::tempdir().unwrap();
     // Create parent directories that conditions check for
@@ -57,6 +67,16 @@ fn test_install_creates_symlinks() {
         codex_agent.is_symlink(),
         "expected .codex/agents/code-review-specialist.md symlink"
     );
+    for command in CODEX_COMMANDS {
+        assert!(
+            fake_home
+                .path()
+                .join(".codex/commands")
+                .join(command)
+                .is_symlink(),
+            "expected .codex/commands/{command} symlink"
+        );
+    }
 
     let codex_skill = fake_home.path().join(".codex/skills/pre-pr-review-swarm");
     assert!(
@@ -110,6 +130,16 @@ fn test_uninstall_removes_symlinks() {
         codex_agent.is_symlink(),
         "codex symlink should exist after install"
     );
+    for command in CODEX_COMMANDS {
+        assert!(
+            fake_home
+                .path()
+                .join(".codex/commands")
+                .join(command)
+                .is_symlink(),
+            "codex command symlink {command} should exist after install"
+        );
+    }
     assert!(
         codex_stax_skill.is_symlink(),
         "codex stax skill symlink should exist after install"
@@ -141,6 +171,13 @@ fn test_uninstall_removes_symlinks() {
         !codex_agent.exists() && !codex_agent.is_symlink(),
         "codex symlink should be removed after uninstall"
     );
+    for command in CODEX_COMMANDS {
+        let path = fake_home.path().join(".codex/commands").join(command);
+        assert!(
+            !path.exists() && !path.is_symlink(),
+            "codex command symlink {command} should be removed after uninstall"
+        );
+    }
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
         "codex stax skill symlink should be removed after uninstall"
@@ -176,6 +213,16 @@ fn test_install_idempotent() {
         claude_md.is_symlink(),
         "symlink should exist after double install"
     );
+    for command in CODEX_COMMANDS {
+        assert!(
+            fake_home
+                .path()
+                .join(".codex/commands")
+                .join(command)
+                .is_symlink(),
+            "codex command symlink {command} should exist after double install"
+        );
+    }
     assert!(
         fake_home
             .path()
@@ -278,6 +325,10 @@ fn test_dependency_ordering() {
         ".codex/agents should be a directory"
     );
     assert!(
+        fake_home.path().join(".codex/commands").is_dir(),
+        ".codex/commands should be a directory"
+    );
+    assert!(
         fake_home.path().join(".codex/skills").is_dir(),
         ".codex/skills should be a directory"
     );
@@ -318,6 +369,16 @@ fn test_dependency_ordering() {
             .is_symlink(),
         "codex agent symlink should exist"
     );
+    for command in CODEX_COMMANDS {
+        assert!(
+            fake_home
+                .path()
+                .join(".codex/commands")
+                .join(command)
+                .is_symlink(),
+            "codex command symlink {command} should exist"
+        );
+    }
     assert!(
         fake_home
             .path()
@@ -361,6 +422,7 @@ fn test_all_symlinks_are_relative() {
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".codex/agents/code-review-specialist.md",
+        ".codex/commands/stax.md",
         ".codex/skills/pre-pr-review-swarm",
         ".codex/skills/stax",
         ".codex/skills/scode-dist-rust-setup",
