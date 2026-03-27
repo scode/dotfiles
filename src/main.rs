@@ -316,6 +316,12 @@ fn add_codex_features(g: &mut FeatureGraph) {
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
+        "codex-skill-stax",
+        PayloadSymlink::new("payload/dot_claude/skills/stax", "~/.codex/skills/stax"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
         "codex-skill-scode-graphite",
         RawSymlink::new(
             "~/git/scode-graphite-skill",

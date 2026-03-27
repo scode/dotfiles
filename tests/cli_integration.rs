@@ -63,6 +63,11 @@ fn test_install_creates_symlinks() {
         codex_skill.is_symlink(),
         "expected .codex/skills/pre-pr-review-swarm symlink"
     );
+    let codex_stax_skill = fake_home.path().join(".codex/skills/stax");
+    assert!(
+        codex_stax_skill.is_symlink(),
+        "expected .codex/skills/stax symlink"
+    );
     let claude_dist_skill = fake_home
         .path()
         .join(".claude/skills/scode-dist-rust-setup");
@@ -98,11 +103,16 @@ fn test_uninstall_removes_symlinks() {
     let codex_agent = fake_home
         .path()
         .join(".codex/agents/code-review-specialist.md");
+    let codex_stax_skill = fake_home.path().join(".codex/skills/stax");
     let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
     assert!(
         codex_agent.is_symlink(),
         "codex symlink should exist after install"
+    );
+    assert!(
+        codex_stax_skill.is_symlink(),
+        "codex stax skill symlink should exist after install"
     );
     assert!(
         codex_dist_skill.is_symlink(),
@@ -130,6 +140,10 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !codex_agent.exists() && !codex_agent.is_symlink(),
         "codex symlink should be removed after uninstall"
+    );
+    assert!(
+        !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
+        "codex stax skill symlink should be removed after uninstall"
     );
     assert!(
         !codex_dist_skill.exists() && !codex_dist_skill.is_symlink(),
@@ -168,6 +182,10 @@ fn test_install_idempotent() {
             .join(".codex/skills/pre-pr-review-swarm")
             .is_symlink(),
         "codex skill symlink should exist after double install"
+    );
+    assert!(
+        fake_home.path().join(".codex/skills/stax").is_symlink(),
+        "codex stax skill symlink should exist after double install"
     );
     assert!(
         fake_home
@@ -308,6 +326,10 @@ fn test_dependency_ordering() {
         "codex skill symlink should exist"
     );
     assert!(
+        fake_home.path().join(".codex/skills/stax").is_symlink(),
+        "codex stax skill symlink should exist"
+    );
+    assert!(
         fake_home
             .path()
             .join(".codex/skills/scode-dist-rust-setup")
@@ -340,6 +362,7 @@ fn test_all_symlinks_are_relative() {
         ".claude/skills/scode-dist-rust-setup",
         ".codex/agents/code-review-specialist.md",
         ".codex/skills/pre-pr-review-swarm",
+        ".codex/skills/stax",
         ".codex/skills/scode-dist-rust-setup",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
