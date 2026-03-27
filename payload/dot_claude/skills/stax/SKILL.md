@@ -1,6 +1,6 @@
 ---
 name: stax
-# No description — this skill is invoked directly via slash command, not by natural language matching.
+description: Use only when the user explicitly invokes `/stax` or `$stax`.
 ---
 
 # Stax Workflow

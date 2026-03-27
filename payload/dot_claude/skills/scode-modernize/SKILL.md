@@ -1,6 +1,6 @@
 ---
 name: scode-modernize
-# No description — this skill is invoked directly via slash command, not by natural language matching.
+description: Scan a repository for known deprecated or outdated patterns and propose or apply the modern equivalent. Use when the user explicitly invokes /scode-modernize or $scode-modernize to audit and modernize project conventions incrementally.
 ---
 
 # Scode Modernize

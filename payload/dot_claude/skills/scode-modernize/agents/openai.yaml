@@ -1,0 +1,6 @@
+interface:
+  display_name: "scode Modernize"
+  short_description: "Find and replace stale patterns in a repo."
+  default_prompt: "Use $scode-modernize to scan this repo for deprecated patterns, present the findings, and apply only the modernizations I approve."
+policy:
+  allow_implicit_invocation: false
