@@ -19,7 +19,73 @@ equivalent. Report what was changed and what was already clean.
 
 ## Checklist
 
-### 1. Replace `actions-rs/*` GitHub Actions (Rust projects)
+### 1. Add formatting and clippy CI jobs (Rust projects)
+
+**Detect:** The project has a `Cargo.toml` at the repository root (or is a Cargo workspace). Check
+`.github/workflows/*.yml` for existing CI jobs that run `cargo fmt` / `rustfmt` and `cargo clippy`. A job counts as
+present only if it runs the check as a dedicated job (not a step buried inside a build-and-test job).
+
+**Skip if:** Both a dedicated formatting job and a dedicated clippy job already exist as separate jobs.
+
+**Why:** Formatting and lint checks catch issues early and independently of test results. Running them as separate jobs
+means they report failures in parallel with tests, making CI feedback faster and easier to triage. Bundling them into the
+test job delays feedback and obscures which check failed.
+
+**Replace with:**
+
+- If no CI workflow exists at all, create `.github/workflows/ci.yml`.
+- Add a `fmt` job that checks formatting. Use `actions-rust-lang/setup-rust-toolchain@v1` to install the `rustfmt`
+  component, then run `cargo fmt --all -- --check`:
+
+```yaml
+fmt:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt
+    - run: cargo fmt --all -- --check
+```
+
+- Add a `clippy` job that runs clippy. Use `actions-rust-lang/setup-rust-toolchain@v1` to install the `clippy`
+  component, then run `cargo clippy`:
+
+```yaml
+clippy:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: clippy
+    - run: cargo clippy
+```
+
+- If `Cargo.lock` is not committed (library crates), use `hashFiles('**/Cargo.toml')` for the cache key instead.
+- If existing CI already has formatting or clippy as steps within another job, extract them into their own jobs and
+  remove the steps from the original job.
+- Only use official actions: `actions/checkout`, `actions/cache`, and `actions-rust-lang/setup-rust-toolchain`. Do not
+  use `actions-rs/*` or third-party community actions.
+- Every Rust CI job that compiles code (clippy, test, build — but not fmt, which only runs rustfmt) must include cargo
+  caching with `actions/cache@v4`. Use the same cache configuration shown in the clippy example above, placed
+  immediately after checkout.
+- When auditing an existing workflow, check that every job which runs `cargo build`, `cargo test`, or `cargo clippy` has
+  a cache step. Add one if missing.
+
+**Verify:** The workflow file has separate `fmt` and `clippy` jobs. Every job that compiles Rust code has cargo caching.
+`act` or a manual read confirms each job runs the expected command.
+
+### 2. Replace `actions-rs/*` GitHub Actions (Rust projects)
 
 **Detect:** Any `.github/workflows/*.yml` file that references `actions-rs/` in a `uses:` field (e.g.
 `actions-rs/toolchain`, `actions-rs/cargo`, `actions-rs/clippy-check`, `actions-rs/audit-check`).
@@ -56,7 +122,7 @@ and eliminates a supply-chain risk.
 
 **Verify:** `rg 'actions-rs/' .github/` returns no matches after replacement.
 
-### 2. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
+### 3. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
 
 **Detect:** A `CLAUDE.md` or `AGENTS.md` at the repository root (or `.claude/` directory) whose content is predominantly
 architecture overview — descriptions of what each directory contains, how modules relate to each other, summaries of the
@@ -79,7 +145,7 @@ overviews are redundant — an agent can read the code — and they rot as the c
 **Verify:** Read the resulting file (if it still exists) and confirm every remaining section expresses an intent,
 preference, or constraint that cannot be trivially inferred from the repository contents.
 
-### 3. Migrate from `log` crate to `tracing` (Rust projects)
+### 4. Migrate from `log` crate to `tracing` (Rust projects)
 
 **Detect:** `Cargo.toml` (including workspace and member `Cargo.toml` files) lists `log` as a dependency, or the source
 code uses `log::info!`, `log::debug!`, `log::warn!`, `log::error!`, `log::trace!`, or the corresponding unqualified
@@ -120,7 +186,7 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
 
-### 4. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+### 5. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
 
 **Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
 repository root, but do not treat an existing config as "already done".
@@ -185,7 +251,7 @@ dprint:
 the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
 the workflow file.
 
-### 5. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
+### 6. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
 **Detect:** The project has a `CLAUDE.md` or `AGENTS.md` (at the repo root or in `.claude/`) that does not already
 contain conventional commit guidance (search for "conventional commit" case-insensitively).
