@@ -19,17 +19,17 @@ equivalent. Report what was changed and what was already clean.
 
 ## Checklist
 
-### 1. Add formatting and clippy CI jobs (Rust projects)
+### 1. Add formatting, clippy, and test CI jobs (Rust projects)
 
 **Detect:** The project has a `Cargo.toml` at the repository root (or is a Cargo workspace). Check
-`.github/workflows/*.yml` for existing CI jobs that run `cargo fmt` / `rustfmt` and `cargo clippy`. A job counts as
-present only if it runs the check as a dedicated job (not a step buried inside a build-and-test job).
+`.github/workflows/*.yml` for existing CI jobs that run `cargo fmt` / `rustfmt`, `cargo clippy`, and `cargo test`. A job
+counts as present only if it runs the check as a dedicated job (not a step buried inside another job).
 
-**Skip if:** Both a dedicated formatting job and a dedicated clippy job already exist as separate jobs.
+**Skip if:** Dedicated formatting, clippy, and test jobs all already exist as separate jobs.
 
-**Why:** Formatting and lint checks catch issues early and independently of test results. Running them as separate jobs
-means they report failures in parallel with tests, making CI feedback faster and easier to triage. Bundling them into
-the test job delays feedback and obscures which check failed.
+**Why:** Formatting, lint, and test checks catch issues early. Running them as separate jobs means they report failures
+in parallel, making CI feedback faster and easier to triage. Bundling them into a single job delays feedback and
+obscures which check failed.
 
 **Replace with:**
 
@@ -71,9 +71,28 @@ clippy:
     - run: cargo clippy
 ```
 
+- Add a `test` job that runs the test suite:
+
+```yaml
+test:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    - run: cargo test
+```
+
 - If `Cargo.lock` is not committed (library crates), use `hashFiles('**/Cargo.toml')` for the cache key instead.
-- If existing CI already has formatting or clippy as steps within another job, extract them into their own jobs and
-  remove the steps from the original job.
+- If existing CI already has formatting, clippy, or tests as steps within another job, extract them into their own jobs
+  and remove the steps from the original job.
 - Only use official actions: `actions/checkout`, `actions/cache`, and `actions-rust-lang/setup-rust-toolchain`. Do not
   use `actions-rs/*` or third-party community actions.
 - Every Rust CI job that compiles code (clippy, test, build — but not fmt, which only runs rustfmt) must include cargo
@@ -82,8 +101,8 @@ clippy:
 - When auditing an existing workflow, check that every job which runs `cargo build`, `cargo test`, or `cargo clippy` has
   a cache step. Add one if missing.
 
-**Verify:** The workflow file has separate `fmt` and `clippy` jobs. Every job that compiles Rust code has cargo caching.
-`act` or a manual read confirms each job runs the expected command.
+**Verify:** The workflow file has separate `fmt`, `clippy`, and `test` jobs. Every job that compiles Rust code has cargo
+caching. `act` or a manual read confirms each job runs the expected command.
 
 ### 2. Replace `actions-rs/*` GitHub Actions (Rust projects)
 
