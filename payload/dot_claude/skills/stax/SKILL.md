@@ -32,9 +32,46 @@ to skip prompts:
 
 ## Starting a session
 
-Before creating new branches or doing any stax work, **always run `stax rs -f`** to sync with remote. This cleans up
-branches whose PRs were merged outside stax (e.g., via the GitHub UI) and prevents stale local state from causing
-submission failures.
+Determine whether you are in the main working tree or an external worktree:
+
+```bash
+git rev-parse --git-dir --git-common-dir
+```
+
+If both lines are the same (e.g. `.git` / `.git`), you are in the main working tree. If they differ, you are in a
+worktree.
+
+### Main working tree
+
+Run `stax rs -f` to sync with remote. This cleans up branches whose PRs were merged outside stax (e.g., via the GitHub
+UI) and prevents stale local state from causing submission failures.
+
+### External worktree
+
+Do **not** run `stax rs -f` — syncing from an external worktree can be disruptive because it may affect the main working
+tree's checkout state.
+
+Instead, bootstrap stax:
+
+1. **Check whether HEAD is detached:**
+
+```bash
+git symbolic-ref HEAD
+```
+
+If this fails, HEAD is detached. Create a branch:
+
+```bash
+git checkout -b <branch-name>
+```
+
+2. **Register the branch with stax:**
+
+```bash
+stax branch track --parent main
+```
+
+Then proceed with normal stax operations.
 
 ## Core Operations
 
