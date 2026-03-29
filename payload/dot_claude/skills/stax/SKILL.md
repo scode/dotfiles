@@ -30,6 +30,8 @@ to skip prompts:
 3. **ALWAYS stack new branches on the current branch** — never switch to trunk first. Even if the changes are logically
    independent, the default is to build a stack. Only branch off trunk when the user explicitly asks for it.
 4. **Do not run `stax` with `--help` or exploratory commands** unless a command fails with an unexpected error.
+5. **Use `stax ss --no-prompt` (or `stax cascade`) to push**, not `git push`. Raw pushes bypass stax's tracking. Only
+   fall back to `git push` when recovering from broken stax state.
 
 ## Starting a session
 
