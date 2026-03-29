@@ -42,6 +42,12 @@ Rules:
 - The summary after the colon is lowercase, imperative mood, no trailing period.
 - Keep the first line under 72 characters.
 
+## Writing voice
+
+Use the `scode-voice` skill when writing or editing any prose destined for files: documentation, READMEs, doc comments,
+inline comments, commit messages, and PR descriptions. If the project's own CLAUDE.md specifies a different voice or
+writing style, that takes precedence.
+
 ## Before finishing work
 
 The following must all pass before creating a PR or claiming work is done:
