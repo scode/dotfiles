@@ -27,7 +27,7 @@ The general rule: never assume a clean slate. If a path was previously installed
 Claude Code skills live in `payload/dot_claude/skills/`. When the user asks to view, modify, or discuss a skill, look
 there — not in `~/.claude/skills/` or elsewhere.
 
-## Conventional Commits
+## Commit messages and PR titles
 
 All commit messages and PR titles must use Conventional Commit format: `<type>: <short summary>`
 
@@ -37,20 +37,24 @@ Append `!` after the type for breaking changes (e.g. `feat!: remove legacy endpo
 
 Rules:
 
-- Type reflects the user-visible effect, not the implementation activity. A bug fix that requires heavy refactoring is
-  `fix`, not `refactor`. A new CLI flag is `feat`, not `chore`.
+- The title describes _what_ the change does, focusing on the user-visible effect rather than implementation details. A
+  bug fix that requires heavy refactoring is `fix`, not `refactor`. A new CLI flag is `feat`, not `chore`.
 - The summary after the colon is lowercase, imperative mood, no trailing period.
 - Keep the first line under 72 characters.
+
+## Commit bodies and PR descriptions
+
+The body/description covers the _why_ — context that cannot be inferred from the code or the title. It is fine to leave
+the body entirely empty when the title says everything useful. For large changes, a brief summary of _what_ is
+acceptable to aid skimming, but the primary purpose is still the _why_.
+
+Do not include "Generated with Claude Code" badges or similar attribution lines.
 
 ## Writing voice
 
 Use the `scode-voice` skill when writing or editing any prose destined for files: documentation, READMEs, doc comments,
 inline comments, commit messages, and PR descriptions. If the project's own CLAUDE.md specifies a different voice or
 writing style, that takes precedence.
-
-## PR descriptions
-
-Do not include "Generated with Claude Code" badges or similar attribution lines in PR descriptions.
 
 ## Before finishing work
 
