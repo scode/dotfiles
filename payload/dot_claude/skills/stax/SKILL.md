@@ -27,7 +27,8 @@ to skip prompts:
 1. **NEVER create or update PRs unless the user explicitly asks in that message.** Each PR operation requires fresh
    explicit consent.
 2. **ALWAYS provide an explicit branch name to `stax create`** (e.g. `stax create auth-refactor`).
-3. **NEVER switch to trunk between stacked branches** — always stack on the current branch.
+3. **ALWAYS stack new branches on the current branch** — never switch to trunk first. Even if the changes are logically
+   independent, the default is to build a stack. Only branch off trunk when the user explicitly asks for it.
 4. **Do not run `stax` with `--help` or exploratory commands** unless a command fails with an unexpected error.
 
 ## Starting a session
