@@ -48,6 +48,10 @@ Use the `scode-voice` skill when writing or editing any prose destined for files
 inline comments, commit messages, and PR descriptions. If the project's own CLAUDE.md specifies a different voice or
 writing style, that takes precedence.
 
+## PR descriptions
+
+Do not include "Generated with Claude Code" badges or similar attribution lines in PR descriptions.
+
 ## Before finishing work
 
 The following must all pass before creating a PR or claiming work is done:
