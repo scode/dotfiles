@@ -27,6 +27,21 @@ The general rule: never assume a clean slate. If a path was previously installed
 Claude Code skills live in `payload/dot_claude/skills/`. When the user asks to view, modify, or discuss a skill, look
 there — not in `~/.claude/skills/` or elsewhere.
 
+## Conventional Commits
+
+All commit messages and PR titles must use Conventional Commit format: `<type>: <short summary>`
+
+Allowed types: `feat`, `fix`, `docs`, `perf`, `refactor`, `style`, `test`, `chore`, `ci`, `revert`.
+
+Append `!` after the type for breaking changes (e.g. `feat!: remove legacy endpoint`). Scope is optional.
+
+Rules:
+
+- Type reflects the user-visible effect, not the implementation activity. A bug fix that requires heavy refactoring is
+  `fix`, not `refactor`. A new CLI flag is `feat`, not `chore`.
+- The summary after the colon is lowercase, imperative mood, no trailing period.
+- Keep the first line under 72 characters.
+
 ## Before finishing work
 
 The following must all pass before creating a PR or claiming work is done:
