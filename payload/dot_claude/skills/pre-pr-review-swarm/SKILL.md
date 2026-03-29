@@ -27,7 +27,8 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    - Otherwise: use uncommitted changes. If none exist, fall back to `git show`.
 3. Check whether a `SPEC.md` exists at the project root.
 4. Spawn reviewers concurrently using the Agent tool (eight always, plus a ninth if `SPEC.md` exists). Each reviewer
-   runs as its own sub-agent to keep review instructions out of the main context.
+   runs as its own sub-agent to keep review instructions out of the main context. Do not set the `model` parameter on
+   the Agent calls — omit it so each reviewer inherits the current session's model.
 5. For each reviewer, spawn an Agent with a prompt that includes the review scope (diff and touched files) and instructs
    the sub-agent to read its charter file before reviewing. Charter files are in the `reviewers/` directory next to this
    skill file. Tell each sub-agent to read its charter from `<base_directory>/reviewers/<name>.md` where
