@@ -183,11 +183,17 @@ Sapling does not have a merge command. Use `gh` to squash-merge:
 gh pr merge <number> --squash
 ```
 
-After merging, sync local state:
+**After every merge**, pull and rebase before doing anything else — including merging the next PR in the stack:
 
 ```bash
 sl pull
+sl rebase -d main
+sl pr submit --stack
 ```
+
+This must happen between each merge. For a stack of five PRs, merge the bottom one, pull + rebase + resubmit, then merge
+the next one, pull + rebase + resubmit, and so on. Without the rebase, the remaining PRs stay parented on the pre-merge
+commit and their GitHub diffs will include the already-merged changes.
 
 ## Undo
 
