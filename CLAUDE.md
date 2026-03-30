@@ -27,6 +27,17 @@ The general rule: never assume a clean slate. If a path was previously installed
 Claude Code skills live in `payload/dot_claude/skills/`. When the user asks to view, modify, or discuss a skill, look
 there — not in `~/.claude/skills/` or elsewhere.
 
+## Choosing `feat` vs `docs` for commit types
+
+This repo is an installer — its product is the set of files it installs. Changes to payload files (configs, skills,
+shell scripts, etc.) are changes to what gets installed, even when those files happen to be markdown or prose. Use `feat`
+or `fix` for those, not `docs`.
+
+`docs` is for documentation _about this project itself_: the README, CLAUDE.md, code comments in `src/`, and similar.
+
+Skills (`payload/dot_claude/skills/`) are a common source of confusion because they look like documentation, but they
+are installed artifacts — part of the product. Adding, removing, or changing a skill's behavior is `feat` (or `fix`).
+
 ## Commit messages and PR titles
 
 All commit messages and PR titles must use Conventional Commit format: `<type>: <short summary>`
