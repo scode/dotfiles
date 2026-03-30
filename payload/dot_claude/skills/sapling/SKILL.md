@@ -180,8 +180,10 @@ PRs for new commits.
 Sapling does not have a merge command. Use `gh` to squash-merge:
 
 ```bash
-gh pr merge <number> --squash
+gh pr merge <number> --squash --auto
 ```
+
+The `--auto` flag queues the merge to happen once CI passes. If you know checks have already passed, omit `--auto`.
 
 **After every merge**, pull and rebase before doing anything else — including merging the next PR in the stack:
 
