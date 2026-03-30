@@ -70,18 +70,34 @@ sl amend <file1> <file2>
 
 ### Amend a commit lower in the stack
 
-Navigate to the target commit, amend, then return:
+`sl amend` automatically rebases all descendant commits. When there are no conflicts, restacking is fully automatic — no
+manual rebase step needed.
+
+The typical workflow for editing a commit in the middle of the stack:
 
 ```bash
 sl goto <commit-hash>
+# ... make changes ...
 sl amend
-sl goto <original-commit>
+sl goto top
 ```
 
-Or use `sl amend --to <commit-hash>` to fold pending changes into a specific commit without navigating.
+Alternatives that skip the navigation:
 
-Or use `sl absorb` to automatically distribute pending changes to the correct commits in the stack based on which commit
-last touched each edited line.
+- `sl amend --to <commit-hash>` — fold pending changes into a specific commit without navigating to it first.
+- `sl absorb` — automatically distribute pending changes to the correct commits in the stack based on which commit last
+  touched each edited line.
+
+Both also auto-restack descendants.
+
+### Resolving conflicts during restacking
+
+If `sl amend` (or `sl rebase`) hits a conflict, it stops and leaves conflict markers in the affected files. To resolve:
+
+1. Edit the conflicted files to resolve the markers.
+2. Run `sl rebase --continue` to resume restacking.
+
+To abandon instead: `sl rebase --abort`.
 
 ### Navigate the stack
 
