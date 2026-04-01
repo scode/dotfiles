@@ -65,7 +65,16 @@
     "rust-analyzer-lsp@claude-plugins-official": true,
     "codex-code-review@dotfiles": true,
     "gemini-code-review@dotfiles": true,
-    "telegram@claude-plugins-official": true
+    "telegram@claude-plugins-official": true,
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
   },
   "sandbox": {
     "enabled": true,
