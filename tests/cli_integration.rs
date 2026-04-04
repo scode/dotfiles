@@ -68,6 +68,11 @@ fn test_install_creates_symlinks() {
         codex_stax_skill.is_symlink(),
         "expected .codex/skills/stax symlink"
     );
+    let codex_slstack_skill = fake_home.path().join(".codex/skills/slstack");
+    assert!(
+        codex_slstack_skill.is_symlink(),
+        "expected .codex/skills/slstack symlink"
+    );
     let claude_dist_skill = fake_home
         .path()
         .join(".claude/skills/scode-dist-rust-setup");
@@ -104,6 +109,7 @@ fn test_uninstall_removes_symlinks() {
         .path()
         .join(".codex/agents/code-review-specialist.md");
     let codex_stax_skill = fake_home.path().join(".codex/skills/stax");
+    let codex_slstack_skill = fake_home.path().join(".codex/skills/slstack");
     let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
     assert!(
@@ -113,6 +119,10 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         codex_stax_skill.is_symlink(),
         "codex stax skill symlink should exist after install"
+    );
+    assert!(
+        codex_slstack_skill.is_symlink(),
+        "codex slstack skill symlink should exist after install"
     );
     assert!(
         codex_dist_skill.is_symlink(),
@@ -144,6 +154,10 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
         "codex stax skill symlink should be removed after uninstall"
+    );
+    assert!(
+        !codex_slstack_skill.exists() && !codex_slstack_skill.is_symlink(),
+        "codex slstack skill symlink should be removed after uninstall"
     );
     assert!(
         !codex_dist_skill.exists() && !codex_dist_skill.is_symlink(),
@@ -186,6 +200,10 @@ fn test_install_idempotent() {
     assert!(
         fake_home.path().join(".codex/skills/stax").is_symlink(),
         "codex stax skill symlink should exist after double install"
+    );
+    assert!(
+        fake_home.path().join(".codex/skills/slstack").is_symlink(),
+        "codex slstack skill symlink should exist after double install"
     );
     assert!(
         fake_home
@@ -330,6 +348,10 @@ fn test_dependency_ordering() {
         "codex stax skill symlink should exist"
     );
     assert!(
+        fake_home.path().join(".codex/skills/slstack").is_symlink(),
+        "codex slstack skill symlink should exist"
+    );
+    assert!(
         fake_home
             .path()
             .join(".codex/skills/scode-dist-rust-setup")
@@ -363,6 +385,7 @@ fn test_all_symlinks_are_relative() {
         ".codex/agents/code-review-specialist.md",
         ".codex/skills/pre-pr-review-swarm",
         ".codex/skills/stax",
+        ".codex/skills/slstack",
         ".codex/skills/scode-dist-rust-setup",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
