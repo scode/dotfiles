@@ -32,8 +32,24 @@ problem domain.
   `pino` in JS/TS; `log/slog` in Go) and flag new code that bypasses it. **Do not flag**: CLI tools whose primary
   purpose is terminal output, test code, build scripts, or code in projects that have no logging framework in their
   dependencies.
-- **Silent failure paths**: error handling that swallows errors, returns plausible-looking defaults, or
-  logs-and-continues where the caller needs to know about the failure.
+- **Swallowed errors**: any code path that discards an error without propagating it to the caller. The default
+  expectation is that errors propagate up the stack. Swallowing an error is only acceptable when there is an obvious,
+  specific reason visible in the immediate context (e.g., a cleanup helper where failure is truly inconsequential, or a
+  best-effort notification where the caller genuinely cannot act on the failure). If no such reason is apparent, flag it.
+  Common patterns to watch for:
+  - **Rust**: `let _ = fallible_call()` or `let _foo = fallible_call()` discarding a `Result`; `if let Ok(v) = ...`
+    with no `else` branch; `.ok()` or `.unwrap_or_default()` used to silence an error rather than handle it;
+    `.map_err(|_| ...)` that replaces the original error with a less informative one; `match` arms that catch `Err(_)`
+    and do nothing or return a default.
+  - **Python**: bare `except:` or `except Exception:` with `pass`, a log-only body, or a default return; calling a
+    function and ignoring its return value when it signals failure via return code.
+  - **Go**: `_ = FallibleCall()` discarding an `error` return; `if err != nil { log.Println(err) }` without returning
+    or propagating; any named `error` return silently set to `nil`.
+  - **JS/TS**: empty `catch {}` blocks; `.catch(() => {})` on promises; `try/catch` where the catch only logs or
+    returns a default without rethrowing.
+  - **General**: any pattern where an error is logged but execution continues as if nothing happened, when the caller
+    would benefit from knowing about the failure. "Log and continue" is not error handling—it is error suppression
+    unless the surrounding code is explicitly best-effort.
 - **Unnecessary dependencies**: importing a crate or package for trivial functionality that's a few lines to implement,
   or that's already available through an existing dependency.
 - **Proportionality violations**: solutions dramatically larger than the problem warrants—50 lines for a 5-line problem,
