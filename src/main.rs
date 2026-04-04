@@ -254,6 +254,13 @@ fn add_bin_features(g: &mut FeatureGraph) {
 }
 
 fn add_codex_features(g: &mut FeatureGraph) {
+    g.add(
+        "codex-md",
+        PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.codex/AGENTS.md"),
+    )
+    .condition(PathExists::new("~/.codex"))
+    .build();
+
     // Agents directory + files
     let codex_agents_dir = g
         .add("codex-agents-dir", ManagedDirectory::new("~/.codex/agents"))

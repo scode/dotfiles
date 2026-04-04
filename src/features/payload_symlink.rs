@@ -369,6 +369,28 @@ mod tests {
     }
 
     #[test]
+    fn install_succeeds_when_source_is_symlink() {
+        let ctx = TestContext::new();
+        ctx.create_source_file("real-source", "symlinked content");
+        symlink(
+            ctx.source_dir.path().join("real-source"),
+            ctx.source_dir.path().join("source-link"),
+        )
+        .unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("source-link", dest_str);
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+
+        let dest = ctx.dest_path("link");
+        assert!(dest.symlink_metadata().unwrap().file_type().is_symlink());
+        let contents = fs::read_to_string(&dest).unwrap();
+        assert_eq!(contents, "symlinked content");
+    }
+
+    #[test]
     fn symlink_remains_valid_after_source_content_change() {
         let ctx = TestContext::new();
         let source_path = ctx.create_source_file("source", "original");
