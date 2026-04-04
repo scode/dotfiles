@@ -1,11 +1,18 @@
 ---
 name: sapling
-description: Use only when the user explicitly invokes `/sapling` or `$sapling`.
+description: Use when the user indicates they want to work with Sapling; after that initial signal, prefer Sapling by default for the rest of the conversation.
 ---
 
 # Sapling Stacked Diffs Workflow
 
 Use [Sapling](https://sapling-scm.com/) (`sl`) for stacked diffs and PR management on local Git repositories.
+
+Do not invoke this skill just because the repo could support Sapling or because stacked-diff workflow might be useful.
+The user needs to give some signal that they want Sapling, such as explicitly invoking `/sapling` or `$sapling`, asking
+to use Sapling, referring to `sl`, or otherwise making Sapling the requested tool.
+
+After that first signal, treat Sapling as the default VCS workflow for the rest of the conversation unless the user asks
+to switch away from it.
 
 Sapling runs on top of an existing `.git` repo — no `sl clone` or `.sl` repo needed. Just run `sl` commands in any git
 working tree.
