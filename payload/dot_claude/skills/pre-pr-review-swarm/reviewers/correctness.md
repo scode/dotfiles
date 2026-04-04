@@ -12,6 +12,9 @@
 Search for bugs, edge-case failures, regressions, and unsafe assumptions.
 
 - Focus on logic errors, off-by-one, resource leaks, race conditions, and missing error propagation.
+- Errors must propagate up the stack by default. Flag any code that silently discards or swallows an error unless there
+  is an explicit, obvious reason in the immediate context why the error is inconsequential. "Log and continue" without
+  propagation counts as swallowing.
 - Don't flag hypothetical edge cases that the surrounding code already precludes.
 - If you suspect a bug, trace the actual code path rather than speculating.
 - Check that tests actually assert the behavior they claim to test.
