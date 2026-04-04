@@ -9,6 +9,8 @@ The most important goal of docstrings and comments is to document the _why_ and 
 obviously inferred from the code. A secondary goal is to make the code skimmable — a reader scanning a file should be
 able to quickly build a mental model of its structure and purpose without reading every line of implementation.
 
+Always use the `scode-voice` skill when writing prose for documentation, docstrings, or inline comments.
+
 ## Docstrings
 
 Be liberal in writing docstrings. But stick to the _what_ and the _why_, don't document the how. Three purposes of
