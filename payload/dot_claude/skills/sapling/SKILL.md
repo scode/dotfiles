@@ -17,8 +17,9 @@ store) and makes network requests to GitHub.
 
 ## Critical Rules
 
-1. **NEVER commit or amend unless the user explicitly asks.** Wait for "amend the commit", "new commit", or similar
-   before touching the commit graph. Staging files (`sl add`) is fine without asking.
+1. **NEVER commit or amend unless the user explicitly asks, or asks to create/update/merge a PR for uncommitted local
+   changes.** Requests such as "make a PR", "submit this stack", or "merge it" implicitly authorize creating the
+   necessary local commit(s) first when the working copy is dirty. Staging files (`sl add`) is fine without asking.
 2. **NEVER create or update PRs unless the user explicitly asks.** Each PR operation requires fresh explicit consent.
 3. **ALWAYS stack new commits on top of the current working copy parent.** Never navigate to trunk first. Even if
    changes are logically independent, the default is to extend the stack. Only start a new stack off trunk when
@@ -148,6 +149,10 @@ Fetches commits from the remote. Does not modify local commits or the working co
 ## Creating PRs
 
 When the user asks to make a PR or submit the stack:
+
+- If the working copy has uncommitted changes, treat that request as implicit authorization to create the necessary
+  commit first. Do not stop just because the changes have not been committed yet.
+- Keep the commit message concise because its first line becomes the PR title.
 
 ```bash
 sl pr submit --stack
