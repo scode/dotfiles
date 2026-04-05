@@ -31,8 +31,10 @@ store) and makes network requests to GitHub.
 3. **ALWAYS stack new commits on top of the current working copy parent while the stack is live.** Never navigate to
    trunk first just to start a new diff. Even if changes are logically independent, the default is to extend the stack.
    Only start a new stack off trunk when explicitly asked.
-4. **Do not assume `sl pull` restacks anything.** It fetches remote state, but it does not rewrite local ancestry. If a
-   stack has landed ancestors or GitHub shows stale parent diffs, explicitly rebase the open stack onto `main`.
+4. **Use `sl pull --rebase` when a merged PR changed trunk.** Plain `sl pull` still updates the pulled remote graph and
+   bookmarks, but it does not rewrite local commits or the working copy. If a stack has landed ancestors or GitHub shows
+   stale parent diffs, start with `sl pull --rebase`. Only fall back to an explicit `sl rebase` repair when that still
+   leaves the stack parented on the pre-merge local commit.
 5. **Always submit from the top of the stack.** After rebases or `sl amend --to ...`, the working copy may be left on a
    lower commit. Running `sl pr submit --stack` from there can leave descendant PRs stale.
 6. **Do not run `sl` with `--help` or exploratory commands** unless a command fails with an unexpected error.
@@ -46,7 +48,8 @@ Use `sl ssl` (shorthand for `sl smartlog -T {ssl}`) to show the graph with GitHu
 
 Pay attention to landed ancestors. If `sl ssl` shows the bottom open commit parenting on a local commit annotated like
 `[Landed as ...]`, the stack is still based on the pre-merge local commit, not the landed `main` commit. That is a sign
-you need an explicit rebase before trusting GitHub's diffs.
+you need to sync the stack before trusting GitHub's diffs. Usually that means `sl goto top` followed by
+`sl pull --rebase`. If the landed ancestor is still in the chain after that, use an explicit `sl rebase` repair.
 
 ## Core Operations
 
@@ -137,22 +140,31 @@ To restack all commits in the current stack onto their latest parent versions:
 sl rebase --restack
 ```
 
-When a stack has been extended on top of a local commit that later landed on `main`, `sl pull` by itself is not enough.
-Use one of these explicitly:
+When a stack has been extended on top of a local commit that later landed on `main`, the normal repair is:
 
 ```bash
-sl pull
+sl goto top
+sl pull --rebase
+```
+
+Sapling documents `sl pull --rebase` as rebasing the current commit or current stack onto trunk. That is the right first
+move after a lower PR lands.
+
+If GitHub is still showing merged changes in an open PR after that, use a more explicit repair. Start from the top of
+the stack, then use one of these:
+
+```bash
 sl rebase --restack
 ```
 
 or, if the root of the open stack is clearly known:
 
 ```bash
-sl pull
 sl rebase -s <bottom-open-commit> -d main
 ```
 
-The second form is the safer repair when GitHub is still showing old merged changes in the bottom PR.
+The second form is the safer repair when GitHub is still showing old merged changes in the bottom PR, because it names
+the exact open sub-stack that should be moved onto `main`.
 
 ### Fold commits together
 
@@ -173,14 +185,16 @@ Opens an interactive editor to split the current commit's changes into multiple 
 ### Pull / sync with remote
 
 ```bash
-sl pull
+sl pull --rebase
 ```
 
-Fetches commits from the remote. It does **not** modify local commits or the working copy.
+Fetches commits from the remote and rebases the current commit or current stack onto trunk.
 
-If the stack includes landed ancestors, or if GitHub is still showing changes from already-merged commits in an open PR,
-follow `sl pull` with an explicit restack or rebase. Do not assume Sapling repaired the ancestry just because the remote
-state is now current.
+Use this as the normal sync-before-edit and sync-after-merge operation.
+
+Plain `sl pull` is still useful when you want remote graph and bookmark updates without rewriting local commits or the
+working copy. If the stack still includes landed ancestors after `sl pull --rebase`, or if GitHub is still showing
+changes from already-merged commits in an open PR, follow up with an explicit restack or targeted rebase.
 
 ## Creating PRs
 
@@ -224,8 +238,10 @@ sl pr submit --stack
 ```
 
 If the bottom PR still shows diff from an already-merged ancestor after submit, the stack is probably parented on the
-pre-merge local commit rather than the landed `main` commit. Fix the ancestry first with `sl rebase --restack` or
-`sl rebase -s <bottom-open-commit> -d main`, then submit again from the top.
+pre-merge local commit rather than the landed `main` commit. From the top of the stack, run `sl pull --rebase` first. If
+that is still not enough, fix the ancestry with `sl rebase --restack` or `sl rebase -s <bottom-open-commit> -d
+main`,
+then submit again from the top.
 
 ## Merging PRs
 
@@ -239,18 +255,22 @@ gh pr merge <number> --squash
 Wait for CI to pass before merging. `gh pr checks --watch --fail-fast` blocks until all checks finish, exiting non-zero
 on failure.
 
-**After every merge**, pull and rebase before doing anything else — including merging the next PR in the stack:
+**After every merge**, sync and restack before doing anything else — including merging the next PR in the stack:
 
 ```bash
-sl pull
-sl rebase -d main
+sl goto top
+sl pull --rebase
 sl goto top
 sl pr submit --stack
 ```
 
-This must happen between each merge. For a stack of five PRs, merge the bottom one, pull + rebase + resubmit, then merge
-the next one, pull + rebase + resubmit, and so on. Without the rebase, the remaining PRs stay parented on the pre-merge
-commit and their GitHub diffs will include the already-merged changes.
+This must happen between each merge. For a stack of five PRs, merge the bottom one, `sl goto top`, `sl pull --rebase`,
+`sl pr submit --stack`, then merge the next one, and so on.
+
+If `sl ssl` still shows the remaining stack hanging off a `[Landed as ...]` ancestor after `sl pull --rebase`, stop and
+repair the ancestry explicitly with `sl rebase --restack` or `sl rebase -s <bottom-open-commit> -d main` before
+resubmitting. The goal is that the next PR is rebased onto the real landed trunk commit, so GitHub does not keep showing
+already-merged changes from the previous PR.
 
 ## Undo
 
