@@ -28,10 +28,14 @@ store) and makes network requests to GitHub.
    changes.** Requests such as "make a PR", "submit this stack", or "merge it" implicitly authorize creating the
    necessary local commit(s) first when the working copy is dirty. Staging files (`sl add`) is fine without asking.
 2. **NEVER create or update PRs unless the user explicitly asks.** Each PR operation requires fresh explicit consent.
-3. **ALWAYS stack new commits on top of the current working copy parent.** Never navigate to trunk first. Even if
-   changes are logically independent, the default is to extend the stack. Only start a new stack off trunk when
-   explicitly asked.
-4. **Do not run `sl` with `--help` or exploratory commands** unless a command fails with an unexpected error.
+3. **ALWAYS stack new commits on top of the current working copy parent while the stack is live.** Never navigate to
+   trunk first just to start a new diff. Even if changes are logically independent, the default is to extend the stack.
+   Only start a new stack off trunk when explicitly asked.
+4. **Do not assume `sl pull` restacks anything.** It fetches remote state, but it does not rewrite local ancestry. If a
+   stack has landed ancestors or GitHub shows stale parent diffs, explicitly rebase the open stack onto `main`.
+5. **Always submit from the top of the stack.** After rebases or `sl amend --to ...`, the working copy may be left on a
+   lower commit. Running `sl pr submit --stack` from there can leave descendant PRs stale.
+6. **Do not run `sl` with `--help` or exploratory commands** unless a command fails with an unexpected error.
 
 ## Stack Visualization
 
@@ -39,6 +43,10 @@ Run `sl` (no arguments) or `sl smartlog` to display the commit graph. This shows
 and commit hashes.
 
 Use `sl ssl` (shorthand for `sl smartlog -T {ssl}`) to show the graph with GitHub PR status annotations.
+
+Pay attention to landed ancestors. If `sl ssl` shows the bottom open commit parenting on a local commit annotated like
+`[Landed as ...]`, the stack is still based on the pre-merge local commit, not the landed `main` commit. That is a sign
+you need an explicit rebase before trusting GitHub's diffs.
 
 ## Core Operations
 
@@ -129,6 +137,23 @@ To restack all commits in the current stack onto their latest parent versions:
 sl rebase --restack
 ```
 
+When a stack has been extended on top of a local commit that later landed on `main`, `sl pull` by itself is not enough.
+Use one of these explicitly:
+
+```bash
+sl pull
+sl rebase --restack
+```
+
+or, if the root of the open stack is clearly known:
+
+```bash
+sl pull
+sl rebase -s <bottom-open-commit> -d main
+```
+
+The second form is the safer repair when GitHub is still showing old merged changes in the bottom PR.
+
 ### Fold commits together
 
 ```bash
@@ -151,7 +176,11 @@ Opens an interactive editor to split the current commit's changes into multiple 
 sl pull
 ```
 
-Fetches commits from the remote. Does not modify local commits or the working copy.
+Fetches commits from the remote. It does **not** modify local commits or the working copy.
+
+If the stack includes landed ancestors, or if GitHub is still showing changes from already-merged commits in an open PR,
+follow `sl pull` with an explicit restack or rebase. Do not assume Sapling repaired the ancestry just because the remote
+state is now current.
 
 ## Creating PRs
 
@@ -160,8 +189,10 @@ When the user asks to make a PR or submit the stack:
 - If the working copy has uncommitted changes, treat that request as implicit authorization to create the necessary
   commit first. Do not stop just because the changes have not been committed yet.
 - Keep the commit message concise because its first line becomes the PR title.
+- First move to the top of the stack so the full descendant chain is in scope for submission.
 
 ```bash
+sl goto top
 sl pr submit --stack
 ```
 
@@ -177,6 +208,7 @@ sl pr submit
 To create PRs as drafts:
 
 ```bash
+sl goto top
 sl pr submit --draft --stack
 ```
 
@@ -184,8 +216,16 @@ After submitting, display the PR URLs from the output to the user. Use `sl ssl` 
 
 ### Update existing PRs
 
-After amending commits or adding new commits, re-run `sl pr submit --stack` to push updates to existing PRs and create
-PRs for new commits.
+After amending commits, adding new commits, or rebasing the stack, re-run submission from the top:
+
+```bash
+sl goto top
+sl pr submit --stack
+```
+
+If the bottom PR still shows diff from an already-merged ancestor after submit, the stack is probably parented on the
+pre-merge local commit rather than the landed `main` commit. Fix the ancestry first with `sl rebase --restack` or
+`sl rebase -s <bottom-open-commit> -d main`, then submit again from the top.
 
 ## Merging PRs
 
@@ -204,6 +244,7 @@ on failure.
 ```bash
 sl pull
 sl rebase -d main
+sl goto top
 sl pr submit --stack
 ```
 
