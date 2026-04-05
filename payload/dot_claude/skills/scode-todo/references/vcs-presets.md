@@ -55,7 +55,8 @@ This preset assumes Sapling is the primary CLI for the repo.
 
 Why these commands:
 
-- `sl pull` on its own only downloads commits; `--rebase` makes it act more like a sync-before-edit operation.
+- `sl pull` updates the pulled remote graph and bookmarks; `--rebase` makes it the normal sync operation before editing
+  and, from the top of the stack, after a lower PR in that stack lands.
 - `sl push --rev . --to <bookmark>` pushes the current commit to the chosen remote bookmark.
 - `sl commit --addremove --message` rolls the add/remove step into the commit so the wrapper stays a single operation.
 
