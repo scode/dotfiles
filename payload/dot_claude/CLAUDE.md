@@ -40,6 +40,8 @@ the change is, unless the change is particularly large and a brief TLDR overview
 
 Do not make lists of things changed.
 
+Do not add "Co-Authored-By" trailers or "Generated with Claude Code" badges to commits or PRs.
+
 # Testability and tests
 
 DO NOT write, or accept during code review, tests that modify environment variables of the process running the test.
