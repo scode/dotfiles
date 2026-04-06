@@ -11,6 +11,10 @@ team branch-management workflow.
 Use `jj` as the source of truth for history. Use `gh` only because GitHub PRs are based on branch names, while `jj`
 manages changes and bookmarks.
 
+If the user explicitly asks to use `jj`, `Jujutsu`, or `$jjstack`, treat that as direction to use this workflow even in
+a plain Git checkout. Do not silently fall back to a Git-only flow just because the repo has not been bootstrapped yet.
+Initialize `jj` in place first unless the user explicitly says not to.
+
 ## What to optimize for
 
 Keep one reviewable change per commit. Keep one stable bookmark per reviewable commit. Keep one PR per bookmark.
@@ -26,6 +30,11 @@ If you let those drift apart, the stack gets annoying fast.
 ## Expected user commands
 
 This skill should treat a few natural-language requests as specific workflow intents.
+
+An explicit request to use `jj`, `Jujutsu`, or `$jjstack` is itself a workflow instruction. If the current checkout is
+not already bootstrapped for `jj`, the default behavior is to run `jj git init --git-repo .` from the repo root and
+continue with the `jj` workflow. Only stop to ask instead of initializing when doing so would be risky in context or the
+user explicitly asked you not to modify repo setup.
 
 - "make a PR" or "create a PR" Create a new stacked PR for the current reviewable change. In practice that usually means
   making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR whose base is
@@ -57,6 +66,7 @@ Before doing anything substantial:
 - make sure `jj` is installed and `jj --version` works
 - make sure `gh auth status` works
 - make sure `jj config get user.name` and `jj config get user.email` are set
+- if the user explicitly asked for `jj` and this is still a plain Git checkout, bootstrap `jj` before doing the rest
 
 If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain,
 `cargo install --locked --bin jj jj-cli` is a reasonable generic fallback.
@@ -85,6 +95,10 @@ For an existing plain Git checkout, initialize jj in place from the repo root:
 ```bash
 jj git init --git-repo .
 ```
+
+When the user explicitly asked for `jj`, this initialization step is the default, not an optional suggestion. The
+mistake to avoid here is noticing that the repo is plain Git and then drifting into a Git-only PR flow. If `jj` is
+installed and the checkout is an ordinary Git repo, initialize `jj` and keep going.
 
 After bootstrapping, start from `trunk()` if jj defined it. That is the safest default because it follows the imported
 default branch instead of assuming a local `main` exists. If `trunk()` is not defined, inspect `jj bookmark list` and
