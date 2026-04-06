@@ -36,6 +36,12 @@ not already bootstrapped for `jj`, the default behavior is to run `jj git init -
 continue with the `jj` workflow. Only stop to ask instead of initializing when doing so would be risky in context or the
 user explicitly asked you not to modify repo setup.
 
+When an agent is driving this workflow from a sandboxed environment, prefer running the actual `jj` and `gh` workflow
+commands outside the sandbox by default. In practice `jj` often needs to lock Git metadata such as `packed-refs`, and
+`gh` often needs access to the host credential store or keyring. Do not burn time proving the sandbox is broken first if
+the task is clearly "use `jj` to manage history and `gh` to manage the PR". Start outside the sandbox unless the
+environment already guarantees those operations work inside it.
+
 - "make a PR" or "create a PR" Create a new stacked PR for the current reviewable change. In practice that usually means
   making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR whose base is
   the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR.
@@ -67,11 +73,27 @@ Before doing anything substantial:
 - make sure `gh auth status` works
 - make sure `jj config get user.name` and `jj config get user.email` are set
 - if the user explicitly asked for `jj` and this is still a plain Git checkout, bootstrap `jj` before doing the rest
+- if the agent is sandboxed, prefer unsandboxed execution for `jj` and `gh` commands that actually drive the workflow
 
 If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain,
 `cargo install --locked --bin jj jj-cli` is a reasonable generic fallback.
 
-If `user.name` or `user.email` is missing, set it before making commits:
+If `jj` `user.name` or `user.email` is missing, first try to copy the existing Git identity into repo-local `jj` config
+before making commits:
+
+```bash
+jj config set --repo user.name "$(git config user.name)"
+jj config set --repo user.email "$(git config user.email)"
+```
+
+If the current working-copy commit was already created with the empty identity, update that author too before
+committing:
+
+```bash
+jj metaedit --update-author @
+```
+
+If Git also does not have a usable identity configured, set `jj` explicitly before making commits:
 
 ```bash
 jj config set --user user.name "Your Name"
@@ -114,6 +136,7 @@ described in the jj docs:
 ## Default rules
 
 - Prefer `jj` commands over `git` for history manipulation.
+- When the agent is sandboxed, prefer running real `jj` and `gh` workflow commands outside the sandbox by default.
 - Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
   every local bookmark published.
