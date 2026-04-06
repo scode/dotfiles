@@ -31,6 +31,12 @@ pub struct TestContext {
     pub dest_dir: TempDir,
 }
 
+impl Default for TestContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestContext {
     /// Creates a new test context with fresh temporary directories.
     pub fn new() -> Self {

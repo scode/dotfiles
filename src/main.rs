@@ -217,6 +217,15 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-jjstack",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/jjstack",
+            "~/.claude/skills/jjstack",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-sapling",
         PayloadSymlink::new(
             "payload/dot_claude/skills/sapling",
@@ -351,6 +360,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "payload/dot_claude/skills/slstack",
             "~/.codex/skills/slstack",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-jjstack",
+        PayloadSymlink::new(
+            "payload/dot_claude/skills/jjstack",
+            "~/.codex/skills/jjstack",
         ),
     )
     .depends_on(&codex_skills_dir)
