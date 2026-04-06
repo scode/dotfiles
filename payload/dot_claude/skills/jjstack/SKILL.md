@@ -63,7 +63,9 @@ environment already guarantees those operations work inside it.
   that change.
 - "merge the PR" or "merge this PR" Default to squash merge unless the user explicitly asks for a different merge
   strategy. In practice that usually means `gh pr merge --squash ...`, and in a stack it means landing the bottom PR
-  first, then restacking any descendants if the squash changed the commit shape GitHub sees.
+  first, then restacking any descendants if the squash changed the commit shape GitHub sees. In detached Git checkouts,
+  do not rely on `gh` inferring the current branch; pass the PR number explicitly, pass `-R owner/repo`, and prefer
+  `--match-head-commit <sha>` when you already know the expected head commit.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, push back. In this workflow,
 "make/create" means a new stacked PR, while "update" means revise the existing one.
@@ -107,6 +109,13 @@ If you do not do this, later commit-creating commands will use an empty identity
 in a normal GitHub workflow. If you need repo-local identity instead of a user-global one, use `--repo` instead of
 `--user`.
 
+After `jj git init` in an existing working tree, treat author repair as part of bootstrap, not as optional cleanup:
+
+1. copy the Git identity into repo-local `jj` config
+2. run `jj metaedit --update-author @` if the working-copy commit already exists with an empty author
+
+If you skip that, the first commit you create from the bootstrapped working copy may inherit a broken identity.
+
 ## Bootstrapping a repo into jj
 
 For a fresh clone, prefer cloning with jj directly:
@@ -136,13 +145,21 @@ described in the jj docs:
 - `https://docs.jj-vcs.dev/latest/github/`
 - `https://docs.jj-vcs.dev/latest/cli-reference/`
 
+Detached Git HEAD is normal in this workflow. Do not treat "not on any branch" as evidence that the checkout is broken.
+The jj graph and bookmark names are the source of truth. For `gh` commands, prefer explicit PR numbers, explicit
+`--head` values, and `-R owner/repo` rather than relying on Git branch inference.
+
 ## Default rules
 
 - Prefer `jj` commands over `git` for history manipulation.
 - When the agent is sandboxed, prefer running real `jj` and `gh` workflow commands outside the sandbox by default.
 - Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
+- Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
+  swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
+  files in the working copy.
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
-  every local bookmark published.
+  every local bookmark published. If the bookmark name contains `/` or you need exact matching instead of pattern
+  matching, use `jj git push --bookmark 'exact:<name>'`.
 - Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
   repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
   shape this workflow is usually trying to preserve.
@@ -191,14 +208,14 @@ jj bookmark set pr/second -r @-
 Publish only those bookmarks:
 
 ```bash
-jj git push --bookmark pr/first --bookmark pr/second
+jj git push --bookmark 'exact:pr/first' --bookmark 'exact:pr/second'
 ```
 
 Create PRs in order:
 
 ```bash
-gh pr create --base main --head pr/first --title "Add first change" --body "..."
-gh pr create --base pr/first --head pr/second --title "Add second change" --body "..."
+gh pr create -R owner/repo --base main --head pr/first --title "Add first change" --body "..."
+gh pr create -R owner/repo --base pr/first --head pr/second --title "Add second change" --body "..."
 ```
 
 The base branch of PR N should be the bookmark for PR N-1.
@@ -212,7 +229,7 @@ jj new pr/top
 # edit files
 jj commit -m "Address review comments"
 jj bookmark set pr/top -r @-
-jj git push --bookmark pr/top
+jj git push --bookmark 'exact:pr/top'
 ```
 
 If the project wants a clean rewritten commit instead:
@@ -221,7 +238,7 @@ If the project wants a clean rewritten commit instead:
 jj new pr/top
 # edit files
 jj squash -m "Original commit title"
-jj git push --bookmark pr/top
+jj git push --bookmark 'exact:pr/top'
 ```
 
 That second flow rewrites the bookmarked commit instead of adding a new one.
@@ -255,7 +272,7 @@ jj squash -m "Original descendant commit title"
 Repeat until the stack is clean, then push every bookmark whose commit changed:
 
 ```bash
-jj git push --bookmark pr/middle --bookmark pr/descendant
+jj git push --bookmark 'exact:pr/middle' --bookmark 'exact:pr/descendant'
 ```
 
 ## Inserting a new PR into the middle of an existing stack
@@ -282,9 +299,9 @@ After that:
 Example:
 
 ```bash
-jj git push --bookmark pr/inserted --bookmark pr/downstream
-gh pr create --base pr/previous --head pr/inserted --title "Add inserted change" --body "..."
-gh pr edit <downstream-pr-number> --base pr/inserted
+jj git push --bookmark 'exact:pr/inserted' --bookmark 'exact:pr/downstream'
+gh pr create -R owner/repo --base pr/previous --head pr/inserted --title "Add inserted change" --body "..."
+gh pr edit -R owner/repo <downstream-pr-number> --base pr/inserted
 ```
 
 That last `gh pr edit` step is mandatory whenever GitHub's PR parent should change.
@@ -296,7 +313,7 @@ Use these before and after push operations:
 ```bash
 jj log -r 'bookmarks() | @ | @-'
 jj bookmark list
-jj git push --bookmark pr/foo --dry-run
+jj git push --bookmark 'exact:pr/foo' --dry-run
 ```
 
 If you need to see what has changed since the last pushed version of a bookmark, `jj interdiff` is often the right tool:
@@ -313,6 +330,23 @@ Stop and surface the problem instead of improvising if:
 - `gh` auth is missing or the repo path is wrong in a non-colocated workspace
 - rewriting a lower commit causes conflicts you cannot resolve confidently
 - the requested GitHub PR shape does not match the bookmark ancestry anymore
+
+## After merging a PR
+
+After GitHub merges the PR, bring the local jj view back into sync before doing anything else:
+
+```bash
+jj git fetch --remote origin
+jj bookmark set main -r main@origin
+jj rebase -s @ -d main
+```
+
+The first command imports the new remote state. The second makes the local `main` bookmark match the merged remote
+bookmark. The third moves the usually-empty working-copy commit on top of the new `main` so the checkout is coherent
+again.
+
+If you are landing a stacked PR that does not target `main`, use the correct local and remote bookmark names instead of
+blindly pasting `main`.
 
 ## Practical notes
 
