@@ -61,6 +61,9 @@ environment already guarantees those operations work inside it.
   GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally. In practice, that
   usually means using `gh pr view 45` to find the head ref, then using `jj new <bookmark>` or another explicit move to
   that change.
+- "merge the PR" or "merge this PR" Default to squash merge unless the user explicitly asks for a different merge
+  strategy. In practice that usually means `gh pr merge --squash ...`, and in a stack it means landing the bottom PR
+  first, then restacking any descendants if the squash changed the commit shape GitHub sees.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, push back. In this workflow,
 "make/create" means a new stacked PR, while "update" means revise the existing one.
@@ -140,6 +143,9 @@ described in the jj docs:
 - Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
   every local bookmark published.
+- Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
+  repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
+  shape this workflow is usually trying to preserve.
 - Remember that after `jj commit`, the real commit is usually `@-`. `@` is typically the new empty working-copy commit.
 - Keep bookmark names stable once a PR exists. Move the bookmark to new commits; do not invent a fresh branch name for
   every revision.
