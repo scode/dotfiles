@@ -44,8 +44,34 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    - Findings at different code locations are never duplicates, even if they describe similar patterns.
 8. Present all findings to the user.
 9. If `nofix` was specified, stop here — do not make any changes.
-10. Otherwise, address actionable findings directly (per soul: default to fixing rather than asking).
+10. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
 11. If no actionable findings remain, state that explicitly before asking for PR creation.
+
+## Fixing findings
+
+Unless `nofix` was specified, the default is to fix every finding. Do not silently cherry-pick. Do not skip a finding
+because it feels low-value, cosmetic, or "nice to have" — if a reviewer surfaced it and the fix is clearly an
+improvement without major trade-offs, apply it.
+
+For each finding, place it into exactly one of these buckets:
+
+1. **Fix.** The finding is clearly correct and the change is clearly an improvement without major trade-offs. Apply the
+   fix. This is the default — most findings land here. Do not defer a fix because it is small, or because it touches
+   something outside the immediate diff but is clearly related to the change under review. "Trivial" is a reason to fix,
+   not a reason to skip.
+2. **Surface for user decision.** The finding is ambiguous: it is not clear whether the proposed change would actually
+   be correct, whether it reflects a real improvement, or whether it involves a trade-off the user should weigh (e.g.
+   behavior change, API change, performance vs. readability, scope creep into unrelated code). In this case, do not fix
+   silently and do not drop the finding. Surface it to the user with a concrete question and your current reading, then
+   wait.
+3. **Reject with reason.** The finding is wrong, based on a misreading of the code, or already addressed elsewhere.
+   State briefly why you are rejecting it.
+
+Do not invent a fourth bucket of "valid but not worth fixing". If you find yourself reaching for that framing, the
+finding belongs in bucket 1. If you genuinely believe a valid finding should not be fixed in this PR, that is a
+trade-off call — put it in bucket 2 and let the user decide.
+
+After fixing, report per-finding what you did: fixed, surfaced (with the question), or rejected (with the reason).
 
 ## Reviewers
 
