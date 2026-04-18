@@ -169,6 +169,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
   every local bookmark published. If the bookmark name contains `/` or you need exact matching instead of pattern
   matching, use `jj git push --bookmark 'exact:<name>'`.
+- Never splice arbitrary PR text directly into a shell command. If a PR title or body came from the user, the model, a
+  commit message, or `gh pr view --json ...`, materialize it first and pass it to `gh` through a quoted variable for the
+  title and `--body-file` for the body. Do not improvise escaping for backticks, `$()`, quotes, or multi-line markdown.
 - Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
   repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
   shape this workflow is usually trying to preserve.
@@ -180,6 +183,58 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Do not let anything else mutate the same working copy while a `jj` command is running. That includes another `jj`
   process, `git`, an editor auto-save doing broad rewrites, or another shell touching the same files. jj snapshots the
   working copy at command boundaries, so concurrent mutation is an easy way to confuse yourself.
+
+## Passing PR text to gh safely
+
+This part is easy to get wrong and the failure mode is dumb: the shell eats markdown or code spans, and you silently
+publish a mangled PR title or body.
+
+Do not do this with real text:
+
+```bash
+gh pr create ... --title "some title with `code`" --body "multi-line body ..."
+```
+
+That style is only safe for toy placeholders. It is not a real workflow for arbitrary content.
+
+When you need to create or edit a PR with actual text, use this pattern instead:
+
+```bash
+title_file=$(mktemp)
+body_file=$(mktemp)
+
+cat >"$title_file" <<'EOF'
+feat: add first change
+EOF
+
+cat >"$body_file" <<'EOF'
+This explains why the change exists.
+
+It may contain `code`, "$vars", $(subshells), single quotes, double quotes, and blank lines.
+EOF
+
+title=$(tr -d '\n' <"$title_file")
+gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
+
+rm -f "$title_file" "$body_file"
+```
+
+Use the same pattern for `gh pr edit`:
+
+```bash
+title=$(tr -d '\n' <"$title_file")
+gh pr edit <pr-number> -R owner/repo --title "$title" --body-file "$body_file"
+```
+
+The important parts are:
+
+- use a single-quoted heredoc delimiter like `<<'EOF'` when writing literal text
+- keep the title in a quoted variable, not inline in the command text
+- pass the body with `--body-file`, not `--body`
+- if you fetched existing text from GitHub and want to preserve it exactly, write it to files first and then reuse the
+  same file-based flow
+
+Do not ad-lib shell escaping here. Use the file-and-variable pattern every time.
 
 ## Starting a new stack
 
@@ -222,9 +277,11 @@ jj git push --bookmark 'exact:pr/first' --bookmark 'exact:pr/second'
 
 Create PRs in order:
 
+Prepare the correct `title` and `body_file` for each PR using the safe pattern above, then run:
+
 ```bash
-gh pr create -R owner/repo --base main --head pr/first --title "Add first change" --body "..."
-gh pr create -R owner/repo --base pr/first --head pr/second --title "Add second change" --body "..."
+gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
 ```
 
 The base branch of PR N should be the bookmark for PR N-1.
@@ -307,9 +364,11 @@ After that:
 
 Example:
 
+Assuming `title` and `body_file` were prepared with the safe pattern above:
+
 ```bash
 jj git push --bookmark 'exact:pr/inserted' --bookmark 'exact:pr/downstream'
-gh pr create -R owner/repo --base pr/previous --head pr/inserted --title "Add inserted change" --body "..."
+gh pr create -R owner/repo --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
 gh pr edit -R owner/repo <downstream-pr-number> --base pr/inserted
 ```
 
