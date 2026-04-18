@@ -44,7 +44,10 @@ environment already guarantees those operations work inside it.
 
 - "make a PR" or "create a PR" Create a new stacked PR for the current reviewable change. In practice that usually means
   making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR whose base is
-  the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR.
+  the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR. If the current bookmark
+  already has a PR but the working copy contains new intended reviewable work on top of it, default to "make the next
+  PR" rather than pushing back. In this workflow that is a very common meaning of "make a PR": turn the new top-of-stack
+  work into its own commit, bookmark it, and open a new PR based on the existing one.
 - "update the PR" Update the existing PR for the current bookmark. Do not create a new bookmark or a new PR unless the
   user explicitly asks for that. Rewrite or extend the current change, push the same bookmark again, and keep the same
   PR number.
@@ -67,8 +70,11 @@ environment already guarantees those operations work inside it.
   do not rely on `gh` inferring the current branch; pass the PR number explicitly, pass `-R owner/repo`, and prefer
   `--match-head-commit <sha>` when you already know the expected head commit.
 
-If the user says only "make a PR" and there is already a PR for the current bookmark, push back. In this workflow,
-"make/create" means a new stacked PR, while "update" means revise the existing one.
+If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
+First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
+create that next PR on top of the existing one. Only push back when there is already a PR for the current bookmark and
+there is no meaningful new work to turn into a new stacked PR. In that narrower case, "make/create" would be ambiguous
+or wrong, while "update" means revise the existing PR.
 
 ## Preconditions
 
@@ -157,6 +163,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
   swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
   files in the working copy.
+- When the user asks to "make/create a PR" and the current bookmark already has an open PR, treat new intended
+  working-copy changes as a request to create the next stacked PR by default. Do not force the user to say "make the
+  next PR" unless there is genuine ambiguity about whether the working-copy changes are intended for a new review unit.
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
   every local bookmark published. If the bookmark name contains `/` or you need exact matching instead of pattern
   matching, use `jj git push --bookmark 'exact:<name>'`.
