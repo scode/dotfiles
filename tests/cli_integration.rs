@@ -17,6 +17,51 @@ fn setup_fake_home() -> TempDir {
     home
 }
 
+fn read_json(home: &TempDir, relative_path: &str) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(home.path().join(relative_path)).unwrap())
+        .unwrap()
+}
+
+const EXPECTED_CLAUDE_ALLOW: &[&str] = &[
+    "Bash(cargo build)",
+    "Bash(cargo clippy:*)",
+    "Bash(cargo fmt:*)",
+    "Bash(codex exec*)",
+    "Bash(dprint check:*)",
+    "Bash(dprint fmt:*)",
+    "Bash(gemini -s -p*)",
+    "Bash(git diff*)",
+    "Bash(gh run list*)",
+    "Bash(gh run view*)",
+    "Bash(gh run watch*)",
+    "Bash(git show*)",
+    "Bash(gt add:*)",
+    "Bash(gt create:*)",
+    "Bash(gt log:*)",
+    "Bash(gt restack:*)",
+    "Bash(gt submit:*)",
+    "Bash(gt sync:*)",
+    "Bash(stax:*)",
+    "Bash(gh pr:*)",
+    "Bash(sl:*)",
+    "Skill(scode-graphite)",
+    "WebFetch(domain:index.crates.io)",
+    "Bash(leiter:*)",
+    "Read(~/.leiter/soul.md)",
+    "Edit(~/.leiter/soul.md)",
+    "Write(~/.leiter/soul.md)",
+];
+
+fn assert_expected_claude_allow(settings: &serde_json::Value) {
+    let allow = settings["permissions"]["allow"].as_array().unwrap();
+    for expected in EXPECTED_CLAUDE_ALLOW {
+        assert!(
+            allow.iter().any(|entry| entry == expected),
+            "expected permissions.allow to contain {expected}"
+        );
+    }
+}
+
 #[test]
 fn test_install_creates_symlinks() {
     let fake_home = setup_fake_home();
@@ -33,9 +78,26 @@ fn test_install_creates_symlinks() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify symlinks created
+    // Verify the Claude markdown symlink and managed settings file were created
     let claude_md = fake_home.path().join(".claude/CLAUDE.md");
     assert!(claude_md.is_symlink(), "expected .claude/CLAUDE.md symlink");
+
+    let claude_settings = fake_home.path().join(".claude/settings.json");
+    assert!(
+        claude_settings.is_file(),
+        "expected .claude/settings.json file"
+    );
+    assert!(
+        !claude_settings.is_symlink(),
+        "expected .claude/settings.json to be a regular file"
+    );
+    let settings = read_json(&fake_home, ".claude/settings.json");
+    assert_eq!(settings["sandbox"]["enabled"], serde_json::json!(true));
+    assert_eq!(
+        settings["statusLine"]["command"],
+        serde_json::json!("~/bin/claude-statusline.sh")
+    );
+    assert_expected_claude_allow(&settings);
 
     // Verify it points to payload/ with a relative path
     let target = std::fs::read_link(&claude_md).unwrap();
@@ -113,8 +175,9 @@ fn test_uninstall_removes_symlinks() {
         String::from_utf8_lossy(&install_output.stderr)
     );
 
-    // Verify symlink exists before uninstall
+    // Verify installed Claude artifacts exist before uninstall
     let claude_md = fake_home.path().join(".claude/CLAUDE.md");
+    let claude_settings = fake_home.path().join(".claude/settings.json");
     let codex_agent = fake_home
         .path()
         .join(".codex/agents/code-review-specialist.md");
@@ -124,6 +187,10 @@ fn test_uninstall_removes_symlinks() {
     let codex_jjstack_skill = fake_home.path().join(".codex/skills/jjstack");
     let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
+    assert!(
+        claude_settings.is_file() && !claude_settings.is_symlink(),
+        "settings file should exist after install"
+    );
     assert!(
         codex_agent.is_symlink(),
         "codex symlink should exist after install"
@@ -162,10 +229,14 @@ fn test_uninstall_removes_symlinks() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify symlinks removed
+    // Verify uninstall removes symlinks but leaves the managed settings file
     assert!(
         !claude_md.exists() && !claude_md.is_symlink(),
         "symlink should be removed after uninstall"
+    );
+    assert!(
+        claude_settings.is_file() && !claude_settings.is_symlink(),
+        "settings file should be left intact after uninstall"
     );
     assert!(
         !codex_agent.exists() && !codex_agent.is_symlink(),
@@ -214,9 +285,14 @@ fn test_install_idempotent() {
 
     // Symlinks still work
     let claude_md = fake_home.path().join(".claude/CLAUDE.md");
+    let claude_settings = fake_home.path().join(".claude/settings.json");
     assert!(
         claude_md.is_symlink(),
         "symlink should exist after double install"
+    );
+    assert!(
+        claude_settings.is_file() && !claude_settings.is_symlink(),
+        "settings file should remain a regular file after double install"
     );
     assert!(
         fake_home
@@ -423,7 +499,6 @@ fn test_all_symlinks_are_relative() {
     // Check several symlinks are relative
     let symlinks_to_check = [
         ".claude/CLAUDE.md",
-        ".claude/settings.json",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",
@@ -449,4 +524,51 @@ fn test_all_symlinks_are_relative() {
             );
         }
     }
+}
+
+#[test]
+fn test_install_migrates_legacy_claude_settings_symlink() {
+    let fake_home = setup_fake_home();
+    let settings_path = fake_home.path().join(".claude/settings.json");
+    let settings_dir = settings_path.parent().unwrap();
+    let legacy_target = dotfiles::util::fs::compute_relative_path(
+        settings_dir,
+        &std::env::current_dir()
+            .unwrap()
+            .join("payload/dot_claude/settings.json"),
+    );
+    std::os::unix::fs::symlink(&legacy_target, &settings_path).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        settings_path.is_file() && !settings_path.is_symlink(),
+        "legacy symlink should be replaced with a regular file"
+    );
+
+    let settings = read_json(&fake_home, ".claude/settings.json");
+    assert!(
+        settings.get("hooks").is_none(),
+        "legacy unmanaged keys should be dropped"
+    );
+    assert!(
+        settings.get("enabledPlugins").is_none(),
+        "legacy unmanaged keys should be dropped"
+    );
+    assert_eq!(settings["sandbox"]["enabled"], serde_json::json!(true));
+    assert_eq!(
+        settings["statusLine"]["command"],
+        serde_json::json!("~/bin/claude-statusline.sh")
+    );
+    assert_expected_claude_allow(&settings);
 }

@@ -19,6 +19,10 @@ Examples:
   gets cleaned up.
 - **Moving files between directories**: both add the new symlink at the new path _and_ add a `DeleteSymlink` for the old
   path. See the `delete-claude-agent-*` entries in `add_claude_features` for a real example of this pattern.
+- **Replacing a symlinked config blob with in-place managed state**: teach the new feature how to recognize and migrate
+  the old installer-owned symlink. Do not assume every former symlink should be deleted outright; some migrations, like
+  `~/.claude/settings.json`, need to replace the symlink with a regular user-owned file and then manage only a subset of
+  its contents.
 
 The general rule: never assume a clean slate. If a path was previously installed, emit a removal feature for it.
 
