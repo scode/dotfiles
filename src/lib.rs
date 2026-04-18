@@ -5,6 +5,6 @@ pub mod util;
 
 pub use condition::{Condition, PathExists};
 pub use features::{
-    DeleteSymlink, Feature, FeatureResult, ManagedDirectory, PayloadSymlink, RawSymlink,
+    DeleteSymlink, Feature, FeatureResult, JsonEnsure, ManagedDirectory, PayloadSymlink, RawSymlink,
 };
 pub use graph::{FeatureBuilder, FeatureGraph, FeatureHandle, RunStats};

@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+# JsonEnsure rewrites only owned keys and should avoid gratuitously reordering
+# unrelated user-managed keys when it touches an existing config file.
+serde_json = { version = "1", features = ["preserve_order"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

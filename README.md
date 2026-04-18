@@ -1,6 +1,6 @@
 # dotfiles
 
-A personal dotfiles manager that installs and uninstalls personal configuration.
+A personal dotfiles manager for symlinks and a small amount of managed config state.
 
 ## Usage
 
@@ -11,6 +11,10 @@ cargo run -- install
 # Uninstall all features
 cargo run -- uninstall
 ```
+
+NOTE: `uninstall` is not a full rollback for every feature. In particular, Claude settings are now merged into
+`~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
+does not remove or revert it.
 
 ## Claude Code Plugins
 

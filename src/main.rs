@@ -1,11 +1,43 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use serde_json::json;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use dotfiles::{
-    DeleteSymlink, FeatureGraph, ManagedDirectory, PathExists, PayloadSymlink, RawSymlink,
+    DeleteSymlink, FeatureGraph, FeatureHandle, JsonEnsure, ManagedDirectory, PathExists,
+    PayloadSymlink, RawSymlink,
 };
+
+const CLAUDE_PERMISSIONS_ALLOW: &[&str] = &[
+    "Bash(cargo build)",
+    "Bash(cargo clippy:*)",
+    "Bash(cargo fmt:*)",
+    "Bash(codex exec*)",
+    "Bash(dprint check:*)",
+    "Bash(dprint fmt:*)",
+    "Bash(gemini -s -p*)",
+    "Bash(git diff*)",
+    "Bash(gh run list*)",
+    "Bash(gh run view*)",
+    "Bash(gh run watch*)",
+    "Bash(git show*)",
+    "Bash(gt add:*)",
+    "Bash(gt create:*)",
+    "Bash(gt log:*)",
+    "Bash(gt restack:*)",
+    "Bash(gt submit:*)",
+    "Bash(gt sync:*)",
+    "Bash(stax:*)",
+    "Bash(gh pr:*)",
+    "Bash(sl:*)",
+    "Skill(scode-graphite)",
+    "WebFetch(domain:index.crates.io)",
+    "Bash(leiter:*)",
+    "Read(~/.leiter/soul.md)",
+    "Edit(~/.leiter/soul.md)",
+    "Write(~/.leiter/soul.md)",
+];
 
 fn add_zed_features(g: &mut FeatureGraph) {
     g.add(
@@ -63,21 +95,45 @@ fn add_ghostty_features(g: &mut FeatureGraph) {
     .build();
 }
 
-fn add_claude_features(g: &mut FeatureGraph) {
+fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) {
     g.add(
         "claude-md",
         PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.claude/CLAUDE.md"),
     )
     .condition(PathExists::new("~/.claude"))
     .build();
+    let claude_settings_base = g
+        .add(
+            "claude-settings-base",
+            JsonEnsure::new("~/.claude/settings.json")
+                // This deleted payload path is still the marker for legacy
+                // installer-owned symlinks that need in-place migration.
+                .legacy_payload_symlink_source("payload/dot_claude/settings.json")
+                .ensure_strings_in_array(
+                    &["permissions", "allow"],
+                    CLAUDE_PERMISSIONS_ALLOW.iter().copied(),
+                )
+                .ensure_value(&["sandbox", "enabled"], json!(true)),
+        )
+        .condition(PathExists::new("~/.claude"))
+        .build();
+
+    // Statusline ordering matters, but it is not a prerequisite for the rest
+    // of the settings merge. Keep it as a separate feature so a bin install
+    // problem does not suppress permissions/sandbox management.
     g.add(
-        "claude-settings",
-        PayloadSymlink::new(
-            "payload/dot_claude/settings.json",
-            "~/.claude/settings.json",
+        "claude-settings-statusline",
+        JsonEnsure::new("~/.claude/settings.json").ensure_value_if_path_exists(
+            &["statusLine"],
+            "~/bin/claude-statusline.sh",
+            json!({
+                "type": "command",
+                "command": "~/bin/claude-statusline.sh"
+            }),
         ),
     )
-    .condition(PathExists::new("~/.claude"))
+    .depends_on(&claude_settings_base)
+    .depends_on(claude_statusline)
     .build();
 
     // Commands directory + files
@@ -258,7 +314,7 @@ fn add_claude_features(g: &mut FeatureGraph) {
     .build();
 }
 
-fn add_bin_features(g: &mut FeatureGraph) {
+fn add_bin_features(g: &mut FeatureGraph) -> FeatureHandle {
     let bin_dir = g.add("bin-dir", ManagedDirectory::new("~/bin")).build();
     g.add(
         "bin-claude-statusline",
@@ -268,7 +324,7 @@ fn add_bin_features(g: &mut FeatureGraph) {
         ),
     )
     .depends_on(&bin_dir)
-    .build();
+    .build()
 }
 
 fn add_codex_features(g: &mut FeatureGraph) {
@@ -404,8 +460,8 @@ fn features() -> FeatureGraph {
     let mut g = FeatureGraph::new();
     add_zed_features(&mut g);
     add_ghostty_features(&mut g);
-    add_bin_features(&mut g);
-    add_claude_features(&mut g);
+    let claude_statusline = add_bin_features(&mut g);
+    add_claude_features(&mut g, &claude_statusline);
     add_codex_features(&mut g);
     g
 }
