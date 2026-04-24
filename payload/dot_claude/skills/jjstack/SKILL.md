@@ -160,6 +160,10 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Prefer `jj` commands over `git` for history manipulation.
 - When the agent is sandboxed, prefer running real `jj` and `gh` workflow commands outside the sandbox by default.
 - Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
+- Do not parallelize stateful workflow steps. In particular, `jj commit`, `jj bookmark set`, `jj git push`,
+  `gh pr create`, and `gh pr edit` must be treated as ordered mutations of one shared state machine, not as independent
+  chores you can fan out. Run them one at a time and re-read state between steps when the next command depends on
+  revsets like `@-`.
 - Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
   swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
   files in the working copy.
@@ -176,6 +180,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
   shape this workflow is usually trying to preserve.
 - Remember that after `jj commit`, the real commit is usually `@-`. `@` is typically the new empty working-copy commit.
+- That means the sequence matters. If you need `jj bookmark set <name> -r @-`, run it only after `jj commit` has
+  finished. Do not start `jj commit` and `jj bookmark set -r @-` concurrently or you can race against the old graph and
+  pin the bookmark to the parent change instead of the new reviewable commit.
 - Keep bookmark names stable once a PR exists. Move the bookmark to new commits; do not invent a fresh branch name for
   every revision.
 - After you change stack shape, update GitHub PR bases explicitly with `gh pr edit --base ...`. GitHub will not infer jj
@@ -298,6 +305,9 @@ jj bookmark set pr/top -r @-
 jj git push --bookmark 'exact:pr/top'
 ```
 
+Those are intentionally separate commands. Do not batch them into one parallel tool call. `jj bookmark set pr/top -r @-`
+is only correct after the commit has completed and the working-copy graph has advanced.
+
 If the project wants a clean rewritten commit instead:
 
 ```bash
@@ -398,6 +408,9 @@ Stop and surface the problem instead of improvising if:
 - `gh` auth is missing or the repo path is wrong in a non-colocated workspace
 - rewriting a lower commit causes conflicts you cannot resolve confidently
 - the requested GitHub PR shape does not match the bookmark ancestry anymore
+- you already ran commit/bookmark/push in parallel and are no longer sure which commit the bookmark points at. In that
+  case, stop, inspect `jj log` and `jj bookmark list`, repair the bookmark target explicitly, and only then push or
+  create/edit the PR.
 
 ## After merging a PR
 
