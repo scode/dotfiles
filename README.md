@@ -5,12 +5,17 @@ A personal dotfiles manager for symlinks and a small amount of managed config st
 ## Usage
 
 ```bash
-# Install all features
+# Install every feature whose prerequisites already exist
 cargo run -- install
 
-# Uninstall all features
+# Uninstall managed symlinks and removable directories
 cargo run -- uninstall
 ```
+
+Install is intentionally conditional. Zed files are installed only when `~/.config/zed` already exists. Claude/Codex
+dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. The optional `scode-graphite`
+skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only
+when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
 
 NOTE: `uninstall` is not a full rollback for every feature. In particular, Claude settings are now merged into
 `~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
