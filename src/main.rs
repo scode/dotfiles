@@ -313,6 +313,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
         ),
     )
     .depends_on(&claude_skills_dir)
+    .condition(PathExists::new("~/git/scode-graphite-skill"))
     .build();
     g.add(
         "claude-skill-scode-voice",
@@ -464,6 +465,7 @@ fn add_codex_features(g: &mut FeatureGraph) {
         ),
     )
     .depends_on(&codex_skills_dir)
+    .condition(PathExists::new("~/git/scode-graphite-skill"))
     .build();
     g.add(
         "codex-skill-scode-voice",

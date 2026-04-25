@@ -2,8 +2,14 @@ use std::process::Command;
 use tempfile::TempDir;
 
 fn setup_fake_home() -> TempDir {
+    let home = setup_fake_home_without_graphite_source();
+    // Optional RawSymlink sources are present in the normal fake home.
+    std::fs::create_dir_all(home.path().join("git/scode-graphite-skill")).unwrap();
+    home
+}
+
+fn setup_fake_home_without_graphite_source() -> TempDir {
     let home = tempfile::tempdir().unwrap();
-    // Create parent directories that conditions check for
     std::fs::create_dir_all(home.path().join(".config/zed")).unwrap();
     std::fs::create_dir_all(home.path().join(".claude")).unwrap();
     std::fs::create_dir_all(home.path().join(".codex")).unwrap();
@@ -12,8 +18,6 @@ fn setup_fake_home() -> TempDir {
             .join("Library/Application Support/com.mitchellh.ghostty"),
     )
     .unwrap();
-    // For RawSymlink source (will create broken symlink, but tests the mechanism)
-    std::fs::create_dir_all(home.path().join("git/scode-graphite-skill")).unwrap();
     home
 }
 
@@ -426,6 +430,36 @@ fn test_conditional_features_skipped_when_parent_missing() {
         .path()
         .join("Library/Application Support/com.mitchellh.ghostty/config");
     assert!(ghostty.is_symlink(), "ghostty config should be symlinked");
+}
+
+#[test]
+fn test_graphite_skill_is_skipped_when_source_missing() {
+    let fake_home = setup_fake_home_without_graphite_source();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (relative_path, label) in [
+        (".claude/skills/scode-graphite", "claude"),
+        (".codex/skills/scode-graphite", "codex"),
+    ] {
+        assert!(
+            fake_home
+                .path()
+                .join(relative_path)
+                .symlink_metadata()
+                .is_err(),
+            "{label} graphite skill should be skipped when the source checkout is missing"
+        );
+    }
 }
 
 #[test]
