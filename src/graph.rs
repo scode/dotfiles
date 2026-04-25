@@ -270,14 +270,12 @@ impl FeatureGraph {
             }
         }
 
-        let stats = RunStats {
+        Ok(RunStats {
             changed,
             unchanged: noop,
             skipped: skipped.len() as u32,
             failed: failed.len() as u32,
-        };
-
-        Ok(stats)
+        })
     }
 
     /// Uninstall all features in reverse dependency order.
@@ -310,14 +308,12 @@ impl FeatureGraph {
             }
         }
 
-        let stats = RunStats {
+        Ok(RunStats {
             changed,
             unchanged: noop,
             skipped: 0,
             failed: failed.len() as u32,
-        };
-
-        Ok(stats)
+        })
     }
 }
 
