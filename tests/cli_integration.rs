@@ -62,6 +62,18 @@ fn assert_expected_claude_allow(settings: &serde_json::Value) {
     }
 }
 
+fn assert_skill_symlink_points_to_payload(home: &TempDir, link_path: &str, payload_path: &str) {
+    let full_path = home.path().join(link_path);
+    assert!(full_path.is_symlink(), "expected {link_path} symlink");
+
+    let target = std::fs::read_link(&full_path).unwrap();
+    assert!(
+        target.to_string_lossy().contains(payload_path),
+        "{link_path} should point at {payload_path}, got: {:?}",
+        target
+    );
+}
+
 #[test]
 fn test_install_creates_symlinks() {
     let fake_home = setup_fake_home();
@@ -157,6 +169,16 @@ fn test_install_creates_symlinks() {
         codex_dist_skill.is_symlink(),
         "expected .codex/skills/scode-dist-rust-setup symlink"
     );
+    assert_skill_symlink_points_to_payload(
+        &fake_home,
+        ".claude/skills/repo-swarm",
+        "payload/dot_claude/skills/repo-swarm",
+    );
+    assert_skill_symlink_points_to_payload(
+        &fake_home,
+        ".codex/skills/repo-swarm",
+        "payload/dot_claude/skills/repo-swarm",
+    );
 }
 
 #[test]
@@ -186,6 +208,8 @@ fn test_uninstall_removes_symlinks() {
     let claude_jjstack_skill = fake_home.path().join(".claude/skills/jjstack");
     let codex_jjstack_skill = fake_home.path().join(".codex/skills/jjstack");
     let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
+    let claude_repo_swarm_skill = fake_home.path().join(".claude/skills/repo-swarm");
+    let codex_repo_swarm_skill = fake_home.path().join(".codex/skills/repo-swarm");
     assert!(claude_md.is_symlink(), "symlink should exist after install");
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
@@ -214,6 +238,14 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         codex_dist_skill.is_symlink(),
         "codex dist skill symlink should exist after install"
+    );
+    assert!(
+        claude_repo_swarm_skill.is_symlink(),
+        "claude repo-swarm skill symlink should exist after install"
+    );
+    assert!(
+        codex_repo_swarm_skill.is_symlink(),
+        "codex repo-swarm skill symlink should exist after install"
     );
 
     // Then uninstall
@@ -261,6 +293,14 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !codex_dist_skill.exists() && !codex_dist_skill.is_symlink(),
         "codex dist skill symlink should be removed after uninstall"
+    );
+    assert!(
+        !claude_repo_swarm_skill.exists() && !claude_repo_swarm_skill.is_symlink(),
+        "claude repo-swarm skill symlink should be removed after uninstall"
+    );
+    assert!(
+        !codex_repo_swarm_skill.exists() && !codex_repo_swarm_skill.is_symlink(),
+        "codex repo-swarm skill symlink should be removed after uninstall"
     );
 }
 
@@ -323,6 +363,20 @@ fn test_install_idempotent() {
             .join(".codex/skills/scode-dist-rust-setup")
             .is_symlink(),
         "codex dist skill symlink should exist after double install"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".claude/skills/repo-swarm")
+            .is_symlink(),
+        "claude repo-swarm skill symlink should exist after double install"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/repo-swarm")
+            .is_symlink(),
+        "codex repo-swarm skill symlink should exist after double install"
     );
 }
 
@@ -478,6 +532,20 @@ fn test_dependency_ordering() {
             .is_symlink(),
         "codex dist skill symlink should exist"
     );
+    assert!(
+        fake_home
+            .path()
+            .join(".claude/skills/repo-swarm")
+            .is_symlink(),
+        "claude repo-swarm skill symlink should exist"
+    );
+    assert!(
+        fake_home
+            .path()
+            .join(".codex/skills/repo-swarm")
+            .is_symlink(),
+        "codex repo-swarm skill symlink should exist"
+    );
 }
 
 #[test]
@@ -502,12 +570,14 @@ fn test_all_symlinks_are_relative() {
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",
+        ".claude/skills/repo-swarm",
         ".codex/agents/code-review-specialist.md",
         ".codex/skills/pre-pr-review-swarm",
         ".codex/skills/stax",
         ".codex/skills/slstack",
         ".codex/skills/jjstack",
         ".codex/skills/scode-dist-rust-setup",
+        ".codex/skills/repo-swarm",
         ".config/zed/keymap.json",
         "Library/Application Support/com.mitchellh.ghostty/config",
     ];
