@@ -179,17 +179,19 @@ watchnload() {
 }
 
 pdfnopassword() {
-  if [ -z $1 ] || [ -z $2 ]; then
+  if [ "$#" -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
     echo "usage: pdfnopassword FILENAME PASSWORD" >&2
     return 1
   fi
 
   local ifile="${1}"
-  local bakfile="${1}.bak"
-  local password="${2}"
+  if [[ "${ifile}" == -* ]]; then
+    ifile="./${ifile}"
+  fi
+  local bakfile="${ifile}.bak"
 
-  (set -x; mv ${ifile} ${bakfile})
-  (set -x; pdftk ${bakfile} input_pw ${password} output $ifile)
+  (set -x; mv "${ifile}" "${bakfile}")
+  pdftk "${bakfile}" input_pw "$2" output "${ifile}"
 }
 
 git_canary() {
