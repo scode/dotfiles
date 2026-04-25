@@ -8,8 +8,7 @@ use tracing::debug;
 use super::{Feature, FeatureResult};
 use crate::util::fs::{expand_tilde, normalize_path};
 
-/// A feature that deletes a symlink if it exists and points to a file within
-/// the payload directory.
+/// Deletes an old installer symlink if it still points into the payload tree.
 ///
 /// This is useful for cleaning up old symlinks that are no longer needed.
 /// The deletion only proceeds if:
@@ -17,8 +16,12 @@ use crate::util::fs::{expand_tilde, normalize_path};
 /// - The symlink target resolves (or lexically normalizes, for broken symlinks)
 ///   to a path within the payload directory
 ///
-/// If the path does not exist, `install()` returns `NoOp` (idempotent).
-/// If the path exists but is not a symlink, or points outside payload, an error is returned.
+/// Links to both files and directories are allowed. That matters for moved
+/// skill directories, where the stale installed path is a directory symlink.
+///
+/// If the path does not exist, `install()` returns `NoOp` (idempotent). If the
+/// path exists but is not a symlink, or points outside payload, an error is
+/// returned.
 ///
 /// `uninstall()` is always a no-op since we cannot restore a deleted symlink.
 #[derive(Debug)]
