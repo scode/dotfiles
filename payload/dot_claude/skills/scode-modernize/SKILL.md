@@ -141,7 +141,34 @@ and eliminates a supply-chain risk.
 
 **Verify:** `rg 'actions-rs/' .github/` returns no matches after replacement.
 
-### 3. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
+### 3. Canonicalize agent instructions as `AGENTS.md`
+
+**Detect:** Check the repository root for `AGENTS.md` and `CLAUDE.md`.
+
+**Skip if:** `AGENTS.md` exists and is a regular file. It is fine if `CLAUDE.md` is missing or is already a symlink to
+`AGENTS.md`.
+
+**Also skip if:** Neither `AGENTS.md` nor `CLAUDE.md` exists. Some projects have no agent instructions yet, and this
+modernization should not create a blank file just to satisfy a naming preference.
+
+**Why:** `AGENTS.md` is the canonical cross-agent instruction file. Keeping `CLAUDE.md` as a symlink preserves
+compatibility with older Claude-specific tooling without forcing people to maintain two copies of the same rules.
+
+**Replace with:**
+
+- If `AGENTS.md` exists and is a symlink, replace it with a regular file containing the symlink target's current
+  content. Do not leave the canonical instruction file as a symlink.
+- If `AGENTS.md` does not exist and `CLAUDE.md` exists, move `CLAUDE.md` to `AGENTS.md`, then create `CLAUDE.md` as a
+  symlink to `AGENTS.md`.
+- If both files exist as regular files, do not guess which one is authoritative. Report the conflict and ask the user
+  which content should become canonical before changing either file.
+- If `CLAUDE.md` exists but is already a symlink somewhere other than `AGENTS.md`, report that explicitly before
+  changing it. The target may be intentional project-specific wiring.
+
+**Verify:** `test -f AGENTS.md && test ! -L AGENTS.md` succeeds when either agent instruction file exists. If
+`CLAUDE.md` exists after the change, `test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"` succeeds.
+
+### 4. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
 
 **Detect:** A `CLAUDE.md` or `AGENTS.md` at the repository root (or `.claude/` directory) whose content is predominantly
 architecture overview — descriptions of what each directory contains, how modules relate to each other, summaries of the
@@ -164,7 +191,7 @@ overviews are redundant — an agent can read the code — and they rot as the c
 **Verify:** Read the resulting file (if it still exists) and confirm every remaining section expresses an intent,
 preference, or constraint that cannot be trivially inferred from the repository contents.
 
-### 4. Migrate from `log` crate to `tracing` (Rust projects)
+### 5. Migrate from `log` crate to `tracing` (Rust projects)
 
 **Detect:** `Cargo.toml` (including workspace and member `Cargo.toml` files) lists `log` as a dependency, or the source
 code uses `log::info!`, `log::debug!`, `log::warn!`, `log::error!`, `log::trace!`, or the corresponding unqualified
@@ -205,7 +232,7 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
 
-### 5. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+### 6. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
 
 **Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
 repository root, but do not treat an existing config as "already done".
@@ -270,7 +297,7 @@ dprint:
 the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
 the workflow file.
 
-### 6. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
+### 7. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
 **Detect:** The project has a `CLAUDE.md` or `AGENTS.md` (at the repo root or in `.claude/`) that does not already
 contain conventional commit guidance (search for "conventional commit" case-insensitively).
@@ -281,7 +308,7 @@ bumps automatically. Even without automation, a consistent prefix makes `git log
 
 **Replace with:**
 
-- Add the following section to the project's `CLAUDE.md` (preferred) or `AGENTS.md`. Place it near any existing commit
+- Add the following section to the project's `AGENTS.md` (preferred) or `CLAUDE.md`. Place it near any existing commit
   message or PR guidance. If the file already has a commit-message section, merge the conventional commit rules into it
   rather than creating a duplicate section.
 
