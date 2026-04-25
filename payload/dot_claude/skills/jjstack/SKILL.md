@@ -66,9 +66,10 @@ environment already guarantees those operations work inside it.
   that change.
 - "merge the PR" or "merge this PR" Default to squash merge unless the user explicitly asks for a different merge
   strategy. In practice that usually means `gh pr merge --squash ...`, and in a stack it means landing the bottom PR
-  first, then restacking any descendants if the squash changed the commit shape GitHub sees. In detached Git checkouts,
-  do not rely on `gh` inferring the current branch; pass the PR number explicitly, pass `-R owner/repo`, and prefer
-  `--match-head-commit <sha>` when you already know the expected head commit.
+  first, then restacking any descendants if the squash changed the commit shape GitHub sees. Do not use
+  `--delete-branch` automatically for a non-top stacked PR. In detached Git checkouts, do not rely on `gh` inferring the
+  current branch; pass the PR number explicitly, pass `-R owner/repo`, and prefer `--match-head-commit <sha>` when you
+  already know the expected head commit.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -179,6 +180,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
   repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
   shape this workflow is usually trying to preserve.
+- Do not delete a merged stack branch while any open GitHub PR still names that branch as its base. GitHub PRs are
+  attached to base branch names, not jj ancestry, so a locally-correct jj graph does not protect child PRs from being
+  closed or misrepresented if their GitHub base branch disappears too early.
 - Remember that after `jj commit`, the real commit is usually `@-`. `@` is typically the new empty working-copy commit.
 - That means the sequence matters. If you need `jj bookmark set <name> -r @-`, run it only after `jj commit` has
   finished. Do not start `jj commit` and `jj bookmark set -r @-` concurrently or you can race against the old graph and
@@ -411,6 +415,74 @@ Stop and surface the problem instead of improvising if:
 - you already ran commit/bookmark/push in parallel and are no longer sure which commit the bookmark points at. In that
   case, stop, inspect `jj log` and `jj bookmark list`, repair the bookmark target explicitly, and only then push or
   create/edit the PR.
+
+## Landing stacked PRs safely
+
+NOTE: Do not use `gh pr merge --delete-branch` for a non-top stacked PR. If a child PR still has the parent bookmark as
+its GitHub `baseRefName`, deleting the parent branch can cause GitHub to close the child PR before you can edit its
+base. `jj` ancestry may still be correct locally, but GitHub is tracking branch names here.
+
+Before merging a stacked PR, identify downstream PRs whose base is the bookmark you are about to land:
+
+```bash
+gh pr list -R "$repo" --state open --base "$parent_bookmark" \
+  --json number,title,headRefName,baseRefName
+```
+
+If that returns any PRs, merge the parent without deleting its branch:
+
+```bash
+head_sha=$(gh pr view "$parent_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+```
+
+Then fetch the landed state and move local `main` to the remote result:
+
+```bash
+jj git fetch --remote origin
+jj bookmark set main -r main@origin
+```
+
+Restack downstream bookmarks in stack order. For a two-PR stack where the child should now target `main`, the concrete
+sequence is:
+
+```bash
+jj rebase -s "$child_bookmark" -d main
+jj git push --bookmark "exact:$child_bookmark"
+
+gh pr edit "$child_pr" -R "$repo" --base main
+gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName
+```
+
+For a larger stack, repeat the same rebase, push, and `gh pr edit --base ...` process from bottom to top. The new base
+is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Re-read
+GitHub state between steps instead of assuming a prior local graph observation still describes the PRs.
+
+Before deleting the old merged branch, query GitHub again:
+
+```bash
+gh pr list -R "$repo" --state open --base "$parent_bookmark" \
+  --json number,title,headRefName,baseRefName
+```
+
+If that returns any PRs, do not delete the branch yet. It is safe to delete the old merged branch only after no open PR
+uses it as `baseRefName`, or after every downstream PR base has already been moved away from it and verified open.
+
+If deletion is desired after that guard passes, delete the remote ref explicitly:
+
+```bash
+gh api -X DELETE "repos/$repo/git/refs/heads/$parent_bookmark"
+```
+
+After every base edit, confirm the downstream PR is still open and that checks have started or are already green:
+
+```bash
+gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,statusCheckRollup
+```
+
+If a child PR is already closed because its base branch was deleted too early, do not assume `gh pr reopen` repaired the
+stack. Verify the PR state from GitHub. If GitHub still reports `CLOSED`, the practical recovery is usually to rebase
+the child bookmark onto updated `main`, push it, and open a replacement PR.
 
 ## After merging a PR
 
