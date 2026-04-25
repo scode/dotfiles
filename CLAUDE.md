@@ -76,5 +76,6 @@ writing style, that takes precedence.
 The following must all pass before creating a PR or claiming work is done:
 
 - `dprint fmt`
+- `cargo fmt`
 - `cargo test`
 - `cargo clippy`
