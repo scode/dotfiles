@@ -5,6 +5,7 @@ A Claude Code plugin that invokes OpenAI's Codex CLI to review code changes.
 ## Prerequisites
 
 - The `codex` CLI must be installed and configured with valid API credentials
+- `jq` must be available for the session-start hook
 - Claude Code with plugin support
 
 ## How It Works
