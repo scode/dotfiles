@@ -7,8 +7,13 @@ set -eu
 
 input=$(cat)
 cwd=$(echo "$input" | jq -r '.workspace.current_dir')
-current_dir=$(basename "$cwd")
-model=$(echo "$input" | jq -r '.model.display_name')
+
+sanitize_terminal_text() {
+  printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177\200-\237'
+}
+
+current_dir=$(sanitize_terminal_text "$(basename "$cwd")")
+model=$(sanitize_terminal_text "$(echo "$input" | jq -r '.model.display_name')")
 
 # --- Git info ---
 
@@ -17,6 +22,7 @@ if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
   branch=$(git -C "$cwd" branch --show-current 2>/dev/null) \
     || branch=$(git -C "$cwd" rev-parse --short HEAD 2>/dev/null) \
     || branch=""
+  branch=$(sanitize_terminal_text "$branch")
 
   if [ -n "$branch" ]; then
     staged=$(git -C "$cwd" diff --cached --numstat 2>/dev/null | wc -l | tr -d ' ')
