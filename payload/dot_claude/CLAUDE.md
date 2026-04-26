@@ -52,6 +52,10 @@ the change is, unless the change is particularly large and a brief TLDR overview
 
 Do not make lists of things changed.
 
+Do not add validation boilerplate to commit messages or PR descriptions. A line like "Tests run: cargo fmt, cargo test,
+cargo clippy" is noise unless the target project's own rules explicitly require that information in the commit or PR
+text. Report checks to the user in the final response instead.
+
 Do not add "Co-Authored-By" trailers or "Generated with Claude Code" badges to commits or PRs.
 
 # Testability and tests
