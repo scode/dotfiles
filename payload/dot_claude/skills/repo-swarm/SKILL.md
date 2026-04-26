@@ -124,11 +124,26 @@ If there is already an equivalent instruction, do not duplicate it.
 Follow the repo's own validation instructions. If no repo-specific validation exists, run the relevant available checks
 for the files touched, then run the broad test/lint/format commands that are practical for the project.
 
+After all PRs have been opened or updated, check GitHub CI for the whole stack from bottom to top. Start with the bottom
+PR because every descendant depends on it being correct. For each PR:
+
+1. Wait for GitHub checks to finish.
+2. If any check fails, inspect the failing check logs and fix the issue in that PR's commit.
+3. Rerun the local validation that matches the failure.
+4. Run the individual-fix `pre-pr-review-swarm` again if the fix changed behavior or materially changed the diff.
+5. Push the updated bookmark.
+6. Push every affected descendant bookmark and update GitHub PR bases if the lower fix moved the stack.
+7. Recheck GitHub CI for the repaired PR before moving upward.
+
+Do not treat the repo-swarm as done while any PR in the stack has pending, failing, missing, or cancelled required
+checks. The final state must be that every PR in the stack is open, has the intended base, and is passing GitHub CI.
+
 Before the final response, verify:
 
 - every accepted fix has a PR,
 - each PR has had its own `pre-pr-review-swarm` pass before creation or update,
 - the GitHub PR bases match the local linear stack,
+- every PR in the stack is passing GitHub CI,
 - the working copy is clean,
 - final validation has passed, or any failures are clearly reported.
 
@@ -142,6 +157,7 @@ Keep the final summary compact. Include:
 - rejected individual-PR findings with reasons,
 - ignored initial findings,
 - validation commands and results,
+- GitHub CI status for every PR,
 - current working-copy status.
 
 Do not imply that ignored findings were fixed. Do not merge the stack unless the user explicitly asks.
