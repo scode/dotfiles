@@ -161,10 +161,17 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Prefer `jj` commands over `git` for history manipulation.
 - When the agent is sandboxed, prefer running real `jj` and `gh` workflow commands outside the sandbox by default.
 - Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
-- Do not parallelize stateful workflow steps. In particular, `jj commit`, `jj bookmark set`, `jj git push`,
-  `gh pr create`, and `gh pr edit` must be treated as ordered mutations of one shared state machine, not as independent
-  chores you can fan out. Run them one at a time and re-read state between steps when the next command depends on
-  revsets like `@-`.
+- Do not parallelize `jj` commands in a colocated repo. This includes apparent read-only commands such as `jj status`,
+  `jj log`, `jj bookmark list`, `jj diff`, and `jj config get`. jj may import or export Git refs, reset Git HEAD state,
+  or create per-repo config as part of commands that look like inspection. Run all `jj` invocations one at a time, and
+  do not put them in `multi_tool_use.parallel`.
+- Also keep Git and repo-scoped GitHub inspection commands sequential when they may inspect the same Git metadata jj is
+  managing. Examples include `git status`, `git show`, `git rev-parse`, `git branch`, and `gh pr view` from inside the
+  repo. Parallelizing ordinary file reads such as `sed`, `rg`, `ls`, `nl`, and `wc` is fine as long as no `jj` or Git
+  repo-state command is running at the same time.
+- Treat workflow mutations as ordered steps in one shared state machine. In particular, `jj commit`, `jj bookmark set`,
+  `jj git push`, `gh pr create`, and `gh pr edit` are not independent chores you can fan out. Run them one at a time and
+  re-read state between steps when the next command depends on revsets like `@-`.
 - Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
   swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
   files in the working copy.
