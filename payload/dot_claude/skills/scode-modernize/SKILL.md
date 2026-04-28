@@ -104,7 +104,44 @@ test:
 **Verify:** The workflow file has separate `fmt`, `clippy`, and `test` jobs. Every job that compiles Rust code has cargo
 caching. `act` or a manual read confirms each job runs the expected command.
 
-### 2. Replace `actions-rs/*` GitHub Actions (Rust projects)
+### 2. Keep agent finish-work commands in sync with CI
+
+**Detect:** The repository has `AGENTS.md` and/or `CLAUDE.md` instructions that tell the agent what to run before
+finishing work, creating a PR, or claiming the work is done. Compare those commands against the commands actually run by
+required CI workflows in `.github/workflows/*.yml`. Treat this as a finding when the command sets differ, when the same
+tool is run with different arguments (for example `cargo clippy` vs. `cargo clippy --all-targets --all-features`), or
+when the instructions omit a required CI signal entirely.
+
+**Skip if:** There are no agent instruction files, no CI workflow files, or no finish-work/checks section in the agent
+instructions. Also skip if the instructions already match the CI commands exactly.
+
+**Why:** The agent should run the same checks locally that GitHub will run after a PR is opened. Near-matches are not
+good enough: a missing flag can hide exactly the failure CI is about to report.
+
+**Replace with:**
+
+- Identify the CI jobs that gate PR health. For Rust projects, include every workflow command that runs `cargo fmt`,
+  `cargo clippy`, `cargo test`, `cargo check`, `cargo build`, `dprint`, or another explicit formatter/linter/test
+  command.
+- Normalize only shell trivia. Compare the actual tool invocation and arguments exactly after removing harmless YAML
+  wrapping, step names, and surrounding shell boilerplate. Do not treat `cargo clippy` and
+  `cargo clippy --all-targets --all-features` as equivalent.
+- Update the finish-work section in `AGENTS.md` (preferred) or `CLAUDE.md` so the required commands match CI exactly,
+  including flags, `--` argument separators, feature flags, workspace flags, package selectors, and check-only flags.
+- If both `AGENTS.md` and `CLAUDE.md` are regular files, keep them consistent with each other. If they conflict and
+  there is no clear canonical file, report the conflict and ask which file should be authoritative before editing.
+- If CI uses a matrix, environment variable, setup step, or script wrapper that materially changes what command runs,
+  capture that faithfully in the agent instructions. Prefer the literal command the agent can run locally; if the CI
+  behavior cannot be expressed as a single local command, say so explicitly in the instructions instead of inventing an
+  approximation.
+- If a CI command is intentionally not useful locally, do not silently drop it. Either document the reason in the
+  finish-work section or report it as an unresolved modernization finding.
+
+**Verify:** Read the final `AGENTS.md` / `CLAUDE.md` instructions and the workflow files side by side. Every local
+finish-work command matches a required CI command exactly, every required CI signal is represented, and no extra local
+command is described as required unless it is intentionally stricter than CI and the instructions say that.
+
+### 3. Replace `actions-rs/*` GitHub Actions (Rust projects)
 
 **Detect:** Any `.github/workflows/*.yml` file that references `actions-rs/` in a `uses:` field (e.g.
 `actions-rs/toolchain`, `actions-rs/cargo`, `actions-rs/clippy-check`, `actions-rs/audit-check`).
@@ -141,7 +178,7 @@ and eliminates a supply-chain risk.
 
 **Verify:** `rg 'actions-rs/' .github/` returns no matches after replacement.
 
-### 3. Canonicalize agent instructions as `AGENTS.md`
+### 4. Canonicalize agent instructions as `AGENTS.md`
 
 **Detect:** Check the repository root for `AGENTS.md` and `CLAUDE.md`.
 
@@ -168,7 +205,7 @@ compatibility with older Claude-specific tooling without forcing people to maint
 **Verify:** `test -f AGENTS.md && test ! -L AGENTS.md` succeeds when either agent instruction file exists. If
 `CLAUDE.md` exists after the change, `test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"` succeeds.
 
-### 4. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
+### 5. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
 
 **Detect:** A `CLAUDE.md` or `AGENTS.md` at the repository root (or `.claude/` directory) whose content is predominantly
 architecture overview — descriptions of what each directory contains, how modules relate to each other, summaries of the
@@ -191,7 +228,7 @@ overviews are redundant — an agent can read the code — and they rot as the c
 **Verify:** Read the resulting file (if it still exists) and confirm every remaining section expresses an intent,
 preference, or constraint that cannot be trivially inferred from the repository contents.
 
-### 5. Migrate from `log` crate to `tracing` (Rust projects)
+### 6. Migrate from `log` crate to `tracing` (Rust projects)
 
 **Detect:** `Cargo.toml` (including workspace and member `Cargo.toml` files) lists `log` as a dependency, or the source
 code uses `log::info!`, `log::debug!`, `log::warn!`, `log::error!`, `log::trace!`, or the corresponding unqualified
@@ -232,7 +269,7 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
 
-### 6. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+### 7. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
 
 **Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
 repository root, but do not treat an existing config as "already done".
@@ -297,7 +334,7 @@ dprint:
 the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
 the workflow file.
 
-### 7. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
+### 8. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
 **Detect:** The project has a `CLAUDE.md` or `AGENTS.md` (at the repo root or in `.claude/`) that does not already
 contain conventional commit guidance (search for "conventional commit" case-insensitively).
