@@ -202,6 +202,54 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   process, `git`, an editor auto-save doing broad rewrites, or another shell touching the same files. jj snapshots the
   working copy at command boundaries, so concurrent mutation is an easy way to confuse yourself.
 
+## Fast path for the common case
+
+NOTE: This is a tool-call optimization, not permission to parallelize state mutations. `jj commit`, `jj bookmark set`,
+`jj git push`, `gh pr create`, `gh pr merge`, and `gh pr edit` are still one ordered state machine. The faster path is
+to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence, instead
+of spending separate tool calls re-reading state after every successful step.
+
+Use this fast path when all of these are true:
+
+- the repo is already bootstrapped for `jj` and identity config is known good
+- the working copy changes are known and intentionally scoped, usually because you just made them
+- you are creating new bookmarks with names you chose for this stack
+- you know the base bookmark (`main`, `trunk()`, or the previous stack bookmark)
+- you have no reason to suspect stale remote state, existing PRs for the same bookmarks, conflicted descendants, or
+  unrelated local changes
+
+In that case, do not burn tool calls on `jj log`, `jj bookmark list`, `jj git push --dry-run`, `gh pr view`, or
+post-create PR inspection unless a command fails or the user specifically asked for that detail. Use the command output
+you already have: `jj commit` tells you where `@-` landed, `jj bookmark set` tells you what it moved, `jj git push`
+reports the pushed refs, and `gh pr create` prints the PR URL.
+
+For a fresh two-PR stack where you just edited `README.md`, this is the intended shape:
+
+```bash
+jj status
+jj commit README.md -m "Add first change"
+
+# edit README.md again
+jj status
+jj commit README.md -m "Add second change"
+
+jj bookmark set pr/first -r @--
+jj bookmark set pr/second -r @-
+jj git push --bookmark 'exact:pr/first' --bookmark 'exact:pr/second'
+```
+
+Then create the PRs in order, using the safe title/body-file pattern below. The second PR's base is the first PR's
+bookmark:
+
+```bash
+gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
+```
+
+If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`,
+`jj log -r 'bookmarks() | @ | @-'`, `jj bookmark list`, and the relevant `gh pr view` or `gh pr list` output before
+trying to repair anything.
+
 ## Passing PR text to gh safely
 
 This part is easy to get wrong and the failure mode is dumb: the shell eats markdown or code spans, and you silently
@@ -259,7 +307,7 @@ Do not ad-lib shell escaping here. Use the file-and-variable pattern every time.
 Start from the tracked default branch via `trunk()` unless you already know you need a different base:
 
 ```bash
-jj new trunk()
+jj new 'trunk()'
 ```
 
 Make the first change, then commit it:
@@ -490,6 +538,30 @@ gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,statusChe
 If a child PR is already closed because its base branch was deleted too early, do not assume `gh pr reopen` repaired the
 stack. Verify the PR state from GitHub. If GitHub still reports `CLOSED`, the practical recovery is usually to rebase
 the child bookmark onto updated `main`, push it, and open a replacement PR.
+
+For the common two-PR landing case, keep the same safety constraints but avoid extra reads. You need one downstream
+guard for the parent branch, one exact head SHA for the merge guard, and then the ordered restack/update/merge sequence:
+
+```bash
+gh pr list -R "$repo" --state open --base "$parent_bookmark" \
+  --json number,title,headRefName,baseRefName
+
+head_sha=$(gh pr view "$parent_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+
+jj git fetch --remote origin
+jj bookmark set main -r main@origin
+jj rebase -s "$child_bookmark" -d main
+jj git push --bookmark "exact:$child_bookmark"
+gh pr edit "$child_pr" -R "$repo" --base main
+
+head_sha=$(gh pr view "$child_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+```
+
+You do not need to check the child PR after `gh pr edit` when the command succeeds and the next operation is an explicit
+merge of that same PR. If `gh pr edit` fails, or if GitHub reports the child PR as closed, fall back to the full
+inspection flow above.
 
 ## After merging a PR
 
