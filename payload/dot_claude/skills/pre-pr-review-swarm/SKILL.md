@@ -39,10 +39,41 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
    - Findings at different code locations are never duplicates, even if they describe similar patterns.
-8. Present all findings to the user.
-9. If `nofix` was specified, stop here — do not make any changes.
-10. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
-11. If no actionable findings remain, state that explicitly before asking for PR creation.
+8. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
+9. Present all findings to the user. Every user-visible finding must include its feedback identifier.
+10. If `nofix` was specified, stop here — do not make any changes.
+11. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
+12. If no actionable findings remain, state that explicitly before asking for PR creation.
+
+## Feedback identifiers
+
+Every reported finding gets a compound identifier:
+
+`Fn / REVIEWER_TYPE-MNEMONIC`
+
+Reviewers do not assign identifiers. The `Fn` portion is strictly monotonically increasing across all findings in final
+report order: `F1`, `F2`, ..., `Fn`. It is global across the whole report, not local to a section or reviewer.
+
+The `REVIEWER_TYPE` portion comes from the retained finding's reviewer/category:
+
+| Reviewer/category       | Code    |
+| ----------------------- | ------- |
+| correctness             | `COR`   |
+| security                | `SEC`   |
+| spec compliance         | `SPEC`  |
+| test quality            | `TEST`  |
+| AI slop                 | `SLOP`  |
+| docs/comments or README | `DOC`   |
+| idiomaticity            | `IDIOM` |
+| simplification          | `SIMP`  |
+
+The `MNEMONIC` portion should be short, uppercase, and tied to the issue itself, for example `PATH`, `PRIVSEC`, or
+`EMPTY-ASSERT`. Prefer something the user can remember while scanning the report. Type-mnemonic identifiers must be
+unique within a report. If the natural mnemonic collides, add a short differentiator rather than reusing the same
+identifier.
+
+Users may identify a finding using either side of the compound identifier. `F3` and `SEC-PATH` are functionally
+equivalent ways to refer to the same finding.
 
 ## Fixing findings
 
@@ -68,7 +99,8 @@ Do not invent a fourth bucket of "valid but not worth fixing". If you find yours
 finding belongs in bucket 1. If you genuinely believe a valid finding should not be fixed in this PR, that is a
 trade-off call — put it in bucket 2 and let the user decide.
 
-After fixing, report per-finding what you did: fixed, surfaced (with the question), or rejected (with the reason).
+After fixing, report per-finding what you did: fixed, surfaced (with the question), or rejected (with the reason). Refer
+to each finding by its feedback identifier.
 
 ## Reviewers
 
@@ -86,7 +118,12 @@ After fixing, report per-finding what you did: fixed, surfaced (with the questio
 
 ## Output Contract
 
-Report results in this structure. Each finding in every section should be tagged **definite** or **possible**.
+Report results in this structure. Each finding in every section must begin with its feedback identifier and be tagged
+**definite** or **possible**.
+
+Example finding:
+
+- `F1 / SEC-PRIVSEC` — **definite** — `src/auth.rs:42` leaks private session material into logs.
 
 - `Correctness`: findings from the correctness reviewer.
 - `Security`: findings from the security reviewer.
