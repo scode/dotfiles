@@ -37,7 +37,7 @@ is a finding-generation pass over the selected repository area.
 
 If the existing `pre-pr-review-swarm` workflow is diff-oriented, adapt the reviewer prompts so each reviewer reviews the
 chosen scope directly. Keep the same reviewer categories, deduplication rules, and output discipline: actionable
-findings only, tagged as definite or possible, with file references and a short rationale.
+findings only, tagged as definite or possible, with feedback identifiers, file references, and a short rationale.
 
 After the initial review, merge and deduplicate findings. Do not start fixing yet.
 
