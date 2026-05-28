@@ -199,7 +199,8 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_agents_dir)
     .build();
 
-    // Delete old agent symlinks that have been moved into the plugin
+    // Delete review-agent symlinks from older installs. The installer may still
+    // find these on machines that predate the removal of these agents.
     g.add(
         "delete-claude-agent-codex-code-review",
         DeleteSymlink::new("~/.claude/agents/codex-code-review.md"),
@@ -360,7 +361,8 @@ fn add_codex_features(g: &mut FeatureGraph) {
     .depends_on(&codex_agents_dir)
     .build();
 
-    // Delete old agent symlinks that have been moved into the plugin
+    // Delete review-agent symlinks from older installs. The installer may still
+    // find these on machines that predate the removal of these agents.
     g.add(
         "delete-codex-agent-codex-code-review",
         DeleteSymlink::new("~/.codex/agents/codex-code-review.md"),
