@@ -14,7 +14,7 @@ The skill accepts optional keyword arguments (case-insensitive, any order):
 - `nofix` — report findings only; do not make any changes to the code.
 - `commit` — review the current commit (`git show`) instead of uncommitted changes.
 
-These can be combined: `/pre-pr-review-swarm nofix commit`
+These can be combined: `nofix commit`
 
 Defaults (no arguments): review uncommitted changes in the working copy, then fix actionable findings. If there are
 clearly no uncommitted changes, fall back to reviewing the current commit.
@@ -26,13 +26,10 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    - If `commit`: use `git show` for the diff and touched files.
    - Otherwise: use uncommitted changes. If none exist, fall back to `git show`.
 3. Check whether a `SPEC.md` exists at the project root.
-4. Spawn reviewers concurrently using the available sub-agent mechanism (eight always, plus a ninth if `SPEC.md`
-   exists). Each reviewer runs as its own sub-agent to keep review instructions out of the main context. Do not set the
-   `model` parameter on sub-agent calls — omit it so each reviewer inherits the current session's model.
-5. For each reviewer, spawn a sub-agent with a prompt that includes the review scope (diff and touched files) and
-   instructs the sub-agent to read its charter file before reviewing. Charter files are in the `reviewers/` directory
-   next to this skill file. Tell each sub-agent to read its charter from `<base_directory>/reviewers/<name>.md` where
-   `<base_directory>` is the base directory shown in the skill loading header.
+4. Run the reviewer charters concurrently when the environment supports it (eight always, plus a ninth if `SPEC.md`
+   exists). Keep each reviewer focused on its own charter so the review instructions stay separate.
+5. For each reviewer, include the review scope (diff and touched files) and instruct the reviewer to read its charter
+   file before reviewing. Charter files live in the `reviewers/` directory next to this skill file.
 6. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
    references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
    observations.

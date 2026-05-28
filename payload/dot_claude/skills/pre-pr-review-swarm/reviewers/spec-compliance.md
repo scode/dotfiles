@@ -16,5 +16,5 @@ divergences—features the spec requires but the change omits, behaviors that co
 covered by the spec.
 
 - When reporting a divergence, quote the relevant spec section.
-- For each divergence, state whether the implementation or the spec appears to be wrong, so the parent agent can decide
+- For each divergence, state whether the implementation or the spec appears to be wrong, so the coordinator can decide
   whether to fix the code or update the spec.
