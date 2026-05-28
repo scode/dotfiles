@@ -21,32 +21,6 @@ NOTE: `uninstall` is not a full rollback for every feature. In particular, Claud
 `~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
 does not remove or revert it.
 
-## Claude Code Plugins
-
-This repo is also a Claude Code plugin marketplace containing:
-
-- **codex-code-review** - Code review using OpenAI's Codex CLI
-- **gemini-code-review** - Code review using Google's Gemini CLI
-
-NOTE: This is still just a personal thing. Those are not meant for wide use and may contain assumptions or preferences
-that are intentionally personal and non-configurable.
-
-### Installation (remote)
-
-```bash
-/plugin marketplace add scode/dotfiles
-/plugin install codex-code-review@dotfiles
-/plugin install gemini-code-review@dotfiles
-```
-
-### Installation (local development)
-
-```bash
-/plugin marketplace add /path/to/dotfiles
-/plugin install codex-code-review@dotfiles
-/plugin install gemini-code-review@dotfiles
-```
-
 ## Disclaimer
 
 This is a personal repository shared in case it's useful to others. No backwards compatibility or guarantees about
