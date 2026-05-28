@@ -31,6 +31,11 @@ The general rule: never assume a clean slate. If a path was previously installed
 Claude Code skills live in `payload/dot_claude/skills/`. When the user asks to view, modify, or discuss a skill, look
 there — not in `~/.claude/skills/` or elsewhere.
 
+## Lore
+
+`lore/*.md` notes, excluding local agent instructions, are historical artifacts. Do not eagerly read them during normal
+work; use them only when digging into past motivation, decisions, or context.
+
 ## Choosing `feat` vs `docs` for commit types
 
 This repo is an installer — its product is the set of files it installs. Changes to payload files (configs, skills,
