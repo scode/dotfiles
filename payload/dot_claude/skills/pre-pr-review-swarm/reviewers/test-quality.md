@@ -17,4 +17,4 @@ Evaluate whether the changed code has adequate, meaningful test coverage.
 - Flag edge cases visible in the diff (error paths, boundary values, empty inputs) that have no test coverage.
 - Flag test names or descriptions that don't match what the test actually verifies.
 - Don't flag missing tests for unchanged code, trivial getters/setters, or simple delegations.
-- Don't suggest specific test implementations—identify the gaps and let the parent agent decide how to fill them.
+- Don't suggest specific test implementations—identify the gaps and leave the implementation choice to the coordinator.
