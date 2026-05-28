@@ -87,6 +87,10 @@ Before doing anything substantial:
 - if the user explicitly asked for `jj` and this is still a plain Git checkout, bootstrap `jj` before doing the rest
 - if the agent is sandboxed, prefer unsandboxed execution for `jj` and `gh` commands that actually drive the workflow
 
+These are session preconditions, not a toll booth before every command. Once you have confirmed them for the current
+repo in the current thread, treat them as known good until something relevant changes: a command fails in a way that
+points at auth or config, the repo changes, `jj` is initialized after the check, or you switch to a different checkout.
+
 If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain,
 `cargo install --locked --bin jj jj-cli` is a reasonable generic fallback.
 
@@ -170,8 +174,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   repo. Parallelizing ordinary file reads such as `sed`, `rg`, `ls`, `nl`, and `wc` is fine as long as no `jj` or Git
   repo-state command is running at the same time.
 - Treat workflow mutations as ordered steps in one shared state machine. In particular, `jj commit`, `jj bookmark set`,
-  `jj git push`, `gh pr create`, and `gh pr edit` are not independent chores you can fan out. Run them one at a time and
-  re-read state between steps when the next command depends on revsets like `@-`.
+  `jj git push`, `gh pr create`, and `gh pr edit` are not independent chores you can fan out. Run them one at a time.
+  Re-read state between steps only when the next command depends on uncertain state; do not turn every successful
+  command into a separate inspection round trip.
 - Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
   swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
   files in the working copy.
@@ -209,6 +214,18 @@ NOTE: This is a tool-call optimization, not permission to parallelize state muta
 to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence, instead
 of spending separate tool calls re-reading state after every successful step.
 
+For straightforward happy paths, batch ordered commands with `set -e` or `&&` in one shell invocation when the next
+command does not need the model to inspect fresh output. This is still sequential execution. It just avoids paying one
+tool call per command for state you already know.
+
+Do not batch an inspection command with the mutation it is supposed to guard. If the working-copy scope is uncertain,
+inspect `jj status` first and let the model decide what to include. Once the intended paths are known, use path-limited
+commands such as `jj commit README.md -m ...` in the batched sequence.
+
+When a batched sequence uses shell variables to construct bookmark names, validate the variables before creating or
+pushing anything. A missing prefix can turn `"$prefix-1"` into a real remote branch named `-1`, and that is needless
+cleanup work. Print the exact bookmark names you are about to push, then push those exact names.
+
 Use this fast path when all of these are true:
 
 - the repo is already bootstrapped for `jj` and identity config is known good
@@ -227,21 +244,33 @@ For a fresh two-PR stack where you just edited `README.md`, this is the intended
 
 ```bash
 jj status
+```
+
+If the status output only shows the intended paths:
+
+```bash
+set -e
 jj commit README.md -m "Add first change"
 
 # edit README.md again
-jj status
 jj commit README.md -m "Add second change"
 
-jj bookmark set pr/first -r @--
-jj bookmark set pr/second -r @-
-jj git push --bookmark 'exact:pr/first' --bookmark 'exact:pr/second'
+first_bookmark=pr/first
+second_bookmark=pr/second
+test -n "$first_bookmark"
+test -n "$second_bookmark"
+printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
+
+jj bookmark set "$first_bookmark" -r @--
+jj bookmark set "$second_bookmark" -r @-
+jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark"
 ```
 
 Then create the PRs in order, using the safe title/body-file pattern below. The second PR's base is the first PR's
 bookmark:
 
 ```bash
+set -e
 gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
 gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
 ```
@@ -328,17 +357,18 @@ At that point the stack usually looks like:
 - `@-` = top reviewable commit
 - `@--` = the commit below it
 
-Create stable bookmarks on the reviewable commits, not on the empty working copy:
+Create stable bookmarks on the reviewable commits, not on the empty working copy, then publish only those bookmarks:
 
 ```bash
-jj bookmark set pr/first -r @--
-jj bookmark set pr/second -r @-
-```
-
-Publish only those bookmarks:
-
-```bash
-jj git push --bookmark 'exact:pr/first' --bookmark 'exact:pr/second'
+set -e
+first_bookmark=pr/first
+second_bookmark=pr/second
+test -n "$first_bookmark"
+test -n "$second_bookmark"
+printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
+jj bookmark set "$first_bookmark" -r @--
+jj bookmark set "$second_bookmark" -r @-
+jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark"
 ```
 
 Create PRs in order:
@@ -346,6 +376,7 @@ Create PRs in order:
 Prepare the correct `title` and `body_file` for each PR using the safe pattern above, then run:
 
 ```bash
+set -e
 gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
 gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
 ```
@@ -484,6 +515,12 @@ gh pr list -R "$repo" --state open --base "$parent_bookmark" \
   --json number,title,headRefName,baseRefName
 ```
 
+If you just created the whole stack in this same session, you already have the PR-to-bookmark mapping. In that case,
+skip repeated `gh pr list --base ...` checks while landing the known stack. Keep the guard when you inherited the stack,
+when another actor may have edited PR bases, when the local notes are incomplete, or before deleting any remote branch.
+Same-session mapping lets you skip rediscovering which PR number belongs to which bookmark. It does not replace checking
+the state, base, and head of the specific PR you are about to merge.
+
 If that returns any PRs, merge the parent without deleting its branch:
 
 ```bash
@@ -502,16 +539,24 @@ Restack downstream bookmarks in stack order. For a two-PR stack where the child 
 sequence is:
 
 ```bash
+set -e
 jj rebase -s "$child_bookmark" -d main
 jj git push --bookmark "exact:$child_bookmark"
-
 gh pr edit "$child_pr" -R "$repo" --base main
-gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName
+gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
 
+After creating a PR, pushing a bookmark, or editing a PR base, use
+`gh pr view --json
+state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability
+waits. GitHub can briefly report no checks for a just-pushed or just-retargeted PR before Actions has attached the new
+runs. Treat "no checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it
+as success. Use workflow logs only when checks fail or get stuck.
+
 For a larger stack, repeat the same rebase, push, and `gh pr edit --base ...` process from bottom to top. The new base
-is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Re-read
-GitHub state between steps instead of assuming a prior local graph observation still describes the PRs.
+is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. If this
+is not a known stack you just created, re-read GitHub state between steps instead of assuming a prior local graph
+observation still describes the PRs.
 
 Before deleting the old merged branch, query GitHub again:
 
@@ -532,21 +577,34 @@ gh api -X DELETE "repos/$repo/git/refs/heads/$parent_bookmark"
 After every base edit, confirm the downstream PR is still open and that checks have started or are already green:
 
 ```bash
-gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,statusCheckRollup
+gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
 
 If a child PR is already closed because its base branch was deleted too early, do not assume `gh pr reopen` repaired the
 stack. Verify the PR state from GitHub. If GitHub still reports `CLOSED`, the practical recovery is usually to rebase
 the child bookmark onto updated `main`, push it, and open a replacement PR.
 
-For the common two-PR landing case, keep the same safety constraints but avoid extra reads. You need one downstream
-guard for the parent branch, one exact head SHA for the merge guard, and then the ordered restack/update/merge sequence:
+If GitHub reports `DIRTY` or `CONFLICTING` after a base edit or force-push but the local jj stack looks clean, do not
+immediately invent a new branch. Wait once and re-read the PR metadata; GitHub mergeability can lag behind rewritten
+refs. If it still reports dirty, verify the local diff/ancestry for the specific child, rewrite that bookmark onto the
+current intended base, push that bookmark explicitly, and recheck the PR metadata before merging. This is a recovery
+path for GitHub's view getting stale or confused, not a replacement for resolving real conflicts.
+
+For the common two-PR landing case, keep the same safety constraints but avoid extra reads. If you already know the
+parent/child mapping because you just created the stack, you can skip rediscovering the stack, but still verify the
+specific PR you are about to merge:
 
 ```bash
-gh pr list -R "$repo" --state open --base "$parent_bookmark" \
-  --json number,title,headRefName,baseRefName
-
-head_sha=$(gh pr view "$parent_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+set -e
+read -r state base head head_sha <<EOF
+$(gh pr view "$parent_pr" -R "$repo" \
+  --json state,baseRefName,headRefName,headRefOid \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
+EOF
+test "$state" = OPEN
+test "$base" = main
+test "$head" = "$parent_bookmark"
+test -n "$head_sha" || { echo "parent PR metadata did not match expected state/base/head" >&2; exit 1; }
 gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
 
 jj git fetch --remote origin
@@ -555,13 +613,28 @@ jj rebase -s "$child_bookmark" -d main
 jj git push --bookmark "exact:$child_bookmark"
 gh pr edit "$child_pr" -R "$repo" --base main
 
-head_sha=$(gh pr view "$child_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+read -r state base head head_sha <<EOF
+$(gh pr view "$child_pr" -R "$repo" \
+  --json state,baseRefName,headRefName,headRefOid \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
+EOF
+test "$state" = OPEN
+test "$base" = main
+test "$head" = "$child_bookmark"
+test -n "$head_sha" || { echo "child PR metadata did not match expected state/base/head" >&2; exit 1; }
 gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha"
 ```
 
-You do not need to check the child PR after `gh pr edit` when the command succeeds and the next operation is an explicit
-merge of that same PR. If `gh pr edit` fails, or if GitHub reports the child PR as closed, fall back to the full
-inspection flow above.
+You do not need to rediscover the child PR after `gh pr edit` when the command succeeds and the next operation is an
+explicit merge of that same PR. You still need to verify that the PR you are about to merge is open and has the expected
+base and head. If `gh pr edit` fails, if the metadata check returns nothing, or if GitHub reports the child PR as
+closed, fall back to the full inspection flow above.
+
+For a known stack with more than two PRs, use the same loop in stack order. After each landing, rebase the remaining
+local stack onto the landed base while preserving the relative order of the still-open PRs. Then edit only the next
+bottom PR's GitHub base to the newly landed branch; descendants should keep their bases on their immediate parent
+bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the
+mapping is already in hand, but do verify the state, base, and head of the specific PR before merging it.
 
 ## After merging a PR
 
