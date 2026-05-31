@@ -1,7 +1,6 @@
 use std::fmt;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use tracing::debug;
@@ -19,17 +18,13 @@ use crate::util::fs::expand_tilde;
 /// a link. The parent directory must already exist.
 #[derive(Debug)]
 pub struct ManagedDirectory {
-    path: PathBuf,
     display_path: String,
 }
 
 impl ManagedDirectory {
     pub fn new(path: impl Into<String>) -> Self {
-        let path_str = path.into();
-        let expanded = expand_tilde(&path_str).unwrap_or_else(|_| PathBuf::from(&path_str));
         Self {
-            path: expanded,
-            display_path: path_str,
+            display_path: path.into(),
         }
     }
 }
@@ -42,24 +37,28 @@ impl fmt::Display for ManagedDirectory {
 
 impl Feature for ManagedDirectory {
     fn install(&self) -> Result<FeatureResult> {
-        if self.path.is_dir() {
+        let path = expand_tilde(&self.display_path)?;
+
+        if path.is_dir() {
             debug!(path = %self.display_path, "directory already exists");
             return Ok(FeatureResult::NoOp);
         }
-        if self.path.exists() {
+        if path.exists() {
             bail!("path exists but is not a directory: {}", self.display_path);
         }
-        fs::create_dir(&self.path)?;
+        fs::create_dir(&path)?;
         debug!(path = %self.display_path, "created directory");
         Ok(FeatureResult::Changed)
     }
 
     fn uninstall(&self) -> Result<FeatureResult> {
-        if !self.path.exists() {
+        let path = expand_tilde(&self.display_path)?;
+
+        if !path.exists() {
             debug!(path = %self.display_path, "directory already removed");
             return Ok(FeatureResult::NoOp);
         }
-        match fs::remove_dir(&self.path) {
+        match fs::remove_dir(&path) {
             Ok(()) => {
                 debug!(path = %self.display_path, "removed directory");
                 Ok(FeatureResult::Changed)

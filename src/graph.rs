@@ -245,12 +245,20 @@ impl FeatureGraph {
                 continue;
             }
 
-            if let Some(cond) = &node.condition
-                && !cond.is_met()
-            {
-                info!("⏭️ skipped: {} ({})", node.feature, cond);
-                skipped.insert(id);
-                continue;
+            if let Some(cond) = &node.condition {
+                match cond.is_met() {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        info!("⏭️ skipped: {} ({})", node.feature, cond);
+                        skipped.insert(id);
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("❌ {} condition failed: {}", node.feature, e);
+                        failed.insert(id);
+                        continue;
+                    }
+                }
             }
 
             debug!("installing feature: {:?}", node.feature);
@@ -397,6 +405,21 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct ErrorCondition;
+
+    impl std::fmt::Display for ErrorCondition {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "error condition")
+        }
+    }
+
+    impl Condition for ErrorCondition {
+        fn is_met(&self) -> Result<bool> {
+            bail!("condition exploded")
+        }
+    }
+
     #[test]
     fn install_respects_dependency_order() {
         let log = Arc::new(Mutex::new(Vec::new()));
@@ -445,6 +468,30 @@ mod tests {
 
         graph.install().unwrap();
 
+        assert!(log.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn install_fails_when_condition_cannot_be_evaluated() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+
+        graph
+            .add("a", MockFeature::new("a", log.clone()))
+            .condition(ErrorCondition)
+            .build();
+
+        let stats = graph.install().unwrap();
+
+        assert_eq!(
+            stats,
+            RunStats {
+                changed: 0,
+                unchanged: 0,
+                skipped: 0,
+                failed: 1,
+            }
+        );
         assert!(log.lock().unwrap().is_empty());
     }
 
