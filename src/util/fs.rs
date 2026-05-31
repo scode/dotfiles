@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
@@ -7,8 +8,17 @@ use anyhow::{Result, bail};
 /// Returns an error if the path starts with `~/` but the `HOME` environment
 /// variable is not set. Paths not starting with `~/` are returned unchanged.
 pub fn expand_tilde(path: &str) -> Result<PathBuf> {
+    expand_tilde_with_home(path, std::env::var_os("HOME"))
+}
+
+/// Expands a leading `~/` using an explicitly provided home directory.
+///
+/// This keeps the process environment out of tests that need to exercise the
+/// missing-`HOME` path. Callers that want normal runtime behavior should use
+/// [`expand_tilde`].
+pub fn expand_tilde_with_home(path: &str, home: Option<OsString>) -> Result<PathBuf> {
     if let Some(rest) = path.strip_prefix("~/") {
-        match std::env::var_os("HOME") {
+        match home {
             Some(home) => Ok(PathBuf::from(home).join(rest)),
             None => bail!("cannot expand ~: HOME environment variable is not set"),
         }
@@ -90,6 +100,12 @@ mod tests {
         let result = expand_tilde("~/config/file.txt").unwrap();
         assert!(result.to_string_lossy().ends_with("/config/file.txt"));
         assert!(!result.to_string_lossy().starts_with("~"));
+    }
+
+    #[test]
+    fn expand_tilde_reports_missing_home() {
+        let err = expand_tilde_with_home("~/config/file.txt", None).unwrap_err();
+        assert!(err.to_string().contains("HOME"));
     }
 
     #[test]
