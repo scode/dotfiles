@@ -36,6 +36,11 @@ there — not in `~/.claude/skills/` or elsewhere.
 `lore/*.md` notes, excluding local agent instructions, are historical artifacts. Do not eagerly read them during normal
 work; use them only when digging into past motivation, decisions, or context.
 
+## SPEC.md
+
+Agents must conform to `SPEC.md`. If implementation and `SPEC.md` disagree, treat that as a bug or explicitly update
+`SPEC.md` in the same change.
+
 ## Choosing `feat` vs `docs` for commit types
 
 This repo is an installer — its product is the set of files it installs. Changes to payload files (configs, skills,

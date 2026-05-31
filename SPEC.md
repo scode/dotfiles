@@ -3,6 +3,16 @@
 This file documents repository behavior that is intentional enough that future review should preserve it or update this
 file in the same change.
 
+## Invocation Directory
+
+The installer is intended to run from the repository root. Payload-relative paths are resolved against the process
+current working directory, not against the compiled binary path.
+
+This is acceptable for this repository because it is a personal checkout-driven installer, normally run with
+`cargo run -- install` or `cargo run -- uninstall` from the checkout. Future changes may make the base directory
+explicit, but reviews should not treat cwd-relative payload lookup as a bug unless the CLI contract changes at the same
+time.
+
 ## Test Coverage Expectations
 
 Installer registration in `src/main.rs` does not need exhaustive integration coverage for every installed payload path.
