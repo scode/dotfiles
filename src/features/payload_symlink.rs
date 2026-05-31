@@ -9,12 +9,12 @@ use tracing::debug;
 use super::{Feature, FeatureResult};
 use crate::util::fs::{compute_relative_path, expand_tilde, normalize_path};
 
-/// A feature that creates a symlink from a destination path to a source file
-/// within the dotfiles repository (typically in the `payload/` directory).
+/// Creates a destination symlink to a payload path in the dotfiles repository.
 ///
-/// The source path is relative to the project root (current working directory),
-/// while the destination supports `~` expansion. The symlink is created using
-/// a relative path, making it resilient to moves of the entire dotfiles directory.
+/// The source may be a file or directory. It is relative to the project root
+/// (current working directory), while the destination supports `~` expansion.
+/// The symlink is created using a relative path, making it resilient to moves
+/// of the entire dotfiles directory.
 ///
 /// The parent directory of the destination must already exist; it will not be
 /// created automatically.
