@@ -12,10 +12,14 @@ cargo run -- install
 cargo run -- uninstall
 ```
 
-Install is intentionally conditional. Zed files are installed only when `~/.config/zed` already exists. Claude/Codex
-dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. The optional `scode-graphite`
-skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only
-when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
+Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
+Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. The optional
+`scode-graphite` skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill
+is installed only when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support`
+exists.
+
+The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
+`~/bin/claude-statusline.sh`.
 
 NOTE: `uninstall` is not a full rollback for every feature. In particular, Claude settings are now merged into
 `~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
