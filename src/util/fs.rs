@@ -64,22 +64,20 @@ pub fn normalize_path(path: &Path) -> PathBuf {
 /// assert_eq!(relative.to_str().unwrap(), "../dotfiles/bashrc");
 /// ```
 pub fn compute_relative_path(from_dir: &Path, to: &Path) -> PathBuf {
-    let mut from_components: Vec<_> = from_dir.components().collect();
-    let mut to_components: Vec<_> = to.components().collect();
+    let from_components: Vec<_> = from_dir.components().collect();
+    let to_components: Vec<_> = to.components().collect();
 
-    while !from_components.is_empty()
-        && !to_components.is_empty()
-        && from_components[0] == to_components[0]
-    {
-        from_components.remove(0);
-        to_components.remove(0);
-    }
+    let shared_prefix_len = from_components
+        .iter()
+        .zip(&to_components)
+        .take_while(|(from, to)| from == to)
+        .count();
 
     let mut result = PathBuf::new();
-    for _ in &from_components {
+    for _ in &from_components[shared_prefix_len..] {
         result.push("..");
     }
-    for component in to_components {
+    for component in &to_components[shared_prefix_len..] {
         result.push(component);
     }
     result
