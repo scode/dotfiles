@@ -1,0 +1,5 @@
+onboarding = false
+
+[keys]
+# Keep Ctrl-b available for Emacs-style backward-char navigation.
+prefix = "ctrl+o"
