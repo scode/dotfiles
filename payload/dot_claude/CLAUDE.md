@@ -50,6 +50,10 @@ Keep the first line of commit messages, and PR titles, very concise.
 For the remainder of the commit message and/or PR descriptions, focus on _why_ the change is made. Do not state _what_
 the change is, unless the change is particularly large and a brief TLDR overview is helpful.
 
+Leave PR descriptions empty when the diff is self-explanatory and there is no non-obvious context to preserve. Do not
+write filler just because a PR body exists. Useful PR descriptions explain motivation, constraints, tradeoffs,
+surprising omissions, or follow-up risks that are not clear from the diff itself.
+
 Do not make lists of things changed.
 
 Do not add validation boilerplate to commit messages or PR descriptions. A line like "Tests run: cargo fmt, cargo test,
