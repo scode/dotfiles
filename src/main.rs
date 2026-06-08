@@ -95,6 +95,22 @@ fn add_ghostty_features(g: &mut FeatureGraph) {
     .build();
 }
 
+fn add_herdr_features(g: &mut FeatureGraph) {
+    let herdr_config_dir = g
+        .add("herdr-config-dir", ManagedDirectory::new("~/.config/herdr"))
+        .condition(PathExists::new("~/.config"))
+        .build();
+    g.add(
+        "herdr-config",
+        PayloadSymlink::new(
+            "payload/dot_config/herdr/config.toml",
+            "~/.config/herdr/config.toml",
+        ),
+    )
+    .depends_on(&herdr_config_dir)
+    .build();
+}
+
 fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) {
     g.add(
         "claude-md",
@@ -482,6 +498,7 @@ fn features() -> FeatureGraph {
     let mut g = FeatureGraph::new();
     add_zed_features(&mut g);
     add_ghostty_features(&mut g);
+    add_herdr_features(&mut g);
     let claude_statusline = add_bin_features(&mut g);
     add_claude_features(&mut g, &claude_statusline);
     add_codex_features(&mut g);
