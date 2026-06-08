@@ -1,0 +1,17 @@
+name: PR Base
+
+on:
+  pull_request:
+
+jobs:
+  require-main-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main as PR base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$BASE_REF" != "main" ]; then
+            echo "PR base must be main, got '$BASE_REF'." >&2
+            exit 1
+          fi
