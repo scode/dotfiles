@@ -368,3 +368,50 @@ Rules:
 
 **Verify:** The target file contains a conventional commit section. Read it back and confirm the types list and rules
 are present.
+
+### 9. Add a PR base guard for stacked workflows (GitHub Actions projects)
+
+**Detect:** The project uses GitHub Actions and allows stacked PRs, but has no required check that rejects PRs whose
+base branch is anything other than the repository's main integration branch.
+
+**Skip if:** There is already a GitHub Actions workflow or equivalent required status check that fails PRs when
+`github.base_ref` is not the expected integration branch.
+
+**Why:** GitHub does not understand stacked PR ancestry. If a child PR is merged through the web UI, GitHub merges it
+into its parent branch, and a later squash merge of the parent hides the child commit as a separate history entry. A
+required base-branch check makes that mistake obvious before the merge button is usable.
+
+**Replace with:**
+
+- Add a dedicated workflow such as `.github/workflows/pr-base.yml`.
+- Trigger it on all pull requests, not only pull requests targeting `main`. A `pull_request.branches: [main]` filter is
+  wrong for this guard because it prevents the workflow from running on the stacked PRs it is supposed to reject.
+- Fail when `github.base_ref` is not exactly `main`:
+
+```yaml
+name: PR Base
+
+on:
+  pull_request:
+
+jobs:
+  require-main-base:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main as PR base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$BASE_REF" != "main" ]; then
+            echo "PR base must be main, got '$BASE_REF'." >&2
+            exit 1
+          fi
+```
+
+- If the repository's integration branch is not named `main`, replace `main` with the exact branch name. Do not use a
+  prefix match such as `pr/*`; the point is to allow only the integration branch and reject everything else.
+- After adding the workflow, make its `require-main-base` check required in GitHub branch protection or repository
+  rulesets. The workflow alone reports the problem, but it does not block merges until GitHub requires it.
+
+**Verify:** Open or inspect a PR whose base is not `main` and confirm the `require-main-base` job fails. Confirm the
+same check is configured as required for merges to `main`; otherwise the workflow is advisory only.
