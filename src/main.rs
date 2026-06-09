@@ -241,7 +241,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     g.add(
         "claude-skill-pre-pr-review-swarm",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/pre-pr-review-swarm",
+            "agent-skills/pre-pr-review-swarm",
             "~/.claude/skills/pre-pr-review-swarm",
         ),
     )
@@ -250,7 +250,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     g.add(
         "claude-skill-scode-dist-rust-setup",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-dist-rust-setup",
+            "agent-skills/scode-dist-rust-setup",
             "~/.claude/skills/scode-dist-rust-setup",
         ),
     )
@@ -259,7 +259,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     g.add(
         "claude-skill-scode-modernize",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-modernize",
+            "agent-skills/scode-modernize",
             "~/.claude/skills/scode-modernize",
         ),
     )
@@ -267,52 +267,37 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .build();
     g.add(
         "claude-skill-scode-todo",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-todo",
-            "~/.claude/skills/scode-todo",
-        ),
+        PayloadSymlink::new("agent-skills/scode-todo", "~/.claude/skills/scode-todo"),
     )
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
         "claude-skill-repo-swarm",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/repo-swarm",
-            "~/.claude/skills/repo-swarm",
-        ),
+        PayloadSymlink::new("agent-skills/repo-swarm", "~/.claude/skills/repo-swarm"),
     )
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
         "claude-skill-stax",
-        PayloadSymlink::new("payload/dot_claude/skills/stax", "~/.claude/skills/stax"),
+        PayloadSymlink::new("agent-skills/stax", "~/.claude/skills/stax"),
     )
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
         "claude-skill-slstack",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/slstack",
-            "~/.claude/skills/slstack",
-        ),
+        PayloadSymlink::new("agent-skills/slstack", "~/.claude/skills/slstack"),
     )
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
         "claude-skill-jjstack",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/jjstack",
-            "~/.claude/skills/jjstack",
-        ),
+        PayloadSymlink::new("agent-skills/jjstack", "~/.claude/skills/jjstack"),
     )
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
         "claude-skill-sapling",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/sapling",
-            "~/.claude/skills/sapling",
-        ),
+        PayloadSymlink::new("agent-skills/sapling", "~/.claude/skills/sapling"),
     )
     .depends_on(&claude_skills_dir)
     .build();
@@ -400,7 +385,7 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-pre-pr-review-swarm",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/pre-pr-review-swarm",
+            "agent-skills/pre-pr-review-swarm",
             "~/.codex/skills/pre-pr-review-swarm",
         ),
     )
@@ -409,7 +394,7 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-scode-dist-rust-setup",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-dist-rust-setup",
+            "agent-skills/scode-dist-rust-setup",
             "~/.codex/skills/scode-dist-rust-setup",
         ),
     )
@@ -418,7 +403,7 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-scode-modernize",
         PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-modernize",
+            "agent-skills/scode-modernize",
             "~/.codex/skills/scode-modernize",
         ),
     )
@@ -426,52 +411,37 @@ fn add_codex_features(g: &mut FeatureGraph) {
     .build();
     g.add(
         "codex-skill-scode-todo",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/scode-todo",
-            "~/.codex/skills/scode-todo",
-        ),
+        PayloadSymlink::new("agent-skills/scode-todo", "~/.codex/skills/scode-todo"),
     )
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
         "codex-skill-repo-swarm",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/repo-swarm",
-            "~/.codex/skills/repo-swarm",
-        ),
+        PayloadSymlink::new("agent-skills/repo-swarm", "~/.codex/skills/repo-swarm"),
     )
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
         "codex-skill-stax",
-        PayloadSymlink::new("payload/dot_claude/skills/stax", "~/.codex/skills/stax"),
+        PayloadSymlink::new("agent-skills/stax", "~/.codex/skills/stax"),
     )
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
         "codex-skill-slstack",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/slstack",
-            "~/.codex/skills/slstack",
-        ),
+        PayloadSymlink::new("agent-skills/slstack", "~/.codex/skills/slstack"),
     )
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
         "codex-skill-jjstack",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/jjstack",
-            "~/.codex/skills/jjstack",
-        ),
+        PayloadSymlink::new("agent-skills/jjstack", "~/.codex/skills/jjstack"),
     )
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
         "codex-skill-sapling",
-        PayloadSymlink::new(
-            "payload/dot_claude/skills/sapling",
-            "~/.codex/skills/sapling",
-        ),
+        PayloadSymlink::new("agent-skills/sapling", "~/.codex/skills/sapling"),
     )
     .depends_on(&codex_skills_dir)
     .build();
