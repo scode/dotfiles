@@ -73,9 +73,14 @@ Rules:
 
 ## Commit bodies and PR descriptions
 
-The body/description covers the _why_ — context that cannot be inferred from the code or the title. It is fine to leave
-the body entirely empty when the title says everything useful. For large changes, a brief summary of _what_ is
-acceptable to aid skimming, but the primary purpose is still the _why_.
+The body/description covers the _why_ — context that cannot be inferred from the code or the title. Leave it empty only
+when the title and diff really do say everything useful, such as a trivial one-line fix with no migration concern,
+surprising constraint, or follow-up risk.
+
+Write a body when there is non-obvious context a future reader would otherwise have to rediscover: why the change is
+needed, what old state or upgrade path it preserves, why a boundary matters, what tradeoff was chosen, what is
+intentionally omitted, or how a stacked PR depends on it. For large changes, a brief summary of _what_ is acceptable to
+aid skimming, but the primary purpose is still the _why_.
 
 Do not include "Generated with Claude Code" badges or similar attribution lines.
 
