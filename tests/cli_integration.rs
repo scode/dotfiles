@@ -66,14 +66,14 @@ fn assert_expected_claude_allow(settings: &serde_json::Value) {
     }
 }
 
-fn assert_skill_symlink_points_to_payload(home: &TempDir, link_path: &str, payload_path: &str) {
+fn assert_skill_symlink_points_to_repo_source(home: &TempDir, link_path: &str, source_path: &str) {
     let full_path = home.path().join(link_path);
     assert!(full_path.is_symlink(), "expected {link_path} symlink");
 
     let target = std::fs::read_link(&full_path).unwrap();
     assert!(
-        target.to_string_lossy().contains(payload_path),
-        "{link_path} should point at {payload_path}, got: {:?}",
+        target.to_string_lossy().contains(source_path),
+        "{link_path} should point at {source_path}, got: {:?}",
         target
     );
 }
@@ -136,53 +136,28 @@ fn test_install_creates_symlinks() {
         "expected .codex/agents/code-review-specialist.md symlink"
     );
 
-    let codex_skill = fake_home.path().join(".codex/skills/pre-pr-review-swarm");
-    assert!(
-        codex_skill.is_symlink(),
-        "expected .codex/skills/pre-pr-review-swarm symlink"
-    );
-    let codex_stax_skill = fake_home.path().join(".codex/skills/stax");
-    assert!(
-        codex_stax_skill.is_symlink(),
-        "expected .codex/skills/stax symlink"
-    );
-    let codex_slstack_skill = fake_home.path().join(".codex/skills/slstack");
-    assert!(
-        codex_slstack_skill.is_symlink(),
-        "expected .codex/skills/slstack symlink"
-    );
-    let claude_jjstack_skill = fake_home.path().join(".claude/skills/jjstack");
-    assert!(
-        claude_jjstack_skill.is_symlink(),
-        "expected .claude/skills/jjstack symlink"
-    );
-    let codex_jjstack_skill = fake_home.path().join(".codex/skills/jjstack");
-    assert!(
-        codex_jjstack_skill.is_symlink(),
-        "expected .codex/skills/jjstack symlink"
-    );
-    let claude_dist_skill = fake_home
-        .path()
-        .join(".claude/skills/scode-dist-rust-setup");
-    assert!(
-        claude_dist_skill.is_symlink(),
-        "expected .claude/skills/scode-dist-rust-setup symlink"
-    );
-    let codex_dist_skill = fake_home.path().join(".codex/skills/scode-dist-rust-setup");
-    assert!(
-        codex_dist_skill.is_symlink(),
-        "expected .codex/skills/scode-dist-rust-setup symlink"
-    );
-    assert_skill_symlink_points_to_payload(
-        &fake_home,
-        ".claude/skills/repo-swarm",
-        "payload/dot_claude/skills/repo-swarm",
-    );
-    assert_skill_symlink_points_to_payload(
-        &fake_home,
-        ".codex/skills/repo-swarm",
-        "payload/dot_claude/skills/repo-swarm",
-    );
+    for skill in [
+        "pre-pr-review-swarm",
+        "scode-dist-rust-setup",
+        "scode-modernize",
+        "scode-todo",
+        "repo-swarm",
+        "stax",
+        "slstack",
+        "jjstack",
+        "sapling",
+    ] {
+        assert_skill_symlink_points_to_repo_source(
+            &fake_home,
+            &format!(".claude/skills/{skill}"),
+            &format!("agent-skills/{skill}"),
+        );
+        assert_skill_symlink_points_to_repo_source(
+            &fake_home,
+            &format!(".codex/skills/{skill}"),
+            &format!("agent-skills/{skill}"),
+        );
+    }
 }
 
 #[test]
