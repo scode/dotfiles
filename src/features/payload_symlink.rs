@@ -1,7 +1,7 @@
 use std::fmt;
 use std::fs;
 use std::os::unix::fs::symlink;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use tracing::debug;
@@ -17,7 +17,12 @@ use crate::util::fs::{compute_relative_path, expand_tilde, normalize_path};
 /// of the entire dotfiles directory.
 ///
 /// The parent directory of the destination must already exist; it will not be
-/// created automatically.
+/// created automatically. If the destination is already a symlink to another
+/// path inside this repository, install treats that as an intended source move
+/// and repoints the link. Uninstall removes repo-owned links for the same
+/// reason: after a source move, the old installed link is still installer state.
+/// Symlinks to anything outside the repository still fail rather than being
+/// overwritten or removed.
 ///
 /// Use `RawSymlink` instead when the source is an external file not managed
 /// by this repository (e.g., linking to a file in another location on disk).
@@ -44,6 +49,7 @@ impl PayloadSymlink {
     fn install_with_base_dir(&self, base_dir: &Path) -> Result<FeatureResult> {
         let dest_path = expand_tilde(&self.destination)?;
         let source_path = base_dir.join(&self.source);
+        let base_canonical = base_dir.canonicalize()?;
         debug!(
             destination = %self.destination,
             source = %self.source,
@@ -55,34 +61,99 @@ impl PayloadSymlink {
         }
 
         let source_canonical = source_path.canonicalize()?;
+        if !source_canonical.starts_with(&base_canonical) {
+            bail!(
+                "source file is outside repository: {}",
+                source_path.display()
+            );
+        }
 
         if dest_path.exists() || dest_path.symlink_metadata().is_ok() {
             if let Ok(link_target) = fs::read_link(&dest_path) {
                 let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
-                let resolved = dest_dir.join(&link_target).canonicalize();
-                if let Ok(resolved) = resolved
-                    && resolved == source_canonical
-                {
-                    debug!(destination = %self.destination, "already installed");
-                    return Ok(FeatureResult::NoOp);
+                let resolved = dest_dir.join(&link_target);
+                match Self::repo_target(base_dir, &base_canonical, &resolved) {
+                    RepoTarget::Resolved(resolved_canonical) => {
+                        if resolved_canonical == source_canonical {
+                            debug!(destination = %self.destination, "already installed");
+                            return Ok(FeatureResult::NoOp);
+                        }
+
+                        debug!(
+                            destination = %self.destination,
+                            old_target = %resolved_canonical.display(),
+                            "repointing repository symlink"
+                        );
+                        fs::remove_file(&dest_path)?;
+                        return Self::create_symlink(&dest_path, &source_canonical);
+                    }
+                    RepoTarget::Broken(normalized) => {
+                        debug!(
+                            destination = %self.destination,
+                            old_target = %normalized.display(),
+                            "repointing broken repository symlink"
+                        );
+                        fs::remove_file(&dest_path)?;
+                        return Self::create_symlink(&dest_path, &source_canonical);
+                    }
+                    RepoTarget::Outside => {
+                        if normalize_path(&resolved) == normalize_path(&source_path) {
+                            debug!(destination = %self.destination, "already installed");
+                            return Ok(FeatureResult::NoOp);
+                        }
+                    }
                 }
             }
             bail!("destination already exists: {}", self.destination);
         }
 
+        Self::create_symlink(&dest_path, &source_canonical)
+    }
+
+    fn create_symlink(dest_path: &Path, source_canonical: &Path) -> Result<FeatureResult> {
         let dest_dir = dest_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("destination has no parent directory"))?
             .canonicalize()?;
 
-        let relative_source = compute_relative_path(&dest_dir, &source_canonical);
+        let relative_source = compute_relative_path(&dest_dir, source_canonical);
 
-        symlink(&relative_source, &dest_path)?;
+        symlink(&relative_source, dest_path)?;
         Ok(FeatureResult::Changed)
+    }
+
+    fn repo_target(base_dir: &Path, base_canonical: &Path, target: &Path) -> RepoTarget {
+        if let Ok(canonical) = target.canonicalize() {
+            if canonical.starts_with(base_canonical) {
+                return RepoTarget::Resolved(canonical);
+            }
+            return RepoTarget::Outside;
+        }
+
+        let normalized = normalize_path(target);
+        if !normalized.starts_with(normalize_path(base_dir)) {
+            return RepoTarget::Outside;
+        }
+
+        let mut ancestor = target;
+        while !ancestor.exists() {
+            let Some(parent) = ancestor.parent() else {
+                return RepoTarget::Outside;
+            };
+            ancestor = parent;
+        }
+
+        match ancestor.canonicalize() {
+            Ok(canonical) if canonical.starts_with(base_canonical) => {
+                RepoTarget::Broken(normalized)
+            }
+            _ => RepoTarget::Outside,
+        }
     }
 
     fn uninstall_with_base_dir(&self, base_dir: &Path) -> Result<FeatureResult> {
         let dest_path = expand_tilde(&self.destination)?;
+        let base_canonical = base_dir.canonicalize()?;
 
         if !dest_path.exists() && dest_path.symlink_metadata().is_err() {
             debug!(destination = %self.destination, "already uninstalled");
@@ -98,14 +169,12 @@ impl PayloadSymlink {
         let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
         let resolved = dest_dir.join(&link_target);
 
-        let targets_match = match (resolved.canonicalize(), source_path.canonicalize()) {
-            (Ok(resolved_canonical), Ok(source_canonical)) => {
-                resolved_canonical == source_canonical
-            }
-            _ => normalize_path(&resolved) == normalize_path(&source_path),
+        let target_owned_by_repo = match Self::repo_target(base_dir, &base_canonical, &resolved) {
+            RepoTarget::Resolved(_) | RepoTarget::Broken(_) => true,
+            RepoTarget::Outside => normalize_path(&resolved) == normalize_path(&source_path),
         };
 
-        if !targets_match {
+        if !target_owned_by_repo {
             bail!("symlink {} points to unexpected target", self.destination);
         }
 
@@ -113,6 +182,12 @@ impl PayloadSymlink {
         debug!(destination = %self.destination, "removed symlink");
         Ok(FeatureResult::Changed)
     }
+}
+
+enum RepoTarget {
+    Resolved(PathBuf),
+    Broken(PathBuf),
+    Outside,
 }
 
 impl Feature for PayloadSymlink {
@@ -180,6 +255,26 @@ mod tests {
     }
 
     #[test]
+    fn install_fails_when_source_symlink_resolves_outside_repo() {
+        let ctx = TestContext::new();
+        let outside = ctx.dest_path("outside-source");
+        File::create(&outside).unwrap();
+        symlink(&outside, ctx.source_dir.path().join("source-link")).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("source-link", dest_str);
+
+        let result = feature.install_with_base_dir(ctx.base_dir());
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("outside repository")
+        );
+    }
+
+    #[test]
     fn install_fails_when_dest_parent_missing() {
         let ctx = TestContext::new();
         ctx.create_source_file("source", "content");
@@ -207,12 +302,72 @@ mod tests {
     }
 
     #[test]
-    fn install_fails_when_dest_is_wrong_symlink() {
+    fn install_repoints_repo_symlink_to_new_source() {
+        let ctx = TestContext::new();
+        let source = ctx.create_source_file("correct", "content");
+        let old_source = ctx.create_source_file("wrong", "other");
+        let dest = ctx.dest_path("link");
+        let old_target = compute_relative_path(dest.parent().unwrap(), &old_source);
+        symlink(old_target, &dest).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("correct", dest_str);
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "content");
+        assert_eq!(
+            dest.parent()
+                .unwrap()
+                .join(fs::read_link(&dest).unwrap())
+                .canonicalize()
+                .unwrap(),
+            source
+        );
+    }
+
+    #[test]
+    fn install_fails_when_dest_symlink_points_outside_repo() {
         let ctx = TestContext::new();
         ctx.create_source_file("correct", "content");
-        ctx.create_source_file("wrong", "other");
+        let outside = ctx.dest_path("outside-source");
+        File::create(&outside).unwrap();
         let dest = ctx.dest_path("link");
-        symlink(ctx.source_dir.path().join("wrong"), &dest).unwrap();
+        symlink(&outside, &dest).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("correct", dest_str);
+
+        let result = feature.install_with_base_dir(ctx.base_dir());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "");
+    }
+
+    #[test]
+    fn install_repoints_broken_repo_symlink_to_new_source() {
+        let ctx = TestContext::new();
+        ctx.create_source_file("correct", "content");
+        let dest = ctx.dest_path("link");
+        symlink(ctx.source_dir.path().join("missing-old-source"), &dest).unwrap();
+        let dest_str = ctx.dest_path_str("link");
+
+        let feature = PayloadSymlink::new("correct", dest_str);
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "content");
+    }
+
+    #[test]
+    fn install_fails_for_broken_target_through_symlinked_repo_directory() {
+        let ctx = TestContext::new();
+        ctx.create_source_file("correct", "content");
+        let outside_dir = ctx.dest_path("outside-dir");
+        fs::create_dir(&outside_dir).unwrap();
+        symlink(&outside_dir, ctx.source_dir.path().join("repo-link")).unwrap();
+        let dest = ctx.dest_path("link");
+        symlink(ctx.source_dir.path().join("repo-link/missing"), &dest).unwrap();
         let dest_str = ctx.dest_path_str("link");
 
         let feature = PayloadSymlink::new("correct", dest_str);
@@ -294,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_fails_for_wrong_symlink_target() {
+    fn uninstall_removes_repo_symlink_to_moved_source() {
         let ctx = TestContext::new();
         ctx.create_source_file("correct", "content");
         ctx.create_source_file("wrong", "other");
@@ -304,20 +459,14 @@ mod tests {
 
         let feature = PayloadSymlink::new("correct", dest_str);
 
-        let result = feature.uninstall_with_base_dir(ctx.base_dir());
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("unexpected target")
-        );
+        let result = feature.uninstall_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+        assert!(dest.symlink_metadata().is_err());
     }
 
-    /// Regression test: when payload source is missing, uninstall must fail for
-    /// symlinks that point to an unexpected target.
+    /// Moved-source uninstalls must still clean up old repo-owned symlinks.
     #[test]
-    fn uninstall_fails_for_wrong_target_when_source_missing() {
+    fn uninstall_removes_repo_symlink_when_source_missing() {
         let ctx = TestContext::new();
         ctx.create_source_file("wrong", "other");
         let dest = ctx.dest_path("link");
@@ -326,15 +475,9 @@ mod tests {
 
         let feature = PayloadSymlink::new("missing", dest_str);
 
-        let result = feature.uninstall_with_base_dir(ctx.base_dir());
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("unexpected target")
-        );
-        assert!(dest.symlink_metadata().unwrap().file_type().is_symlink());
+        let result = feature.uninstall_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+        assert!(dest.symlink_metadata().is_err());
     }
 
     /// Regression test: lexical fallback should allow uninstall when source and
