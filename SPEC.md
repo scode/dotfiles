@@ -5,17 +5,25 @@ file in the same change.
 
 ## Invocation Directory
 
-The installer is intended to run from the repository root. Payload-relative paths are resolved against the process
-current working directory, not against the compiled binary path.
+The installer is intended to run from the repository root. Installer source paths are resolved against the process
+current working directory, not against the compiled binary path. Those sources are usually under `payload/`, but may
+also live elsewhere in the repository when the installed artifact is shared across multiple agent-specific destinations.
 
 This is acceptable for this repository because it is a personal checkout-driven installer, normally run with
 `cargo run -- install` or `cargo run -- uninstall` from the checkout. Future changes may make the base directory
-explicit, but reviews should not treat cwd-relative payload lookup as a bug unless the CLI contract changes at the same
+explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract changes at the same
 time.
+
+## Repo-Owned Symlink Migration
+
+`PayloadSymlink` treats an existing destination symlink to another path inside this repository as old installer state.
+On install, it repoints that symlink to the current source path. On uninstall, it removes repo-owned symlinks even when
+they point at a previous source path. Symlinks to targets outside the repository must still block install and uninstall
+rather than being overwritten or removed.
 
 ## Test Coverage Expectations
 
-Installer registration in `src/main.rs` does not need exhaustive integration coverage for every installed payload path.
+Installer registration in `src/main.rs` does not need exhaustive integration coverage for every installed source path.
 Those registrations are mostly data: paths, feature names, and dependency wiring. A small set of integration tests
 should cover the important installer mechanics, but they do not need to duplicate the entire registry.
 
