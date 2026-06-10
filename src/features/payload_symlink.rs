@@ -316,13 +316,15 @@ mod tests {
         let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
         assert_eq!(result, FeatureResult::Changed);
         assert_eq!(fs::read_to_string(&dest).unwrap(), "content");
+        // Canonicalize both sides: on macOS the tempdir lives behind the /var ->
+        // /private/var symlink, so only the resolved side would carry the /private prefix.
         assert_eq!(
             dest.parent()
                 .unwrap()
                 .join(fs::read_link(&dest).unwrap())
                 .canonicalize()
                 .unwrap(),
-            source
+            source.canonicalize().unwrap()
         );
     }
 
