@@ -186,6 +186,10 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
   every local bookmark published. If the bookmark name contains `/` or you need exact matching instead of pattern
   matching, use `jj git push --bookmark 'exact:<name>'`.
+- Do not pass `--allow-new` to `jj git push`. It was deprecated in jj 0.36 and removed in 0.42; on current jj it fails
+  immediately with `unexpected argument '--allow-new'`. Explicitly naming the bookmark with `--bookmark`/`exact:` is
+  sufficient to push a new bookmark on jj 0.36 and later. Only if `jj --version` reports 0.24–0.35 does a brand-new
+  untracked bookmark need `--allow-new` (or `jj bookmark track` on 0.35).
 - Never splice arbitrary PR text directly into a shell command. If a PR title or body came from the user, the model, a
   commit message, or `gh pr view --json ...`, materialize it first and pass it to `gh` through a quoted variable for the
   title and `--body-file` for the body. Do not improvise escaping for backticks, `$()`, quotes, or multi-line markdown.
@@ -278,6 +282,11 @@ gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --b
 If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`,
 `jj log -r 'bookmarks() | @ | @-'`, `jj bookmark list`, and the relevant `gh pr view` or `gh pr list` output before
 trying to repair anything.
+
+When a batched step fails, the steps before it have already mutated state. Resume from the failed step, not from the top
+of the batch. Rerunning the whole sequence would replay the earlier mutations: a second `jj commit` creates a spurious
+empty commit, and a replayed `jj bookmark set` can pin the bookmark to the wrong revision now that the graph has
+advanced.
 
 ## Passing PR text to gh safely
 
@@ -501,6 +510,12 @@ Stop and surface the problem instead of improvising if:
 - you already ran commit/bookmark/push in parallel and are no longer sure which commit the bookmark points at. In that
   case, stop, inspect `jj log` and `jj bookmark list`, repair the bookmark target explicitly, and only then push or
   create/edit the PR.
+
+If a `jj` or `gh` command fails with `unexpected argument` or an unknown-flag error, treat it as version drift between
+the installed tool and whatever produced the flag — this skill's examples, or your own priors. Check `--help` for the
+installed version and drop or replace the flag, rather than retrying the same command or inventing a workaround. Do not
+assume the examples here match the installed version's CLI surface; jj in particular removes deprecated flags
+(`--allow-new` is the known case).
 
 ## Landing stacked PRs safely
 
