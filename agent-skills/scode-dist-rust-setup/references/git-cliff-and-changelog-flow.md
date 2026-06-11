@@ -19,23 +19,33 @@ Replace the default `commit_parsers` with:
 
 ```toml
 commit_parsers = [
-  # Override tags: "changelog: skip" forces exclusion, "changelog: include" forces inclusion.
-  # When both are present, skip wins. Check message, body, and footer.
+  # "changelog: skip" forces exclusion and wins over everything else, so it
+  # goes first. Check message, body, and footer.
   { message = "(?i)\\bchangelog\\s*:\\s*skip\\b", skip = true },
   { body = "(?i)\\bchangelog\\s*:\\s*skip\\b", skip = true },
   { footer = "(?i)\\bchangelog\\s*:\\s*skip\\b", skip = true },
-  { message = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
-  { body = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
-  { footer = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
   # Conventional Commit types included in changelog (user-visible changes).
+  # These must run before the "changelog: include" override below: PR bodies
+  # always contain a changelog tag (CI-enforced), and if the include override
+  # ran first it would force every commit into "Changed" regardless of type.
   { message = "^feat(\\([^\\)]+\\))?!?:", group = "Added" },
   { message = "^fix(\\([^\\)]+\\))?!?:", group = "Fixed" },
   { message = "^perf(\\([^\\)]+\\))?!?:", group = "Performance" },
   { message = "^revert(\\([^\\)]+\\))?!?:", group = "Reverted" },
+  # "changelog: include" rescues commit types that would otherwise be skipped
+  # (e.g. a refactor worth calling out); they land under "Changed".
+  { message = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
+  { body = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
+  { footer = "(?i)\\bchangelog\\s*:\\s*include\\b", group = "Changed" },
   # Conventional Commit types excluded from changelog (non-user-visible).
   { message = "^(docs|doc|refactor|style|test|chore|ci)(\\([^\\)]+\\))?!?:", skip = true },
 ]
 ```
+
+NOTE: Parser order is load-bearing. An earlier version of this skill placed the `changelog: include` rules before the
+type-based rules. Because CI requires every PR body to carry a changelog tag, squash-merged commits always matched the
+include rule first and every entry was grouped under "Changed" — fix commits never reached the "Fixed" group. Keep the
+order: skip overrides, then type grouping, then the include rescue, then type-based skips.
 
 ### Other settings
 

@@ -415,3 +415,32 @@ jobs:
 
 **Verify:** Open or inspect a PR whose base is not `main` and confirm the `require-main-base` job fails. Confirm the
 same check is configured as required for merges to `main`; otherwise the workflow is advisory only.
+
+### 10. Fix `changelog: include` parser ordering in `cliff.toml` (git-cliff projects)
+
+**Detect:** The project has a `cliff.toml` with a `commit_parsers` list in which a rule matching `changelog: include`
+(in message, body, or footer) appears _before_ the type-based grouping rules (`^feat`, `^fix`, `^perf`, `^revert`).
+
+**Skip if:** There is no `cliff.toml`, there are no `changelog: include` parser rules at all, or the include rules
+already come after the type-based grouping rules.
+
+**Why:** git-cliff applies the first matching parser. In repos where CI requires every PR body to carry a
+`changelog: include` / `changelog: skip` tag, squash-merged commits always contain a tag in the body — so an early
+include rule matches first and forces every entry into its group (typically "Changed"). Fix commits never reach the
+"Fixed" group and the generated changelog misclassifies everything. This bit saltybox: every release section came out as
+"### Changed" until the parsers were reordered.
+
+**Replace with:**
+
+- Reorder `commit_parsers` to: `changelog: skip` overrides first (skip must win over everything), then the type-based
+  grouping rules (`feat` → Added, `fix` → Fixed, `perf` → Performance, `revert` → Reverted), then the
+  `changelog: include` rules (which now only rescue commit types that would otherwise be skipped), then the type-based
+  skip rule for non-user-visible types.
+- The corrected block, with rationale comments, is in
+  `agent-skills/scode-dist-rust-setup/references/git-cliff-and-changelog-flow.md` — keep the two in sync.
+- After reordering, regenerate the changelog (`git-cliff --tag <current-tag> -o CHANGELOG.md`) and review the diff:
+  entries for past releases may legitimately move between groups (that is the fix working). Watch for hand-written
+  sections that regeneration drops; restore them manually.
+
+**Verify:** In `cliff.toml`, the first `changelog\s*:\s*include` rule appears on a later line than the `^fix` grouping
+rule. Regenerating the changelog puts `fix:` commits under "### Fixed", not "### Changed".
