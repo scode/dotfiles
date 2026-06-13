@@ -29,4 +29,3 @@ Search for bugs, edge-case failures, regressions, and unsafe assumptions.
     a default without rethrowing.
 - Don't flag hypothetical edge cases that the surrounding code already precludes.
 - If you suspect a bug, trace the actual code path rather than speculating.
-- Check that tests actually assert the behavior they claim to test.
