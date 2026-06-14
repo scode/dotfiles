@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suggestions"],
+  "properties": {
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "rationale", "target"],
+        "properties": {
+          "summary": { "type": "string" },
+          "rationale": { "type": "string" },
+          "target": { "type": "string" }
+        }
+      }
+    }
+  }
+}

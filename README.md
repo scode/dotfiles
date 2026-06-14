@@ -6,10 +6,10 @@ A personal dotfiles manager for symlinks and a small amount of managed config st
 
 ```bash
 # Install every feature whose prerequisites already exist
-cargo run -- install
+cargo run -p dotfiles -- install
 
 # Uninstall managed symlinks and removable directories
-cargo run -- uninstall
+cargo run -p dotfiles -- uninstall
 ```
 
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
