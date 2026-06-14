@@ -2,6 +2,10 @@
 /target/
 **/*.rs.bk
 
+# Manual skill eval artifacts
+/eval-runs/
+/eval-worktrees/
+
 # Editor settings
 .idea/
 .vscode/

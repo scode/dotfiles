@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["judgments"],
+  "properties": {
+    "judgments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "classification", "rationale"],
+        "properties": {
+          "finding_id": { "type": "string" },
+          "classification": { "enum": ["good", "incorrect", "indeterminate"] },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

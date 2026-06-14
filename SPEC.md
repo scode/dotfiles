@@ -10,9 +10,19 @@ current working directory, not against the compiled binary path. Those sources a
 also live elsewhere in the repository when the installed artifact is shared across multiple agent-specific destinations.
 
 This is acceptable for this repository because it is a personal checkout-driven installer, normally run with
-`cargo run -- install` or `cargo run -- uninstall` from the checkout. Future changes may make the base directory
-explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract changes at the same
-time.
+`cargo run -p dotfiles -- install` or `cargo run -p dotfiles -- uninstall` from the checkout. Future changes may make
+the base directory explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract
+changes at the same time.
+
+## Manual Skill Evals
+
+The `xtask` crate is repository tooling, not an installed dotfiles artifact. `cargo xtask eval ...` is intentionally
+manual because it spends model tokens. Eval runs may clone public target repositories under `eval-worktrees/` and write
+run artifacts under `eval-runs/`; both directories must stay ignored by git.
+
+The `pre-pr-review-swarm` eval corpus points at unpolished code refs. Historical polished PRs are not ground truth for
+these evals. Comparisons are baseline-relative: a likely regression means a judge-approved baseline finding was not
+recovered as a judge-approved candidate finding across repeats for the same resolved diff.
 
 ## Repo-Owned Symlink Migration
 

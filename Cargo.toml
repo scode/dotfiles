@@ -3,6 +3,10 @@ name = "dotfiles"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = [".", "xtask"]
+default-members = [".", "xtask"]
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

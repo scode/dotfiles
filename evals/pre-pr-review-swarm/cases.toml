@@ -1,0 +1,4 @@
+[[cases]]
+id = "treeward-swapped-fifo"
+repo = "scode/treeward"
+subject_ref = "code-review-eval-swapped-fifo"
