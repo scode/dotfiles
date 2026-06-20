@@ -13,7 +13,13 @@ manages changes and bookmarks.
 
 If the user explicitly asks to use `jj`, `Jujutsu`, or `$jjstack`, treat that as direction to use this workflow even in
 a plain Git checkout. Do not silently fall back to a Git-only flow just because the repo has not been bootstrapped yet.
-Initialize `jj` in place first unless the user explicitly says not to.
+Initialize `jj` in place first unless the user explicitly says not to. This preference lasts for the rest of the
+session, or until the user explicitly says to stop using jjstack.
+
+If a `jj` or `gh` command is blocked by sandboxing, approval policy, missing escalation, or any similar execution
+permission issue, stop and ask the user how to proceed. Do not downgrade to a Git-only, manual, or otherwise different
+commit/PR flow to get around the block. A user who asked for jjstack asked for this workflow, not merely for "some way
+to create a commit or PR".
 
 ## What to optimize for
 
@@ -503,6 +509,8 @@ jj interdiff --from pr/foo@origin --to pr/foo
 
 Stop and surface the problem instead of improvising if:
 
+- a `jj` or `gh` workflow command is blocked by sandboxing, approval policy, missing escalation, or another execution
+  permission issue
 - `jj git push` reports a bookmark conflict or stale remote state and a fetch is clearly required
 - `gh` auth is missing or the repo path is wrong in a non-colocated workspace
 - rewriting a lower commit causes conflicts you cannot resolve confidently
