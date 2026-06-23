@@ -32,6 +32,11 @@ away with an accurate mental model of the file.
 When relevant, document invariants, non-obvious edge cases, important omissions, and assumptions callers must not make.
 Those are exactly the details that go missing when comments are too terse.
 
+When changing code, add or update nearby docstrings for any new invariant, lifecycle dependency, cache, async or
+scheduling behavior, test harness assumption, or cross-phase contract. Before finalizing a diff, scan new private
+helpers and changed tests: if a future reader would need bug history, framework lifecycle context, or a non-obvious
+portability assumption to understand why the code is shaped that way, document that context.
+
 ## Inline comments
 
 Inline comments are not decoration. Add them when a reader needs a signpost: non-obvious intent, a surprising
