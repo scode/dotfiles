@@ -115,11 +115,11 @@ fn test_install_creates_symlinks() {
     );
     assert_expected_claude_allow(&settings);
 
-    // Verify it points to payload/ with a relative path
+    // Verify it points to the shared agent-instructions source with a relative path.
     let target = std::fs::read_link(&claude_md).unwrap();
     assert!(
-        target.to_string_lossy().contains("payload/"),
-        "symlink should point to payload/"
+        target.ends_with("agent-instructions/AGENTS.md"),
+        "symlink should point to agent-instructions/AGENTS.md"
     );
     assert!(
         target.is_relative(),
@@ -630,6 +630,57 @@ fn test_install_migrates_legacy_claude_settings_symlink() {
         serde_json::json!("~/bin/claude-statusline.sh")
     );
     assert_expected_claude_allow(&settings);
+}
+
+#[test]
+fn test_install_repoints_legacy_agent_instruction_symlinks() {
+    let fake_home = setup_fake_home();
+    let legacy_links = [
+        fake_home.path().join(".claude/CLAUDE.md"),
+        fake_home.path().join(".codex/AGENTS.md"),
+    ];
+
+    for legacy_link in &legacy_links {
+        let legacy_target = dotfiles::util::fs::compute_relative_path(
+            legacy_link.parent().unwrap(),
+            &std::env::current_dir()
+                .unwrap()
+                .join("payload/dot_claude/CLAUDE.md"),
+        );
+        std::os::unix::fs::symlink(&legacy_target, legacy_link).unwrap();
+        assert!(
+            legacy_link.is_symlink(),
+            "legacy instruction symlink setup failed"
+        );
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for legacy_link in legacy_links {
+        let target = std::fs::read_link(&legacy_link).unwrap();
+        assert!(
+            target.ends_with("agent-instructions/AGENTS.md"),
+            "{} should be repointed to agent-instructions/AGENTS.md, got: {:?}",
+            legacy_link.display(),
+            target
+        );
+        assert!(
+            target.is_relative(),
+            "{} symlink should remain relative, got: {:?}",
+            legacy_link.display(),
+            target
+        );
+    }
 }
 
 #[test]

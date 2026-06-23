@@ -137,7 +137,7 @@ fn add_herdr_features(g: &mut FeatureGraph) {
 fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) {
     g.add(
         "claude-md",
-        PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.claude/CLAUDE.md"),
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.claude/CLAUDE.md"),
     )
     .condition(PathExists::new("~/.claude"))
     .build();
@@ -334,7 +334,7 @@ fn add_bin_features(g: &mut FeatureGraph) -> FeatureHandle {
 fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-md",
-        PayloadSymlink::new("payload/dot_claude/CLAUDE.md", "~/.codex/AGENTS.md"),
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.codex/AGENTS.md"),
     )
     .condition(PathExists::new("~/.codex"))
     .build();
