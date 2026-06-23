@@ -2,10 +2,10 @@
 
 ## Keeping main.rs in sync
 
-This repo is a dotfiles installer. Files under `payload/` and `agent-skills/` are installed to the home directory via
-symlinks registered in `src/main.rs`. When you add, remove, rename, or move an installed source file, you must update
-`src/main.rs` to match — otherwise the file won't actually be installed. Look at existing entries in `main.rs` for the
-pattern.
+This repo is a dotfiles installer. Files under `payload/`, `agent-instructions/`, and `agent-skills/` are installed to
+the home directory via symlinks registered in `src/main.rs`. When you add, remove, rename, or move an installed source
+file, you must update `src/main.rs` to match — otherwise the file won't actually be installed. Look at existing entries
+in `main.rs` for the pattern.
 
 ## Migrating features in main.rs
 
@@ -34,6 +34,12 @@ The general rule: never assume a clean slate. If a path was previously installed
 
 Shared agent skills live in `agent-skills/`. When the user asks to view, modify, or discuss a skill, look there — not in
 `~/.claude/skills/`, `~/.codex/skills/`, or the old `payload/dot_claude/skills/` path.
+
+## Agent Instructions
+
+Shared installed agent instructions live in `agent-instructions/`. When changing the Claude/Codex instruction blob that
+gets installed as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, edit `agent-instructions/AGENTS.md`, not the old
+`payload/dot_claude/CLAUDE.md` path.
 
 ## Lore
 
