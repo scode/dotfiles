@@ -127,15 +127,7 @@ fn test_install_creates_symlinks() {
         target
     );
 
-    // Verify codex gets the same skill/agent symlinks as claude
-    let codex_agent = fake_home
-        .path()
-        .join(".codex/agents/code-review-specialist.md");
-    assert!(
-        codex_agent.is_symlink(),
-        "expected .codex/agents/code-review-specialist.md symlink"
-    );
-
+    // Verify codex gets the same skill symlinks as claude.
     for skill in [
         "pre-pr-review-swarm",
         "scode-dist-rust-setup",
@@ -179,9 +171,6 @@ fn test_uninstall_removes_symlinks() {
     // Verify installed Claude artifacts exist before uninstall
     let claude_md = fake_home.path().join(".claude/CLAUDE.md");
     let claude_settings = fake_home.path().join(".claude/settings.json");
-    let codex_agent = fake_home
-        .path()
-        .join(".codex/agents/code-review-specialist.md");
     let codex_stax_skill = fake_home.path().join(".codex/skills/stax");
     let codex_slstack_skill = fake_home.path().join(".codex/skills/slstack");
     let claude_jjstack_skill = fake_home.path().join(".claude/skills/jjstack");
@@ -193,10 +182,6 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
         "settings file should exist after install"
-    );
-    assert!(
-        codex_agent.is_symlink(),
-        "codex symlink should exist after install"
     );
     assert!(
         codex_stax_skill.is_symlink(),
@@ -248,10 +233,6 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
         "settings file should be left intact after uninstall"
-    );
-    assert!(
-        !codex_agent.exists() && !codex_agent.is_symlink(),
-        "codex symlink should be removed after uninstall"
     );
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
@@ -453,29 +434,29 @@ fn test_dependency_ordering() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify directories were created (via ManagedDirectory)
+    // Verify directories were created only for artifacts the installer still manages.
     assert!(
         fake_home.path().join(".claude/commands").is_dir(),
         ".claude/commands should be a directory"
     );
     assert!(
-        fake_home.path().join(".claude/agents").is_dir(),
-        ".claude/agents should be a directory"
+        !fake_home.path().join(".claude/agents").exists(),
+        ".claude/agents should not be created without installed agents"
     );
     assert!(
         fake_home.path().join(".claude/skills").is_dir(),
         ".claude/skills should be a directory"
     );
     assert!(
-        fake_home.path().join(".codex/agents").is_dir(),
-        ".codex/agents should be a directory"
+        !fake_home.path().join(".codex/agents").exists(),
+        ".codex/agents should not be created without installed agents"
     );
     assert!(
         fake_home.path().join(".codex/skills").is_dir(),
         ".codex/skills should be a directory"
     );
 
-    // Verify symlinks that depend on those directories exist
+    // Verify managed symlinks exist and removed agent symlinks stay absent.
     assert!(
         fake_home
             .path()
@@ -484,11 +465,11 @@ fn test_dependency_ordering() {
         "command symlink should exist"
     );
     assert!(
-        fake_home
+        !fake_home
             .path()
             .join(".claude/agents/code-review-specialist.md")
-            .is_symlink(),
-        "agent symlink should exist"
+            .exists(),
+        "removed claude agent symlink should not be installed"
     );
     assert!(
         fake_home
@@ -509,11 +490,11 @@ fn test_dependency_ordering() {
         "claude jjstack skill symlink should exist"
     );
     assert!(
-        fake_home
+        !fake_home
             .path()
             .join(".codex/agents/code-review-specialist.md")
-            .is_symlink(),
-        "codex agent symlink should exist"
+            .exists(),
+        "removed codex agent symlink should not be installed"
     );
     assert!(
         fake_home
@@ -580,7 +561,6 @@ fn test_all_symlinks_are_relative() {
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",
         ".claude/skills/repo-swarm",
-        ".codex/agents/code-review-specialist.md",
         ".codex/skills/pre-pr-review-swarm",
         ".codex/skills/stax",
         ".codex/skills/slstack",
@@ -650,4 +630,58 @@ fn test_install_migrates_legacy_claude_settings_symlink() {
         serde_json::json!("~/bin/claude-statusline.sh")
     );
     assert_expected_claude_allow(&settings);
+}
+
+#[test]
+fn test_install_removes_legacy_code_review_specialist_agent_symlinks() {
+    let fake_home = setup_fake_home();
+    let legacy_paths = [
+        "code-review-specialist.md",
+        "codex-code-review.md",
+        "gemini-code-review.md",
+    ]
+    .into_iter()
+    .flat_map(|agent_file| {
+        [
+            fake_home.path().join(".claude/agents").join(agent_file),
+            fake_home.path().join(".codex/agents").join(agent_file),
+        ]
+    })
+    .collect::<Vec<_>>();
+
+    for legacy_path in &legacy_paths {
+        std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
+        let legacy_target = dotfiles::util::fs::compute_relative_path(
+            legacy_path.parent().unwrap(),
+            &std::env::current_dir()
+                .unwrap()
+                .join("payload/dot_claude/agents")
+                .join(legacy_path.file_name().unwrap()),
+        );
+        std::os::unix::fs::symlink(&legacy_target, legacy_path).unwrap();
+        assert!(
+            legacy_path.is_symlink(),
+            "legacy agent symlink setup failed"
+        );
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for legacy_path in legacy_paths {
+        assert!(
+            !legacy_path.exists() && !legacy_path.is_symlink(),
+            "legacy agent symlink should be removed: {}",
+            legacy_path.display()
+        );
+    }
 }
