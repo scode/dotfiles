@@ -39,6 +39,29 @@ const CLAUDE_PERMISSIONS_ALLOW: &[&str] = &[
     "Write(~/.leiter/soul.md)",
 ];
 
+const LEGACY_AGENT_FILES: &[&str] = &[
+    "code-review-specialist.md",
+    "codex-code-review.md",
+    "gemini-code-review.md",
+];
+
+/// Registers cleanup for agent symlinks that may exist from older installs.
+///
+/// These cleanup features are conditioned on the agents directory already
+/// existing. That lets real upgrades remove repo-owned legacy symlinks without
+/// making fresh installs create an empty agents directory.
+fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_dir: &str) {
+    for file_name in LEGACY_AGENT_FILES {
+        let agent_name = file_name.strip_suffix(".md").unwrap_or(file_name);
+        g.add(
+            format!("delete-{agent_owner}-agent-{agent_name}"),
+            DeleteSymlink::new(format!("{agents_dir}/{file_name}")),
+        )
+        .condition(PathExists::new(agents_dir.to_owned()))
+        .build();
+    }
+}
+
 fn add_zed_features(g: &mut FeatureGraph) {
     g.add(
         "zed-keymap",
@@ -197,38 +220,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_commands_dir)
     .build();
 
-    // Agents directory + files
-    let claude_agents_dir = g
-        .add(
-            "claude-agents-dir",
-            ManagedDirectory::new("~/.claude/agents"),
-        )
-        .condition(PathExists::new("~/.claude"))
-        .build();
-    g.add(
-        "claude-agent-code-review-specialist",
-        PayloadSymlink::new(
-            "payload/dot_claude/agents/code-review-specialist.md",
-            "~/.claude/agents/code-review-specialist.md",
-        ),
-    )
-    .depends_on(&claude_agents_dir)
-    .build();
-
-    // Delete review-agent symlinks from older installs. The installer may still
-    // find these on machines that predate the removal of these agents.
-    g.add(
-        "delete-claude-agent-codex-code-review",
-        DeleteSymlink::new("~/.claude/agents/codex-code-review.md"),
-    )
-    .depends_on(&claude_agents_dir)
-    .build();
-    g.add(
-        "delete-claude-agent-gemini-code-review",
-        DeleteSymlink::new("~/.claude/agents/gemini-code-review.md"),
-    )
-    .depends_on(&claude_agents_dir)
-    .build();
+    add_agent_cleanup_features(g, "claude", "~/.claude/agents");
 
     // Skills directory + files
     let claude_skills_dir = g
@@ -347,35 +339,7 @@ fn add_codex_features(g: &mut FeatureGraph) {
     .condition(PathExists::new("~/.codex"))
     .build();
 
-    // Agents directory + files
-    let codex_agents_dir = g
-        .add("codex-agents-dir", ManagedDirectory::new("~/.codex/agents"))
-        .condition(PathExists::new("~/.codex"))
-        .build();
-    g.add(
-        "codex-agent-code-review-specialist",
-        PayloadSymlink::new(
-            "payload/dot_claude/agents/code-review-specialist.md",
-            "~/.codex/agents/code-review-specialist.md",
-        ),
-    )
-    .depends_on(&codex_agents_dir)
-    .build();
-
-    // Delete review-agent symlinks from older installs. The installer may still
-    // find these on machines that predate the removal of these agents.
-    g.add(
-        "delete-codex-agent-codex-code-review",
-        DeleteSymlink::new("~/.codex/agents/codex-code-review.md"),
-    )
-    .depends_on(&codex_agents_dir)
-    .build();
-    g.add(
-        "delete-codex-agent-gemini-code-review",
-        DeleteSymlink::new("~/.codex/agents/gemini-code-review.md"),
-    )
-    .depends_on(&codex_agents_dir)
-    .build();
+    add_agent_cleanup_features(g, "codex", "~/.codex/agents");
 
     // Skills directory + files
     let codex_skills_dir = g
