@@ -101,7 +101,7 @@ voice or writing style, that takes precedence.
 
 The following must all pass before creating a PR or claiming work is done:
 
-- `dprint fmt`
-- `cargo fmt`
+- `dprint check`
+- `cargo fmt --check`
 - `cargo test`
-- `cargo clippy`
+- `cargo clippy -- -D warnings`
