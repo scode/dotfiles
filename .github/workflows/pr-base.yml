@@ -5,7 +5,7 @@ on:
 
 jobs:
   require-main-base:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud
     steps:
       - name: Require main as PR base
         env:
