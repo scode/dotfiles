@@ -104,7 +104,61 @@ test:
 **Verify:** The workflow file has separate `fmt`, `clippy`, and `test` jobs. Every job that compiles Rust code has cargo
 caching. `act` or a manual read confirms each job runs the expected command.
 
-### 2. Keep agent finish-work commands in sync with CI
+### 2. Switch GitHub Actions workflows to Ubicloud runners
+
+**Detect:** The project has GitHub Actions workflows under `.github/workflows/` and at least one job uses a GitHub
+hosted Ubuntu runner such as `ubuntu-latest`, `ubuntu-24.04`, or `ubuntu-22.04` instead of an Ubicloud runner.
+
+**Skip if:** There are no GitHub Actions workflows, every job already uses an Ubicloud runner, or the workflow clearly
+needs a GitHub-hosted runner for a documented reason.
+
+**Why:** Ubicloud runners are a standard part of the baseline CI setup. They are compatible with GitHub runner images
+for ordinary Linux CI, and the short label keeps the workflow independent of a specific CPU size until the project has a
+reason to care.
+
+**Replace with:**
+
+- By default, do the same migration as <https://github.com/scode/ferricode/pull/6>: replace each GitHub-hosted Ubuntu
+  runner with `runs-on: ubicloud` and leave the rest of the workflow alone.
+- Preserve intentional non-Linux jobs. Do not rewrite macOS, Windows, self-hosted, or container-only jobs unless the
+  user explicitly asks for that.
+- If the user asks to use Ubicloud with a custom runner, present the full available runner list below and ask which
+  label to use before editing. The list was pulled from Ubicloud's runner type documentation and linked
+  `github_runner_labels.yml` on 2026-06-27; do not browse during the normal modernization run just to refresh it.
+- Do not offer deprecated arm label aliases unless the user specifically asks about backwards compatibility.
+
+Available Ubicloud runner labels:
+
+- `ubicloud` (alias for `ubicloud-standard-2-ubuntu-2404`)
+- `ubicloud-arm` (alias for `ubicloud-standard-2-arm-ubuntu-2404`)
+- `ubicloud-standard-2`, `ubicloud-standard-4`, `ubicloud-standard-8`, `ubicloud-standard-16`, `ubicloud-standard-30`,
+  `ubicloud-standard-60`
+- `ubicloud-standard-2-ubuntu-2204`, `ubicloud-standard-4-ubuntu-2204`, `ubicloud-standard-8-ubuntu-2204`,
+  `ubicloud-standard-16-ubuntu-2204`, `ubicloud-standard-30-ubuntu-2204`, `ubicloud-standard-60-ubuntu-2204`
+- `ubicloud-standard-2-ubuntu-2404`, `ubicloud-standard-4-ubuntu-2404`, `ubicloud-standard-8-ubuntu-2404`,
+  `ubicloud-standard-16-ubuntu-2404`, `ubicloud-standard-30-ubuntu-2404`, `ubicloud-standard-60-ubuntu-2404`
+- `ubicloud-standard-2-ubuntu-2604`, `ubicloud-standard-4-ubuntu-2604`, `ubicloud-standard-8-ubuntu-2604`,
+  `ubicloud-standard-16-ubuntu-2604`, `ubicloud-standard-30-ubuntu-2604`, `ubicloud-standard-60-ubuntu-2604`
+- `ubicloud-premium-2`, `ubicloud-premium-4`, `ubicloud-premium-8`, `ubicloud-premium-16`, `ubicloud-premium-30`
+- `ubicloud-premium-2-ubuntu-2204`, `ubicloud-premium-4-ubuntu-2204`, `ubicloud-premium-8-ubuntu-2204`,
+  `ubicloud-premium-16-ubuntu-2204`, `ubicloud-premium-30-ubuntu-2204`
+- `ubicloud-premium-2-ubuntu-2404`, `ubicloud-premium-4-ubuntu-2404`, `ubicloud-premium-8-ubuntu-2404`,
+  `ubicloud-premium-16-ubuntu-2404`, `ubicloud-premium-30-ubuntu-2404`
+- `ubicloud-premium-2-ubuntu-2604`, `ubicloud-premium-4-ubuntu-2604`, `ubicloud-premium-8-ubuntu-2604`,
+  `ubicloud-premium-16-ubuntu-2604`, `ubicloud-premium-30-ubuntu-2604`
+- `ubicloud-standard-2-arm`, `ubicloud-standard-4-arm`, `ubicloud-standard-8-arm`, `ubicloud-standard-16-arm`,
+  `ubicloud-standard-30-arm`, `ubicloud-standard-60-arm`
+- `ubicloud-standard-2-arm-ubuntu-2204`, `ubicloud-standard-4-arm-ubuntu-2204`, `ubicloud-standard-8-arm-ubuntu-2204`,
+  `ubicloud-standard-16-arm-ubuntu-2204`, `ubicloud-standard-30-arm-ubuntu-2204`, `ubicloud-standard-60-arm-ubuntu-2204`
+- `ubicloud-standard-2-arm-ubuntu-2404`, `ubicloud-standard-4-arm-ubuntu-2404`, `ubicloud-standard-8-arm-ubuntu-2404`,
+  `ubicloud-standard-16-arm-ubuntu-2404`, `ubicloud-standard-30-arm-ubuntu-2404`, `ubicloud-standard-60-arm-ubuntu-2404`
+- `ubicloud-standard-2-arm-ubuntu-2604`, `ubicloud-standard-4-arm-ubuntu-2604`, `ubicloud-standard-8-arm-ubuntu-2604`,
+  `ubicloud-standard-16-arm-ubuntu-2604`, `ubicloud-standard-30-arm-ubuntu-2604`, `ubicloud-standard-60-arm-ubuntu-2604`
+
+**Verify:** Workflow jobs that previously used GitHub-hosted Ubuntu runners now use `runs-on: ubicloud`, or the
+user-selected Ubicloud label when they explicitly requested a custom runner. Non-Linux jobs are unchanged.
+
+### 3. Keep agent finish-work commands in sync with CI
 
 **Detect:** The repository has `AGENTS.md` and/or `CLAUDE.md` instructions that tell the agent what to run before
 finishing work, creating a PR, or claiming the work is done. Compare those commands against the commands actually run by
@@ -141,7 +195,7 @@ good enough: a missing flag can hide exactly the failure CI is about to report.
 finish-work command matches a required CI command exactly, every required CI signal is represented, and no extra local
 command is described as required unless it is intentionally stricter than CI and the instructions say that.
 
-### 3. Replace `actions-rs/*` GitHub Actions (Rust projects)
+### 4. Replace `actions-rs/*` GitHub Actions (Rust projects)
 
 **Detect:** Any `.github/workflows/*.yml` file that references `actions-rs/` in a `uses:` field (e.g.
 `actions-rs/toolchain`, `actions-rs/cargo`, `actions-rs/clippy-check`, `actions-rs/audit-check`).
@@ -178,7 +232,7 @@ and eliminates a supply-chain risk.
 
 **Verify:** `rg 'actions-rs/' .github/` returns no matches after replacement.
 
-### 4. Canonicalize agent instructions as `AGENTS.md`
+### 5. Canonicalize agent instructions as `AGENTS.md`
 
 **Detect:** Check the repository root for `AGENTS.md` and `CLAUDE.md`.
 
@@ -205,7 +259,7 @@ compatibility with older Claude-specific tooling without forcing people to maint
 **Verify:** `test -f AGENTS.md && test ! -L AGENTS.md` succeeds when either agent instruction file exists. If
 `CLAUDE.md` exists after the change, `test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"` succeeds.
 
-### 5. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
+### 6. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
 
 **Detect:** A `CLAUDE.md` or `AGENTS.md` at the repository root (or `.claude/` directory) whose content is predominantly
 architecture overview — descriptions of what each directory contains, how modules relate to each other, summaries of the
@@ -228,7 +282,7 @@ overviews are redundant — an agent can read the code — and they rot as the c
 **Verify:** Read the resulting file (if it still exists) and confirm every remaining section expresses an intent,
 preference, or constraint that cannot be trivially inferred from the repository contents.
 
-### 6. Migrate from `log` crate to `tracing` (Rust projects)
+### 7. Migrate from `log` crate to `tracing` (Rust projects)
 
 **Detect:** `Cargo.toml` (including workspace and member `Cargo.toml` files) lists `log` as a dependency, or the source
 code uses `log::info!`, `log::debug!`, `log::warn!`, `log::error!`, `log::trace!`, or the corresponding unqualified
@@ -269,7 +323,7 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
 
-### 7. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+### 8. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
 
 **Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
 repository root, but do not treat an existing config as "already done".
@@ -334,7 +388,7 @@ dprint:
 the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
 the workflow file.
 
-### 8. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
+### 9. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
 **Detect:** The project has a `CLAUDE.md` or `AGENTS.md` (at the repo root or in `.claude/`) that does not already
 contain conventional commit guidance (search for "conventional commit" case-insensitively).
@@ -369,7 +423,7 @@ Rules:
 **Verify:** The target file contains a conventional commit section. Read it back and confirm the types list and rules
 are present.
 
-### 9. Add a PR base guard for stacked workflows (GitHub Actions projects)
+### 10. Add a PR base guard for stacked workflows (GitHub Actions projects)
 
 **Detect:** The project uses GitHub Actions and allows stacked PRs, but has no required check that rejects PRs whose
 base branch is anything other than the repository's main integration branch.
@@ -416,7 +470,7 @@ jobs:
 **Verify:** Open or inspect a PR whose base is not `main` and confirm the `require-main-base` job fails. Confirm the
 same check is configured as required for merges to `main`; otherwise the workflow is advisory only.
 
-### 10. Fix `changelog: include` parser ordering in `cliff.toml` (git-cliff projects)
+### 11. Fix `changelog: include` parser ordering in `cliff.toml` (git-cliff projects)
 
 **Detect:** The project has a `cliff.toml` with a `commit_parsers` list in which a rule matching `changelog: include`
 (in message, body, or footer) appears _before_ the type-based grouping rules (`^feat`, `^fix`, `^perf`, `^revert`).
