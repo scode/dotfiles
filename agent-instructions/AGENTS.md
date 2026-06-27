@@ -37,6 +37,16 @@ scheduling behavior, test harness assumption, or cross-phase contract. Before fi
 helpers and changed tests: if a future reader would need bug history, framework lifecycle context, or a non-obvious
 portability assumption to understand why the code is shaped that way, document that context.
 
+When writing code, err on the side of quality docstrings even if that is not the prevailing style in the files you are
+touching. Sparse existing documentation is not a reason to keep new behavior under-documented. Only back off when
+repo-specific instructions explicitly ask for less documentation in that file or module; do not infer that preference
+from silence or from old code.
+
+This authoring rule is intentionally stronger than the review rule. During review, do not mechanically demand docstrings
+everywhere. Still flag missing documentation when a change adds a contract, invariant, lifecycle assumption,
+trust-boundary assumption, async/race behavior, portability assumption, or failure mode that a future reader would
+otherwise have to rediscover.
+
 ## Inline comments
 
 Inline comments are not decoration. Add them when a reader needs a signpost: non-obvious intent, a surprising
