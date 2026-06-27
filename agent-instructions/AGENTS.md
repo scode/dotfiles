@@ -59,6 +59,11 @@ Leave PR descriptions empty when the diff is self-explanatory and there is no no
 write filler just because a PR body exists. Useful PR descriptions explain motivation, constraints, tradeoffs,
 surprising omissions, or follow-up risks that are not clear from the diff itself.
 
+Use `## Problem` and `## Solution` sections only when the PR body needs real explanatory context and those headings make
+that context easier to scan. If the diff and title already make the motivation clear, leave the body empty. Do not turn
+routine cleanup, metadata changes, narrow instruction tweaks, or other self-explanatory PRs into boilerplate
+problem/solution writeups.
+
 Do not make lists of things changed.
 
 Do not add validation boilerplate to commit messages or PR descriptions. A line like "Tests run: cargo fmt, cargo test,
