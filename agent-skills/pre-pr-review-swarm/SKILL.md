@@ -1,11 +1,12 @@
 ---
 name: pre-pr-review-swarm
-description: Run a concurrent multi-angle review immediately before proposing PR creation. Use when implementation and tests are complete and you are about to ask for PR creation or submission. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, README or equivalent documentation drift, and SPEC.md compliance (when a SPEC.md exists at the project root).
+description: Run a concurrent multi-angle review only when the user explicitly invokes `pre-pr-review-swarm` by name. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, README or equivalent documentation drift, and SPEC.md compliance (when a SPEC.md exists at the project root).
 ---
 
 # Pre-PR Review Swarm
 
-Run this skill as the final quality gate after implementation work and before asking to create a PR.
+Run this skill only when the user explicitly invokes `pre-pr-review-swarm` by name. Do not infer it from ordinary PR
+creation, submission, or readiness work.
 
 ## Arguments
 
