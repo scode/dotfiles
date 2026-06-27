@@ -3,6 +3,7 @@ name = "dotfiles"
 version = "0.1.0"
 default-run = "dotfiles"
 edition = "2024"
+license = "Apache-2.0"
 
 [workspace]
 members = [".", "xtask"]
