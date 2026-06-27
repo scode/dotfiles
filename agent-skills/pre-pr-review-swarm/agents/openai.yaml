@@ -1,4 +1,4 @@
 interface:
   display_name: "Pre-PR Review Swarm"
-  short_description: "Run a concurrent multi-angle review before PR creation."
-  default_prompt: "Run the pre-pr-review-swarm skill to do a final concurrent review pass before asking for PR creation."
+  short_description: "Run an explicitly requested concurrent multi-angle review."
+  default_prompt: "Run the pre-pr-review-swarm skill only because it was explicitly invoked by name."
