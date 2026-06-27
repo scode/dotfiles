@@ -2,3 +2,8 @@
 id = "treeward-swapped-fifo"
 repo = "scode/treeward"
 subject_ref = "code-review-eval-swapped-fifo"
+
+[[cases]]
+id = "ferricode-openai-codex-remote-auth"
+repo = "scode/ferricode"
+subject_ref = "eval/pre-pr-review-swarm/pr-10-openai-codex-remote-auth"
