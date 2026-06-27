@@ -22,28 +22,43 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
 ## Workflow
 
 1. Parse arguments (see above).
-2. Determine review scope:
-   - If `commit`: use `git show` for the diff and touched files.
-   - Otherwise: use uncommitted changes. If none exist, fall back to `git show`.
-3. Check whether a `SPEC.md` exists at the project root.
-4. Run the reviewer charters concurrently when the environment supports it (eight always, plus a ninth if `SPEC.md`
-   exists). Keep each reviewer focused on its own charter so the review instructions stay separate.
-5. For each reviewer, include the review scope (diff and touched files) and instruct the reviewer to read its charter
-   file before reviewing. Charter files live in the `reviewers/` directory next to this skill file.
-6. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
+2. Materialize the review scope into a named diff file before spawning reviewers:
+   - If `commit`: write the current commit diff and touched-file summary to the scope file.
+   - Otherwise: write the uncommitted working-copy diff and touched-file summary to the scope file. If that scope is
+     empty, replace it with the current commit diff.
+   - Abort instead of spawning reviewers if the selected scope file is still empty.
+   - Keep the checkout aligned with the selected scope's after-state while reviewers run. If that is not true, use an
+     isolated checkout/worktree or abort instead of asking reviewers to infer context from stale files.
+   - Record a short human-readable scope label, such as `current commit <id>` or
+     `uncommitted working-copy diff
+     (<n> files)`.
+3. Report the selected scope before spawning reviewers.
+4. Check whether a `SPEC.md` exists at the project root.
+5. Run the reviewer charters concurrently when the environment supports it (eight always, plus a ninth if `SPEC.md`
+   exists). Keep each reviewer focused on its own charter so the review instructions stay separate. If the environment
+   cannot spawn reviewer agents and wait for their results, stop and report that the swarm could not be run. Do not
+   replace the swarm with a coordinator-only read-through and do not report PR readiness from a review that did not
+   actually spawn reviewers.
+6. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
+   its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Do not
+   describe the review scope only in prose, and do not let reviewers infer which changes to review from the working
+   tree. Charter files live in the `reviewers/` directory next to this skill file.
+7. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
    references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
-   observations.
-7. Merge and deduplicate findings using these rules:
+   observations. Every expected reviewer must return a result before the coordinator can merge findings. A missing
+   reviewer result is a failed swarm run, not an empty finding list.
+8. Merge and deduplicate findings using these rules:
    - Priority order: correctness, security, spec compliance, test quality, AI slop, docs drift, non-idiomatic patterns,
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
    - Findings at different code locations are never duplicates, even if they describe similar patterns.
-8. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
-9. Present all findings to the user. Every user-visible finding must include its feedback identifier.
-10. If `nofix` was specified, stop here — do not make any changes.
-11. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
-12. If no actionable findings remain, state that explicitly before asking for PR creation.
+9. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
+10. Present all findings to the user. Every user-visible finding must include its feedback identifier, and the report
+    must include the selected scope label.
+11. If `nofix` was specified, stop here — do not make any changes.
+12. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
+13. If no actionable findings remain, state that explicitly before asking for PR creation.
 
 ## Feedback identifiers
 
@@ -120,6 +135,14 @@ to each finding by its feedback identifier.
 
 Report results in this structure. Each finding in every section must begin with its feedback identifier and be tagged
 **definite** or **possible**.
+
+Always include `Reviewed scope: <selected scope label>` before the findings sections. This is not cosmetic: it is the
+user-visible guard against accidentally reviewing an empty working-copy diff or giving different reviewers different
+scope.
+
+Always include `Reviewer execution: <n>/<expected> reviewers completed` before the findings sections. If that number is
+not complete, the report must say `PR Readiness: not ready` and explain that the swarm did not run to completion. Do not
+present an empty finding set as a successful swarm unless every expected reviewer actually returned a result.
 
 Example finding:
 
