@@ -13,7 +13,8 @@ equivalent. Report what was changed and what was already clean.
 1. Detect project type (Rust, etc.) from the repository root.
 2. Walk the checklist below. For each item, check whether the pattern exists. Collect all findings.
 3. Present the full list of findings to the user and ask which ones to address.
-4. Apply replacements only for the items the user approves.
+4. Apply replacements only for the items the user approves. By default, treat each approved item as its own `$jjstack`
+   PR. If the user gives an explicit order, apply the items in that order; otherwise use the checklist order.
 5. After all approved items are processed, summarize: which items were fixed, which were skipped, which were already
    clean.
 
