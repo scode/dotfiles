@@ -12,3 +12,38 @@ subject_ref = "eval/pre-pr-review-swarm/pr-10-openai-codex-remote-auth"
 id = "dotfiles-scode-chores-initial"
 repo = "scode/dotfiles"
 subject_ref = "eval/pre-pr-review-swarm/scode-chores-initial"
+
+[[cases]]
+id = "saltybox-spec-skeleton-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/spec-skeleton-initial"
+
+[[cases]]
+id = "saltybox-move-v1-crypto-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/move-v1-crypto-initial"
+
+[[cases]]
+id = "saltybox-format-dispatch-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/format-dispatch-initial"
+
+[[cases]]
+id = "saltybox-v2-engine-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/v2-engine-initial"
+
+[[cases]]
+id = "saltybox-v2-decrypt-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/v2-decrypt-initial"
+
+[[cases]]
+id = "saltybox-v2-write-gate-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/v2-write-gate-initial"
+
+[[cases]]
+id = "saltybox-v2-flip-initial"
+repo = "scode/saltybox"
+subject_ref = "eval/pre-pr-review-swarm/v2-flip-initial"
