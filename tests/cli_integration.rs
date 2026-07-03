@@ -132,6 +132,7 @@ fn test_install_creates_symlinks() {
         "pre-pr-review-swarm",
         "scode-dist-rust-setup",
         "scode-modernize",
+        "scode-chores",
         "scode-todo",
         "repo-swarm",
         "stax",
