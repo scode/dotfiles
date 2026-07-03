@@ -1,0 +1,6 @@
+interface:
+  display_name: "scode Chores"
+  short_description: "Run periodic dependency chores."
+  default_prompt: "Use $scode-chores to inspect this repo for routine dependency chores, show me the available PR options, and create the approved stacked PRs."
+policy:
+  allow_implicit_invocation: false

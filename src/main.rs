@@ -258,6 +258,12 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-chores",
+        PayloadSymlink::new("agent-skills/scode-chores", "~/.claude/skills/scode-chores"),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-todo",
         PayloadSymlink::new("agent-skills/scode-todo", "~/.claude/skills/scode-todo"),
     )
@@ -370,6 +376,12 @@ fn add_codex_features(g: &mut FeatureGraph) {
             "agent-skills/scode-modernize",
             "~/.codex/skills/scode-modernize",
         ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-chores",
+        PayloadSymlink::new("agent-skills/scode-chores", "~/.codex/skills/scode-chores"),
     )
     .depends_on(&codex_skills_dir)
     .build();
