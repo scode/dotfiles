@@ -7,3 +7,8 @@ subject_ref = "code-review-eval-swapped-fifo"
 id = "ferricode-openai-codex-remote-auth"
 repo = "scode/ferricode"
 subject_ref = "eval/pre-pr-review-swarm/pr-10-openai-codex-remote-auth"
+
+[[cases]]
+id = "dotfiles-scode-chores-initial"
+repo = "scode/dotfiles"
+subject_ref = "eval/pre-pr-review-swarm/scode-chores-initial"
