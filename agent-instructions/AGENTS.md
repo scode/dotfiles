@@ -58,6 +58,14 @@ Do not add comments that merely translate syntax into English, label the obvious
 next to a line of code. Avoid boilerplate. Prefer comments that orient the reader to a whole section or decision over
 minimalist commentary that says almost nothing.
 
+# Editing files
+
+Edit files with the agent's dedicated file-editing tools, not by piping edits through shell commands (sed, python
+heredocs, and the like). The user reviews changes as they happen, and dedicated-tool edits render as proper diffs in the
+session while shell edits are opaque. Shell-based editing is acceptable only with a strong concrete reason — a genuinely
+mechanical bulk transform (many call sites via regex, generated content) that would be impractical as individual edits —
+and never merely to avoid re-reading a file whose on-disk state drifted.
+
 # Commit messages and PR titles/descriptions
 
 Keep the first line of commit messages, and PR titles, very concise.
