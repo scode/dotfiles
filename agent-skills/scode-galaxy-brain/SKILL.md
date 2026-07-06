@@ -35,21 +35,27 @@ that skill; reason about it (and explain it to the user) on that skill's terms.
 Cost is a relative score of what the model costs to run (higher = cheaper). Intelligence is how hard a problem you can
 hand the model unsupervised. Taste covers UI/UX, code quality, API design, and copy. Each entry names a model at a
 specific reasoning effort — run it at that effort. The family column tells you which delegation path from the mechanics
-section applies.
+section applies. The sota column marks state of the art models: the ones trusted with the hardest work (critical review,
+the orchestrator role itself). More than one model can be state of the art at once, across families, and which of them
+the user can access varies by environment (see Local availability below).
 
 A larger number is better on every dimension; for cost that means cheaper.
 
-| model         | family | cost | intelligence | taste |
-| ------------- | ------ | ---- | ------------ | ----- |
-| gpt-5.5 low   | gpt    | 11   | 5            | 4     |
-| gpt-5.5 high  | gpt    | 9    | 8            | 5     |
-| sonnet-5 high | claude | 5    | 5            | 7     |
-| opus-4.8 high | claude | 4    | 7            | 8     |
-| fable-5 high  | claude | 2    | 9            | 9     |
+| model         | family | sota | cost | intelligence | taste |
+| ------------- | ------ | ---- | ---- | ------------ | ----- |
+| gpt-5.5 low   | gpt    |      | 11   | 5            | 4     |
+| gpt-5.5 high  | gpt    |      | 9    | 8            | 5     |
+| sonnet-5 high | claude |      | 5    | 5            | 7     |
+| opus-4.8 high | claude |      | 4    | 7            | 8     |
+| fable-5 high  | claude | yes  | 2    | 9            | 9     |
 
 How to route:
 
 - Prefer the cheapest model (highest cost score) whose intelligence and taste meet the needs of the task.
+- When a task calls for a state of the art model and more than one is marked sota, prefer the one you are yourself
+  running as: the user chose it for this session, which signals both availability and preference in this environment.
+  Diverge only for a concrete reason (Local availability below, an explicit provider preference, or repeated poor output
+  on the task at hand).
 - Set the intelligence bar by the cost of a missed or wrong result, not only by how hard the task looks. Cheap models
   are fine for producing work because you gate the output and defects get caught. Review and verification tasks are
   themselves the gate — there is no backstop behind them — so a missed finding is unrecoverable and criticality, not
@@ -83,6 +89,16 @@ to diverge — for example the preferred provider's models repeatedly produce po
 demands intelligence or taste that no model in the preferred family has. How strongly to hold the preference in edge
 cases is your judgment call, but a mild "the other model rates a point higher" is not enough to diverge. When you do
 diverge, say so and why.
+
+## Local availability
+
+The table describes models that exist; it does not know which ones the user can access in this environment. Before your
+first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read it and honor it: it contains natural
+language adjustments from the user, most commonly availability restrictions like "fable-5 is not available, do not use"
+or "only claude models work here". Treat its contents as authoritative over the table — an excluded model is simply not
+in the table for this session, and every routing rule (including "do not route down on cost") applies to the models that
+remain. If the file does not exist, all table models are assumed available. Do not create or edit this file yourself; it
+belongs to the user.
 
 ## Delegation mechanics
 
