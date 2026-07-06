@@ -24,6 +24,10 @@ Things to know before using it:
 - Adding `prefer-gpt` or `prefer-claude` to the invocation steers virtually all delegation to that provider — meant for
   when your subscription sizes differ, not for model-quality reasons. The agent only diverges from the preference with a
   strong reason (and says so). Default is no preference.
+- If some models aren't available in your environment, say so in `~/.scode-galaxy-brainrc.md` — plain natural language
+  like "fable-5 is not available, do not use". The agent reads it before routing and treats it as authoritative over the
+  built-in table, so you never need to edit the skill per environment. When several state of the art models are
+  available, the one your session is already running on is preferred.
 - Saying "galaxy brain feedback: <what went wrong or should improve>" mid-session makes the agent pause and append a
   self-contained problem report to `~/.local/state/scode-galaxy-brain/feedback.md` (it announces the exact path). The
   entries are written to be handed to an agent in this repo to improve the skill. Review before forwarding — the agent
