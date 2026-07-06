@@ -2,48 +2,58 @@
 id = "treeward-swapped-fifo"
 repo = "scode/treeward"
 subject_ref = "code-review-eval-swapped-fifo"
+curation = "hand"
 
 [[cases]]
 id = "ferricode-openai-codex-remote-auth"
 repo = "scode/ferricode"
 subject_ref = "eval/pre-pr-review-swarm/pr-10-openai-codex-remote-auth"
+curation = "hand"
 
 [[cases]]
 id = "dotfiles-scode-chores-initial"
 repo = "scode/dotfiles"
 subject_ref = "eval/pre-pr-review-swarm/scode-chores-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-spec-skeleton-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/spec-skeleton-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-move-v1-crypto-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/move-v1-crypto-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-format-dispatch-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/format-dispatch-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-v2-engine-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/v2-engine-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-v2-decrypt-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/v2-decrypt-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-v2-write-gate-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/v2-write-gate-initial"
+curation = "hand"
 
 [[cases]]
 id = "saltybox-v2-flip-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/v2-flip-initial"
+curation = "hand"
