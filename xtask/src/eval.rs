@@ -127,6 +127,7 @@ impl RunCommand {
             subject_sha: target.subject_sha.clone(),
             base_ref: target.base_ref.clone(),
             base_sha: target.base_sha.clone(),
+            curation: case.curation,
             skill_source: skill.source,
             skill_path: skill.path.display().to_string(),
             created_at: now_rfc3339()?,
@@ -221,6 +222,7 @@ impl CompareCommand {
                 repo: baseline_meta.repo.clone(),
                 subject_ref: baseline_meta.subject_sha.clone(),
                 base_ref: Some(baseline_meta.base_sha.clone()),
+                curation: baseline_meta.curation,
             },
             tools,
         )?;
@@ -306,6 +308,18 @@ struct CasesFile {
     cases: Vec<EvalCase>,
 }
 
+/// Provenance of an eval case: hand-curated versus mass-mined from upstream
+/// open source PRs. Metadata only — the harness treats both kinds identically.
+/// The flag exists so history preserves which cases were individually vetted
+/// by a human and which came out of an agent mining pipeline with only a
+/// shortlist-level skim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Curation {
+    Hand,
+    Mined,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct EvalCase {
     id: String,
@@ -313,6 +327,8 @@ struct EvalCase {
     subject_ref: String,
     #[serde(default)]
     base_ref: Option<String>,
+    #[serde(default)]
+    curation: Option<Curation>,
 }
 
 #[derive(Debug)]
@@ -357,6 +373,11 @@ struct RunMetadata {
     subject_sha: String,
     base_ref: String,
     base_sha: String,
+    /// Copied from the case so run artifacts preserve provenance even if the
+    /// case is later edited or removed. Absent in run.json files predating the
+    /// field.
+    #[serde(default)]
+    curation: Option<Curation>,
     skill_source: String,
     skill_path: String,
     created_at: String,
@@ -925,6 +946,16 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a case ref to a commit SHA, preferring the origin branch of that
+/// name so a stale local checkout never wins over the pushed state.
+///
+/// Falls back to `git fetch origin <reference>` when the ref resolves neither
+/// as an origin branch nor locally. Mined cases pin exact SHAs whose commits
+/// are often reachable only from GitHub's `refs/pull/N/head`, which clones do
+/// not fetch; GitHub serves fetch-by-SHA for such commits, so the fetch makes
+/// the pinned commit resolvable. Force-pushed-away commits are eventually
+/// GC'd upstream and will fail here — cases must pin commits that remain
+/// ancestors of a retained ref.
 fn resolve_case_ref(tools: &ToolEnv, repo: &Path, reference: &str) -> Result<String> {
     let remote_ref = format!("refs/remotes/origin/{reference}^{{commit}}");
     if let Some(sha) = git_stdout_optional(
@@ -935,6 +966,21 @@ fn resolve_case_ref(tools: &ToolEnv, repo: &Path, reference: &str) -> Result<Str
         return Ok(sha);
     }
     let commit_ref = format!("{reference}^{{commit}}");
+    if let Some(sha) = git_stdout_optional(
+        tools,
+        repo,
+        &["rev-parse", "--verify", "--quiet", &commit_ref],
+    )? {
+        return Ok(sha);
+    }
+    run_checked(
+        Command::new(&tools.git)
+            .arg("-C")
+            .arg(repo)
+            .args(["fetch", "origin"])
+            .arg(reference),
+    )
+    .with_context(|| format!("failed to fetch unresolvable ref '{reference}' from origin"))?;
     git_stdout(tools, repo, ["rev-parse", &commit_ref])
 }
 
@@ -1159,6 +1205,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             subject_ref: "subject".to_string(),
             base_ref: Some("explicit-base".to_string()),
+            curation: None,
         };
 
         let prepared = prepare_case_checkout(root, &case, &tools)?;
@@ -1182,6 +1229,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             subject_ref: "subject".to_string(),
             base_ref: None,
+            curation: None,
         };
 
         let prepared = prepare_case_checkout(root, &case, &tools)?;
@@ -1190,6 +1238,31 @@ mod tests {
         assert_eq!(
             fs::read_to_string(checkout.join(".fake-head-ref"))?,
             "subject-remote-sha\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unresolvable_refs_are_fetched_from_origin() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_fake_bin(root, "git", fake_git_script())?;
+        let tools = fake_tools(root);
+        let case = EvalCase {
+            id: "case-a".to_string(),
+            repo: "owner/repo".to_string(),
+            subject_ref: "pinned".to_string(),
+            base_ref: Some("base".to_string()),
+            curation: Some(Curation::Mined),
+        };
+
+        let prepared = prepare_case_checkout(root, &case, &tools)?;
+
+        assert_eq!(prepared.subject_sha, "pinned-fetched-sha");
+        let checkout = root.join(WORKTREE_ROOT).join("repos/owner-repo");
+        assert_eq!(
+            fs::read_to_string(checkout.join(".fake-fetched"))?,
+            "pinned\n"
         );
         Ok(())
     }
@@ -1205,6 +1278,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             subject_ref: "merge-subject".to_string(),
             base_ref: None,
+            curation: None,
         };
 
         let error = prepare_case_checkout(root, &case, &tools).unwrap_err();
@@ -1316,6 +1390,7 @@ mod tests {
             .expect("seed case should exist");
         assert_eq!(case.repo, "scode/treeward");
         assert_eq!(case.subject_ref, "code-review-eval-swapped-fifo");
+        assert_eq!(case.curation, Some(Curation::Hand));
 
         for schema in [
             "findings.schema.json",
@@ -1748,6 +1823,7 @@ mod tests {
             subject_sha: "subject".to_string(),
             base_ref: "base".to_string(),
             base_sha: "base".to_string(),
+            curation: None,
             skill_source: "working-tree".to_string(),
             skill_path: DEFAULT_SKILL_PATH.to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -1863,7 +1939,14 @@ case "$1" in
     tar -C "$tmp" -cf - agent-skills/pre-pr-review-swarm
     rm -rf "$tmp"
     ;;
-  fetch) exit 0 ;;
+  fetch)
+    # Record explicit-ref fetches ("fetch origin <ref>") so tests can assert
+    # the fetch fallback fired; the routine "fetch --tags origin" is ignored.
+    if [ "${2:-}" = "origin" ] && [ -n "${3:-}" ] && [ -n "$repo" ]; then
+      printf '%s\n' "$3" > "$repo/.fake-fetched"
+    fi
+    exit 0
+    ;;
   checkout)
     mkdir -p "$repo/.git"
     printf '%s\n' "${@: -1}" > "$repo/.fake-head-ref"
@@ -1888,6 +1971,15 @@ case "$1" in
         subject^\{commit\}) echo subject-local-stale-sha ;;
         explicit-base^\{commit\}) echo explicit-base-local-stale-sha ;;
         base^\{commit\}) echo base-sha ;;
+        pinned^\{commit\})
+          # Simulates a commit reachable only via fetch-by-SHA: resolvable
+          # only after an explicit "fetch origin pinned" recorded the marker.
+          if [ -n "$repo" ] && [ -f "$repo/.fake-fetched" ]; then
+            echo pinned-fetched-sha
+          else
+            exit 1
+          fi
+          ;;
         *) echo "$2" ;;
       esac
     fi

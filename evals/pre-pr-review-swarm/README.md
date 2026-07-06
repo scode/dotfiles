@@ -51,3 +51,12 @@ It writes `suggestions.json` next to the comparison, plus a raw synthesis transc
 Cases live in `cases.toml`. Each case points at a public repository and an unpolished subject ref. If `base_ref` is
 omitted, the harness resolves the subject ref to a commit and uses its first parent as the base. Merge commits require
 an explicit base.
+
+Refs that resolve neither as an origin branch nor locally are fetched from origin by name, so a case may pin an exact
+commit SHA even when that commit is reachable only from GitHub's `refs/pull/N/head` (GitHub serves fetch-by-SHA for
+those). Pin both `subject_ref` and `base_ref` as SHAs for such cases, and avoid commits that were force-pushed away —
+upstream eventually garbage-collects them.
+
+`curation` records how a case was produced: `"hand"` for cases individually curated by a human, `"mined"` for cases
+mass-mined from upstream open source PRs by an agent pipeline with only shortlist-level human review. The harness treats
+both identically; the flag preserves provenance (and is copied into each run's `run.json`).
