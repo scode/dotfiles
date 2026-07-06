@@ -50,10 +50,17 @@ A larger number is better on every dimension; for cost that means cheaper.
 How to route:
 
 - Prefer the cheapest model (highest cost score) whose intelligence and taste meet the needs of the task.
+- Set the intelligence bar by the cost of a missed or wrong result, not only by how hard the task looks. Cheap models
+  are fine for producing work because you gate the output and defects get caught. Review and verification tasks are
+  themselves the gate — there is no backstop behind them — so a missed finding is unrecoverable and criticality, not
+  task mechanics, drives the model choice.
 - Bulk and mechanical work — scanning large logs for patterns, searching source for simple patterns, clear-spec
   implementation, tedious churn that needs no design decisions: gpt-5.5.
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
-- Reviews of plans or implementations: fable-5 or opus-4.8, optionally gpt-5.5 as an extra independent perspective.
+- Mechanical review dimensions — slop detection, style and idiomaticity, docs drift, best-practice pattern checks:
+  gpt-5.5 high.
+- Critical review dimensions — security, correctness, concurrency, data integrity: fable-5 high. Do not route these down
+  on cost. Optionally add gpt-5.5 as an extra independent perspective.
 - Never use Haiku.
 - These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't
   meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. The
