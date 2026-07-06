@@ -33,11 +33,31 @@ const CLAUDE_PERMISSIONS_ALLOW: &[&str] = &[
     "Bash(sl:*)",
     "Skill(scode-graphite)",
     "WebFetch(domain:index.crates.io)",
+];
+
+/// Every leiter permission string a previous payload version wrote. Removal
+/// is exact-match, so each historical spelling must be listed verbatim: the
+/// earliest payloads used absolute /Users/scode paths before switching to ~.
+const LEGACY_LEITER_PERMISSIONS_ALLOW: &[&str] = &[
     "Bash(leiter:*)",
     "Read(~/.leiter/soul.md)",
     "Edit(~/.leiter/soul.md)",
     "Write(~/.leiter/soul.md)",
+    "Edit(/Users/scode/.leiter/soul.md)",
+    "Write(/Users/scode/.leiter/soul.md)",
 ];
+
+/// Builds one SessionStart/SessionEnd hook group exactly as an old payload
+/// wrote it. Hook cleanup is exact-match against whole groups, so every
+/// historical command spelling needs its own group value; the call sites
+/// below enumerate all shapes the payload ever carried.
+fn leiter_hook_group(commands: &[&str]) -> serde_json::Value {
+    let hooks: Vec<_> = commands
+        .iter()
+        .map(|command| json!({ "type": "command", "command": command }))
+        .collect();
+    json!({ "hooks": hooks })
+}
 
 const LEGACY_AGENT_FILES: &[&str] = &[
     "code-review-specialist.md",
@@ -152,6 +172,31 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
                     &["permissions", "allow"],
                     CLAUDE_PERMISSIONS_ALLOW.iter().copied(),
                 )
+                .remove_strings_from_array(
+                    &["permissions", "allow"],
+                    LEGACY_LEITER_PERMISSIONS_ALLOW.iter().copied(),
+                )
+                .remove_values_from_array(
+                    &["hooks", "SessionStart"],
+                    [
+                        leiter_hook_group(&["leiter context", "leiter nudge"]),
+                        leiter_hook_group(&["leiter hook context", "leiter hook nudge"]),
+                        leiter_hook_group(&[
+                            "leiter hook context",
+                            "leiter hook nudge --auto-distill",
+                        ]),
+                    ],
+                )
+                .remove_values_from_array(
+                    &["hooks", "SessionEnd"],
+                    [
+                        leiter_hook_group(&["leiter session-end"]),
+                        leiter_hook_group(&["leiter hook session-end"]),
+                    ],
+                )
+                .remove_value_if_equals(&["hooks", "SessionStart"], json!([]))
+                .remove_value_if_equals(&["hooks", "SessionEnd"], json!([]))
+                .remove_value_if_equals(&["hooks"], json!({}))
                 .ensure_value(&["sandbox", "enabled"], json!(true)),
         )
         .condition(PathExists::new("~/.claude"))
