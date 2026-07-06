@@ -59,8 +59,9 @@ How to route:
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
 - Mechanical review dimensions — slop detection, style and idiomaticity, docs drift, best-practice pattern checks:
   gpt-5.5 high.
-- Critical review dimensions — security, correctness, concurrency, data integrity: fable-5 high. Do not route these down
-  on cost. Optionally add gpt-5.5 as an extra independent perspective.
+- Critical review dimensions — security, correctness, concurrency, data integrity, test quality: fable-5 high. Do not
+  route these down on cost. Optionally add gpt-5.5 as an extra independent perspective. Test quality is critical rather
+  than mechanical because weak tests are how correctness bugs survive review.
 - Never use Haiku.
 - These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't
   meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. The
