@@ -20,6 +20,16 @@ Delegation is for steps toward a change, never for managing the change itself. Y
 branches, pushes, PR creation and updates. Delegates must not commit, branch, push, or open PRs — your session carries
 the user's VCS workflow preferences and skills, and those do not transfer to a sub agent.
 
+## Composing with other skills
+
+Galaxy-brain is a routing layer, not a workflow. When another skill or instruction defines its own process — roles,
+steps, what counts as a valid run — that skill stays authoritative for the process. Galaxy-brain only decides which
+model and effort executes each unit of work, how the delegation seam works, and how delegated output gets gated.
+
+Keep the roles separate: do not merge this skill's orchestrator role with another skill's coordinator role, and do not
+attribute one skill's constraints to the other. If another skill forbids or requires something, that rule comes from
+that skill; reason about it (and explain it to the user) on that skill's terms.
+
 ## Model table
 
 Cost is a relative score of what the model costs to run (higher = cheaper). Intelligence is how hard a problem you can
