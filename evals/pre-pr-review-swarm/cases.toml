@@ -57,3 +57,148 @@ id = "saltybox-v2-flip-initial"
 repo = "scode/saltybox"
 subject_ref = "eval/pre-pr-review-swarm/v2-flip-initial"
 curation = "hand"
+
+# Mined cases below: pre-review states of upstream open source PRs where human
+# review produced follow-up commits. Subject and base pin exact SHAs because
+# the commits are typically reachable only from GitHub pull refs. See the
+# README's Cases section for how these were produced.
+
+[[cases]]
+id = "tokio-pr8233-map-while-fuse"
+repo = "tokio-rs/tokio"
+subject_ref = "c9445807b78e2f5c6c748bdcae1d34dc055c5c84"
+base_ref = "46c830117b82fb806f6a164fcda25050846cf5f9"
+curation = "mined"
+
+[[cases]]
+id = "tokio-pr8231-windows-signal-statics"
+repo = "tokio-rs/tokio"
+subject_ref = "ebc47ebe7087133788c1879ba0dc4032320ce9a8"
+base_ref = "46c830117b82fb806f6a164fcda25050846cf5f9"
+curation = "mined"
+
+[[cases]]
+id = "tokio-pr8218-stream-iter-coop"
+repo = "tokio-rs/tokio"
+subject_ref = "c5b405caa517263748d996a3ac1d54e4c020aace"
+base_ref = "66e29121b333d1ba5bde803f570e421524d4431e"
+curation = "mined"
+
+[[cases]]
+id = "tokio-pr8144-unix-socketaddr"
+repo = "tokio-rs/tokio"
+subject_ref = "3bbebaae9b7462a1a520a80c4ae79cde90f56cae"
+base_ref = "c6d58ce7e7bf4a6e7e6efc1ffeb42daa3a627c17"
+curation = "mined"
+
+[[cases]]
+id = "rust-analyzer-pr22685-itertools-15"
+repo = "rust-analyzer/rust-analyzer"
+subject_ref = "0c4d4c22470a5dce23a59ae046720af59f231493"
+base_ref = "667151fc0c622b891c1f5e4285f60f7c85862200"
+curation = "mined"
+
+[[cases]]
+id = "rust-analyzer-pr22519-trait-sig-generics"
+repo = "rust-analyzer/rust-analyzer"
+subject_ref = "b5bad9e7fc2ee9909f31674f9ae95a840578cb7d"
+base_ref = "123c1660f4d80443aea20329cfcc5185b1c233ad"
+curation = "mined"
+
+[[cases]]
+id = "rust-analyzer-pr22466-e0596-diagnostic"
+repo = "rust-analyzer/rust-analyzer"
+subject_ref = "de60e47a93a7eae52010a700d21cf867ffdc2e9d"
+base_ref = "b48cc1083d4fd7264d968ba613553400a30a90a8"
+curation = "mined"
+
+[[cases]]
+id = "ripgrep-pr2787-wasi-hyperlink"
+repo = "BurntSushi/ripgrep"
+subject_ref = "2954e428262c3048e68e174a35d8633a503ebe19"
+base_ref = "d922b7ac114c24d6800ae5f79d2967481f380c83"
+curation = "mined"
+
+[[cases]]
+id = "duckdb-pr23555-connect-attach"
+repo = "duckdb/duckdb"
+subject_ref = "f0eac3ce0e24a6e0a921420c6f0403968691b2c1"
+base_ref = "46a4e337b8496d1b01a32744f5bad9e6f59e4b74"
+curation = "mined"
+
+[[cases]]
+id = "duckdb-pr23526-bind-statement"
+repo = "duckdb/duckdb"
+subject_ref = "98a2e9f14c4ae74a9707373a3d91aef8deb9fa7d"
+base_ref = "29ec18cf005e4b60bd6a5f2ee5cec0a1d7bb4040"
+curation = "mined"
+
+[[cases]]
+id = "duckdb-pr23329-json-copy-formats"
+repo = "duckdb/duckdb"
+subject_ref = "dbf89590ac7d66426d65361b8e50012353fe7e0b"
+base_ref = "18b593788d6ebd548bcf55b18cc8f3e15d5fb4c3"
+curation = "mined"
+
+[[cases]]
+id = "duckdb-pr23419-multifile-async-scan"
+repo = "duckdb/duckdb"
+subject_ref = "65b8fd1c6695076e751cdedeb1d2f248d1497974"
+base_ref = "16a5aec84d49715a946fe2c8bbd779ac11ca07d7"
+curation = "mined"
+
+[[cases]]
+id = "fmt-pr4686-join-char-types"
+repo = "fmtlib/fmt"
+subject_ref = "25ea80099b1dbe2c4478fb38b4c0063770cbe16e"
+base_ref = "8d3f731763bcbb4a11e3d714c551e509007957b1"
+curation = "mined"
+
+[[cases]]
+id = "catch2-pr2849-ansi-column-wrap"
+repo = "catchorg/Catch2"
+subject_ref = "dab58896a25f195b638135004b890d7d8ee32f2d"
+base_ref = "bfe3ff8f19d3436381b4e3a18c13734d21a8b089"
+curation = "mined"
+
+[[cases]]
+id = "cpython-pr118065-shelve-serializers"
+repo = "python/cpython"
+subject_ref = "44b9fa1e9735f646b6dbc2a08b606eb8ac97ea5c"
+base_ref = "8f25cc992021d6ffc62bb110545b97a92f7cb295"
+curation = "mined"
+
+[[cases]]
+id = "cpython-pr121143-strace-helper"
+repo = "python/cpython"
+subject_ref = "d99157f3d1e0d2c860e2df93d4a39b44712d8d84"
+base_ref = "2f5f19e783385ec5312f7054827ccf1cdb6e14ef"
+curation = "mined"
+
+[[cases]]
+id = "pydantic-pr12627-coverage-tests"
+repo = "pydantic/pydantic"
+subject_ref = "67d61e75c7a7882b67444b08e782979b84eddb1e"
+base_ref = "0329e09161d2c5e3a0b8eb1e795a7a41f177e184"
+curation = "mined"
+
+[[cases]]
+id = "pydantic-pr12077-dataclass-doc"
+repo = "pydantic/pydantic"
+subject_ref = "f4e8f3372656df589a60717a75c48b62c255a670"
+base_ref = "a59dab907cdc63ae78d8634a2c11a453a826f41f"
+curation = "mined"
+
+[[cases]]
+id = "pydantic-pr12793-fraction-tests"
+repo = "pydantic/pydantic"
+subject_ref = "c0622195c9cfa9cd158b13eb5ca0ee78e948b5d0"
+base_ref = "1642c892c498f4626fbb68ba74b03c7e9c86756c"
+curation = "mined"
+
+[[cases]]
+id = "pydantic-pr9953-core-config"
+repo = "pydantic/pydantic"
+subject_ref = "e9a997d4420c6a2c7fa512579bcebe43996fee73"
+base_ref = "d654a0766c2f3c6fe0a12718f32aa3bf4d3ecc86"
+curation = "mined"
