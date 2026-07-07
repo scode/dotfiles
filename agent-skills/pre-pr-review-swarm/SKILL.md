@@ -44,33 +44,39 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
      (<n> files)`.
 3. Report the selected scope before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
-5. Run the reviewer charters concurrently when the environment supports it (seven always, plus an eighth if `SPEC.md`
-   exists). Keep each reviewer focused on its own charter so the review instructions stay separate. If the environment
-   cannot spawn reviewer agents and wait for their results, stop and report that the swarm could not be run. Do not
-   replace the swarm with a coordinator-only read-through and do not report PR readiness from a review that did not
-   actually spawn reviewers.
-6. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
+5. Decide the reviewer panel. By default every reviewer runs (seven always, plus an eighth if `SPEC.md` exists). If
+   every file touched by the change — including files listed under `Omitted from scope:` — has a prose extension (`.md`,
+   `.markdown`, `.txt`), apply the prose-only fast path instead: spawn only the docs-comments, ai-slop, simplification,
+   and (when `SPEC.md` exists) spec-compliance reviewers. The correctness, security, test-quality, and idiomaticity
+   charters have nothing to bite on in a prose-only change, so skipping them saves their agent contexts rather than
+   paying each to return an empty list. The trigger is purely mechanical: a file with any other extension anywhere in
+   the change means the full panel runs. When in doubt, run the full panel.
+6. Run the selected reviewer charters concurrently when the environment supports it. Keep each reviewer focused on its
+   own charter so the review instructions stay separate. If the environment cannot spawn reviewer agents and wait for
+   their results, stop and report that the swarm could not be run. Do not replace the swarm with a coordinator-only
+   read-through and do not report PR readiness from a review that did not actually spawn reviewers.
+7. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
    its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
    reviewers that files listed under `Omitted from scope:` were part of the change but were excluded as generated or
    lock files; they exist in the checkout and may be consulted when a charter needs them. Do not describe the review
    scope only in prose, and do not let reviewers infer which changes to review from the working tree. Charter files live
    in the `reviewers/` directory next to this skill file.
-7. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
+8. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
    references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
    observations. Every expected reviewer must return a result before the coordinator can merge findings. A missing
    reviewer result is a failed swarm run, not an empty finding list.
-8. Merge and deduplicate findings using these rules:
+9. Merge and deduplicate findings using these rules:
    - Priority order: correctness, security, spec compliance, test quality, AI slop, docs drift, non-idiomatic patterns,
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
    - Findings at different code locations are never duplicates, even if they describe similar patterns.
-9. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
-10. Present all findings to the user. Every user-visible finding must include its feedback identifier, and the report
+10. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
+11. Present all findings to the user. Every user-visible finding must include its feedback identifier, and the report
     must include the selected scope label.
-11. If `nofix` was specified, stop here — do not make any changes.
-12. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
-13. If no actionable findings remain, state that explicitly before asking for PR creation.
+12. If `nofix` was specified, stop here — do not make any changes.
+13. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
+14. If no actionable findings remain, state that explicitly before asking for PR creation.
 
 ## Feedback identifiers
 
@@ -154,6 +160,10 @@ scope.
 Always include `Reviewer execution: <n>/<expected> reviewers completed` before the findings sections. If that number is
 not complete, the report must say `PR Readiness: not ready` and explain that the swarm did not run to completion. Do not
 present an empty finding set as a successful swarm unless every expected reviewer actually returned a result.
+
+`<expected>` is the size of the selected panel. When the prose-only fast path applied, say so on the same line and name
+the reviewers it skipped. A skipped reviewer's findings section must say it was skipped by the fast path — an unspawned
+reviewer did not return an empty finding list, and the report must not read as if it did.
 
 Example finding:
 
