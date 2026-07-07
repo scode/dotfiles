@@ -27,7 +27,16 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    - If `commit`: write the current commit diff and touched-file summary to the scope file.
    - Otherwise: write the uncommitted working-copy diff and touched-file summary to the scope file. If that scope is
      empty, replace it with the current commit diff.
-   - Abort instead of spawning reviewers if the selected scope file is still empty.
+   - Exclude dependency lock files (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.sum`,
+     `poetry.lock`, `uv.lock`, and equivalents) and clearly generated or vendored files from the diff written to the
+     scope file. Every reviewer pays to read every token of the scope file, and mechanical churn in generated files is
+     almost never what a reviewer needs to see.
+   - Never omit silently. End the scope file with an `Omitted from scope: <paths>` trailer listing every excluded file,
+     so reviewers know the change touched them and can read them from the checkout when their charter calls for it
+     (dependency changes during a security review, for example). Keep omitted files in the touched-file summary, marked
+     as omitted.
+   - Abort instead of spawning reviewers if the selected scope file is still empty. If the diff became empty only
+     because every touched file was excluded, say so: the change touched only generated or lock files.
    - Keep the checkout aligned with the selected scope's after-state while reviewers run. If that is not true, use an
      isolated checkout/worktree or abort instead of asking reviewers to infer context from stale files.
    - Record a short human-readable scope label, such as `current commit <id>` or
@@ -41,9 +50,11 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
    replace the swarm with a coordinator-only read-through and do not report PR readiness from a review that did not
    actually spawn reviewers.
 6. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
-   its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Do not
-   describe the review scope only in prose, and do not let reviewers infer which changes to review from the working
-   tree. Charter files live in the `reviewers/` directory next to this skill file.
+   its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
+   reviewers that files listed under `Omitted from scope:` were part of the change but were excluded as generated or
+   lock files; they exist in the checkout and may be consulted when a charter needs them. Do not describe the review
+   scope only in prose, and do not let reviewers infer which changes to review from the working tree. Charter files live
+   in the `reviewers/` directory next to this skill file.
 7. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
    references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
    observations. Every expected reviewer must return a result before the coordinator can merge findings. A missing
