@@ -63,7 +63,15 @@ These are the patterns this review exists to catch. Treat them as blocking when 
 - **Unintroduced references.** Wording that presupposes context the reader does not have — "the hard cap", "the earlier
   refactor" — definite references to things the message never introduced. The author knows the referent because they
   were in the session that drafted the message; the reader was not. A message must introduce a fact before referring
-  back to it.
+  back to it. This applies from the first word: a body that opens "The rc file only documented..." presupposes the
+  reader knows what the rc file is, exactly like "the hard cap" would mid-message.
+- **Insider shorthand without orientation.** A title or opening built from the project's internal vocabulary — a
+  codename, a subsystem nickname, "the rc" — that never gives a cold reader a plain-language foothold. The test: after
+  the first sentence or two, could a stranger state what the change lets a user do? Density is not a virtue when it
+  locks the reader out. Before diving into mechanism, the message needs one plain sentence a stranger could parse
+  ("users can now fully replace the model routing table in their config file"), not only mechanism-speak ("a table in
+  the rc replaces the default wholesale"). This is the counterweight to the anti-filler rules above — orientation is not
+  filler.
 - **Wall of text.** Several distinct points packed into one unbroken paragraph, or an enumeration written as a chain of
   sentences when the text is literally listing things — that wants a bulleted list. The inverse also holds: a genuinely
   nuanced point often needs connected prose, so do not demand bullets for content that develops an argument. But even
