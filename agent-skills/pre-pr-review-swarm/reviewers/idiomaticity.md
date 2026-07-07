@@ -12,6 +12,8 @@
 Flag code that is non-idiomatic for the target language, framework, or repository conventions.
 
 - Anchor to the conventions already visible in the repository, not textbook style guides.
-- Read a few existing files in the same directory to calibrate before reviewing.
+- Calibrate by reading at most the files touched by the scope plus 2–3 neighboring files (same directory or directly
+  referenced). Do not sweep the repository for more context — breadth costs tokens and rarely changes a stylistic
+  verdict.
 - Don't flag style preferences that are consistent within the repo. If the repo avoids a common idiom everywhere, that's
   a repo convention, not a deviation.
