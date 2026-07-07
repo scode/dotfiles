@@ -234,14 +234,22 @@ fn test_uninstall_removes_symlinks() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify uninstall removes symlinks but leaves the managed settings file
+    // Verify uninstall removes symlinks, and that the managed settings file
+    // survives as a user-owned file with the managed footprint reverted. A
+    // fresh install wrote only managed values, so reverting leaves exactly {}.
     assert!(
         !claude_md.exists() && !claude_md.is_symlink(),
         "symlink should be removed after uninstall"
     );
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
-        "settings file should be left intact after uninstall"
+        "settings file should be left in place after uninstall"
+    );
+    let settings_after = read_json(&fake_home, ".claude/settings.json");
+    assert_eq!(
+        settings_after,
+        serde_json::json!({}),
+        "managed settings values should be reverted on uninstall"
     );
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
@@ -723,6 +731,43 @@ fn test_install_removes_legacy_leiter_claude_settings_from_regular_file() {
         ])
     );
     assert!(settings["hooks"].get("SessionEnd").is_none());
+}
+
+/// Uninstall straight from an un-migrated legacy settings symlink, without an
+/// install first. This pins two behaviors at once: the symlink is removed
+/// outright (the repo-owned symlink contract), and the run succeeds even
+/// though claude-settings-statusline reverts before claude-settings-base —
+/// both features must recognize the legacy symlink, or the first one fails
+/// the run with "unexpected target" (failed features make the binary exit
+/// nonzero).
+#[test]
+fn test_uninstall_removes_unmigrated_legacy_claude_settings_symlink() {
+    let fake_home = setup_fake_home();
+    let settings_path = fake_home.path().join(".claude/settings.json");
+    let settings_dir = settings_path.parent().unwrap();
+    let legacy_target = dotfiles::util::fs::compute_relative_path(
+        settings_dir,
+        &std::env::current_dir()
+            .unwrap()
+            .join("payload/dot_claude/settings.json"),
+    );
+    std::os::unix::fs::symlink(&legacy_target, &settings_path).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("uninstall")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "uninstall failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !settings_path.exists() && !settings_path.is_symlink(),
+        "legacy settings symlink should be removed by uninstall"
+    );
 }
 
 #[test]
