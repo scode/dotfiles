@@ -15,6 +15,9 @@ Identify safe opportunities to simplify control flow, data flow, and abstraction
 - Don't suggest extracting helpers for one-time operations.
 - Don't suggest adding abstractions. The goal is removing unnecessary complexity, not reshaping it.
 - Prefer concrete before/after sketches over vague "this could be simpler."
+- Calibrate by reading at most the files touched by the scope plus 2–3 neighboring files (same directory or directly
+  referenced). Do not sweep the repository for more context — breadth costs tokens and rarely changes a stylistic
+  verdict.
 
 ## C++ include guardrail
 
