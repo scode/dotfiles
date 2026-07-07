@@ -47,7 +47,19 @@ enum JsonEnsureOperation {
         path: Vec<String>,
         values: Vec<String>,
     },
+    StringsAbsentFromArray {
+        path: Vec<String>,
+        values: Vec<String>,
+    },
     Value {
+        path: Vec<String>,
+        value: Value,
+    },
+    ValuesAbsentFromArray {
+        path: Vec<String>,
+        values: Vec<Value>,
+    },
+    ValueAbsentIfEquals {
         path: Vec<String>,
         value: Value,
     },
@@ -97,12 +109,62 @@ impl JsonEnsure {
         self
     }
 
+    /// Removes the given strings from an existing array path.
+    ///
+    /// Missing paths are left alone. Existing paths still have to be arrays of
+    /// strings, because this operation is meant for retiring values from a
+    /// string list the installer has previously managed.
+    pub fn remove_strings_from_array(
+        mut self,
+        path: &[&str],
+        values: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.operations
+            .push(JsonEnsureOperation::StringsAbsentFromArray {
+                path: to_path(path),
+                values: values.into_iter().map(Into::into).collect(),
+            });
+        self
+    }
+
     /// Ensures a path exists with the exact JSON value provided.
     pub fn ensure_value(mut self, path: &[&str], value: Value) -> Self {
         self.operations.push(JsonEnsureOperation::Value {
             path: to_path(path),
             value,
         });
+        self
+    }
+
+    /// Removes exact JSON values from an existing array path.
+    ///
+    /// This is deliberately exact-match only. It is for removing values that an
+    /// older installer version wrote verbatim, while leaving nearby user-added
+    /// values in the same array untouched.
+    pub fn remove_values_from_array(
+        mut self,
+        path: &[&str],
+        values: impl IntoIterator<Item = Value>,
+    ) -> Self {
+        self.operations
+            .push(JsonEnsureOperation::ValuesAbsentFromArray {
+                path: to_path(path),
+                values: values.into_iter().collect(),
+            });
+        self
+    }
+
+    /// Removes a path only when its current value matches exactly.
+    ///
+    /// This gives cleanup operations a safe pruning step: empty containers left
+    /// behind by a known removal can be dropped without deleting user-owned
+    /// values that happen to live at the same path.
+    pub fn remove_value_if_equals(mut self, path: &[&str], value: Value) -> Self {
+        self.operations
+            .push(JsonEnsureOperation::ValueAbsentIfEquals {
+                path: to_path(path),
+                value,
+            });
         self
     }
 
@@ -235,8 +297,17 @@ impl JsonEnsure {
                 JsonEnsureOperation::StringsInArray { path, values } => {
                     ensure_strings_in_array(root, path, values)?
                 }
+                JsonEnsureOperation::StringsAbsentFromArray { path, values } => {
+                    remove_strings_from_array(root, path, values)?
+                }
                 JsonEnsureOperation::Value { path, value } => {
                     ensure_value(root, path, value.clone())?
+                }
+                JsonEnsureOperation::ValuesAbsentFromArray { path, values } => {
+                    remove_values_from_array(root, path, values)?
+                }
+                JsonEnsureOperation::ValueAbsentIfEquals { path, value } => {
+                    remove_value_if_equals(root, path, value)?
                 }
                 JsonEnsureOperation::ValueIfPathExists {
                     path,
@@ -316,6 +387,54 @@ fn ensure_strings_in_array(root: &mut Value, path: &[String], values: &[String])
     Ok(changed)
 }
 
+fn remove_strings_from_array(root: &mut Value, path: &[String], values: &[String]) -> Result<bool> {
+    let Some(target) = get_existing_path_mut(root, path)? else {
+        return Ok(false);
+    };
+
+    let Some(array) = target.as_array_mut() else {
+        bail!("managed path '{}' must be an array", display_path(path));
+    };
+
+    if array.iter().any(|entry| !entry.is_string()) {
+        bail!(
+            "managed path '{}' must contain only strings",
+            display_path(path)
+        );
+    }
+
+    let before = array.len();
+    array.retain(|entry| !values.iter().any(|value| entry.as_str() == Some(value)));
+    Ok(array.len() != before)
+}
+
+fn remove_values_from_array(root: &mut Value, path: &[String], values: &[Value]) -> Result<bool> {
+    let Some(target) = get_existing_path_mut(root, path)? else {
+        return Ok(false);
+    };
+
+    let Some(array) = target.as_array_mut() else {
+        bail!("managed path '{}' must be an array", display_path(path));
+    };
+
+    let before = array.len();
+    array.retain(|entry| !values.iter().any(|value| value == entry));
+    Ok(array.len() != before)
+}
+
+fn remove_value_if_equals(root: &mut Value, path: &[String], value: &Value) -> Result<bool> {
+    let should_remove = match get_existing_path_mut(root, path)? {
+        Some(existing) => *existing == *value,
+        None => false,
+    };
+
+    if should_remove {
+        remove_path(root, path)
+    } else {
+        Ok(false)
+    }
+}
+
 fn remove_path(root: &mut Value, path: &[String]) -> Result<bool> {
     let Some((last, parents)) = path.split_last() else {
         bail!("managed path cannot be empty");
@@ -369,6 +488,31 @@ fn get_or_create_path<'a>(root: &'a mut Value, path: &[String]) -> Result<&'a mu
         });
     }
     Ok(current)
+}
+
+fn get_existing_path_mut<'a>(
+    root: &'a mut Value,
+    path: &[String],
+) -> Result<Option<&'a mut Value>> {
+    if path.is_empty() {
+        bail!("managed path cannot be empty");
+    }
+
+    let mut current = root;
+    for (index, segment) in path.iter().enumerate() {
+        let Some(object) = current.as_object_mut() else {
+            bail!(
+                "managed path '{}' crosses a non-object value",
+                display_path(&path[..=index])
+            );
+        };
+
+        let Some(next) = object.get_mut(segment) else {
+            return Ok(None);
+        };
+        current = next;
+    }
+    Ok(Some(current))
 }
 
 fn display_path(path: &[String]) -> String {
@@ -437,6 +581,75 @@ mod tests {
         );
         assert_eq!(written["sandbox"]["enabled"], Value::Bool(true));
         assert_eq!(written["hooks"]["SessionStart"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn install_removes_obsolete_strings_from_existing_array() {
+        let ctx = TestContext::new();
+        let dest = ctx.dest_path("settings.json");
+        fs::write(
+            &dest,
+            r#"{
+  "permissions": { "allow": ["A", "B", "C"] }
+}"#,
+        )
+        .unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_strings_from_array(&["permissions", "allow"], ["B", "missing"]);
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+
+        let written: Value = serde_json::from_str(&fs::read_to_string(dest).unwrap()).unwrap();
+        assert_eq!(
+            written["permissions"]["allow"],
+            serde_json::json!(["A", "C"])
+        );
+    }
+
+    #[test]
+    fn install_removes_exact_array_values_and_only_prunes_expected_empty_paths() {
+        let ctx = TestContext::new();
+        let dest = ctx.dest_path("settings.json");
+        fs::write(
+            &dest,
+            r#"{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "old" }] },
+      { "hooks": [{ "type": "command", "command": "keep" }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "old-end" }] }
+    ]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_values_from_array(
+                &["hooks", "SessionStart"],
+                [serde_json::json!({ "hooks": [{ "type": "command", "command": "old" }] })],
+            )
+            .remove_values_from_array(
+                &["hooks", "SessionEnd"],
+                [serde_json::json!({ "hooks": [{ "type": "command", "command": "old-end" }] })],
+            )
+            .remove_value_if_equals(&["hooks", "SessionStart"], serde_json::json!([]))
+            .remove_value_if_equals(&["hooks", "SessionEnd"], serde_json::json!([]))
+            .remove_value_if_equals(&["hooks"], serde_json::json!({}));
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::Changed);
+
+        let written: Value = serde_json::from_str(&fs::read_to_string(dest).unwrap()).unwrap();
+        assert_eq!(
+            written["hooks"]["SessionStart"],
+            serde_json::json!([{ "hooks": [{ "type": "command", "command": "keep" }] }])
+        );
+        assert!(written["hooks"].get("SessionEnd").is_none());
     }
 
     #[test]
@@ -570,6 +783,113 @@ mod tests {
 
         let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
         assert!(err.to_string().contains("must be an array"));
+    }
+
+    #[test]
+    fn install_errors_when_string_removal_target_is_not_an_array() {
+        let ctx = TestContext::new();
+        fs::write(
+            ctx.dest_path("settings.json"),
+            r#"{"permissions":{"allow":"A"}}"#,
+        )
+        .unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_strings_from_array(&["permissions", "allow"], ["A"]);
+
+        let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
+        assert!(err.to_string().contains("must be an array"));
+    }
+
+    #[test]
+    fn install_errors_when_string_removal_target_has_non_string_entries() {
+        let ctx = TestContext::new();
+        fs::write(
+            ctx.dest_path("settings.json"),
+            r#"{"permissions":{"allow":["A", 1]}}"#,
+        )
+        .unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_strings_from_array(&["permissions", "allow"], ["A"]);
+
+        let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
+        assert!(err.to_string().contains("contain only strings"));
+    }
+
+    #[test]
+    fn install_errors_when_value_removal_target_is_not_an_array() {
+        let ctx = TestContext::new();
+        fs::write(
+            ctx.dest_path("settings.json"),
+            r#"{"hooks":{"SessionStart":{}}}"#,
+        )
+        .unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_values_from_array(&["hooks", "SessionStart"], [serde_json::json!({})]);
+
+        let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
+        assert!(err.to_string().contains("must be an array"));
+    }
+
+    #[test]
+    fn install_errors_when_array_removal_path_crosses_non_object_value() {
+        let ctx = TestContext::new();
+        fs::write(ctx.dest_path("settings.json"), r#"{"hooks":true}"#).unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_strings_from_array(&["hooks", "SessionStart"], ["x"]);
+
+        let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
+        assert!(err.to_string().contains("crosses a non-object value"));
+    }
+
+    #[test]
+    fn install_errors_when_conditional_removal_path_crosses_non_object_value() {
+        let ctx = TestContext::new();
+        fs::write(ctx.dest_path("settings.json"), r#"{"hooks":true}"#).unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_value_if_equals(&["hooks", "SessionStart"], serde_json::json!([]));
+
+        let err = feature.install_with_base_dir(ctx.base_dir()).unwrap_err();
+        assert!(err.to_string().contains("crosses a non-object value"));
+    }
+
+    /// A false `Changed` from any removal operation would make every install
+    /// rewrite the destination file, since main.rs applies the removals
+    /// unconditionally. This pins the no-op contract for all three removal
+    /// operations at once: missing paths, values already absent, and
+    /// non-matching remove_value_if_equals targets.
+    #[test]
+    fn install_is_noop_when_removals_have_nothing_to_remove() {
+        let ctx = TestContext::new();
+        let dest = ctx.dest_path("settings.json");
+        fs::write(
+            &dest,
+            r#"{
+  "permissions": { "allow": ["A"] },
+  "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "keep" }] }] }
+}"#,
+        )
+        .unwrap();
+        let before = fs::read_to_string(&dest).unwrap();
+
+        let feature = JsonEnsure::new(ctx.dest_path_str("settings.json"))
+            .remove_strings_from_array(&["permissions", "allow"], ["absent"])
+            .remove_strings_from_array(&["missing", "path"], ["absent"])
+            .remove_values_from_array(
+                &["hooks", "SessionStart"],
+                [serde_json::json!({ "hooks": [{ "type": "command", "command": "old" }] })],
+            )
+            .remove_values_from_array(&["hooks", "SessionEnd"], [serde_json::json!({})])
+            .remove_value_if_equals(&["hooks", "SessionStart"], serde_json::json!([]))
+            .remove_value_if_equals(&["hooks"], serde_json::json!({}));
+
+        let result = feature.install_with_base_dir(ctx.base_dir()).unwrap();
+        assert_eq!(result, FeatureResult::NoOp);
+        assert_eq!(fs::read_to_string(dest).unwrap(), before);
     }
 
     #[test]

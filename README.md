@@ -23,7 +23,8 @@ The statusline script is not conditional on Claude or Codex. Install creates `~/
 
 NOTE: `uninstall` is not a full rollback for every feature. In particular, Claude settings are now merged into
 `~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
-does not remove or revert it.
+does not remove or revert it. Install may also delete specific values that older installer versions wrote (retired
+permissions and hooks); values the installer never wrote are left alone.
 
 ## Disclaimer
 

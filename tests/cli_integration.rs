@@ -50,10 +50,6 @@ const EXPECTED_CLAUDE_ALLOW: &[&str] = &[
     "Bash(sl:*)",
     "Skill(scode-graphite)",
     "WebFetch(domain:index.crates.io)",
-    "Bash(leiter:*)",
-    "Read(~/.leiter/soul.md)",
-    "Edit(~/.leiter/soul.md)",
-    "Write(~/.leiter/soul.md)",
 ];
 
 fn assert_expected_claude_allow(settings: &serde_json::Value) {
@@ -64,6 +60,18 @@ fn assert_expected_claude_allow(settings: &serde_json::Value) {
             "expected permissions.allow to contain {expected}"
         );
     }
+}
+
+fn assert_no_leiter_settings(settings: &serde_json::Value) {
+    let rendered = serde_json::to_string(settings).unwrap();
+    assert!(
+        !rendered.contains("leiter"),
+        "settings should not contain leiter references: {rendered}"
+    );
+    assert!(
+        !rendered.contains("soul.md"),
+        "settings should not contain soul.md references: {rendered}"
+    );
 }
 
 fn assert_skill_symlink_points_to_repo_source(home: &TempDir, link_path: &str, source_path: &str) {
@@ -586,6 +594,137 @@ fn test_all_symlinks_are_relative() {
     }
 }
 
+/// The settings fixture stacks every historical leiter shape into one file:
+/// absolute-path and ~ permission spellings, plus all three hook command
+/// generations. No real machine ever had them all at once, but this proves
+/// each exact-match removal value in main.rs actually matches something.
+#[test]
+fn test_install_removes_legacy_leiter_claude_settings_from_regular_file() {
+    let fake_home = setup_fake_home();
+    let settings_path = fake_home.path().join(".claude/settings.json");
+    std::fs::write(
+        &settings_path,
+        r#"{
+  "permissions": {
+    "allow": [
+      "Bash(custom:*)",
+      "Bash(leiter:*)",
+      "Read(~/.leiter/soul.md)",
+      "Edit(~/.leiter/soul.md)",
+      "Write(~/.leiter/soul.md)",
+      "Edit(/Users/scode/.leiter/soul.md)",
+      "Write(/Users/scode/.leiter/soul.md)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter context"
+          },
+          {
+            "type": "command",
+            "command": "leiter nudge"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook context"
+          },
+          {
+            "type": "command",
+            "command": "leiter hook nudge"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook context"
+          },
+          {
+            "type": "command",
+            "command": "leiter hook nudge --auto-distill"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "custom hook"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter session-end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "leiter hook session-end"
+          }
+        ]
+      }
+    ]
+  }
+}"#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let settings = read_json(&fake_home, ".claude/settings.json");
+    assert_no_leiter_settings(&settings);
+    assert_expected_claude_allow(&settings);
+    assert!(
+        settings["permissions"]["allow"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry == "Bash(custom:*)"),
+        "unmanaged permissions should be preserved"
+    );
+    assert_eq!(
+        settings["hooks"]["SessionStart"],
+        serde_json::json!([
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "custom hook"
+                    }
+                ]
+            }
+        ])
+    );
+    assert!(settings["hooks"].get("SessionEnd").is_none());
+}
+
 #[test]
 fn test_install_migrates_legacy_claude_settings_symlink() {
     let fake_home = setup_fake_home();
@@ -631,6 +770,7 @@ fn test_install_migrates_legacy_claude_settings_symlink() {
         serde_json::json!("~/bin/claude-statusline.sh")
     );
     assert_expected_claude_allow(&settings);
+    assert_no_leiter_settings(&settings);
 }
 
 #[test]
