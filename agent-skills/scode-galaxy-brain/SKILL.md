@@ -78,6 +78,10 @@ How to route:
 - Every time you delegate, tell the user which model and effort you picked for that task and why, in one sentence tied
   to the table's dimensions (e.g. "mechanical rename across many files, no design decisions — gpt-5.5 high").
 
+The model names in these rules are role fillers drawn from the default table, not fixed bindings: bulk and mechanical
+work mean the cheapest model whose intelligence clears the bar, and critical review means a sota-marked model. When the
+table changes (see Local availability), reapply each rule to whichever model now fills its role.
+
 ## Provider preference
 
 The invocation may include the keyword `prefer-gpt` or `prefer-claude`. This expresses a preference unrelated to model
@@ -97,8 +101,28 @@ first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read it 
 language adjustments from the user, most commonly availability restrictions like "fable-5 is not available, do not use"
 or "only claude models work here". Treat its contents as authoritative over the table — an excluded model is simply not
 in the table for this session, and every routing rule (including "do not route down on cost") applies to the models that
-remain. If the file does not exist, all table models are assumed available. Do not create or edit this file yourself; it
-belongs to the user.
+remain.
+
+The rc file may go further than exclusions and supply its own model table. The intended workflow is copy-paste: the user
+copies the default table out of this file and edits it — same columns, and crucially the same scales, since the scores
+are relative and the routing thresholds (taste ≥ 7, cost comparisons, the sota mark) only mean anything against the
+default table's calibration. A table in the rc file replaces the default table wholesale: models it omits do not exist
+this session even without an explicit "not available" line, and its scores and sota markings drive routing exactly as
+the default table's would. Remap the role-based routing rules onto what the replacement contains. Its model names are
+the ids you actually invoke — pass them to codex's `-m` verbatim (minus the trailing effort word); for the claude path,
+map to the nearest `--model` alias. If the model your own session runs as is absent, that only bars delegating to it —
+you keep orchestrating, and the "prefer the one you are yourself running as" tie-break simply drops out. If the table
+deviates from this shape (missing columns, an unfamiliar scale), do your best to interpret it in the spirit of the
+default table rather than rejecting it, and tell the user what you assumed.
+
+To spare the user the manual copy-paste, they can ask you to seed the file — "populate my galaxy-brain rc with the
+default table" or words to that effect. On that explicit request (and only then), write the current default table into
+`~/.scode-galaxy-brainrc.md`, preceded by a one-line note saying the table replaces the skill's default wholesale and is
+meant to be edited. Never discard existing content: if the file already exists, append the table to it, and if it
+already contains a model table, stop and ask instead of writing a second one.
+
+If the file does not exist, all table models are assumed available. Apart from the seeding request above, do not create
+or edit this file yourself; it belongs to the user.
 
 ## Delegation mechanics
 

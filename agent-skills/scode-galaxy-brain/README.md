@@ -28,6 +28,9 @@ Things to know before using it:
   like "fable-5 is not available, do not use". The agent reads it before routing and treats it as authoritative over the
   built-in table, so you never need to edit the skill per environment. When several state of the art models are
   available, the one your session is already running on is preferred.
+- The rc file can also hold a full replacement model table: copy the table out of SKILL.md, edit rows and scores (same
+  columns and scales), and it supersedes the built-in one — models you leave out are treated as unavailable. Ask the
+  agent to "populate my galaxy-brain rc with the default table" and it will seed the file for you to edit.
 - Saying "galaxy brain feedback: <what went wrong or should improve>" mid-session makes the agent pause and append a
   self-contained problem report to `~/.local/state/scode-galaxy-brain/feedback.md` (it announces the exact path). The
   entries are written to be handed to an agent in this repo to improve the skill. Review before forwarding — the agent
