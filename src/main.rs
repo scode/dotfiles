@@ -5,7 +5,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use dotfiles::{
-    DeleteSymlink, FeatureGraph, FeatureHandle, JsonEnsure, ManagedDirectory, PathExists,
+    DeleteSymlink, FeatureGraph, FeatureHandle, JsonManaged, ManagedDirectory, PathExists,
     PayloadSymlink, RawSymlink,
 };
 
@@ -164,11 +164,11 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     let claude_settings_base = g
         .add(
             "claude-settings-base",
-            JsonEnsure::new("~/.claude/settings.json")
+            JsonManaged::new("~/.claude/settings.json")
                 // This deleted payload path is still the marker for legacy
                 // installer-owned symlinks that need in-place migration.
                 .legacy_payload_symlink_source("payload/dot_claude/settings.json")
-                .ensure_strings_in_array(
+                .managed_strings_in_array(
                     &["permissions", "allow"],
                     CLAUDE_PERMISSIONS_ALLOW.iter().copied(),
                 )
@@ -197,7 +197,7 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
                 .remove_value_if_equals(&["hooks", "SessionStart"], json!([]))
                 .remove_value_if_equals(&["hooks", "SessionEnd"], json!([]))
                 .remove_value_if_equals(&["hooks"], json!({}))
-                .ensure_value(&["sandbox", "enabled"], json!(true)),
+                .managed_value(&["sandbox", "enabled"], json!(true)),
         )
         .condition(PathExists::new("~/.claude"))
         .build();
@@ -207,14 +207,21 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     // problem does not suppress permissions/sandbox management.
     g.add(
         "claude-settings-statusline",
-        JsonEnsure::new("~/.claude/settings.json").ensure_value_if_path_exists(
-            &["statusLine"],
-            "~/bin/claude-statusline.sh",
-            json!({
-                "type": "command",
-                "command": "~/bin/claude-statusline.sh"
-            }),
-        ),
+        JsonManaged::new("~/.claude/settings.json")
+            // Uninstall runs this feature before claude-settings-base (reverse
+            // dependency order), so it can be the first to encounter an
+            // un-migrated legacy symlink. Without this marker that symlink is
+            // "unexpected" and uninstall fails on machines that never ran a
+            // post-migration install.
+            .legacy_payload_symlink_source("payload/dot_claude/settings.json")
+            .managed_value_if_path_exists(
+                &["statusLine"],
+                "~/bin/claude-statusline.sh",
+                json!({
+                    "type": "command",
+                    "command": "~/bin/claude-statusline.sh"
+                }),
+            ),
     )
     .depends_on(&claude_settings_base)
     .depends_on(claude_statusline)

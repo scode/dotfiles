@@ -21,10 +21,15 @@ exists.
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.
 
-NOTE: `uninstall` is not a full rollback for every feature. In particular, Claude settings are now merged into
-`~/.claude/settings.json` as a regular user-owned JSON file. The installer stops managing that file on uninstall, but it
-does not remove or revert it. Install may also delete specific values that older installer versions wrote (retired
-permissions and hooks); values the installer never wrote are left alone.
+NOTE: `uninstall` is not a full rollback for every feature. Claude settings are merged into `~/.claude/settings.json` as
+a regular user-owned JSON file, where the installer owns only the specific values it manages. Uninstall removes those
+owned values when they still match what install wrote (a value you edited is treated as yours and left alone) and prunes
+containers that removal empties, but it never deletes a regular settings file and cannot restore values install
+overwrote in the first place. An un-migrated settings symlink left by a very old install is the exception: uninstall
+removes that symlink outright, as it did back when the whole file was symlinked. Install may also delete specific values
+that older installer versions wrote (retired permissions and hooks); those are one-way cleanups that uninstall does not
+re-add. Beyond the empty-container pruning above, values at paths the installer neither manages nor targets for cleanup
+are never touched.
 
 ## Disclaimer
 
