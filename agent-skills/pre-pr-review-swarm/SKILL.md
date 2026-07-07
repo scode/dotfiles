@@ -1,6 +1,6 @@
 ---
 name: pre-pr-review-swarm
-description: Run a concurrent multi-angle review only when the user explicitly invokes `pre-pr-review-swarm` by name. Spawn parallel reviewers for documentation/comment correctness, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, README or equivalent documentation drift, and SPEC.md compliance (when a SPEC.md exists at the project root).
+description: Run a concurrent multi-angle review only when the user explicitly invokes `pre-pr-review-swarm` by name. Spawn parallel reviewers for documentation/comment correctness and README drift, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, and SPEC.md compliance (when a SPEC.md exists at the project root).
 ---
 
 # Pre-PR Review Swarm
@@ -44,7 +44,7 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
      (<n> files)`.
 3. Report the selected scope before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
-5. Run the reviewer charters concurrently when the environment supports it (eight always, plus a ninth if `SPEC.md`
+5. Run the reviewer charters concurrently when the environment supports it (seven always, plus an eighth if `SPEC.md`
    exists). Keep each reviewer focused on its own charter so the review instructions stay separate. If the environment
    cannot spawn reviewer agents and wait for their results, stop and report that the swarm could not be run. Do not
    replace the swarm with a coordinator-only read-through and do not report PR readiness from a review that did not
@@ -140,7 +140,6 @@ to each finding by its feedback identifier.
 | security-reviewer                                       | `reviewers/security.md`        |
 | test-quality-reviewer                                   | `reviewers/test-quality.md`    |
 | ai-slop-reviewer                                        | `reviewers/ai-slop.md`         |
-| readme-drift-reviewer                                   | `reviewers/readme-drift.md`    |
 | spec-compliance-reviewer _(only when `SPEC.md` exists)_ | `reviewers/spec-compliance.md` |
 
 ## Output Contract
@@ -166,7 +165,7 @@ Example finding:
   spec appears to need updating.
 - `Test Quality`: findings from the test-quality reviewer.
 - `AI Slop`: findings from the ai-slop-reviewer.
-- `Docs/README Drift`: findings from the docs-comments and readme-drift reviewers.
+- `Docs/README Drift`: findings from the docs-comments reviewer, which also owns README drift.
 - `Idiomaticity`: non-idiomatic patterns found.
 - `Simplification`: safe simplification opportunities.
 - `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready.
