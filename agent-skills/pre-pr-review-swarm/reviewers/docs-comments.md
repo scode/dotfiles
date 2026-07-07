@@ -17,3 +17,12 @@ behavior.
 - Flag comments that describe behavior the code no longer exhibits.
 - Flag TODO/FIXME that the current change resolves but didn't remove.
 - Don't suggest adding doc comments to private internals unless the logic is genuinely non-obvious.
+
+## README drift
+
+Validate `README.md` (or equivalent user-facing docs) against the code under review; propose additions when behavior
+changed materially.
+
+- Only flag drift if the change alters user-visible behavior, CLI flags, configuration, or setup steps.
+- Internal refactors that don't change external behavior should not trigger README updates.
+- Don't suggest documenting implementation details in the README.
