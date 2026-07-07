@@ -68,6 +68,9 @@ and never merely to avoid re-reading a file whose on-disk state drifted.
 
 # Commit messages and PR titles/descriptions
 
+Always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR descriptions, or commit
+messages. If that skill is missing or unavailable, stop and tell the user instead of writing the text without it.
+
 Keep the first line of commit messages, and PR titles, very concise.
 
 For the remainder of the commit message and/or PR descriptions, focus on _why_ the change is made. Do not state _what_
