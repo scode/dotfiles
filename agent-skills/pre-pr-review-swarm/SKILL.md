@@ -13,20 +13,58 @@ creation, submission, or readiness work.
 The skill accepts optional keyword arguments (case-insensitive, any order):
 
 - `nofix` — report findings only; do not make any changes to the code.
-- `commit` — review the current commit (`git show`) instead of uncommitted changes.
+- `commit` — review only the current commit (in git: `git show`), ignoring uncommitted changes.
+- `uncommitted` — review only the uncommitted working-copy diff, even when the current commit is itself unpublished
+  work.
 
-These can be combined: `nofix commit`
+These can be combined: `nofix commit`. `commit` and `uncommitted` contradict each other; if both are passed, stop and
+ask the user which scope they meant.
 
-Defaults (no arguments): review uncommitted changes in the working copy, then fix actionable findings. If there are
-clearly no uncommitted changes, fall back to reviewing the current commit.
+Defaults (no arguments): review the change a PR reviewer would actually see, then fix actionable findings. What that
+means depends on where the current commit sits. The rules below are stated in VCS-neutral terms; the git commands are
+illustrations only, and other version control systems have their own equivalents for the same questions. Throughout,
+"the current commit" means the reviewable commit backing the change, and "uncommitted changes" means edits not yet part
+of it. In systems where the working copy is itself a commit (jj, for example), the working-copy commit's content plays
+the uncommitted-changes role and the current commit is its parent — do not let the WIP commit shift the combined range
+up by one and collapse the scope to just the fixes.
+
+- If the current commit is already on the mainline branch (in git: `git merge-base --is-ancestor HEAD origin/main`
+  succeeds), the working copy holds the whole change: review the uncommitted working-copy diff. If there are clearly no
+  uncommitted changes, fall back to reviewing the current commit.
+- If the current commit is _not_ on the mainline — an unpushed commit, or a branch commit backing an open PR — and there
+  are uncommitted changes on top of it, review the combined diff from the parent of the current commit through the
+  working copy. Uncommitted edits in this state are almost always follow-up fixes destined to land in that same commit
+  or PR, and the eventual reviewer will see both together. Reviewing only the uncommitted slice produces a misleadingly
+  small — sometimes near-empty — review of a large in-flight change. If the working copy is clean in this state, review
+  the current commit by itself.
+- The mainline test alone cannot distinguish follow-up fixes from the start of the next change: a finished commit whose
+  PR is already up to date, with fresh edits on top meant for a new PR, looks mechanically identical to the fix-up case.
+  Use session context to decide — the work that produced the edits usually makes their destination obvious. When the
+  edits are clearly the beginning of a new review unit, review the uncommitted slice alone and say so in the scope
+  report. When the destination is genuinely unclear, present both candidate scopes and ask the user which they meant
+  instead of silently taking the combined default; one question is cheaper than a swarm run over the wrong scope.
+  Unclear is not an edge case to argue away: a session with no knowledge of where the uncommitted edits came from, or
+  edits touching files unrelated to what the commit changes, is the unclear case.
+- The combined range is deliberately the current commit plus its pending fixes, not the whole branch: this assumes the
+  stacked workflow where each commit is its own reviewable unit, and sweeping in earlier commits would re-review work
+  that is not part of this change. On a multi-commit branch destined for a single PR, this scope is narrower than what
+  the PR reviewer will see; say so in the scope report so the user can widen it if that is not what they want.
+- If the mainline cannot be determined (no remote, detached state with no obvious default branch), use the uncommitted
+  working-copy diff and note the ambiguity in the scope label.
+
+Review the uncommitted slice by itself despite an unpublished current commit only when `uncommitted` is passed.
 
 ## Workflow
 
 1. Parse arguments (see above).
 2. Materialize the review scope into a named diff file before spawning reviewers:
    - If `commit`: write the current commit diff and touched-file summary to the scope file.
-   - Otherwise: write the uncommitted working-copy diff and touched-file summary to the scope file. If that scope is
-     empty, replace it with the current commit diff.
+   - If `uncommitted`: write the uncommitted working-copy diff and touched-file summary to the scope file.
+   - Otherwise, follow the defaults above. For the combined default (unpublished commit plus uncommitted fixes), write
+     the diff from the parent of the current commit through the working copy (in git: `git diff HEAD^`) and a
+     touched-file summary over that same range — the scope must contain the already-committed content, not just the
+     follow-up edits. For the mainline default, write the uncommitted working-copy diff; if that scope is empty, replace
+     it with the current commit diff.
    - Exclude dependency lock files (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `go.sum`,
      `poetry.lock`, `uv.lock`, and equivalents) and clearly generated or vendored files from the diff written to the
      scope file. Every reviewer pays to read every token of the scope file, and mechanical churn in generated files is
@@ -39,9 +77,11 @@ clearly no uncommitted changes, fall back to reviewing the current commit.
      because every touched file was excluded, say so: the change touched only generated or lock files.
    - Keep the checkout aligned with the selected scope's after-state while reviewers run. If that is not true, use an
      isolated checkout/worktree or abort instead of asking reviewers to infer context from stale files.
-   - Record a short human-readable scope label, such as `current commit <id>` or
-     `uncommitted working-copy diff
-     (<n> files)`.
+   - Record a short human-readable scope label that names the selection and includes the touched-file count and diff
+     line count, such as `current commit <id> (3 files, 120 diff lines)` or
+     `commit <id> + uncommitted changes (7 files, 480 diff lines)`. The counts are a guard, not decoration: a label
+     showing a handful of diff lines when the in-flight change is known to be large means the wrong scope was selected,
+     and the user should be able to see that before reviewers spend anything on it.
 3. Report the selected scope before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
 5. Decide the reviewer panel. By default every reviewer runs (seven always, plus an eighth if `SPEC.md` exists). If
@@ -154,8 +194,8 @@ Report results in this structure. Each finding in every section must begin with 
 **definite** or **possible**.
 
 Always include `Reviewed scope: <selected scope label>` before the findings sections. This is not cosmetic: it is the
-user-visible guard against accidentally reviewing an empty working-copy diff or giving different reviewers different
-scope.
+user-visible guard against reviewing an empty or under-sized scope (such as a sliver of uncommitted fixes when the real
+change is a whole in-flight commit) or giving different reviewers different scope.
 
 Always include `Reviewer execution: <n>/<expected> reviewers completed` before the findings sections. If that number is
 not complete, the report must say `PR Readiness: not ready` and explain that the swarm did not run to completion. Do not
