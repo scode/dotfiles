@@ -72,8 +72,12 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   change itself and what the diff actually does.
 - **Validation boilerplate.** Lines like "Tests run: cargo fmt, cargo test, cargo clippy" are noise unless the repo's
   own rules explicitly require them in the message.
-- **Attribution noise.** "Co-Authored-By" trailers for AI tools, "Generated with Claude Code" badges, and similar —
-  blocking unless the repo's conventions explicitly require them.
+- **Attribution noise.** "Co-Authored-By" trailers for AI tools, "Generated with Claude Code" badges, and similar
+  tool-credit boilerplate — blocking unless the repo's conventions explicitly require them. Do not stretch this rule to
+  an explicit caveat that qualifies evidence quality, provenance, or review depth for a specific section, especially one
+  the user asked to include or preserve. A note saying a section was machine-generated and only lightly reviewed is not
+  taking credit; it tells the future reader how much to trust that section. Judge whether it is accurate and scoped,
+  rather than treating it as an attribution badge.
 - **Title restated as body.** A body whose only content is the title again in more words.
 - **Unintroduced references.** Wording that presupposes context the reader does not have — "the hard cap", "the earlier
   refactor" — definite references to things the message never introduced. The author knows the referent because they

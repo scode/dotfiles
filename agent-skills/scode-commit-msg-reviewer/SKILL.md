@@ -30,7 +30,9 @@ text themselves.
    (CLAUDE.md, AGENTS.md, CONTRIBUTING, or similar) if any exist, and — when the user gave explicit instructions about
    the message's content or structure — those instructions, verbatim or faithfully paraphrased. The user's brief is part
    of the message's spec; your reasoning, the change history, and earlier review rounds are not, and must stay out — a
-   neutral first read is the entire point of this skill.
+   neutral first read is the entire point of this skill. When the candidate intentionally preserves wording from a
+   description the user edited by hand (a PR body, a diff summary), say so in the reviewer prompt and identify the
+   preserved wording — the reviewer must treat it as part of the user's spec, not as candidate text to judge.
 4. The reviewer returns a verdict of approve or needs-revision, with findings tagged blocking or nitpick.
 5. On blocking findings, revise and repeat from step 3 with a **new** subagent, instructing it to report only blocking
    findings — round one already surfaced nitpicks, and later fresh reviewers would otherwise keep producing new ones.
