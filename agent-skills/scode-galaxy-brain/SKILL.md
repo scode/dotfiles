@@ -34,6 +34,15 @@ Keep the roles separate: do not merge this skill's orchestrator role with anothe
 attribute one skill's constraints to the other. If another skill forbids or requires something, that rule comes from
 that skill; reason about it (and explain it to the user) on that skill's terms.
 
+Routing authority covers nested delegation too. When another active skill's process calls for spawning subagents —
+reviewers, workers, whatever it names them — each spawn is still a galaxy-brain delegation: pick the model from the
+table, set model and effort explicitly where the spawn mechanism supports it, and announce the choice as usual. The trap
+is following the other skill's spawn instructions verbatim and letting its subagents silently inherit this session's
+expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims only the choices
+the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a spawn, that demand
+is process, not a routing default — honor it like any other rule that skill owns, and attribute the choice to that skill
+when you announce it.
+
 ## Model table
 
 Cost is a relative score of what the model costs to run (higher = cheaper). Intelligence is how hard a problem you can
