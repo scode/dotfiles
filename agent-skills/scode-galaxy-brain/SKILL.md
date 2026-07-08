@@ -4,7 +4,10 @@ description: >
   Accomplish a goal by delegating suitable parts of the work to cheaper models while the current session stays in
   charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
   scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword.
-  Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed.
+  Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
+  invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
+  the user expressly stops it, unless the invocation itself limited the scope up front; if retained context says it was
+  active, re-read this skill before delegating.
 ---
 
 # Scode Galaxy Brain
@@ -42,6 +45,25 @@ expensive model. Inheriting is fine only as a deliberate routing decision, state
 the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a spawn, that demand
 is process, not a routing default — honor it like any other rule that skill owns, and attribute the choice to that skill
 when you announce it.
+
+## Staying active for the whole session
+
+Activation is session-scoped, not turn- or task-scoped. Once the user invokes this skill, keep routing every delegation
+through it — including spawns triggered by other skills, and including later tasks the user never mentions the skill on
+— for the rest of the session. Only two things end it: the user expressly asking to stop, or an invocation that limited
+the scope up front ("use scode-galaxy-brain for <this one thing>"). Finishing the task it was invoked for does not.
+Context compaction, session resume, a tool restart, or a summary that fails to mention the skill does not end it either;
+treat retained context that has gone quiet about galaxy-brain as a summarization artifact, not a decision anyone made.
+
+After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md and
+`~/.scode-galaxy-brainrc.md` (if it exists) before doing further substantive work — the routing rules do not survive
+summarization reliably. If the retained context is ambiguous but mentions outstanding delegated work, model or effort
+routing, or galaxy-brain at all, assume the skill is still active and say that you are assuming it.
+
+When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
+goal, any provider preference, rc-file assumptions, delegations still in flight, and the next routing decision. Do this
+even when no delegate is currently running — between delegations is exactly when a summary is most likely to drop the
+skill. This is a backstop, not the mechanism: stickiness applies whether or not a handoff was ever written.
 
 ## Model table
 
