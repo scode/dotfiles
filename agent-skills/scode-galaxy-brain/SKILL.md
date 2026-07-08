@@ -1,6 +1,10 @@
 ---
 name: scode-galaxy-brain
-description: Accomplish a goal by delegating suitable parts of the work to cheaper models while the current session stays in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword. Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed.
+description: >
+  Accomplish a goal by delegating suitable parts of the work to cheaper models while the current session stays in
+  charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
+  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword.
+  Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed.
 ---
 
 # Scode Galaxy Brain
