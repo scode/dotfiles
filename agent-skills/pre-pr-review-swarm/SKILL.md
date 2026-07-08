@@ -92,8 +92,12 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    paying each to return an empty list. The trigger is purely mechanical: a file with any other extension anywhere in
    the change means the full panel runs. When in doubt, run the full panel.
 6. Run the selected reviewer charters concurrently when the environment supports it. Keep each reviewer focused on its
-   own charter so the review instructions stay separate. If the environment cannot spawn reviewer agents and wait for
-   their results, stop and report that the swarm could not be run. Do not replace the swarm with a coordinator-only
+   own charter so the review instructions stay separate. If the session has an active model-routing skill — one whose
+   job is to decide which model and reasoning effort each delegated task or subagent runs on — then which model and
+   effort each reviewer runs at is that skill's decision: route each spawn through it and pass explicit model/effort
+   overrides where the spawn mechanism supports them, rather than letting reviewers silently inherit the coordinator's
+   model. This applies equally to the reduced prose-only panel. If the environment cannot spawn reviewer agents and wait
+   for their results, stop and report that the swarm could not be run. Do not replace the swarm with a coordinator-only
    read-through and do not report PR readiness from a review that did not actually spawn reviewers.
 7. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
    its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
