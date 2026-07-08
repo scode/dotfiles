@@ -49,7 +49,10 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   substantial. The canonical case: forcing routine work into a Problem/Solution shape. "Libraries were out of date" is
   not a problem being solved; bumping dependencies is a day-to-day chore, and the honest message says so plainly or says
   nothing. Use Problem/Solution headings only when there is real explanatory context and the headings make it easier to
-  scan.
+  scan. Documentation-only changes need the same skepticism: a summary that frames the docs' previous absence as the
+  problem being solved ("the guide did not cover X", "the page did not explain Y"), or that points at the question or
+  request that prompted the writing, is usually narrating why the author typed the patch, not context a future reader
+  needs. For a small self-contained documentation addition, prefer a concise statement of what the diff documents.
 - **Claims the diff contradicts.** If the message says the change does something the diff shows it does not do (or vice
   versa), that is the worst outcome a message can have — it actively misleads the future investigator. Note the
   asymmetry: motivation often lives _outside_ the diff (an incident, a user report, an upstream bug), and you cannot
