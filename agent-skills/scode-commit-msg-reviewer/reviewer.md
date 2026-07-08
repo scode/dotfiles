@@ -35,6 +35,12 @@ follow-up risks — the context a future reader cannot recover from the diff. It
 already shows that. A brief overview of what changed is acceptable only when the change is genuinely large enough that a
 reader needs orientation before diving in.
 
+A body can carry a plausible-looking rationale that is still not the _why_: if the first "why" sentence describes where
+the implementation lives, how the patch is packaged, or which helper, API, or command was chosen, that is a solution
+detail promoted to the headline reason, and it misleads the future reader unless the choice really is the point of the
+change. For workflow and tooling changes, first name the workflow the change enables; mention the implementation
+mechanism after that, and only when it matters.
+
 An empty body is a valid and frequently correct outcome. When the title and diff say everything useful, the right body
 is no body. Filler written because a body field exists is strictly worse than nothing — it trains readers to skip bodies
 entirely.
