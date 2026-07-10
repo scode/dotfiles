@@ -76,13 +76,16 @@ the user can access varies by environment (see Local availability below).
 
 A larger number is better on every dimension; for cost that means cheaper.
 
-| model         | family | sota | cost | intelligence | taste |
-| ------------- | ------ | ---- | ---- | ------------ | ----- |
-| gpt-5.5 low   | gpt    |      | 11   | 5            | 4     |
-| gpt-5.5 high  | gpt    |      | 9    | 8            | 5     |
-| sonnet-5 high | claude |      | 5    | 5            | 7     |
-| opus-4.8 high | claude |      | 4    | 7            | 8     |
-| fable-5 high  | claude | yes  | 2    | 9            | 9     |
+| model                | family | sota | cost | intelligence | taste |
+| -------------------- | ------ | ---- | ---- | ------------ | ----- |
+| gpt-5.6-luna medium  | gpt    |      | 12   | 4            | 5     |
+| gpt-5.6-terra medium | gpt    |      | 10   | 6            | 6     |
+| gpt-5.6-sol low      | gpt    |      | 9    | 6            | 7     |
+| gpt-5.6-sol medium   | gpt    |      | 7    | 8            | 8     |
+| gpt-5.6-sol high     | gpt    | yes  | 5    | 9            | 8     |
+| sonnet-5 high        | claude |      | 5    | 5            | 7     |
+| opus-4.8 high        | claude |      | 4    | 7            | 8     |
+| fable-5 high         | claude | yes  | 2    | 9            | 9     |
 
 How to route:
 
@@ -90,19 +93,22 @@ How to route:
 - When a task calls for a state of the art model and more than one is marked sota, prefer the one you are yourself
   running as: the user chose it for this session, which signals both availability and preference in this environment.
   Diverge only for a concrete reason (Local availability below, an explicit provider preference, or repeated poor output
-  on the task at hand).
+  on the task at hand). If the model you are running is not in the table, apply the normal cheapest-qualified rule
+  within the sota rows.
 - Set the intelligence bar by the cost of a missed or wrong result, not only by how hard the task looks. Cheap models
   are fine for producing work because you gate the output and defects get caught. Review and verification tasks are
   themselves the gate — there is no backstop behind them — so a missed finding is unrecoverable and criticality, not
   task mechanics, drives the model choice.
 - Bulk and mechanical work — scanning large logs for patterns, searching source for simple patterns, clear-spec
-  implementation, tedious churn that needs no design decisions: gpt-5.5.
+  implementation, tedious churn that needs no design decisions: use the cheapest model whose intelligence clears the
+  task.
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
-- Mechanical review dimensions — slop detection, style and idiomaticity, docs drift, best-practice pattern checks:
-  gpt-5.5 high.
-- Critical review dimensions — security, correctness, concurrency, data integrity, test quality: fable-5 high. Do not
-  route these down on cost. Optionally add gpt-5.5 as an extra independent perspective. Test quality is critical rather
-  than mechanical because weak tests are how correctness bugs survive review.
+- Mechanical review dimensions — slop detection, style and idiomaticity, docs drift, best-practice pattern checks: use
+  the cheapest model with intelligence ≥ 8.
+- Critical review dimensions — security, correctness, concurrency, data integrity, test quality: use a sota-marked
+  model. Do not route these to a non-sota model on cost. Optionally add the cheapest model with intelligence ≥ 8 as an
+  extra independent perspective. Test quality is critical rather than mechanical because weak tests are how correctness
+  bugs survive review.
 - Never use Haiku.
 - These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't
   meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. The
@@ -111,7 +117,7 @@ How to route:
 - Some work isn't worth delegating at all: if writing the task spec and reviewing the result costs more than doing the
   task, just do it.
 - Every time you delegate, tell the user which model and effort you picked for that task and why, in one sentence tied
-  to the table's dimensions (e.g. "mechanical rename across many files, no design decisions — gpt-5.5 high").
+  to the table's dimensions (e.g. "mechanical rename across many files, no design decisions — gpt-5.6-terra medium").
 
 The model names in these rules are role fillers drawn from the default table, not fixed bindings: bulk and mechanical
 work mean the cheapest model whose intelligence clears the bar, and critical review means a sota-marked model. When the
@@ -174,13 +180,13 @@ When delegating natively, also set the target reasoning effort if your sub agent
 otherwise sub agents inherit the session's effort and that is acceptable.
 
 Name every sub agent (label, description, or whatever your mechanism displays) so the name includes the task plus the
-model and effort actually doing the work, e.g. `fix-foo-gpt-5.5-high`. Harness UIs otherwise show only the wrapper or
-default model, which misleads anyone watching progress.
+model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
+or default model, which misleads anyone watching progress.
 
 ### Shelling out to codex
 
 ```sh
-codex exec --yolo -m gpt-5.5 -c model_reasoning_effort=high -o <scratch-file> "<prompt>"
+codex exec --yolo -m gpt-5.6-sol -c model_reasoning_effort=high -o <scratch-file> "<prompt>"
 ```
 
 - Reasoning effort is set with `-c model_reasoning_effort=<low|medium|high>`. Always pass it explicitly rather than
