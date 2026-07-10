@@ -30,10 +30,21 @@ The title (first line of a commit message, or PR title) is very concise and desc
 change, not the implementation. A bug fix that required heavy refactoring is still a fix. If the repo mandates a format
 such as Conventional Commits, wrong type classification is a real error, not a style preference.
 
+The title and opening should orient a reasonable reader quickly. Ignore formulaic banners such as `NOTE:` or `WARNING:`
+when judging the opening: within roughly the first one to four substantive sentences, the reader should either
+understand why the change exists or recognize that the message is establishing necessary background before it gets to
+the reason. This is not a sentence quota or a demand for an explicit why section. A trivial message such as
+`chore: cargo update` can stand alone because the title already supplies the whole useful picture.
+
 The body exists to carry the _why_: motivation, constraints, tradeoffs, rejected alternatives, surprising omissions,
 follow-up risks — the context a future reader cannot recover from the diff. It should not narrate the _what_; the diff
 already shows that. A brief overview of what changed is acceptable only when the change is genuinely large enough that a
 reader needs orientation before diving in.
+
+Order information from big picture to detail. A long description is fine — even pages of text — when the material is
+useful. Start with the purpose, problem, or TLDR, then move toward implementation details, side points, evidence, links,
+examples, and related documentation. Summarizing the key parts of a large change can help orient the reader; extracting
+an arbitrary sample of low-level details from the diff does not.
 
 A body can carry a plausible-looking rationale that is still not the _why_: if the first "why" sentence describes where
 the implementation lives, how the patch is packaged, or which helper, API, or command was chosen, that is a solution
@@ -50,7 +61,8 @@ entirely.
 These are the patterns this review exists to catch. Treat them as blocking when present.
 
 - **Diff narration.** A body that lists or paraphrases the changes ("Updated X, refactored Y, added tests for Z"). The
-  diff is right there; the message adds nothing and buries any actual context in noise.
+  diff is right there; the message adds nothing and buries any actual context in noise. A selective overview of the key
+  parts of a large change is different: it gives the reader a map rather than reproducing a random subset of the diff.
 - **Manufactured motivation.** A mundane change dressed up with an invented rationale to make the message look
   substantial. The canonical case: forcing routine work into a Problem/Solution shape. "Libraries were out of date" is
   not a problem being solved; bumping dependencies is a day-to-day chore, and the honest message says so plainly or says
@@ -79,22 +91,21 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   taking credit; it tells the future reader how much to trust that section. Judge whether it is accurate and scoped,
   rather than treating it as an attribution badge.
 - **Title restated as body.** A body whose only content is the title again in more words.
-- **Unintroduced references.** Wording that presupposes context the reader does not have — "the hard cap", "the earlier
-  refactor" — definite references to things the message never introduced. The author knows the referent because they
-  were in the session that drafted the message; the reader was not. A message must introduce a fact before referring
-  back to it. This applies from the first word: a body that opens "The rc file only documented..." presupposes the
-  reader knows what the rc file is, exactly like "the hard cap" would mid-message.
-- **Insider shorthand without orientation.** A title or opening built from the project's internal vocabulary — a
-  codename, a subsystem nickname, "the rc" — that never gives a cold reader a plain-language foothold. The test: after
-  the first sentence or two, could a stranger state what the change lets a user do? Density is not a virtue when it
-  locks the reader out. Before diving into mechanism, the message needs one plain sentence a stranger could parse
-  ("users can now fully replace the model routing table in their config file"), not only mechanism-speak ("a table in
-  the rc replaces the default wholesale"). This is the counterweight to the anti-filler rules above — orientation is not
-  filler.
-- **Wall of text.** Several distinct points packed into one unbroken paragraph, or an enumeration written as a chain of
-  sentences when the text is literally listing things — that wants a bulleted list. The inverse also holds: a genuinely
-  nuanced point often needs connected prose, so do not demand bullets for content that develops an argument. But even
-  long prose gets paragraph breaks at genuine transitions.
+- **Unintroduced context.** Wording that presupposes context the reader cannot reasonably be expected to have. Calibrate
+  that expectation to the actual audience: common technologies and prominent project features usually need no
+  introduction; an implementation detail that first appears in this diff almost always does. Existing implementation
+  details fall between those poles and depend on how familiar the project's likely readers will be with them. Definite
+  references such as "the hard cap", "the earlier refactor", or "the rc" are warning signs when the message never
+  establishes what they mean. Before referring back to an unfamiliar detail, introduce it with enough plain-language
+  context that a cold reader can follow the point.
+- **Buried purpose.** An opening that enumerates low-level details without telling the reader why the change matters or
+  clearly establishing background needed to explain it. Reaching hundreds of characters into a description without a
+  reasonable big-picture answer is a strong sign that the message is ordered backwards. Move the purpose or TLDR up; let
+  mechanics, exceptions, and side points come later. Length is not the problem — a useful two-page description is fine
+  when it progresses from the big picture into the weeds.
+- **Undifferentiated detail.** Several distinct points packed into one unbroken paragraph, or a literal enumeration
+  written as a chain of sentences. Use paragraphs at genuine transitions and bullets for actual lists. The inverse also
+  holds: nuanced reasoning often needs connected prose, so do not demand bullets merely because a description is long.
 - **Marketing register.** Enthusiasm, buzzwords, "comprehensive", "robust", exclamation marks. The voice to hold
   messages to: plain everyday words, technically precise where it counts, direct, no filler, no padding to sound
   impressive.
