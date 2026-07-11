@@ -80,12 +80,12 @@ A larger number is better on every dimension; for cost that means cheaper.
 | -------------------- | ------ | ---- | ---- | ------------ | ----- |
 | gpt-5.6-luna medium  | gpt    |      | 12   | 4            | 5     |
 | gpt-5.6-terra medium | gpt    |      | 10   | 6            | 6     |
-| gpt-5.6-sol low      | gpt    |      | 9    | 6            | 7     |
-| gpt-5.6-sol medium   | gpt    |      | 7    | 8            | 8     |
-| gpt-5.6-sol high     | gpt    | yes  | 5    | 9            | 8     |
+| gpt-5.6-sol low      | gpt    |      | 5    | 7            | 7     |
+| gpt-5.6-sol medium   | gpt    |      | 4    | 8            | 8     |
+| gpt-5.6-sol high     | gpt    | yes  | 2    | 9            | 8     |
 | sonnet-5 high        | claude |      | 5    | 5            | 7     |
 | opus-4.8 high        | claude |      | 4    | 7            | 8     |
-| fable-5 high         | claude | yes  | 2    | 9            | 9     |
+| fable-5 high         | claude | yes  | 1    | 9            | 9     |
 
 How to route:
 
