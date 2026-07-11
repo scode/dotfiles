@@ -202,3 +202,21 @@ repo = "pydantic/pydantic"
 subject_ref = "e9a997d4420c6a2c7fa512579bcebe43996fee73"
 base_ref = "d654a0766c2f3c6fe0a12718f32aa3bf4d3ecc86"
 curation = "mined"
+
+[[cases]]
+id = "stark-parts-pr56-catalog-static-asset"
+repo = "scode/stark-parts"
+subject_ref = "eval/pre-pr-review-swarm/pr-56-catalog-static-asset-initial"
+curation = "hand"
+
+[[cases]]
+id = "stark-parts-pr57-catalog-only-ci"
+repo = "scode/stark-parts"
+subject_ref = "eval/pre-pr-review-swarm/pr-57-catalog-only-ci-initial"
+curation = "hand"
+
+[[cases]]
+id = "stark-parts-pr58-catalog-vercel-cache"
+repo = "scode/stark-parts"
+subject_ref = "eval/pre-pr-review-swarm/pr-58-catalog-vercel-cache-initial"
+curation = "hand"
