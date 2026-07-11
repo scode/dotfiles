@@ -232,12 +232,18 @@ codex exec --yolo -m gpt-5.6-sol -c model_reasoning_effort=high -o <scratch-file
 ### Shelling out to claude
 
 ```sh
-claude -p --model <alias> --effort <level> --dangerously-skip-permissions "<prompt>"
+CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
+  claude -p --model <alias> --effort <level> --dangerously-skip-permissions "<prompt>"
 ```
 
 - Model aliases: `sonnet`, `opus`, `haiku`, `fable`. Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. The final
   response is printed to stdout.
-- The same timeout caveat applies.
+- Print mode otherwise terminates background tasks after 600 seconds and exits successfully with a diagnostic instead of
+  the requested result. Keep its inner wait unlimited; the outer orchestrator already owns monitoring and cancellation.
+- A zero exit status is necessary but not sufficient. Reject empty or truncated output and results that do not satisfy
+  the task's explicit acceptance criteria. Also reject the termination diagnostic, which starts with
+  `Background tasks still running after`.
+- The same outer shell timeout caveat applies.
 
 ### Writing the task spec
 
