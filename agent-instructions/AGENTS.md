@@ -12,6 +12,14 @@ responsibilities, and constraints without reading every line.
 
 Always use the `scode-voice` skill when writing prose for documentation, docstrings, or inline comments.
 
+## Documentation pass
+
+After changing code, make a separate documentation pass over every touched file. Inspect new and substantially changed
+modules, types, functions, test helpers, and non-trivial sections for missing docstrings or explanatory comments. Bias
+toward adding documentation when the decision is close, including for private helpers and tests. For files with multiple
+phases or responsibilities, add section-level signposts when they make the implementation easier to scan. Treat this
+pass as part of the finish criteria.
+
 ## Docstrings
 
 Write docstrings liberally. Default to adding one when a symbol has real behavior, constraints, or a reason to exist. Do
