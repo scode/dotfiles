@@ -1,8 +1,8 @@
 ---
 name: scode-galaxy-brain
 description: >
-  Accomplish a goal by delegating suitable parts of the work to cheaper models while the current session stays in
-  charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
+  Accomplish a goal by delegating suitable parts of the work to cost-effective models while the current session stays
+  in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
   scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
@@ -15,9 +15,9 @@ description: >
 ## Premise
 
 You — the current session — are running on a state of the art, expensive model. The point of this skill is to spend that
-capability where it matters (planning, judgment, design, quality control) and route everything else to cheaper models
-without significantly compromising the quality of the final output. You stay in charge the whole time: you decompose the
-goal, you decide what to delegate, you judge every result, and you own the overall change.
+capability where it matters (planning, judgment, design, quality control) and route suitable work to models likely to
+finish it at lower total cost without significantly compromising quality. You stay in charge the whole time: you
+decompose the goal, you decide what to delegate, you judge every result, and you own the overall change.
 
 The goal is cost-effective quality; parallelize freely when it helps. The one hard limit is writes: delegates share the
 working tree and this skill deliberately ships without write-concurrency tooling (worktrees and the like), so tasks that
@@ -39,12 +39,12 @@ that skill; reason about it (and explain it to the user) on that skill's terms.
 
 Routing authority covers nested delegation too. When another active skill's process calls for spawning subagents —
 reviewers, workers, whatever it names them — each spawn is still a galaxy-brain delegation: pick the model from the
-table, set model and effort explicitly where the spawn mechanism supports it, and announce the choice as usual. The trap
-is following the other skill's spawn instructions verbatim and letting its subagents silently inherit this session's
-expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims only the choices
-the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a spawn, that demand
-is process, not a routing default — honor it like any other rule that skill owns, and attribute the choice to that skill
-when you announce it.
+appropriate work profile, set model and effort explicitly where the spawn mechanism supports it, and announce the choice
+as usual. The trap is following the other skill's spawn instructions verbatim and letting its subagents silently inherit
+this session's expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims
+only the choices the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a
+spawn, that demand is process, not a routing default — honor it like any other rule that skill owns, and attribute the
+choice to that skill when you announce it.
 
 ## Staying active for the whole session
 
@@ -65,63 +65,97 @@ goal, any provider preference, rc-file assumptions, delegations still in flight,
 even when no delegate is currently running — between delegations is exactly when a summary is most likely to drop the
 skill. This is a backstop, not the mechanism: stickiness applies whether or not a handoff was ever written.
 
-## Model table
+## Routing model
 
-Cost is a relative score of what the model costs to run (higher = cheaper). Intelligence is how hard a problem you can
-hand the model unsupervised. Taste covers UI/UX, code quality, API design, and copy. Each entry names a model at a
-specific reasoning effort — run it at that effort. The family column tells you which delegation path from the mechanics
-section applies. The sota column marks state of the art models: the ones trusted with the hardest work (critical review,
-the orchestrator role itself). More than one model can be state of the art at once, across families, and which of them
-the user can access varies by environment (see Local availability below).
+Do not rank models with universal cost or intelligence scores. Effective cost depends on the task: a nominally cheap
+model can spend more tokens, take longer, require more review, and trigger an escalation when work exceeds its reliable
+range. Route by work profile instead, then use the gate and escalation policy to control total cost through an accepted
+result.
 
-A larger number is better on every dimension; for cost that means cheaper.
+Each model name includes its configured reasoning effort. The family determines which delegation path from the mechanics
+section applies. `sota` marks models trusted with critical review and the orchestrator role. Availability and user
+overrides may remove or replace these defaults; see Local availability.
 
-| model                | family | sota | cost | intelligence | taste |
-| -------------------- | ------ | ---- | ---- | ------------ | ----- |
-| gpt-5.6-luna medium  | gpt    |      | 12   | 4            | 5     |
-| gpt-5.6-terra medium | gpt    |      | 10   | 6            | 6     |
-| gpt-5.6-sol low      | gpt    |      | 5    | 7            | 7     |
-| gpt-5.6-sol medium   | gpt    |      | 4    | 8            | 8     |
-| gpt-5.6-sol high     | gpt    | yes  | 2    | 9            | 8     |
-| sonnet-5 high        | claude |      | 5    | 5            | 7     |
-| opus-4.8 high        | claude |      | 4    | 7            | 8     |
-| fable-5 high         | claude | yes  | 1    | 9            | 9     |
+| model                | family | sota |
+| -------------------- | ------ | ---- |
+| gpt-5.6-luna medium  | gpt    |      |
+| gpt-5.6-terra medium | gpt    |      |
+| gpt-5.6-sol low      | gpt    |      |
+| gpt-5.6-sol medium   | gpt    |      |
+| gpt-5.6-sol high     | gpt    | yes  |
+| haiku-4.5 high       | claude |      |
+| sonnet-5 low         | claude |      |
+| sonnet-5 medium      | claude |      |
+| sonnet-5 high        | claude |      |
+| opus-4.8 high        | claude |      |
+| fable-5 high         | claude | yes  |
 
-How to route:
+### Work profiles
 
-- Prefer the cheapest model (highest cost score) whose intelligence and taste meet the needs of the task.
-- When a task calls for a state of the art model and more than one is marked sota, prefer the one you are yourself
-  running as: the user chose it for this session, which signals both availability and preference in this environment.
-  Diverge only for a concrete reason (Local availability below, an explicit provider preference, or repeated poor output
-  on the task at hand). If the model you are running is not in the table, apply the normal cheapest-qualified rule
-  within the sota rows.
-- Set the intelligence bar by the cost of a missed or wrong result, not only by how hard the task looks. Cheap models
-  are fine for producing work because you gate the output and defects get caught. Review and verification tasks are
-  themselves the gate — there is no backstop behind them — so a missed finding is unrecoverable and criticality, not
-  task mechanics, drives the model choice.
-- Bulk and mechanical work — scanning large logs for patterns, searching source for simple patterns, clear-spec
-  implementation, tedious churn that needs no design decisions: use the cheapest model whose intelligence clears the
-  task.
-- Anything user-facing (UI, copy, API design) needs taste ≥ 7.
-- Mechanical review dimensions — slop detection, style and idiomaticity, docs drift, best-practice pattern checks: use
-  the cheapest model with intelligence ≥ 8.
-- Critical review dimensions — security, correctness, concurrency, data integrity, test quality: use a sota-marked
-  model. Do not route these to a non-sota model on cost. Optionally add the cheapest model with intelligence ≥ 8 as an
-  extra independent perspective. Test quality is critical rather than mechanical because weak tests are how correctness
-  bugs survive review.
-- Never use Haiku.
-- These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't
-  meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. The
-  same goes preemptively — if mid-task you realize the work needs more intelligence or taste than you thought (what
-  looked mechanical turns out to be API design), reroute or do it yourself without asking.
-- Some work isn't worth delegating at all: if writing the task spec and reviewing the result costs more than doing the
-  task, just do it.
-- Every time you delegate, tell the user which model and effort you picked for that task and why, in one sentence tied
-  to the table's dimensions (e.g. "mechanical rename across many files, no design decisions — gpt-5.6-terra medium").
+Classify the task before choosing a model. Use the primary for the orchestrator's family when it is suitable and
+available. Move to the escalation model after a substantive failure or when the task proves more demanding than its
+initial classification.
 
-The model names in these rules are role fillers drawn from the default table, not fixed bindings: bulk and mechanical
-work mean the cheapest model whose intelligence clears the bar, and critical review means a sota-marked model. When the
-table changes (see Local availability), reapply each rule to whichever model now fills its role.
+| profile                   | use when                                                                 | GPT route                                  | Claude route                    |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   |
+| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 medium → sonnet-5 high |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-4.8 high → fable-5 high    |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-4.8 high → fable-5 high    |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-4.8 high   |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    |
+
+These assignments are defaults, not claims that every task in a profile is equivalent. Test quality is critical because
+weak tests are how correctness defects survive review. Reviews route above similarly sized implementation work because
+the reviewer is the gate: a missed finding may have no later backstop. Some profiles intentionally share routes today;
+keeping their semantics separate lets later calibration change one without conflating different failure costs. A second
+cross-family SOTA perspective may be worth its overhead for high-risk critical review. Orchestration is not a delegation
+profile; planning, decomposition, quality gating, and VCS ownership remain with the current SOTA session.
+
+### Native-path bias
+
+When models are roughly equally suitable, prefer the model in the orchestrator's family. Same-family delegates normally
+stay inside the current harness; crossing families adds process startup, context transfer, authentication, permission,
+output-handling, and failure overhead. The native delegation path is the real reason for the preference. If a harness
+can invoke another family natively, prefer the native path rather than following family names mechanically.
+
+Apply the bias according to expected task size. These are judgment anchors, not hard thresholds:
+
+| expected size | practical meaning                                                     | native-path bias                                                                   |
+| ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| tiny          | Setup and review may cost as much as doing the task directly.         | Very strong. Usually do it directly or delegate natively.                          |
+| short         | One bounded operation with little context or expected iteration.      | Strong. Cross harnesses only for a meaningful capability or total-cost advantage.  |
+| medium        | A substantive task where model work dominates fixed startup overhead. | Moderate. Consider likely retries and review burden alongside startup overhead.    |
+| large         | Extended work where cross-harness startup is a minor part of the run. | Weak. Choose the route most likely to finish cleanly at lower expected total cost. |
+
+Do not select an unsuitable model merely to stay native. Cross families when the native family has no suitable model,
+the other family is materially better for the task, a medium or large task has materially lower expected total cost on
+the other route, a native attempt failed, the user requested that provider, or an independent cross-family perspective
+is part of the goal. Expected total cost includes likely tokens, latency, review burden, and escalation risk — not
+nominal token price alone. For critical work, reliability and useful independence take priority over the size-based
+bias.
+
+### Delegation and escalation rules
+
+- First ask whether delegation is worthwhile. If specifying and reviewing the task costs more than doing it, do it
+  yourself. This is especially common for tiny tasks.
+- Set the profile by ambiguity, verification strength, required taste, and the cost of a wrong or missed result — not by
+  apparent line count alone.
+- Give a primary model one well-specified attempt. Fix trivial defects locally. After one substantive failure, escalate
+  instead of repeatedly spending tokens on the same underpowered model.
+- A route with no listed escalation is already at the family's trusted endpoint. If it fails substantively, handle the
+  work in the orchestrator or make a deliberate cross-family attempt; do not retry it mechanically.
+- When the primary's output is broadly wrong rather than fixable, preserve pre-existing user work, remove only the
+  delegate's changes, and give the escalation model a fresh implementation task. Include concrete acceptance failures as
+  evidence, but do not ask it to repair a structurally bad patch.
+- Escalate immediately if the output shows that the task was misclassified. You have standing permission to reroute or
+  do the work yourself without asking.
+- Prefer cheaper, faster workhorses when validation is deterministic and inexpensive. Start stronger when incorrect
+  output is difficult to detect or the delegate itself is the final review gate.
+- Every time you delegate, tell the user which model and effort you picked, the work profile, and why any native or
+  cross-family choice makes sense for the task's expected size. One announcement may cover a homogeneous fan-out batch
+  that shares the same profile, model, effort, and rationale.
 
 ## Provider preference
 
@@ -130,40 +164,38 @@ performance — typically the user has a large subscription with one provider an
 spend steered accordingly. The default, absent a keyword, is no preference.
 
 When a preference is given, route every delegation to the preferred family unless there is a very clear, strong reason
-to diverge — for example the preferred provider's models repeatedly produce poor output on a specific task, or the task
-demands intelligence or taste that no model in the preferred family has. How strongly to hold the preference in edge
-cases is your judgment call, but a mild "the other model rates a point higher" is not enough to diverge. When you do
-diverge, say so and why.
+to diverge — for example repeated poor output, no suitable model for the selected profile, or a goal that explicitly
+needs an independent cross-family perspective. An explicit provider preference overrides the default native-path bias.
+When you diverge, say so and why.
 
 ## Local availability
 
-The table describes models that exist; it does not know which ones the user can access in this environment. Before your
-first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read it and honor it: it contains natural
-language adjustments from the user, most commonly availability restrictions like "fable-5 is not available, do not use"
-or "only claude models work here". Treat its contents as authoritative over the table — an excluded model is simply not
-in the table for this session, and every routing rule (including "do not route down on cost") applies to the models that
-remain.
+The inventory and profiles describe models that exist; they do not know which ones the user can access in this
+environment. Before your first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read it and honor it:
+it contains natural language adjustments from the user, most commonly availability restrictions like "fable-5 is not
+available, do not use" or "only claude models work here". Treat its contents as authoritative. Remove unavailable models
+from every profile and use the next suitable option rather than preserving a preferred slot mechanically.
 
-The rc file may go further than exclusions and supply its own model table. The intended workflow is copy-paste: the user
-copies the default table out of this file and edits it — same columns, and crucially the same scales, since the scores
-are relative and the routing thresholds (taste ≥ 7, cost comparisons, the sota mark) only mean anything against the
-default table's calibration. A table in the rc file replaces the default table wholesale: models it omits do not exist
-this session even without an explicit "not available" line, and its scores and sota markings drive routing exactly as
-the default table's would. Remap the role-based routing rules onto what the replacement contains. Its model names are
-the ids you actually invoke — pass them to codex's `-m` verbatim (minus the trailing effort word); for the claude path,
-map to the nearest `--model` alias. If the model your own session runs as is absent, that only bars delegating to it —
-you keep orchestrating, and the "prefer the one you are yourself running as" tie-break simply drops out. If the table
-deviates from this shape (missing columns, an unfamiliar scale), do your best to interpret it in the spirit of the
-default table rather than rejecting it, and tell the user what you assumed.
+The rc file may replace the model inventory, override profile assignments, or add natural-language routing constraints.
+An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for delegation. Model
+names are the ids to invoke — pass GPT names to `codex -m` without the trailing effort word and map Claude names to the
+nearest `--model` alias. When a replacement inventory introduces models absent from the built-in profiles, the rc file
+must assign them to profiles or describe their roles well enough to do so. Ask instead of inventing profile assignments
+when that information is missing. A new family also needs an invocation mechanism; treat it as unavailable until the rc
+file provides one.
 
-To spare the user the manual copy-paste, they can ask you to seed the file — "populate my galaxy-brain rc with the
-default table" or words to that effect. On that explicit request (and only then), write the current default table into
-`~/.scode-galaxy-brainrc.md`, preceded by a one-line note saying the table replaces the skill's default wholesale and is
-meant to be edited. Never discard existing content: if the file already exists, append the table to it, and if it
-already contains a model table, stop and ask instead of writing a second one.
+Legacy rc files may still contain the old `cost`, `intelligence`, and `taste` columns. Treat known rows as an
+availability inventory and preserve family/SOTA metadata, but ignore the numeric scores. Apply the built-in work
+profiles after filtering them to the listed models. Unknown models still require explicit profile roles under the rule
+above. Tell the user that profile overrides are now the supported way to customize routing.
 
-If the file does not exist, all table models are assumed available. Apart from the seeding request above, do not create
-or edit this file yourself; it belongs to the user.
+To spare the user manual copy-paste, they can ask you to seed the file. On that explicit request only, write the current
+model inventory and work-profile table into `~/.scode-galaxy-brainrc.md`, preceded by a note that they replace the
+defaults and are meant to be edited. Never discard existing content: append when safe, and stop to ask if the file
+already contains an inventory or profile table.
+
+If the file does not exist, all inventory models are assumed available. Apart from the seeding request above, do not
+create or edit this file yourself; it belongs to the user.
 
 ## Delegation mechanics
 
@@ -240,9 +272,9 @@ For code output:
 2. Re-run the relevant checks yourself.
 3. Then make a judgment call:
    - Small defects (naming, comments, minor logic): fix them yourself — a fixup round-trip costs more than doing it.
-   - Substantive but well-specified defects: send one fixup round back to the same model with a precise list of defects.
-   - After about two failed rounds, or when the output shows the task needed more intelligence or taste than the model
-     has: stop sending it back. Do it yourself or re-delegate to a higher-rated model, without asking the user.
+   - Substantive but well-specified defects: send one precise fixup round to the profile's escalation model.
+   - If the escalation also fails, or the output shows that the profile itself was wrong, stop iterating. Do it yourself
+     or move to a stronger profile without asking the user.
 
 For read-only findings (reviews, scans, analysis): spot-verify against the cited code or data before relaying. When
 reporting to the user, separate what you confirmed from delegate claims you did not verify.
