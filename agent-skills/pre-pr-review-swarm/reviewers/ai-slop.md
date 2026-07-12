@@ -27,6 +27,12 @@ problem domain.
 - **Vacuous comments**: comments that restate the next line of code in prose (`// increment counter` above
   `counter += 1`), or docstrings that just rephrase the function signature. Distinct from docs-comments-reviewer which
   checks accuracy—this checks for zero-information commentary.
+- **Comments splitting metadata from its declaration**: in languages that permit it, inserting documentation or a
+  comment between a decorator, annotation, or attribute and the declaration it decorates. Examples include `///` or `//`
+  between Rust's `#[test]`, `#[derive(...)]`, or `#[cfg(...)]` and the item, or the equivalent placement after a
+  decorator or annotation in another language. Even when the compiler or interpreter accepts it, this breaks a visually
+  atomic pair apart and usually means documentation was inserted mechanically. Put the comment before the complete
+  metadata block, or in the language's conventional documentation position.
 - **Raw print instead of logging**: using `println!`/`eprintln!` in Rust, `print()`/`sys.stdout` in Python,
   `console.log` in JS/TS, `fmt.Println` in Go, or equivalent raw I/O for operational messages (status, progress,
   diagnostics, errors) in library or application code that has a logging framework available. Check whether the project
