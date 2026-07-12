@@ -7,6 +7,13 @@ NOTE: Cases should point at repositories and refs you are willing to let Codex r
 sandbox, but it still runs the agent in the target checkout and should not be treated as a hard isolation boundary for
 host secrets.
 
+NOTE: Sandboxing is TEMPORARILY DISABLED and eval runs are restricted to hand-curated cases until the sandboxing
+situation is resolved. Codex's Linux sandbox wraps agent commands in bubblewrap, which fails on hosts that restrict
+unprivileged user namespaces (Ubuntu's `apparmor_restrict_unprivileged_userns`) unless a profiled system bwrap is
+installed. The failure is silent — every agent command exits 1 and the agent falls back to web/MCP lookups, invalidating
+the run. Until that is fixed, `eval run` passes `--dangerously-bypass-approvals-and-sandbox` and refuses `mined` cases,
+since running an unsandboxed agent against unvetted third-party code is not acceptable.
+
 The eval harness runs `pre-pr-review-swarm` against unpolished code refs. It does not need the historical polished PR.
 The useful signal is whether a candidate skill or model finds the same judge-approved issues as a baseline run.
 
