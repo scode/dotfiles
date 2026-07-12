@@ -113,6 +113,16 @@ impl RunCommand {
         let case = load_cases(root)?
             .remove(&self.case_id)
             .ok_or_else(|| anyhow!("unknown eval case '{}'", self.case_id))?;
+        // TEMPORARY: only hand-curated cases may run while sandboxing is
+        // disabled (see run_codex_json). Mined cases point at third-party
+        // repos, and running an unsandboxed agent against unvetted code is
+        // not acceptable. Lift this once sandboxing is resolved.
+        ensure!(
+            case.curation == Some(Curation::Hand),
+            "case '{}' is not hand-curated; mined cases are disabled until \
+             sandboxing is resolved",
+            self.case_id
+        );
         let target = prepare_case_checkout(root, &case, tools)?;
         let skill = resolve_skill(
             root,
@@ -689,8 +699,17 @@ fn run_codex_json(
         .arg("--ephemeral")
         .arg("--ignore-user-config")
         .arg("--ignore-rules")
-        .arg("-s")
-        .arg("read-only")
+        // TEMPORARY: sandboxing is disabled until the host sandbox situation
+        // is resolved. Codex's Linux sandbox wraps every shell command in
+        // bubblewrap, which cannot start on hosts that restrict unprivileged
+        // user namespaces (Ubuntu's apparmor_restrict_unprivileged_userns)
+        // unless a profiled system bwrap is installed. The failure mode is
+        // nasty: every agent command exits 1 before running, the agent
+        // silently falls back to web/MCP lookups, and the eval measures
+        // nothing. Until sandboxing works here, run unsandboxed and restrict
+        // the case list to hand-curated repos (see RunCommand). Restore
+        // `-s read-only` when re-enabling.
+        .arg("--dangerously-bypass-approvals-and-sandbox")
         .arg("-m")
         .arg(model)
         .arg("-C")
@@ -1301,6 +1320,34 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("has no charter"));
+        Ok(())
+    }
+
+    /// TEMPORARY (with the sandbox bypass): mined cases target third-party
+    /// repos and must not run while agents execute unsandboxed. The guard has
+    /// to fire before any checkout or codex spend. Delete this test when
+    /// sandboxing is re-enabled and the restriction is lifted.
+    #[test]
+    fn run_command_rejects_mined_cases_while_unsandboxed() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-mined".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        assert!(error.to_string().contains("not hand-curated"));
         Ok(())
     }
 
@@ -1987,6 +2034,13 @@ mod tests {
 id = "case-a"
 repo = "owner/repo"
 subject_ref = "subject"
+curation = "hand"
+
+[[cases]]
+id = "case-mined"
+repo = "owner/repo"
+subject_ref = "subject"
+curation = "mined"
 "#,
         )?;
         fs::write(
@@ -2147,7 +2201,7 @@ out=""
 schema=""
 cwd=""
 saw_ephemeral=0
-saw_read_only=0
+saw_sandbox_bypass=0
 saw_ignore_user_config=0
 saw_ignore_rules=0
 stdin_prompt=""
@@ -2167,10 +2221,14 @@ while [ "$#" -gt 0 ]; do
   elif [ "$1" = "--ignore-rules" ]; then
     saw_ignore_rules=1
     shift
+  elif [ "$1" = "--dangerously-bypass-approvals-and-sandbox" ]; then
+    # TEMPORARY: mirrors the sandbox bypass in run_codex_json; assert the
+    # sandboxed form again once sandboxing is re-enabled.
+    saw_sandbox_bypass=1
+    shift
   elif [ "$1" = "-s" ]; then
-    test "$2" = "read-only"
-    saw_read_only=1
-    shift 2
+    echo "fake codex saw a sandbox flag while sandboxing is disabled" >&2
+    exit 2
   elif [ "$1" = "-C" ]; then
     cwd="$2"
     shift 2
@@ -2183,7 +2241,7 @@ while [ "$#" -gt 0 ]; do
 done
 stdin_prompt="$(cat)"
 test "$saw_ephemeral" = "1"
-test "$saw_read_only" = "1"
+test "$saw_sandbox_bypass" = "1"
 test "$saw_ignore_user_config" = "1"
 test "$saw_ignore_rules" = "1"
 test -n "$cwd"
