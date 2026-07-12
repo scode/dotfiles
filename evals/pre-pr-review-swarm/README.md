@@ -26,6 +26,12 @@ By default, `run` repeats each case three times. Outputs go under `eval-runs/`, 
 Use `--skill-path <path>` to evaluate a local skill directory other than the working tree default. Use
 `--skill-ref <git-ref>` when you want the harness to export the skill from a specific commit, branch, or tag.
 
+Use `--reviewer <name>` to restrict a run to a single reviewer charter (for example `--reviewer test-quality`). The full
+swarm costs 7-8 reviewer agents per repeat, which is wasted spend when only one charter changed. The name must match a
+`reviewers/<name>.md` file in the resolved skill. The restriction is recorded in `run.json`, and `compare` refuses to
+compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings and a full
+panel's findings measure different things.
+
 ## How does it work?
 
 `run` prepares the target repository under `eval-worktrees/repos/`, resolves the case's subject ref, and uses either the

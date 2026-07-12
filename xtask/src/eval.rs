@@ -67,6 +67,15 @@ struct RunCommand {
     skill_ref: Option<String>,
     #[arg(long)]
     skill_path: Option<PathBuf>,
+    /// Restrict the run to a single reviewer charter, e.g. `test-quality`.
+    ///
+    /// The full swarm is expensive (7-8 reviewer agents per repeat), and
+    /// charter tuning usually only needs the one reviewer being tuned. The
+    /// name must match a `reviewers/<name>.md` charter in the resolved skill.
+    /// Restricted and unrestricted runs measure different things, so the
+    /// restriction is recorded in run.json and `compare` refuses to mix them.
+    #[arg(long)]
+    reviewer: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -111,6 +120,16 @@ impl RunCommand {
             self.skill_path.as_deref(),
             tools,
         )?;
+        // Validate against the resolved skill, not the working tree: with
+        // --skill-ref the charter set may differ from what is checked out.
+        if let Some(reviewer) = &self.reviewer {
+            let charter = skill.path.join("reviewers").join(format!("{reviewer}.md"));
+            ensure!(
+                charter.is_file(),
+                "reviewer '{reviewer}' has no charter at {}",
+                charter.display()
+            );
+        }
         let run_id = unique_id(&format!("{}-{}", slug(&self.label), slug(&self.case_id)))?;
         let run_dir = root.join(RUN_ROOT).join(&run_id);
         fs::create_dir_all(&run_dir)?;
@@ -128,6 +147,7 @@ impl RunCommand {
             base_ref: target.base_ref.clone(),
             base_sha: target.base_sha.clone(),
             curation: case.curation,
+            reviewer: self.reviewer.clone(),
             skill_source: skill.source,
             skill_path: skill.path.display().to_string(),
             created_at: now_rfc3339()?,
@@ -139,11 +159,22 @@ impl RunCommand {
         for repeat in 1..=self.repeats {
             let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
             fs::create_dir_all(&repeat_dir)?;
-            let prompt = prompt_template
+            let mut prompt = prompt_template
                 .replace("{{skill_path}}", &skill.path.display().to_string())
                 .replace("{{repo_path}}", &target.checkout.display().to_string())
                 .replace("{{base_sha}}", &target.base_sha)
                 .replace("{{subject_sha}}", &target.subject_sha);
+            // Appended rather than templated so the stock prompt file stays
+            // valid for unrestricted runs and old skill exports.
+            if let Some(reviewer) = &self.reviewer {
+                prompt.push_str(&format!(
+                    "\n\nReviewer restriction: run only the `{reviewer}` reviewer charter \
+                     (`reviewers/{reviewer}.md` inside the skill directory). Do not spawn \
+                     the rest of the reviewer panel, and ignore the skill's panel-size and \
+                     panel-completeness requirements; the single reviewer's findings are \
+                     the run's findings.\n"
+                ));
+            }
             let findings_path = repeat_dir.join("findings.json");
             let transcript_path = repeat_dir.join("transcript.jsonl");
             run_codex_json(
@@ -203,6 +234,12 @@ impl CompareCommand {
             baseline_meta.base_sha == candidate_meta.base_sha
                 && baseline_meta.subject_sha == candidate_meta.subject_sha,
             "baseline and candidate runs must review the same resolved diff"
+        );
+        ensure!(
+            baseline_meta.reviewer == candidate_meta.reviewer,
+            "baseline reviewer restriction ({}) does not match candidate ({})",
+            baseline_meta.reviewer.as_deref().unwrap_or("full panel"),
+            candidate_meta.reviewer.as_deref().unwrap_or("full panel")
         );
         let model = self.model.unwrap_or_else(|| candidate_meta.model.clone());
         let comparison_id = unique_id(&format!(
@@ -378,6 +415,13 @@ struct RunMetadata {
     /// field.
     #[serde(default)]
     curation: Option<Curation>,
+    /// Present when the run was restricted to a single reviewer charter via
+    /// `--reviewer`. A restricted run's findings are not comparable to a full
+    /// panel's, so `compare` requires this field to match between baseline and
+    /// candidate. Absent in run.json files predating the field, which reads
+    /// back as an unrestricted run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reviewer: Option<String>,
     skill_source: String,
     skill_path: String,
     created_at: String,
@@ -1170,6 +1214,7 @@ mod tests {
             label: "smoke".to_string(),
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
         }
         .run_with_tools(root, &tools)?;
 
@@ -1191,6 +1236,71 @@ mod tests {
         .run(root)?;
         assert!(run_dir.join("baseline.json").is_file());
 
+        Ok(())
+    }
+
+    /// The --reviewer restriction must reach both artifacts that downstream
+    /// steps depend on: the prompt (so the eval agent actually runs a single
+    /// charter) and run.json (so compare can refuse to mix restricted and
+    /// unrestricted runs). A restriction that silently failed to reach the
+    /// prompt would produce full-panel findings labeled as single-reviewer.
+    #[test]
+    fn reviewer_restriction_reaches_prompt_and_metadata() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "codex", fake_codex_script())?;
+        let tools = fake_tools(root);
+
+        RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "restricted".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: Some("test-quality".to_string()),
+        }
+        .run_with_tools(root, &tools)?;
+
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
+        assert_eq!(metadata.reviewer.as_deref(), Some("test-quality"));
+        let prompt = fs::read_to_string(run_dir.join("repeat-1/findings.json.prompt"))?;
+        assert!(prompt.contains("Reviewer restriction"));
+        assert!(prompt.contains("reviewers/test-quality.md"));
+        Ok(())
+    }
+
+    /// A typo'd reviewer name must fail before any tokens are spent, not
+    /// silently run the full panel with a no-op restriction note.
+    #[test]
+    fn run_command_rejects_unknown_reviewer() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "restricted".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: Some("no-such-reviewer".to_string()),
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        assert!(error.to_string().contains("has no charter"));
         Ok(())
     }
 
@@ -1371,6 +1481,7 @@ mod tests {
             label: "smoke".to_string(),
             skill_ref: None,
             skill_path: None,
+            reviewer: None,
         }
         .run_with_tools(root, &fake_tools(root))
         .unwrap_err();
@@ -1667,6 +1778,21 @@ mod tests {
                 .to_string()
                 .contains("must review the same resolved diff")
         );
+
+        // A single-reviewer run and a full-panel run measure different
+        // things; comparing them would report the missing panel's findings
+        // as regressions.
+        let mut wrong_reviewer = run_meta("candidate-run", "fake-model");
+        wrong_reviewer.reviewer = Some("test-quality".to_string());
+        write_json(&candidate.join("run.json"), &wrong_reviewer)?;
+        let error = CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: Some("fake-model".to_string()),
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+        assert!(error.to_string().contains("reviewer restriction"));
         Ok(())
     }
 
@@ -1824,6 +1950,7 @@ mod tests {
             base_ref: "base".to_string(),
             base_sha: "base".to_string(),
             curation: None,
+            reviewer: None,
             skill_source: "working-tree".to_string(),
             skill_path: DEFAULT_SKILL_PATH.to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -1881,6 +2008,13 @@ subject_ref = "subject"
             fs::write(root.join(EVAL_ROOT).join("schemas").join(schema), "{}")?;
         }
         fs::write(root.join(DEFAULT_SKILL_PATH).join("SKILL.md"), "# skill")?;
+        // A charter file so --reviewer validation has something to accept.
+        fs::create_dir_all(root.join(DEFAULT_SKILL_PATH).join("reviewers"))?;
+        fs::write(
+            root.join(DEFAULT_SKILL_PATH)
+                .join("reviewers/test-quality.md"),
+            "# test-quality-reviewer",
+        )?;
         Ok(())
     }
 
@@ -2109,6 +2243,7 @@ JSON
     grep -F "pre-pr-review-swarm" <<<"$stdin_prompt" >/dev/null
     grep -F "owner-repo" <<<"$stdin_prompt" >/dev/null
     grep -F "base-sha..subject-remote-sha" <<<"$stdin_prompt" >/dev/null
+    printf '%s' "$stdin_prompt" >"$out.prompt"
     cat >"$out" <<'JSON'
 {
   "findings": [
