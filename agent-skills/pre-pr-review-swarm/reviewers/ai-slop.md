@@ -60,6 +60,10 @@ problem domain.
 
 **What NOT to flag:**
 
+- Whether a test verifies anything, verifies the right thing, is worth having, or uses a forbidden technique—the
+  test-quality reviewer owns all of that, even though weak tests are a common AI-generation artifact. Disproportionate
+  or cargo-cult test infrastructure is still in scope here when the problem is its design rather than what the tests
+  verify.
 - Patterns consistent with the surrounding codebase—if the whole repo clones liberally, individual clones aren't slop.
 - Code that is merely verbose but correct and clear—the simplification reviewer handles that.
 - Error-handling issues that are only about missing propagation or swallowed failures—the correctness reviewer handles
