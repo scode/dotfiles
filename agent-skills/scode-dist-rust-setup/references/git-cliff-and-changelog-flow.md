@@ -25,9 +25,12 @@ commit_parsers = [
   { body = "(?i)\\bchangelog\\s*:\\s*skip\\b", skip = true },
   { footer = "(?i)\\bchangelog\\s*:\\s*skip\\b", skip = true },
   # Conventional Commit types included in changelog (user-visible changes).
-  # These must run before the "changelog: include" override below: PR bodies
-  # always contain a changelog tag (CI-enforced), and if the include override
-  # ran first it would force every commit into "Changed" regardless of type.
+  # These must run before the "changelog: include" override below: CI enforces
+  # exactly one of "changelog: include" or "changelog: skip" per PR body, and
+  # squash merges carry that tag into the commit body. With the skip parsers
+  # above dropping the skips, commits merged under this convention reach this
+  # point carrying "changelog: include" — if the override ran first it would
+  # force them all into "Changed" regardless of type.
   { message = "^feat(\\([^\\)]+\\))?!?:", group = "Added" },
   { message = "^fix(\\([^\\)]+\\))?!?:", group = "Fixed" },
   { message = "^perf(\\([^\\)]+\\))?!?:", group = "Performance" },
