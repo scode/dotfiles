@@ -69,13 +69,23 @@ struct RunCommand {
     skill_path: Option<PathBuf>,
     /// Restrict the run to a single reviewer charter, e.g. `test-quality`.
     ///
-    /// The full swarm is expensive (7-8 reviewer agents per repeat), and
+    /// The full swarm is expensive (one agent per reviewer charter per
+    /// repeat), and
     /// charter tuning usually only needs the one reviewer being tuned. The
     /// name must match a `reviewers/<name>.md` charter in the resolved skill.
     /// Restricted and unrestricted runs measure different things, so the
     /// restriction is recorded in run.json and `compare` refuses to mix them.
     #[arg(long)]
     reviewer: Option<String>,
+    /// Reasoning effort for the run's agents (minimal|low|medium|high).
+    ///
+    /// Passed to codex as `model_reasoning_effort`. When omitted the run uses
+    /// codex's built-in default — the harness ignores user config, so this
+    /// flag is the only way to control effort. Effort changes what a run
+    /// measures, so it is recorded in run.json and `compare` refuses to mix
+    /// runs with different efforts.
+    #[arg(long)]
+    effort: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -92,6 +102,11 @@ struct CompareCommand {
     candidate: PathBuf,
     #[arg(long)]
     model: Option<String>,
+    /// Reasoning effort for the judge and matcher agents
+    /// (minimal|low|medium|high). Independent of the effort the compared runs
+    /// used; when omitted the judges run at codex's built-in default.
+    #[arg(long)]
+    effort: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -100,6 +115,26 @@ struct SynthesizeCommand {
     comparison: PathBuf,
     #[arg(long)]
     model: Option<String>,
+    /// Reasoning effort for the synthesis agent (minimal|low|medium|high).
+    /// When omitted, codex's built-in default.
+    #[arg(long)]
+    effort: Option<String>,
+}
+
+/// Reasoning-effort levels codex accepts for `model_reasoning_effort`.
+/// Validated up front, like the reviewer restriction, so a typo fails before
+/// any tokens are spent rather than mid-run inside codex.
+const EFFORT_LEVELS: [&str; 4] = ["minimal", "low", "medium", "high"];
+
+fn validate_effort(effort: Option<&str>) -> Result<()> {
+    if let Some(effort) = effort {
+        ensure!(
+            EFFORT_LEVELS.contains(&effort),
+            "unknown effort '{effort}'; expected one of {}",
+            EFFORT_LEVELS.join(", ")
+        );
+    }
+    Ok(())
 }
 
 impl RunCommand {
@@ -109,6 +144,7 @@ impl RunCommand {
             "only {DEFAULT_SKILL} is supported in v1"
         );
         ensure!(self.repeats > 0, "--repeats must be at least 1");
+        validate_effort(self.effort.as_deref())?;
 
         let case = load_cases(root)?
             .remove(&self.case_id)
@@ -158,6 +194,7 @@ impl RunCommand {
             base_sha: target.base_sha.clone(),
             curation: case.curation,
             reviewer: self.reviewer.clone(),
+            effort: self.effort.clone(),
             skill_source: skill.source,
             skill_path: skill.path.display().to_string(),
             created_at: now_rfc3339()?,
@@ -189,7 +226,10 @@ impl RunCommand {
             let transcript_path = repeat_dir.join("transcript.jsonl");
             run_codex_json(
                 tools,
-                &self.model,
+                ModelSpec {
+                    model: &self.model,
+                    effort: self.effort.as_deref(),
+                },
                 &target.checkout,
                 &schema,
                 &findings_path,
@@ -251,7 +291,18 @@ impl CompareCommand {
             baseline_meta.reviewer.as_deref().unwrap_or("full panel"),
             candidate_meta.reviewer.as_deref().unwrap_or("full panel")
         );
+        ensure!(
+            baseline_meta.effort == candidate_meta.effort,
+            "baseline effort ({}) does not match candidate ({})",
+            baseline_meta.effort.as_deref().unwrap_or("codex default"),
+            candidate_meta.effort.as_deref().unwrap_or("codex default")
+        );
+        validate_effort(self.effort.as_deref())?;
         let model = self.model.unwrap_or_else(|| candidate_meta.model.clone());
+        let spec = ModelSpec {
+            model: &model,
+            effort: self.effort.as_deref(),
+        };
         let comparison_id = unique_id(&format!(
             "compare-{}-{}",
             slug(&baseline_meta.case_id),
@@ -277,7 +328,7 @@ impl CompareCommand {
         let judgments = judge_findings(
             root,
             tools,
-            &model,
+            spec,
             &target,
             &comparison_dir,
             "baseline",
@@ -286,7 +337,7 @@ impl CompareCommand {
         let candidate_judgments = judge_findings(
             root,
             tools,
-            &model,
+            spec,
             &target,
             &comparison_dir,
             "candidate",
@@ -295,7 +346,7 @@ impl CompareCommand {
         let matches = match_findings(
             root,
             tools,
-            &model,
+            spec,
             &target,
             &comparison_dir,
             &baseline_findings,
@@ -324,6 +375,7 @@ impl SynthesizeCommand {
             .model
             .or_else(|| comparison.candidate_model.clone())
             .ok_or_else(|| anyhow!("--model is required when comparison has no candidate model"))?;
+        validate_effort(self.effort.as_deref())?;
         let prompt_template =
             fs::read_to_string(root.join(EVAL_ROOT).join("prompts/synthesize.md"))?;
         let schema = root.join(EVAL_ROOT).join("schemas/suggestions.schema.json");
@@ -336,7 +388,10 @@ impl SynthesizeCommand {
         let transcript_path = out_dir.join("synthesis-transcript.jsonl");
         run_codex_json(
             tools,
-            &model,
+            ModelSpec {
+                model: &model,
+                effort: self.effort.as_deref(),
+            },
             root,
             &schema,
             &suggestions_path,
@@ -432,6 +487,13 @@ struct RunMetadata {
     /// back as an unrestricted run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reviewer: Option<String>,
+    /// Reasoning effort the run's agents used, when set via `--effort`. Like
+    /// the reviewer restriction, effort changes what the run measures, so
+    /// `compare` requires it to match between baseline and candidate. Absent
+    /// both in run.json files predating the field and in runs that used
+    /// codex's built-in default; the two are indistinguishable and comparable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
     skill_source: String,
     skill_path: String,
     created_at: String,
@@ -458,6 +520,20 @@ struct Finding {
     summary: String,
     location: String,
     rationale: String,
+    /// Reviewer charters that surfaced this finding, as reported by the
+    /// skill's coordinator. Optional for compatibility with runs produced
+    /// before attribution existed. The field must be declared here even
+    /// though nothing in the harness consumes it: the run command
+    /// re-serializes findings.json through this struct, so an undeclared
+    /// field would be silently stripped from the stored artifact.
+    ///
+    /// More than one entry means the coordinator merged same-location
+    /// findings from several reviewers — that is the signal that lets a
+    /// later analysis measure per-reviewer marginal contribution (for
+    /// example, whether a generalist reviewer finds anything its lensed
+    /// siblings missed) from a single full-panel run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reviewers: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     repeat: Option<usize>,
 }
@@ -684,16 +760,26 @@ fn export_skill_ref(root: &Path, reference: &str, out: &Path, tools: &ToolEnv) -
     Ok(())
 }
 
+/// Model id plus optional reasoning effort — the two knobs every codex
+/// invocation takes together. Bundled so a call site cannot choose one
+/// without deciding the other.
+#[derive(Clone, Copy)]
+struct ModelSpec<'a> {
+    model: &'a str,
+    effort: Option<&'a str>,
+}
+
 fn run_codex_json(
     tools: &ToolEnv,
-    model: &str,
+    spec: ModelSpec,
     cwd: &Path,
     schema: &Path,
     output_last_message: &Path,
     transcript: &Path,
     prompt: &str,
 ) -> Result<()> {
-    let mut child = Command::new(&tools.codex)
+    let mut command = Command::new(&tools.codex);
+    command
         .arg("exec")
         .arg("--json")
         .arg("--ephemeral")
@@ -711,7 +797,16 @@ fn run_codex_json(
         // `-s read-only` when re-enabling.
         .arg("--dangerously-bypass-approvals-and-sandbox")
         .arg("-m")
-        .arg(model)
+        .arg(spec.model);
+    // Effort must ride on the command line: --ignore-user-config strips the
+    // config file where model_reasoning_effort would normally live, so
+    // omitting the flag here means codex's built-in default, not the user's.
+    if let Some(effort) = spec.effort {
+        command
+            .arg("-c")
+            .arg(format!("model_reasoning_effort={effort}"));
+    }
+    let mut child = command
         .arg("-C")
         .arg(cwd)
         .arg("--output-schema")
@@ -776,7 +871,7 @@ fn collect_run_findings(run_dir: &Path) -> Result<Vec<Finding>> {
 fn judge_findings(
     root: &Path,
     tools: &ToolEnv,
-    model: &str,
+    spec: ModelSpec,
     target: &PreparedCase,
     out_dir: &Path,
     name: &str,
@@ -808,7 +903,7 @@ fn judge_findings(
     let transcript_path = out_dir.join(format!("{name}-judge-transcript.jsonl"));
     run_codex_json(
         tools,
-        model,
+        spec,
         &target.checkout,
         &schema,
         &output_path,
@@ -824,7 +919,7 @@ fn judge_findings(
 fn match_findings(
     root: &Path,
     tools: &ToolEnv,
-    model: &str,
+    spec: ModelSpec,
     target: &PreparedCase,
     out_dir: &Path,
     baseline: &[Finding],
@@ -844,7 +939,7 @@ fn match_findings(
     let transcript_path = out_dir.join("match-transcript.jsonl");
     run_codex_json(
         tools,
-        model,
+        spec,
         &target.checkout,
         &schema,
         &output_path,
@@ -1234,6 +1329,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            effort: None,
         }
         .run_with_tools(root, &tools)?;
 
@@ -1281,6 +1377,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: Some("test-quality".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)?;
 
@@ -1315,11 +1412,76 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: Some("no-such-reviewer".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)
         .unwrap_err();
 
         assert!(error.to_string().contains("has no charter"));
+        Ok(())
+    }
+
+    /// --effort must reach both artifacts that matter: the codex command line
+    /// (the `-c model_reasoning_effort=...` override is the only thing that
+    /// actually changes agent behavior, since --ignore-user-config strips the
+    /// config file where effort would normally live) and run.json (so compare
+    /// can refuse to mix runs measured at different efforts).
+    #[test]
+    fn effort_reaches_codex_config_and_metadata() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "codex", fake_codex_script())?;
+        let tools = fake_tools(root);
+
+        RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "high-effort".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: Some("high".to_string()),
+        }
+        .run_with_tools(root, &tools)?;
+
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
+        assert_eq!(metadata.effort.as_deref(), Some("high"));
+        let config = fs::read_to_string(run_dir.join("repeat-1/findings.json.config"))?;
+        assert!(config.contains("model_reasoning_effort=high"));
+        Ok(())
+    }
+
+    /// A typo'd effort must fail before any tokens are spent, mirroring the
+    /// unknown-reviewer guard: the value is passed straight to codex, which
+    /// would otherwise fail (or silently coerce) mid-run after the checkout
+    /// work already happened.
+    #[test]
+    fn run_command_rejects_unknown_effort() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: None,
+            reviewer: None,
+            effort: Some("extreme".to_string()),
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+
+        assert!(error.to_string().contains("unknown effort"));
         Ok(())
     }
 
@@ -1343,6 +1505,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            effort: None,
         }
         .run_with_tools(root, &tools)
         .unwrap_err();
@@ -1529,6 +1692,7 @@ mod tests {
             skill_ref: None,
             skill_path: None,
             reviewer: None,
+            effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
         .unwrap_err();
@@ -1572,7 +1736,17 @@ mod tests {
         assert_schema_contract(
             &read_json(&root.join(EVAL_ROOT).join("schemas/findings.schema.json"))?,
             "findings",
-            &["id", "category", "summary", "location", "rationale"],
+            // reviewers is required here even though the Rust struct reads it
+            // as optional: OpenAI strict output schemas reject properties
+            // missing from `required`, so optionality must live in the reader.
+            &[
+                "id",
+                "category",
+                "summary",
+                "location",
+                "rationale",
+                "reviewers",
+            ],
             &["id", "category", "summary", "location", "rationale"],
         );
         let judgments: serde_json::Value =
@@ -1690,6 +1864,7 @@ mod tests {
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)?;
 
@@ -1704,6 +1879,7 @@ mod tests {
         SynthesizeCommand {
             comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)?;
         assert!(
@@ -1739,6 +1915,7 @@ mod tests {
         let error = SynthesizeCommand {
             comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
             model: None,
+            effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
         .unwrap_err();
@@ -1770,6 +1947,7 @@ mod tests {
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
         .unwrap_err();
@@ -1805,6 +1983,7 @@ mod tests {
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)
         .unwrap_err();
@@ -1817,6 +1996,7 @@ mod tests {
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)
         .unwrap_err();
@@ -1836,10 +2016,27 @@ mod tests {
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            effort: None,
         }
         .run_with_tools(root, &tools)
         .unwrap_err();
         assert!(error.to_string().contains("reviewer restriction"));
+
+        // Effort changes how hard the subject agents work, so runs at
+        // different efforts measure different things, exactly like the
+        // reviewer restriction.
+        let mut wrong_effort = run_meta("candidate-run", "fake-model");
+        wrong_effort.effort = Some("high".to_string());
+        write_json(&candidate.join("run.json"), &wrong_effort)?;
+        let error = CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: Some("fake-model".to_string()),
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+        assert!(error.to_string().contains("baseline effort"));
         Ok(())
     }
 
@@ -1998,6 +2195,7 @@ mod tests {
             base_sha: "base".to_string(),
             curation: None,
             reviewer: None,
+            effort: None,
             skill_source: "working-tree".to_string(),
             skill_path: DEFAULT_SKILL_PATH.to_string(),
             created_at: "2026-01-01T00:00:00Z".to_string(),
@@ -2011,8 +2209,42 @@ mod tests {
             summary: summary.to_string(),
             location: "src/lib.rs:1".to_string(),
             rationale: "because".to_string(),
+            reviewers: None,
             repeat: Some(repeat),
         }
+    }
+
+    /// The run command re-serializes findings.json through the Finding
+    /// struct, so any field the struct does not declare is silently stripped
+    /// from the stored artifact. This pins reviewer attribution surviving
+    /// that round trip: losing it would quietly destroy the only record of
+    /// which reviewer charters surfaced each finding, which is the data a
+    /// per-reviewer contribution analysis depends on.
+    #[test]
+    fn finding_round_trip_preserves_reviewer_attribution() -> Result<()> {
+        let raw = r#"{
+            "findings": [{
+                "id": "F1",
+                "category": "correctness",
+                "summary": "s",
+                "location": "src/lib.rs:1",
+                "rationale": "r",
+                "reviewers": ["correctness-general", "correctness-data-flow"]
+            }]
+        }"#;
+        let file: FindingsFile = serde_json::from_str(raw)?;
+        let round_tripped = serde_json::to_string(&file)?;
+        let reparsed: FindingsFile = serde_json::from_str(&round_tripped)?;
+        assert_eq!(
+            reparsed.findings[0].reviewers.as_deref(),
+            Some(
+                &[
+                    "correctness-general".to_string(),
+                    "correctness-data-flow".to_string()
+                ][..]
+            )
+        );
+        Ok(())
     }
 
     fn judgment(id: &str, classification: Classification) -> Judgment {
@@ -2200,6 +2432,7 @@ set -euo pipefail
 out=""
 schema=""
 cwd=""
+config=""
 saw_ephemeral=0
 saw_sandbox_bypass=0
 saw_ignore_user_config=0
@@ -2211,6 +2444,9 @@ while [ "$#" -gt 0 ]; do
     shift 2
   elif [ "$1" = "--output-schema" ]; then
     schema="$2"
+    shift 2
+  elif [ "$1" = "-c" ]; then
+    config="${config}${2}"$'\n'
     shift 2
   elif [ "$1" = "--ephemeral" ]; then
     saw_ephemeral=1
@@ -2247,6 +2483,11 @@ test "$saw_ignore_rules" = "1"
 test -n "$cwd"
 test -n "$stdin_prompt"
 mkdir -p "$(dirname "$out")"
+# Record -c overrides next to the output so tests can assert what config
+# (e.g. model_reasoning_effort) actually reached the codex command line.
+if [ -n "$config" ]; then
+  printf '%s' "$config" >"$out.config"
+fi
 case "$(basename "$schema")" in
   judgments.schema.json)
     grep -F "Review input:" <<<"$stdin_prompt" >/dev/null

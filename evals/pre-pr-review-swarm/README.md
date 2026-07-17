@@ -34,10 +34,17 @@ Use `--skill-path <path>` to evaluate a local skill directory other than the wor
 `--skill-ref <git-ref>` when you want the harness to export the skill from a specific commit, branch, or tag.
 
 Use `--reviewer <name>` to restrict a run to a single reviewer charter (for example `--reviewer test-quality`). The full
-swarm costs 7-8 reviewer agents per repeat, which is wasted spend when only one charter changed. The name must match a
-`reviewers/<name>.md` file in the resolved skill. The restriction is recorded in `run.json`, and `compare` refuses to
-compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings and a full
-panel's findings measure different things.
+swarm costs one agent per reviewer charter per repeat, which is wasted spend when only one charter changed. The name
+must match a `reviewers/<name>.md` file in the resolved skill. The restriction is recorded in `run.json`, and `compare`
+refuses to compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings
+and a full panel's findings measure different things.
+
+Use `--effort <minimal|low|medium|high>` to set the reasoning effort of the agents. This is the only way to control
+effort: the harness runs codex with `--ignore-user-config`, which strips the config file where `model_reasoning_effort`
+would normally live, so without the flag every agent runs at codex's built-in default. On `run` the effort applies to
+the subject agents and is recorded in `run.json`; like the reviewer restriction, `compare` refuses to mix runs with
+different efforts. On `compare` and `synthesize` the flag sets the judge/matcher/synthesis agents' effort independently
+of what the compared runs used.
 
 ## How does it work?
 
@@ -47,6 +54,13 @@ in read-only mode, with user config and execpolicy rules ignored, pointing it at
 for structured findings. The command prints the new run directory. Inside it, `run.json` records the resolved SHAs,
 model, skill source, label, and repeat count. Each `repeat-N/` directory contains `findings.json` and the raw
 `transcript.jsonl` from Codex.
+
+Each finding carries a `reviewers` array naming the charters that surfaced it, preserved through the skill's own
+merge/dedup step. The comparison flow does not consume it; it exists so a single full-panel run can answer per-reviewer
+questions offline — which charters contribute unique findings, and which only duplicate their siblings — without paying
+for one restricted run per reviewer. The schema requires the field on new runs (OpenAI strict output schemas reject
+optional properties, so optionality cannot live there), while the harness reads it as optional so runs recorded before
+the field existed still parse.
 
 `baseline` does not rerun the model. It writes `baseline.json` into an existing run directory so later comparisons know
 that run is the reference point. The command prints the path to that marker file.

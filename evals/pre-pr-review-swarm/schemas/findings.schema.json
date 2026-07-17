@@ -9,13 +9,17 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "category", "summary", "location", "rationale"],
+        "required": ["id", "category", "summary", "location", "rationale", "reviewers"],
         "properties": {
           "id": { "type": "string" },
           "category": { "type": "string" },
           "summary": { "type": "string" },
           "location": { "type": "string" },
-          "rationale": { "type": "string" }
+          "rationale": { "type": "string" },
+          "reviewers": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
         }
       }
     }
