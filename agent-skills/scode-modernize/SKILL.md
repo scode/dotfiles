@@ -474,16 +474,21 @@ same check is configured as required for merges to `main`; otherwise the workflo
 ### 11. Fix `changelog: include` parser ordering in `cliff.toml` (git-cliff projects)
 
 **Detect:** The project has a `cliff.toml` with a `commit_parsers` list in which a rule matching `changelog: include`
-(in message, body, or footer) appears _before_ the type-based grouping rules (`^feat`, `^fix`, `^perf`, `^revert`).
+(in message, body, or footer) appears _before_ the type-based grouping rules (`^feat`, `^fix`, `^perf`, `^revert`). Also
+treat it as a finding when the ordering is correct but the rationale comment above the type-grouping rules is the older
+scode-dist-rust-setup wording — a claim that PR bodies or commits "always" contain a changelog tag, without scoping the
+claim to commits merged under the convention.
 
 **Skip if:** There is no `cliff.toml`, there are no `changelog: include` parser rules at all, or the include rules
-already come after the type-based grouping rules.
+already come after the type-based grouping rules and the rationale comment already matches the current template wording.
 
 **Why:** git-cliff applies the first matching parser. In repos where CI requires every PR body to carry a
-`changelog: include` / `changelog: skip` tag, squash-merged commits always contain a tag in the body — so an early
-include rule matches first and forces every entry into its group (typically "Changed"). Fix commits never reach the
-"Fixed" group and the generated changelog misclassifies everything. This bit saltybox: every release section came out as
-"### Changed" until the parsers were reordered.
+`changelog: include` / `changelog: skip` tag, squash merges copy that tag into the commit body — so for commits merged
+under the convention, an early include rule matches first and forces every entry into its group (typically "Changed").
+Fix commits never reach the "Fixed" group and the generated changelog misclassifies everything. This bit saltybox: every
+release section came out as "### Changed" until the parsers were reordered. The stale comment wording matters too: the
+comment is the only documentation of this load-bearing ordering constraint, and the old wording overstates the invariant
+(pre-convention commits in migrated repos carry no tag at all).
 
 **Replace with:**
 
@@ -493,9 +498,13 @@ include rule matches first and forces every entry into its group (typically "Cha
   skip rule for non-user-visible types.
 - The corrected block, with rationale comments, is in
   `agent-skills/scode-dist-rust-setup/references/git-cliff-and-changelog-flow.md` — keep the two in sync.
+- If the ordering is already correct and only the comment wording is stale, replace the rationale comment with the
+  current block from the reference file and leave the parser rules untouched. No changelog regeneration is needed in
+  that case — the output does not change.
 - After reordering, regenerate the changelog (`git-cliff --tag <current-tag> -o CHANGELOG.md`) and review the diff:
   entries for past releases may legitimately move between groups (that is the fix working). Watch for hand-written
   sections that regeneration drops; restore them manually.
 
 **Verify:** In `cliff.toml`, the first `changelog\s*:\s*include` rule appears on a later line than the `^fix` grouping
-rule. Regenerating the changelog puts `fix:` commits under "### Fixed", not "### Changed".
+rule, and the rationale comment matches the current template in the reference file. When the ordering changed,
+regenerating the changelog puts `fix:` commits under "### Fixed", not "### Changed".
