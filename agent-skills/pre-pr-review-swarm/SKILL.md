@@ -105,16 +105,31 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    lock files; they exist in the checkout and may be consulted when a charter needs them. Do not describe the review
    scope only in prose, and do not let reviewers infer which changes to review from the working tree. Charter files live
    in the `reviewers/` directory next to this skill file.
-8. Require each reviewer to return only actionable findings, each tagged as **definite** or **possible**, with file
-   references and a short rationale. If a reviewer has zero findings, it returns an empty list—do not invent low-value
-   observations. Every expected reviewer must return a result before the coordinator can merge findings. A missing
-   reviewer result is a failed swarm run, not an empty finding list.
-9. Merge and deduplicate findings using these rules:
+8. Require each reviewer to return only findings with a concrete recommended action, each tagged as **definite** or
+   **possible**, with file references and a short rationale. Actionability is a quality bar, not an invitation to
+   summarize: a reviewer that spots the same pattern in several independently editable places returns one finding per
+   place, not one aggregate finding for the pattern. If a reviewer has zero findings, it returns an empty list—do not
+   invent low-value observations. Every expected reviewer must return a result before the coordinator can merge
+   findings. A missing reviewer result is a failed swarm run, not an empty finding list.
+9. Merge and deduplicate findings using these rules. Granularity is an output invariant of this step, not a style
+   preference: every independently editable location a reviewer surfaced must still be visible as its own finding
+   afterwards. Deduplication exists to remove same-location overlap between reviewers, and for nothing else.
    - Priority order: correctness, security, spec compliance, test quality, AI slop, docs drift, non-idiomatic patterns,
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
-   - Findings at different code locations are never duplicates, even if they describe similar patterns.
+   - Findings at different code locations are never duplicates, even when they share a category, rationale, or
+     recommended fix. Sharing a reason to change is the wrong equivalence relation: each location needs its own edit and
+     may get its own accept/reject decision. Merging findings is allowed only when they describe one contiguous code
+     region that a single edit would resolve. Adjacent assertions in one test pinning the same behavior can be one
+     finding; the same anti-pattern in two files is two findings, always.
+   - Theme summaries are additive, never a substitute. When many findings share a category, a one-line theme
+     introduction above them is welcome, but each location keeps its own finding and identifier beneath it. Concision
+     must not erase the inventory.
+   - Account for every reviewer finding. After this step each one is either retained as its own finding, merged into a
+     retained finding at the same location, or rejected as incorrect or non-actionable with a stated reason. A finding
+     that silently vanishes into a broader summary is a coordinator bug: category-level compression is exactly the
+     failure mode the location rule guards against, and the accounting is what makes a violation visible.
 10. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
 11. Present all findings to the user. Every user-visible finding must include its feedback identifier, and the report
     must include the selected scope label.
@@ -208,6 +223,12 @@ present an empty finding set as a successful swarm unless every expected reviewe
 `<expected>` is the size of the selected panel. When the prose-only fast path applied, say so on the same line and name
 the reviewers it skipped. A skipped reviewer's findings section must say it was skipped by the fast path — an unspawned
 reviewer did not return an empty finding list, and the report must not read as if it did.
+
+Always include `Finding accounting: <r> reviewer findings → <n> reported (<m> same-location merges, <k> rejected)`
+before the findings sections, where the numbers satisfy `r = n + m + k`. This is the count-based guard against lossy
+aggregation: reviewer findings that are neither reported, merged at the same location, nor rejected with a reason were
+silently collapsed, and the arithmetic makes that loss visible to the user instead of leaving the swarm looking less
+thorough than it was.
 
 Example finding:
 
