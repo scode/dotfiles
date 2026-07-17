@@ -155,8 +155,9 @@ verify `release.yml` references it correctly.
    - Include by default: `feat`, `fix`, `perf`, `revert`.
    - Skip by default: `refactor`, `style`, `test`, `chore`, `ci`, `docs`, `doc`.
    - Parser order matters: `changelog: skip` overrides first, then type-based grouping, then `changelog: include` as a
-     rescue for otherwise-skipped types. The include rules must NOT come before the type rules — every PR body carries a
-     changelog tag (CI-enforced), so an early include rule would group every commit under "Changed".
+     rescue for otherwise-skipped types. The include rules must NOT come before the type rules — CI enforces a changelog
+     tag in every PR body and squash merges carry it into the commit body, so an early include rule would group every
+     commit merged under the convention into "Changed".
    - If both tags are present, `changelog: skip` wins.
 4. Update `CONTRIBUTING.md` with:
    - Conventional Commit requirements for commit messages and PR titles.
