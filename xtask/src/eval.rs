@@ -201,48 +201,257 @@ impl RunCommand {
         };
         write_json(&run_dir.join("run.json"), &metadata)?;
 
-        let prompt_template = fs::read_to_string(root.join(EVAL_ROOT).join("prompts/run.md"))?;
-        let schema = root.join(EVAL_ROOT).join("schemas/findings.schema.json");
+        // The harness owns the fan-out: one codex agent per reviewer charter,
+        // merged deterministically below. An earlier design asked a single
+        // codex session to run the whole skill, trusting it to spawn reviewer
+        // subagents; observed transcripts showed it never actually spawned
+        // anything (collab waits on zero threads) and silently reviewed solo
+        // with every charter loaded — the exact degraded mode the swarm
+        // exists to avoid, with no way to detect it from the findings alone.
+        let mut panel = discover_panel(&skill.path, &target.checkout)?;
+        if let Some(reviewer) = &self.reviewer {
+            ensure!(
+                panel.iter().any(|name| name == reviewer),
+                "reviewer '{reviewer}' is not spawnable for this case (base \
+                 charters and condition-gated charters like spec-compliance \
+                 without a SPEC.md are excluded); spawnable: {}",
+                panel.join(", ")
+            );
+            panel.retain(|name| name == reviewer);
+        }
+
+        // Scope materialization also lives in the harness rather than in a
+        // coordinator agent: every reviewer must see the identical boundary,
+        // and the eval scope is always exactly base..subject.
+        let scope_path = run_dir.join("scope.diff");
+        write_scope_file(tools, &target, &scope_path)?;
+
+        let prompt_template = fs::read_to_string(root.join(EVAL_ROOT).join("prompts/reviewer.md"))?;
+        let schema = root
+            .join(EVAL_ROOT)
+            .join("schemas/reviewer-findings.schema.json");
+        let charters_dir = skill.path.join("reviewers");
+        let context = PanelContext {
+            tools,
+            spec: ModelSpec {
+                model: &self.model,
+                effort: self.effort.as_deref(),
+            },
+            prompt_template: &prompt_template,
+            schema: &schema,
+            scope_path: &scope_path,
+            charters_dir: &charters_dir,
+            target: &target,
+        };
         for repeat in 1..=self.repeats {
             let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
-            fs::create_dir_all(&repeat_dir)?;
-            let mut prompt = prompt_template
-                .replace("{{skill_path}}", &skill.path.display().to_string())
-                .replace("{{repo_path}}", &target.checkout.display().to_string())
-                .replace("{{base_sha}}", &target.base_sha)
-                .replace("{{subject_sha}}", &target.subject_sha);
-            // Appended rather than templated so the stock prompt file stays
-            // valid for unrestricted runs and old skill exports.
-            if let Some(reviewer) = &self.reviewer {
-                prompt.push_str(&format!(
-                    "\n\nReviewer restriction: run only the `{reviewer}` reviewer charter \
-                     (`reviewers/{reviewer}.md` inside the skill directory). Do not spawn \
-                     the rest of the reviewer panel, and ignore the skill's panel-size and \
-                     panel-completeness requirements; the single reviewer's findings are \
-                     the run's findings.\n"
-                ));
-            }
-            let findings_path = repeat_dir.join("findings.json");
-            let transcript_path = repeat_dir.join("transcript.jsonl");
-            run_codex_json(
-                tools,
-                ModelSpec {
-                    model: &self.model,
-                    effort: self.effort.as_deref(),
-                },
-                &target.checkout,
-                &schema,
-                &findings_path,
-                &transcript_path,
-                &prompt,
-            )?;
-            let findings: FindingsFile = read_json(&findings_path)?;
-            write_json(&findings_path, &findings)?;
+            let findings = run_reviewer_panel(&context, &panel, &repeat_dir)?;
+            write_json(&repeat_dir.join("findings.json"), &findings)?;
         }
 
         println!("{}", run_dir.display());
         Ok(())
     }
+}
+
+/// How many reviewer agents run concurrently within one repeat. The agents
+/// are network-bound codex processes, so modest parallelism cuts wall-clock
+/// substantially without saturating the machine or the API.
+const REVIEWER_CONCURRENCY: usize = 6;
+
+/// Select the spawnable reviewer charters from a resolved skill.
+///
+/// The charter files themselves carry the exclusion markers, so this works
+/// across skill versions without a separate manifest: shared base charters
+/// (read by lens reviewers, never spawned) say "not spawned as a reviewer",
+/// and condition-gated charters (spec-compliance) say "Only spawned when
+/// `SPEC.md` exists". Text markers are fragile in principle, but they are
+/// versioned with the skill export being evaluated, which a harness-side
+/// manifest would not be.
+fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> {
+    let dir = skill_path.join("reviewers");
+    let mut panel = Vec::new();
+    for entry in fs::read_dir(&dir)
+        .with_context(|| format!("no reviewers directory at {}", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| anyhow!("unreadable charter file name at {}", path.display()))?
+            .to_string();
+        let text = fs::read_to_string(&path)?;
+        if text.contains("not spawned as a reviewer") {
+            continue;
+        }
+        if text.contains("Only spawned when `SPEC.md` exists")
+            && !target_root.join("SPEC.md").is_file()
+        {
+            continue;
+        }
+        panel.push(name);
+    }
+    panel.sort();
+    ensure!(
+        !panel.is_empty(),
+        "no spawnable reviewer charters found in {}",
+        dir.display()
+    );
+    Ok(panel)
+}
+
+/// Materialize the review scope every reviewer receives: the base..subject
+/// diff plus a touched-file summary, in one file so all agents see the exact
+/// same boundary.
+fn write_scope_file(tools: &ToolEnv, target: &PreparedCase, scope_path: &Path) -> Result<()> {
+    let range = format!("{}..{}", target.base_sha, target.subject_sha);
+    let summary = git_stdout(
+        tools,
+        &target.checkout,
+        [
+            "diff",
+            "--name-status",
+            &target.base_sha,
+            &target.subject_sha,
+        ],
+    )?;
+    let diff = git_stdout(
+        tools,
+        &target.checkout,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--find-renames",
+            &target.base_sha,
+            &target.subject_sha,
+        ],
+    )?;
+    ensure!(!diff.trim().is_empty(), "scope diff for {range} is empty");
+    fs::write(
+        scope_path,
+        format!("Reviewed range: {range}\n\nTouched files:\n{summary}\n{diff}"),
+    )?;
+    Ok(())
+}
+
+/// Per-repeat ground-truth record of the fan-out: which reviewer agents ran
+/// and how many findings each returned. A repeat's findings.json only reaches
+/// disk after every panel member completed — any reviewer failure aborts the
+/// run — so this file is the evidence that the swarm actually executed,
+/// replacing an agent's unverifiable self-report.
+#[derive(Debug, Serialize, Deserialize)]
+struct ExecutionRecord {
+    expected: usize,
+    reviewers: Vec<ReviewerExecution>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ReviewerExecution {
+    reviewer: String,
+    findings: usize,
+}
+
+/// Everything a reviewer spawn needs beyond its own name: shared invocation
+/// state for one run's panel, bundled so the fan-out call sites stay small.
+struct PanelContext<'a> {
+    tools: &'a ToolEnv,
+    spec: ModelSpec<'a>,
+    prompt_template: &'a str,
+    schema: &'a Path,
+    scope_path: &'a Path,
+    charters_dir: &'a Path,
+    target: &'a PreparedCase,
+}
+
+/// Run every panel charter as its own codex agent (bounded concurrency),
+/// then merge: namespace finding ids by reviewer and stamp harness-side
+/// attribution. Attribution stamped here is ground truth — it cannot be
+/// fabricated or dropped by a coordinator agent.
+fn run_reviewer_panel(
+    context: &PanelContext,
+    panel: &[String],
+    repeat_dir: &Path,
+) -> Result<FindingsFile> {
+    let reviewers_dir = repeat_dir.join("reviewers");
+    fs::create_dir_all(&reviewers_dir)?;
+    let mut per_reviewer: Vec<(String, FindingsFile)> = Vec::new();
+    for chunk in panel.chunks(REVIEWER_CONCURRENCY) {
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|name| {
+                    let reviewers_dir = &reviewers_dir;
+                    scope.spawn(move || run_single_reviewer(context, name, reviewers_dir))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("reviewer thread panicked"))
+                .collect::<Vec<_>>()
+        });
+        for result in results {
+            per_reviewer.push(result?);
+        }
+    }
+
+    let mut merged = Vec::new();
+    let mut executions = Vec::new();
+    for (name, file) in per_reviewer {
+        executions.push(ReviewerExecution {
+            reviewer: name.clone(),
+            findings: file.findings.len(),
+        });
+        for mut finding in file.findings {
+            finding.id = format!("{name}:{}", finding.id);
+            finding.reviewers = Some(vec![name.clone()]);
+            merged.push(finding);
+        }
+    }
+    write_json(
+        &repeat_dir.join("execution.json"),
+        &ExecutionRecord {
+            expected: panel.len(),
+            reviewers: executions,
+        },
+    )?;
+    Ok(FindingsFile { findings: merged })
+}
+
+/// One reviewer agent: render its prompt, run codex against the reviewer
+/// schema, and parse its findings. Runs on a worker thread during fan-out.
+fn run_single_reviewer(
+    context: &PanelContext,
+    name: &str,
+    reviewers_dir: &Path,
+) -> Result<(String, FindingsFile)> {
+    let charter_path = context.charters_dir.join(format!("{name}.md"));
+    let prompt = context
+        .prompt_template
+        .replace("{{charter_path}}", &charter_path.display().to_string())
+        .replace(
+            "{{repo_path}}",
+            &context.target.checkout.display().to_string(),
+        )
+        .replace("{{scope_path}}", &context.scope_path.display().to_string())
+        .replace("{{base_sha}}", &context.target.base_sha)
+        .replace("{{subject_sha}}", &context.target.subject_sha);
+    let findings_path = reviewers_dir.join(format!("{name}.findings.json"));
+    let transcript_path = reviewers_dir.join(format!("{name}.transcript.jsonl"));
+    run_codex_json(
+        context.tools,
+        context.spec,
+        &context.target.checkout,
+        context.schema,
+        &findings_path,
+        &transcript_path,
+        &prompt,
+    )
+    .with_context(|| format!("reviewer '{name}' failed"))?;
+    let findings: FindingsFile = read_json(&findings_path)?;
+    Ok((name.to_string(), findings))
 }
 
 impl BaselineCommand {
@@ -1339,8 +1548,43 @@ mod tests {
             .expect("expected run dir")?
             .path();
         assert!(run_dir.join("run.json").is_file());
-        assert!(run_dir.join("repeat-1/findings.json").is_file());
-        assert!(run_dir.join("repeat-2/transcript.jsonl").is_file());
+        assert!(run_dir.join("scope.diff").is_file());
+        // Per-reviewer artifacts: the fixture panel is docs-comments and
+        // test-quality (correctness is a base charter, spec-compliance is
+        // gated on a SPEC.md the fake checkout lacks).
+        for repeat in ["repeat-1", "repeat-2"] {
+            for reviewer in ["docs-comments", "test-quality"] {
+                assert!(
+                    run_dir
+                        .join(repeat)
+                        .join("reviewers")
+                        .join(format!("{reviewer}.findings.json"))
+                        .is_file()
+                );
+                assert!(
+                    run_dir
+                        .join(repeat)
+                        .join("reviewers")
+                        .join(format!("{reviewer}.transcript.jsonl"))
+                        .is_file()
+                );
+            }
+        }
+        let execution: ExecutionRecord = read_json(&run_dir.join("repeat-1/execution.json"))?;
+        assert_eq!(execution.expected, 2);
+        assert_eq!(execution.reviewers.len(), 2);
+        // The merged findings carry harness-stamped attribution and
+        // reviewer-namespaced ids — ground truth, not agent self-report.
+        let findings: FindingsFile = read_json(&run_dir.join("repeat-1/findings.json"))?;
+        assert_eq!(findings.findings.len(), 2);
+        let ids: Vec<_> = findings.findings.iter().map(|f| f.id.as_str()).collect();
+        assert!(ids.contains(&"docs-comments:F1"));
+        assert!(ids.contains(&"test-quality:F1"));
+        for finding in &findings.findings {
+            let stamped = finding.reviewers.as_ref().expect("stamped attribution");
+            assert_eq!(stamped.len(), 1);
+            assert!(finding.id.starts_with(&format!("{}:", stamped[0])));
+        }
         let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
         assert_eq!(metadata.base_sha, "base-sha");
         assert_eq!(metadata.subject_sha, "subject-remote-sha");
@@ -1354,11 +1598,11 @@ mod tests {
         Ok(())
     }
 
-    /// The --reviewer restriction must reach both artifacts that downstream
-    /// steps depend on: the prompt (so the eval agent actually runs a single
-    /// charter) and run.json (so compare can refuse to mix restricted and
-    /// unrestricted runs). A restriction that silently failed to reach the
-    /// prompt would produce full-panel findings labeled as single-reviewer.
+    /// The --reviewer restriction must actually shrink the panel the harness
+    /// spawns — not just be recorded — and must land in run.json so compare
+    /// can refuse to mix restricted and unrestricted runs. A restriction that
+    /// silently failed to filter would spend the full panel and label the
+    /// result single-reviewer.
     #[test]
     fn reviewer_restriction_reaches_prompt_and_metadata() -> Result<()> {
         let temp = tempfile::tempdir()?;
@@ -1387,9 +1631,110 @@ mod tests {
             .path();
         let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
         assert_eq!(metadata.reviewer.as_deref(), Some("test-quality"));
-        let prompt = fs::read_to_string(run_dir.join("repeat-1/findings.json.prompt"))?;
-        assert!(prompt.contains("Reviewer restriction"));
+        let execution: ExecutionRecord = read_json(&run_dir.join("repeat-1/execution.json"))?;
+        assert_eq!(execution.expected, 1);
+        assert_eq!(execution.reviewers[0].reviewer, "test-quality");
+        assert!(
+            !run_dir
+                .join("repeat-1/reviewers/docs-comments.findings.json")
+                .exists()
+        );
+        let prompt = fs::read_to_string(
+            run_dir.join("repeat-1/reviewers/test-quality.findings.json.prompt"),
+        )?;
         assert!(prompt.contains("reviewers/test-quality.md"));
+        Ok(())
+    }
+
+    /// Restricting to a shared base charter must fail before any tokens are
+    /// spent: base charters are reading material for lens reviewers, and
+    /// spawning one as a reviewer would silently measure a phantom panel
+    /// member.
+    #[test]
+    fn run_command_rejects_base_charter_restriction() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "restricted".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: Some("correctness".to_string()),
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        assert!(error.to_string().contains("not spawnable"));
+        Ok(())
+    }
+
+    /// Panel discovery is driven by markers in the charter files themselves,
+    /// so it must hold across skill versions: base charters are never
+    /// spawned, and SPEC.md-gated charters run only when the target checkout
+    /// actually has a SPEC.md. A discovery bug here silently changes what a
+    /// run measures.
+    #[test]
+    fn discover_panel_applies_charter_markers() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let skill_path = root.join(DEFAULT_SKILL_PATH);
+        let target_root = root.join("target-checkout");
+        fs::create_dir_all(&target_root)?;
+
+        let panel = discover_panel(&skill_path, &target_root)?;
+        assert_eq!(panel, vec!["docs-comments", "test-quality"]);
+
+        fs::write(target_root.join("SPEC.md"), "# spec")?;
+        let panel = discover_panel(&skill_path, &target_root)?;
+        assert_eq!(
+            panel,
+            vec!["docs-comments", "spec-compliance", "test-quality"]
+        );
+        Ok(())
+    }
+
+    /// A reviewer agent that fails must abort the whole run, naming the
+    /// reviewer. Carrying on with a partial panel would quietly produce the
+    /// missing-reviewer data this fan-out design exists to make impossible.
+    #[test]
+    fn reviewer_failure_aborts_run() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "codex",
+            "#!/usr/bin/env bash\ncat >/dev/null\necho 'fake reviewer crash' >&2\nexit 1\n",
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "crash".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("reviewer '"));
+        assert!(message.contains("failed"));
         Ok(())
     }
 
@@ -1454,7 +1799,9 @@ mod tests {
             .path();
         let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
         assert_eq!(metadata.effort.as_deref(), Some("high"));
-        let config = fs::read_to_string(run_dir.join("repeat-1/findings.json.config"))?;
+        let config = fs::read_to_string(
+            run_dir.join("repeat-1/reviewers/test-quality.findings.json.config"),
+        )?;
         assert!(config.contains("model_reasoning_effort=high"));
         Ok(())
     }
@@ -1716,6 +2063,7 @@ mod tests {
 
         for schema in [
             "findings.schema.json",
+            "reviewer-findings.schema.json",
             "judgments.schema.json",
             "matches.schema.json",
             "suggestions.schema.json",
@@ -1747,6 +2095,19 @@ mod tests {
                 "rationale",
                 "reviewers",
             ],
+            &["id", "category", "summary", "location", "rationale"],
+        );
+        // The codex-facing reviewer schema has no reviewers property at all:
+        // attribution is stamped by the harness after the agent returns, so
+        // the agent is never asked (or able) to claim attribution itself.
+        assert_schema_contract(
+            &read_json(
+                &root
+                    .join(EVAL_ROOT)
+                    .join("schemas/reviewer-findings.schema.json"),
+            )?,
+            "findings",
+            &["id", "category", "summary", "location", "rationale"],
             &["id", "category", "summary", "location", "rationale"],
         );
         let judgments: serde_json::Value =
@@ -2276,8 +2637,9 @@ curation = "mined"
 "#,
         )?;
         fs::write(
-            root.join(EVAL_ROOT).join("prompts/run.md"),
-            "run {{skill_path}} {{repo_path}} {{base_sha}}..{{subject_sha}}",
+            root.join(EVAL_ROOT).join("prompts/reviewer.md"),
+            "review {{charter_path}} in {{repo_path}} scope {{scope_path}} \
+             range {{base_sha}}..{{subject_sha}}",
         )?;
         fs::write(root.join(EVAL_ROOT).join("prompts/judge.md"), "judge")?;
         fs::write(root.join(EVAL_ROOT).join("prompts/match.md"), "match")?;
@@ -2287,6 +2649,7 @@ curation = "mined"
         )?;
         for schema in [
             "findings.schema.json",
+            "reviewer-findings.schema.json",
             "judgments.schema.json",
             "matches.schema.json",
             "suggestions.schema.json",
@@ -2294,12 +2657,29 @@ curation = "mined"
             fs::write(root.join(EVAL_ROOT).join("schemas").join(schema), "{}")?;
         }
         fs::write(root.join(DEFAULT_SKILL_PATH).join("SKILL.md"), "# skill")?;
-        // A charter file so --reviewer validation has something to accept.
+        // A fixture panel exercising every discovery rule: two spawnable
+        // charters, one shared base charter (skipped), and one SPEC.md-gated
+        // charter (skipped because the fake checkout has no SPEC.md).
         fs::create_dir_all(root.join(DEFAULT_SKILL_PATH).join("reviewers"))?;
         fs::write(
             root.join(DEFAULT_SKILL_PATH)
                 .join("reviewers/test-quality.md"),
             "# test-quality-reviewer",
+        )?;
+        fs::write(
+            root.join(DEFAULT_SKILL_PATH)
+                .join("reviewers/docs-comments.md"),
+            "# docs-comments-reviewer",
+        )?;
+        fs::write(
+            root.join(DEFAULT_SKILL_PATH)
+                .join("reviewers/correctness.md"),
+            "# Correctness base charter\n\nNOTE: This file is not spawned as a reviewer on its own.",
+        )?;
+        fs::write(
+            root.join(DEFAULT_SKILL_PATH)
+                .join("reviewers/spec-compliance.md"),
+            "# spec-compliance-reviewer\n\n_(Only spawned when `SPEC.md` exists at the project root.)_",
         )?;
         Ok(())
     }

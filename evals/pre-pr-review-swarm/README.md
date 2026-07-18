@@ -35,9 +35,10 @@ Use `--skill-path <path>` to evaluate a local skill directory other than the wor
 
 Use `--reviewer <name>` to restrict a run to a single reviewer charter (for example `--reviewer test-quality`). The full
 swarm costs one agent per reviewer charter per repeat, which is wasted spend when only one charter changed. The name
-must match a `reviewers/<name>.md` file in the resolved skill. The restriction is recorded in `run.json`, and `compare`
-refuses to compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings
-and a full panel's findings measure different things.
+must match a spawnable `reviewers/<name>.md` charter in the resolved skill — shared base charters and condition-gated
+charters that do not apply to the case are rejected. The restriction is recorded in `run.json`, and `compare` refuses to
+compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings and a full
+panel's findings measure different things.
 
 Use `--effort <minimal|low|medium|high>` to set the reasoning effort of the agents. This is the only way to control
 effort: the harness runs codex with `--ignore-user-config`, which strips the config file where `model_reasoning_effort`
@@ -49,18 +50,28 @@ of what the compared runs used.
 ## How does it work?
 
 `run` prepares the target repository under `eval-worktrees/repos/`, resolves the case's subject ref, and uses either the
-explicit `base_ref` or the subject commit's first parent as the review base. It then runs `codex exec` once per repeat
-in read-only mode, with user config and execpolicy rules ignored, pointing it at the selected skill version and asking
-for structured findings. The command prints the new run directory. Inside it, `run.json` records the resolved SHAs,
-model, skill source, label, and repeat count. Each `repeat-N/` directory contains `findings.json` and the raw
-`transcript.jsonl` from Codex.
+explicit `base_ref` or the subject commit's first parent as the review base. The harness then owns the swarm fan-out
+itself: it materializes the review scope once into `scope.diff`, discovers the spawnable reviewer panel from the
+resolved skill's `reviewers/` directory (shared base charters are skipped, and `spec-compliance` runs only when the
+target checkout has a `SPEC.md`), and runs one `codex exec` per reviewer charter per repeat, a few reviewers at a time,
+each seeing only its own charter plus the shared scope. The command prints the new run directory. Inside it, `run.json`
+records the resolved SHAs, model, skill source, label, and repeat count; each `repeat-N/` directory contains the merged
+`findings.json`, per-reviewer findings and transcripts under `reviewers/`, and `execution.json`.
 
-Each finding carries a `reviewers` array naming the charters that surfaced it, preserved through the skill's own
-merge/dedup step. The comparison flow does not consume it; it exists so a single full-panel run can answer per-reviewer
-questions offline — which charters contribute unique findings, and which only duplicate their siblings — without paying
-for one restricted run per reviewer. The schema requires the field on new runs (OpenAI strict output schemas reject
-optional properties, so optionality cannot live there), while the harness reads it as optional so runs recorded before
-the field existed still parse.
+NOTE: an earlier harness design asked a single codex session to run the whole skill and trusted it to spawn reviewer
+subagents. Observed transcripts showed it never spawned anything — collab waits on zero threads — and silently reviewed
+solo with every charter loaded, which is exactly the degraded single-context mode the swarm exists to avoid, and it was
+undetectable from the findings alone. The harness-side fan-out replaces trust with ground truth: `execution.json`
+records which reviewer agents actually ran and how many findings each returned, any reviewer failure aborts the run, and
+finding ids are namespaced by reviewer with the `reviewers` attribution stamped by the harness after each agent returns.
+An agent can neither fabricate nor drop attribution, and a "swarm" that did not actually fan out can no longer
+masquerade as a completed run.
+
+The stamped `reviewers` array is what lets a single full-panel run answer per-reviewer questions offline — which
+charters contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
+reviewer. The comparison flow does not consume it. Codex-facing agents get `reviewer-findings.schema.json`, which has no
+attribution field at all; the stored `findings.json` follows `findings.schema.json`, whose `reviewers` field the harness
+reads as optional so runs recorded before the field existed still parse.
 
 `baseline` does not rerun the model. It writes `baseline.json` into an existing run directory so later comparisons know
 that run is the reference point. The command prints the path to that marker file.
