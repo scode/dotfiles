@@ -1885,6 +1885,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -1968,6 +1969,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -2015,6 +2017,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
 
@@ -2070,6 +2073,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         // Preflight calls must succeed so the failure under test is the
         // reviewer fan-out, not the preflight guard that runs before it.
@@ -2126,6 +2130,7 @@ esac
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -2215,6 +2220,7 @@ esac
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -2260,6 +2266,7 @@ esac
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         // Emits both error shapes on stdout, then fails with empty stderr —
         // the observed real-world failure mode.
@@ -2319,6 +2326,7 @@ exit 1
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(
             root,
@@ -2370,6 +2378,7 @@ exit 1
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         // Preflight agents return a finding that never references the
         // planted file — execution "worked" but the review evidently did not.
@@ -2421,6 +2430,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
 
@@ -2452,6 +2462,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -2541,6 +2552,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
     fn explicit_base_ref_is_resolved() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
         let case = EvalCase {
@@ -2565,6 +2577,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let root = temp.path();
         let checkout = root.join(WORKTREE_ROOT).join("repos/owner-repo");
         fs::create_dir_all(checkout.join(".git"))?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
         let case = EvalCase {
@@ -2589,6 +2602,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
     fn unresolvable_refs_are_fetched_from_origin() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
         let case = EvalCase {
@@ -2614,6 +2628,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
     fn missing_base_ref_rejects_merge_subjects() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         let tools = fake_tools(root);
         let case = EvalCase {
@@ -2634,6 +2649,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
     fn resolve_skill_exports_skill_refs_and_rejects_ambiguous_sources() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let root = temp.path();
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_eval_fixture(root)?;
         let tools = fake_tools(root);
@@ -2869,6 +2885,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -3002,6 +3019,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let temp = tempfile::tempdir()?;
         let root = temp.path();
         write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
         write_fake_bin(root, "git", fake_git_script())?;
         write_fake_bin(root, "codex", fake_codex_script())?;
         let tools = fake_tools(root);
@@ -3375,6 +3393,20 @@ curation = "mined"
                 marked_at: "2026-01-01T00:00:00Z".to_string(),
             },
         )
+    }
+
+    /// Serializes every test that writes fake executables and then spawns
+    /// them. The test binary's threads fork constantly; a fork that lands
+    /// between another test's write and exec of its fake bin briefly holds
+    /// the (CLOEXEC, but not yet execed) write fd open in the child, and the
+    /// exec then fails with ETXTBSY. Observed as rare cross-suite "one test
+    /// randomly failed" flakes whose error came from a stage the failing
+    /// test's assertions never touch. Holding this lock for the duration of
+    /// each write-then-spawn test closes the window; the serialized tests
+    /// finish in well under a second combined.
+    fn fake_bin_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn write_fake_bin(root: &Path, name: &str, script: &str) -> Result<()> {
