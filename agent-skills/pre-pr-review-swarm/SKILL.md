@@ -84,13 +84,13 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      and the user should be able to see that before reviewers spend anything on it.
 3. Report the selected scope before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
-5. Decide the reviewer panel. By default every reviewer runs (seven always, plus an eighth if `SPEC.md` exists). If
+5. Decide the reviewer panel. By default every reviewer runs (twelve always, plus a thirteenth if `SPEC.md` exists). If
    every file touched by the change — including files listed under `Omitted from scope:` — has a prose extension (`.md`,
    `.markdown`, `.txt`), apply the prose-only fast path instead: spawn only the docs-comments, ai-slop, simplification,
-   and (when `SPEC.md` exists) spec-compliance reviewers. The correctness, security, test-quality, and idiomaticity
-   charters have nothing to bite on in a prose-only change, so skipping them saves their agent contexts rather than
-   paying each to return an empty list. The trigger is purely mechanical: a file with any other extension anywhere in
-   the change means the full panel runs. When in doubt, run the full panel.
+   and (when `SPEC.md` exists) spec-compliance reviewers. The correctness and security reviewers and the test-quality
+   and idiomaticity charters have nothing to bite on in a prose-only change, so skipping them saves their agent contexts
+   rather than paying each to return an empty list. The trigger is purely mechanical: a file with any other extension
+   anywhere in the change means the full panel runs. When in doubt, run the full panel.
 6. Run the selected reviewer charters concurrently when the environment supports it. Keep each reviewer focused on its
    own charter so the review instructions stay separate. If the session has an active model-routing skill — one whose
    job is to decide which model and reasoning effort each delegated task or subagent runs on — then which model and
@@ -118,6 +118,9 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
+   - Lens siblings — the correctness lens reviewers among themselves, and likewise the security lens reviewers — share
+     one category and priority. When two of them flag the same code region, keep one finding and note that multiple
+     lenses agreed: agreement is a confidence signal worth surfacing, not a duplicate to discard silently.
    - Findings at different code locations are never duplicates, even when they share a category, rationale, or
      recommended fix. Sharing a reason to change is the wrong equivalence relation: each location needs its own edit and
      may get its own accept/reject decision. Merging findings is allowed only when they describe one contiguous code
@@ -196,16 +199,36 @@ to each finding by its feedback identifier.
 
 ## Reviewers
 
-| Name                                                    | Charter file                   |
-| ------------------------------------------------------- | ------------------------------ |
-| docs-comments-reviewer                                  | `reviewers/docs-comments.md`   |
-| simplification-reviewer                                 | `reviewers/simplification.md`  |
-| idiomaticity-reviewer                                   | `reviewers/idiomaticity.md`    |
-| correctness-reviewer                                    | `reviewers/correctness.md`     |
-| security-reviewer                                       | `reviewers/security.md`        |
-| test-quality-reviewer                                   | `reviewers/test-quality.md`    |
-| ai-slop-reviewer                                        | `reviewers/ai-slop.md`         |
-| spec-compliance-reviewer _(only when `SPEC.md` exists)_ | `reviewers/spec-compliance.md` |
+| Name                                                    | Charter file                               |
+| ------------------------------------------------------- | ------------------------------------------ |
+| docs-comments-reviewer                                  | `reviewers/docs-comments.md`               |
+| simplification-reviewer                                 | `reviewers/simplification.md`              |
+| idiomaticity-reviewer                                   | `reviewers/idiomaticity.md`                |
+| correctness-general-reviewer                            | `reviewers/correctness-general.md`         |
+| correctness-data-flow-reviewer                          | `reviewers/correctness-data-flow.md`       |
+| correctness-state-lifecycle-reviewer                    | `reviewers/correctness-state-lifecycle.md` |
+| correctness-edge-inputs-reviewer                        | `reviewers/correctness-edge-inputs.md`     |
+| security-general-reviewer                               | `reviewers/security-general.md`            |
+| security-input-trust-reviewer                           | `reviewers/security-input-trust.md`        |
+| security-secrets-env-reviewer                           | `reviewers/security-secrets-env.md`        |
+| test-quality-reviewer                                   | `reviewers/test-quality.md`                |
+| ai-slop-reviewer                                        | `reviewers/ai-slop.md`                     |
+| spec-compliance-reviewer _(only when `SPEC.md` exists)_ | `reviewers/spec-compliance.md`             |
+
+### Lens reviewers
+
+The correctness and security charters run as several lens reviewers each instead of one reviewer per charter. Identical
+reviewers produce correlated attention: they all find the same salient issues and share the same blind spots, so extra
+spawns only pay for themselves when each one digs somewhere different. Each lens reviewer reads the shared base charter
+(`reviewers/correctness.md` or `reviewers/security.md`) and is a complete reviewer for that charter — the lens adds a
+mandatory deep pass, it never narrows scope, so a bug outside every lens is still every lens reviewer's job to report.
+The lens set is meant to be tuned over time: add, remove, or reword lenses to balance cost against finding quality
+rather than treating the current set as fixed.
+
+Each split charter also runs one generalist with no lens at all. It patches the holes in the lens taxonomy — bugs that
+fit no lens get only baseline attention from the lensed reviewers — and doubles as a diagnostic for tuning: a generalist
+that keeps surfacing findings the lenses missed points at a gap worth naming as a new lens, while one that only
+duplicates them is a slot that can be reclaimed.
 
 ## Output Contract
 
@@ -234,8 +257,8 @@ Example finding:
 
 - `F1 / SEC-PRIVSEC` — **definite** — `src/auth.rs:42` leaks private session material into logs.
 
-- `Correctness`: findings from the correctness reviewer.
-- `Security`: findings from the security reviewer.
+- `Correctness`: findings from the correctness lens reviewers, presented as one section.
+- `Security`: findings from the security lens reviewers, presented as one section.
 - `Spec Compliance` _(only when `SPEC.md` exists)_: list of divergences, each stating whether the implementation or the
   spec appears to need updating.
 - `Test Quality`: findings from the test-quality reviewer.
