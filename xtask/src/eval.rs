@@ -458,6 +458,13 @@ struct PreflightAgentRecord {
     agent: String,
     findings: usize,
     planted_issue_found: bool,
+    /// Present when the agent failed outright (codex error, unparseable
+    /// output) rather than running and missing the planted issue. Captured so
+    /// the record stays complete on every failure path — the record is the
+    /// evidence file the run output points at, and a hard failure is exactly
+    /// when someone goes looking for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 /// Cheap end-to-end check of the agent-execution path, run before every real
@@ -512,18 +519,38 @@ fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) 
             .map(|handle| handle.join().expect("preflight thread panicked"))
             .collect::<Vec<_>>()
     });
+    // Write the record before propagating any agent failure: the record is
+    // the evidence artifact the run output directs readers to, and a hard
+    // agent failure is precisely when it gets read. Results pair with names
+    // by position — the thread handles were spawned in `names` order.
     let mut agents = Vec::new();
-    for result in results {
-        let (name, findings) = result?;
-        let planted = findings
-            .findings
-            .iter()
-            .any(|finding| finding.location.contains(PREFLIGHT_PLANTED_FILE));
-        agents.push(PreflightAgentRecord {
-            agent: name,
-            findings: findings.findings.len(),
-            planted_issue_found: planted,
-        });
+    let mut first_error = None;
+    for (name, result) in names.iter().zip(results) {
+        match result {
+            Ok((name, findings)) => {
+                let planted = findings
+                    .findings
+                    .iter()
+                    .any(|finding| finding.location.contains(PREFLIGHT_PLANTED_FILE));
+                agents.push(PreflightAgentRecord {
+                    agent: name,
+                    findings: findings.findings.len(),
+                    planted_issue_found: planted,
+                    error: None,
+                });
+            }
+            Err(error) => {
+                agents.push(PreflightAgentRecord {
+                    agent: name.clone(),
+                    findings: 0,
+                    planted_issue_found: false,
+                    error: Some(format!("{error:#}")),
+                });
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
     }
     let passed = agents.iter().all(|agent| agent.planted_issue_found);
     let record_path = dir.join("preflight.json");
@@ -534,6 +561,9 @@ fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) 
             agents,
         },
     )?;
+    if let Some(error) = first_error {
+        return Err(error.context(format!("preflight record: {}", record_path.display())));
+    }
     ensure!(
         passed,
         "preflight failed: an agent did not surface the planted issue, so the \
@@ -2181,6 +2211,58 @@ esac
                     .is_file()
             );
         }
+        Ok(())
+    }
+
+    /// A hard preflight agent failure (codex crash, bad model) must still
+    /// leave preflight.json on disk. The run output points readers at that
+    /// record, and an outright failure is exactly when someone goes looking —
+    /// a record written only on the softer miss path would be missing when it
+    /// matters most. (Found by manual testing with a bogus model id.)
+    #[test]
+    fn preflight_agent_failure_still_writes_record() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "codex",
+            "#!/usr/bin/env bash\ncat >/dev/null\necho 'fake codex crash' >&2\nexit 1\n",
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "crash".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("preflight agent"),
+            "unexpected error: {message}"
+        );
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let record: PreflightRecord = read_json(&run_dir.join("preflight/preflight.json"))?;
+        assert_eq!(record.status, "failed");
+        assert_eq!(record.agents.len(), PREFLIGHT_AGENTS);
+        for agent in &record.agents {
+            assert!(!agent.planted_issue_found);
+            assert!(agent.error.as_deref().unwrap_or("").contains("failed"));
+        }
+        assert!(!run_dir.join("repeat-1").exists());
         Ok(())
     }
 
