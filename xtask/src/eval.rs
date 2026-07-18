@@ -255,9 +255,164 @@ impl RunCommand {
             write_json(&repeat_dir.join("findings.json"), &findings)?;
         }
 
+        // Post-run verification digests the on-disk evidence (deliberately
+        // re-read from artifacts, not trusted from memory) and prints the
+        // inspection contract. The preflight proves the path works before
+        // spend; this proves — and makes cheaply inspectable — that the real
+        // agents did real work.
+        let verification = verify_run(&run_dir, self.repeats)?;
+        write_json(&run_dir.join("verification.json"), &verification)?;
+        println!(
+            "post-run verification: {} — {} repeats, {} anomalies; digest: {}",
+            verification.status,
+            verification.repeats.len(),
+            verification.anomaly_count,
+            run_dir.join("verification.json").display()
+        );
+        for repeat in &verification.repeats {
+            for reviewer in &repeat.reviewers {
+                for anomaly in &reviewer.anomalies {
+                    println!(
+                        "  anomaly repeat-{} {}: {anomaly}",
+                        repeat.repeat, reviewer.reviewer
+                    );
+                }
+            }
+        }
+        println!(
+            "REQUIRED for the launching agent: read the verification digest above, then \
+             spot-check at least one reviewer transcript per repeat \
+             (repeat-N/reviewers/<name>.transcript.jsonl) to confirm the agents actually \
+             reviewed the scope. Do not report this run's results without that inspection."
+        );
+
         println!("{}", run_dir.display());
         Ok(())
     }
+}
+
+/// Post-run evidence digest, written to `verification.json`. Where the
+/// preflight gates the run up front, this summarizes what the real agents
+/// actually did — per-reviewer output tokens, command counts, and anomalies —
+/// so the launching agent can verify execution without reading dozens of raw
+/// transcripts. Status is `clean` or `attention`; anomalies never abort the
+/// run, because judging their severity is exactly the launching agent's job.
+#[derive(Debug, Serialize, Deserialize)]
+struct RunVerification {
+    status: String,
+    anomaly_count: usize,
+    repeats: Vec<RepeatVerification>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RepeatVerification {
+    repeat: usize,
+    expected_reviewers: usize,
+    completed_reviewers: usize,
+    reviewers: Vec<ReviewerVerification>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ReviewerVerification {
+    reviewer: String,
+    findings: usize,
+    /// Output tokens from the transcript's `turn.completed` usage record.
+    /// Absent when the transcript never reported a completed turn — which is
+    /// itself an anomaly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<u64>,
+    /// Completed `command_execution` items in the transcript. Zero is not
+    /// flagged — a scope-only review without commands can be legitimate — but
+    /// it is recorded so the launching agent can weigh it.
+    commands: usize,
+    anomalies: Vec<String>,
+}
+
+/// Digest one reviewer transcript: output tokens from the final
+/// `turn.completed` event, completed command count, and anomalies for the
+/// signals that indicate no real agent work happened. Unknown or non-JSON
+/// lines are ignored — the transcript format carries event types we do not
+/// consume.
+fn digest_transcript(path: &Path) -> (Option<u64>, usize, Vec<String>) {
+    let mut anomalies = Vec::new();
+    let Ok(raw) = fs::read_to_string(path) else {
+        return (
+            None,
+            0,
+            vec!["transcript missing or unreadable".to_string()],
+        );
+    };
+    let mut output_tokens = None;
+    let mut commands = 0;
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match event.get("type").and_then(|t| t.as_str()) {
+            Some("turn.completed") => {
+                output_tokens = event
+                    .pointer("/usage/output_tokens")
+                    .and_then(|v| v.as_u64());
+            }
+            Some("item.completed")
+                if event.pointer("/item/type").and_then(|v| v.as_str())
+                    == Some("command_execution") =>
+            {
+                commands += 1;
+            }
+            _ => {}
+        }
+    }
+    match output_tokens {
+        None => anomalies.push("no turn.completed event in transcript".to_string()),
+        Some(0) => anomalies.push("turn completed with zero output tokens".to_string()),
+        Some(_) => {}
+    }
+    (output_tokens, commands, anomalies)
+}
+
+/// Build the post-run digest from disk. Reads the same artifacts a later
+/// inspector would (execution.json and per-reviewer transcripts) rather than
+/// trusting in-memory state, so the digest also validates that the evidence
+/// trail itself is complete.
+fn verify_run(run_dir: &Path, repeats: usize) -> Result<RunVerification> {
+    let mut repeat_records = Vec::new();
+    let mut anomaly_count = 0;
+    for repeat in 1..=repeats {
+        let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
+        let execution: ExecutionRecord = read_json(&repeat_dir.join("execution.json"))?;
+        let mut reviewers = Vec::new();
+        for entry in &execution.reviewers {
+            let transcript = repeat_dir
+                .join("reviewers")
+                .join(format!("{}.transcript.jsonl", entry.reviewer));
+            let (output_tokens, commands, anomalies) = digest_transcript(&transcript);
+            anomaly_count += anomalies.len();
+            reviewers.push(ReviewerVerification {
+                reviewer: entry.reviewer.clone(),
+                findings: entry.findings,
+                output_tokens,
+                commands,
+                anomalies,
+            });
+        }
+        repeat_records.push(RepeatVerification {
+            repeat,
+            expected_reviewers: execution.expected,
+            completed_reviewers: execution.reviewers.len(),
+            reviewers,
+        });
+    }
+    Ok(RunVerification {
+        status: if anomaly_count == 0 {
+            "clean"
+        } else {
+            "attention"
+        }
+        .to_string(),
+        anomaly_count,
+        repeats: repeat_records,
+    })
 }
 
 /// Synthetic preflight scope: a four-line diff with one planted logic error
@@ -1894,6 +2049,97 @@ esac
         Ok(())
     }
 
+    /// Every run must end with a verification digest whose numbers come from
+    /// the on-disk transcripts, because the digest is what the launching
+    /// agent inspects instead of reading every raw transcript. A digest that
+    /// silently miscounted tokens or commands would defeat the inspection
+    /// step it exists to enable.
+    #[test]
+    fn verification_digest_reflects_transcript_evidence() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "codex", fake_codex_script())?;
+        let tools = fake_tools(root);
+
+        RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 2,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)?;
+
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let verification: RunVerification = read_json(&run_dir.join("verification.json"))?;
+        assert_eq!(verification.status, "clean");
+        assert_eq!(verification.anomaly_count, 0);
+        assert_eq!(verification.repeats.len(), 2);
+        for repeat in &verification.repeats {
+            assert_eq!(repeat.expected_reviewers, 2);
+            assert_eq!(repeat.completed_reviewers, 2);
+            for reviewer in &repeat.reviewers {
+                // The fake codex stream emits one completed command and a
+                // 42-output-token turn per agent.
+                assert_eq!(reviewer.output_tokens, Some(42));
+                assert_eq!(reviewer.commands, 1);
+                assert!(reviewer.anomalies.is_empty());
+            }
+        }
+        Ok(())
+    }
+
+    /// The anomaly signals must fire on the transcript shapes that indicate
+    /// no real agent work: a missing/unreadable transcript, a stream that
+    /// never completed a turn, and a turn that produced zero output. These
+    /// are the post-run analogues of the solo-swarm incident — execution that
+    /// looks finished but did nothing.
+    #[test]
+    fn transcript_digest_flags_empty_or_missing_work() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = temp.path();
+
+        let (tokens, commands, anomalies) = digest_transcript(&dir.join("missing.jsonl"));
+        assert_eq!((tokens, commands), (None, 0));
+        assert_eq!(anomalies.len(), 1);
+        assert!(anomalies[0].contains("missing"));
+
+        let no_turn = dir.join("no-turn.jsonl");
+        fs::write(&no_turn, "{\"event\":\"done\"}\nnot-json\n")?;
+        let (tokens, _, anomalies) = digest_transcript(&no_turn);
+        assert_eq!(tokens, None);
+        assert!(anomalies[0].contains("no turn.completed"));
+
+        let zero = dir.join("zero.jsonl");
+        fs::write(
+            &zero,
+            "{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":0}}\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(&zero);
+        assert_eq!(tokens, Some(0));
+        assert!(anomalies[0].contains("zero output tokens"));
+
+        let healthy = dir.join("healthy.jsonl");
+        fs::write(
+            &healthy,
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\"}}\n\
+             {\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":7}}\n",
+        )?;
+        let (tokens, commands, anomalies) = digest_transcript(&healthy);
+        assert_eq!((tokens, commands), (Some(7), 1));
+        assert!(anomalies.is_empty());
+        Ok(())
+    }
+
     /// Every run must leave preflight evidence on disk: the record is what
     /// lets the invoking agent verify that concurrent agent execution with
     /// structured output actually worked before trusting the run's findings.
@@ -3214,6 +3460,11 @@ JSON
     esac
     ;;
 esac
+# Mimic the real --json event stream closely enough for post-run
+# verification: one completed command, a turn.completed with usage, and an
+# unknown trailing event that digesting must tolerate.
+echo '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"true","status":"completed"}}'
+echo '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":42,"reasoning_output_tokens":5}}'
 echo '{"event":"done"}'
 "#
     }

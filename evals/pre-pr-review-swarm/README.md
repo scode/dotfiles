@@ -70,9 +70,15 @@ masquerade as a completed run.
 Before any real spend, every `run` executes a preflight: two concurrent agents review a tiny synthetic scope with a
 planted defect (a parity check claiming to test evenness), at the exact model and effort the run will use. Each agent
 must return a finding referencing the planted file; an agent failure or a miss aborts the run before the first repeat.
-The verdict is recorded in `<run-dir>/preflight/preflight.json` and echoed on stdout. When assessing whether a run's
-agent execution actually happened as planned, that record plus each repeat's `execution.json` is the evidence to check —
-do not infer health from a plausible-looking findings list alone.
+The verdict is recorded in `<run-dir>/preflight/preflight.json` and echoed on stdout.
+
+After the repeats complete, `run` digests the on-disk evidence into `<run-dir>/verification.json`: per reviewer and
+repeat, the output tokens from the transcript's completed turn, the number of commands the agent ran, and anomalies for
+the shapes that indicate no real work happened (missing transcript, no completed turn, zero output tokens). Anomalies do
+not abort the run — judging their severity is the launching agent's job — but the digest status and every anomaly are
+printed, followed by the inspection contract: the launching agent must always read the digest and spot-check at least
+one reviewer transcript per repeat before reporting or trusting the run's results. Do not infer health from a
+plausible-looking findings list alone; the solo-swarm incident this design replaced produced exactly that.
 
 The stamped `reviewers` array is what lets a single full-panel run answer per-reviewer questions offline — which
 charters contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
