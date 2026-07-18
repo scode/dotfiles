@@ -66,7 +66,7 @@ problem domain.
   verify.
 - Patterns consistent with the surrounding codebase—if the whole repo clones liberally, individual clones aren't slop.
 - Code that is merely verbose but correct and clear—the simplification reviewer handles that.
-- Error-handling issues that are only about missing propagation or swallowed failures—the correctness reviewer handles
+- Error-handling issues that are only about missing propagation or swallowed failures—the correctness reviewers handle
   those.
 - Straightforward local simplifications with no AI-specific signal—the simplification reviewer handles those.
 - Style preferences—the idiomaticity reviewer handles that.

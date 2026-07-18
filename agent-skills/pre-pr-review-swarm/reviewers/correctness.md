@@ -1,4 +1,8 @@
-# correctness-reviewer
+# Correctness base charter
+
+NOTE: This file is not spawned as a reviewer on its own. It is the shared full charter for the correctness lens
+reviewers (`correctness-*.md` in this directory); each of them reads this file first and then applies its own lens on
+top.
 
 ## Rules
 
