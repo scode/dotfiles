@@ -9,7 +9,8 @@ Your charter file:
 `{{charter_path}}`
 
 Read it fully and follow it. If it directs you to read another file first (a shared base charter, for example), read
-that file too — it is part of your charter.
+that file too — it is part of your charter. That is your complete instruction set: do not read SKILL.md or other parts
+of the skill, which describe coordinator work the harness already does for you.
 
 Review this repository checkout, which is already at the after-state of the change:
 
