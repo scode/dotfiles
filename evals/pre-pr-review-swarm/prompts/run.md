@@ -18,3 +18,8 @@ files. Return only JSON matching the supplied schema. Findings should be actiona
 user. If there are no findings, return an empty `findings` array.
 
 Include enough rationale for a later judge to understand why each finding was reported.
+
+For each finding, set `reviewers` to the reviewer charter names that surfaced it. Preserve attribution through the
+skill's merge/deduplication step: a finding kept after merging same-location reports from several reviewers lists every
+contributing reviewer, not just the one whose wording survived. This attribution is what lets a later analysis measure
+which reviewers earn their cost, so do not drop it during aggregation.
