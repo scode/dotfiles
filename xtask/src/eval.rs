@@ -328,6 +328,33 @@ struct ReviewerVerification {
     anomalies: Vec<String>,
 }
 
+/// Extract the last error message from a codex --json event stream. Errors
+/// appear in two shapes — top-level `{"type":"error","message":...}` events
+/// and `item.completed` items whose item type is `error` — and later events
+/// supersede earlier ones (an early fallback warning is less useful than the
+/// final API rejection). Returns None for streams with no error events.
+fn last_error_event(stdout: &str) -> Option<String> {
+    let mut last = None;
+    for line in stdout.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let message = match event.get("type").and_then(|t| t.as_str()) {
+            Some("error") => event.get("message").and_then(|m| m.as_str()),
+            Some("item.completed")
+                if event.pointer("/item/type").and_then(|v| v.as_str()) == Some("error") =>
+            {
+                event.pointer("/item/message").and_then(|m| m.as_str())
+            }
+            _ => None,
+        };
+        if let Some(message) = message {
+            last = Some(message.to_string());
+        }
+    }
+    last
+}
+
 /// Digest one reviewer transcript: output tokens from the final
 /// `turn.completed` event, completed command count, and anomalies for the
 /// signals that indicate no real agent work happened. Unknown or non-JSON
@@ -1361,9 +1388,19 @@ fn run_codex_json(
         .context("failed to run codex exec")?;
     fs::write(transcript, &output.stdout)?;
     if !output.status.success() {
+        // Codex reports failures as events on the --json stdout stream, not
+        // stderr, so stderr alone is usually empty and useless. Surface the
+        // last error event and the transcript path so the actual cause (a
+        // rejected schema, an unknown model) reaches the command output
+        // instead of requiring a manual transcript dig.
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let event = last_error_event(&stdout)
+            .map(|message| format!("; last error event: {message}"))
+            .unwrap_or_default();
         bail!(
-            "codex exec failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "codex exec failed: {}{event}; transcript: {}",
+            String::from_utf8_lossy(&output.stderr).trim(),
+            transcript.display()
         );
     }
     ensure!(
@@ -2212,6 +2249,64 @@ esac
             );
         }
         Ok(())
+    }
+
+    /// A failed codex exec must surface the cause from the --json stream:
+    /// codex writes errors to stdout events, so without this the CLI error is
+    /// the useless "codex exec failed: " with empty stderr that made the
+    /// schema-rejection and bogus-model failures needlessly hard to diagnose.
+    #[test]
+    fn codex_failure_surfaces_last_error_event_and_transcript() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        // Emits both error shapes on stdout, then fails with empty stderr —
+        // the observed real-world failure mode.
+        write_fake_bin(
+            root,
+            "codex",
+            r#"#!/usr/bin/env bash
+cat >/dev/null
+echo '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"model metadata missing"}}'
+echo '{"type":"error","message":"api rejected request: status 400"}'
+exit 1
+"#,
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "crash".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("api rejected request: status 400"));
+        assert!(message.contains("transcript:"));
+        Ok(())
+    }
+
+    /// The two error-event shapes and the last-one-wins rule, pinned at the
+    /// parser level: a stream whose final signal is an item-shaped error must
+    /// not be shadowed by an earlier top-level one, and vice versa.
+    #[test]
+    fn last_error_event_prefers_final_error_of_either_shape() {
+        let stream = concat!(
+            "{\"type\":\"error\",\"message\":\"first\"}\n",
+            "not-json\n",
+            "{\"type\":\"item.completed\",\"item\":{\"type\":\"error\",\"message\":\"second\"}}\n",
+        );
+        assert_eq!(last_error_event(stream).as_deref(), Some("second"));
+        assert_eq!(last_error_event("{\"type\":\"turn.started\"}\n"), None);
     }
 
     /// A hard preflight agent failure (codex crash, bad model) must still
