@@ -24,6 +24,11 @@ The `pre-pr-review-swarm` eval corpus points at unpolished code refs. Historical
 these evals. Comparisons are baseline-relative: a likely regression means a judge-approved baseline finding was not
 recovered as a judge-approved candidate finding across repeats for the same resolved diff.
 
+`compare` deliberately refuses runs whose configurations measure different things: mismatched reviewer restrictions,
+mismatched efforts within one backend, and cross-backend comparisons where either run left `--effort` unset (an unset
+effort is each vendor's own built-in default, and defaults are not comparable across backends). These refusals are
+intentional guards, not over-strictness to relax in review.
+
 ## Repo-Owned Symlink Migration
 
 `PayloadSymlink` treats an existing destination symlink to another path inside this repository as old installer state.
