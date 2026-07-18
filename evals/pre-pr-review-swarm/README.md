@@ -67,6 +67,13 @@ finding ids are namespaced by reviewer with the `reviewers` attribution stamped 
 An agent can neither fabricate nor drop attribution, and a "swarm" that did not actually fan out can no longer
 masquerade as a completed run.
 
+Before any real spend, every `run` executes a preflight: two concurrent agents review a tiny synthetic scope with a
+planted defect (a parity check claiming to test evenness), at the exact model and effort the run will use. Each agent
+must return a finding referencing the planted file; an agent failure or a miss aborts the run before the first repeat.
+The verdict is recorded in `<run-dir>/preflight/preflight.json` and echoed on stdout. When assessing whether a run's
+agent execution actually happened as planned, that record plus each repeat's `execution.json` is the evidence to check —
+do not infer health from a plausible-looking findings list alone.
+
 The stamped `reviewers` array is what lets a single full-panel run answer per-reviewer questions offline — which
 charters contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
 reviewer. The comparison flow does not consume it. Codex-facing agents get `reviewer-findings.schema.json`, which has no

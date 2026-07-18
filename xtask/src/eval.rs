@@ -243,6 +243,12 @@ impl RunCommand {
             charters_dir: &charters_dir,
             target: &target,
         };
+        // Preflight before the real spend: prove the fan-out path works end
+        // to end with the exact model/effort this run will use. A run that
+        // reaches the repeats loop has evidence on disk that agent spawning
+        // and structured output actually function.
+        run_preflight(root, tools, context.spec, &run_dir)?;
+
         for repeat in 1..=self.repeats {
             let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
             let findings = run_reviewer_panel(&context, &panel, &repeat_dir)?;
@@ -252,6 +258,138 @@ impl RunCommand {
         println!("{}", run_dir.display());
         Ok(())
     }
+}
+
+/// Synthetic preflight scope: a four-line diff with one planted logic error
+/// (`n % 2 == 1` claiming to test evenness). Deliberately trivial — any
+/// functioning reviewer agent at any effort finds it — so a miss indicates a
+/// broken execution path, not a hard case.
+const PREFLIGHT_SCOPE: &str = "Reviewed range: preflight fixture (synthetic)\n\n\
+Touched files:\nA\tsrc/even.rs\n\n\
+diff --git a/src/even.rs b/src/even.rs\n\
+new file mode 100644\n\
+--- /dev/null\n\
++++ b/src/even.rs\n\
+@@ -0,0 +1,4 @@\n\
++/// Returns true when `n` is even.\n\
++pub fn is_even(n: u32) -> bool {\n\
++    n % 2 == 1\n\
++}\n";
+
+const PREFLIGHT_CHARTER: &str = "# preflight-reviewer\n\n\
+You are a correctness reviewer. Report logic errors in the scope diff, with a file reference for each finding.\n";
+
+/// The file a preflight finding must reference to count as evidence that the
+/// agent actually read the scope rather than returning something generic.
+const PREFLIGHT_PLANTED_FILE: &str = "src/even.rs";
+
+/// Two agents rather than one: the point of the preflight is the fan-out
+/// path — concurrent agent spawning with structured output — not just that
+/// codex works once.
+const PREFLIGHT_AGENTS: usize = 2;
+
+/// On-disk evidence of the preflight, written to `preflight/preflight.json`
+/// whether it passed or failed. This is what the invoking agent (or a human)
+/// checks to confirm agent execution worked as planned before trusting the
+/// run's findings.
+#[derive(Debug, Serialize, Deserialize)]
+struct PreflightRecord {
+    status: String,
+    agents: Vec<PreflightAgentRecord>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PreflightAgentRecord {
+    agent: String,
+    findings: usize,
+    planted_issue_found: bool,
+}
+
+/// Cheap end-to-end check of the agent-execution path, run before every real
+/// eval: spawn two concurrent agents against a synthetic scope with a planted
+/// defect and require each to find it. Exists because the failure modes it
+/// guards against are silent — a schema the API rejects, a model id that
+/// cannot run, or an execution path that quietly degrades — and were
+/// previously discovered only after a full run's spend, or worse, not at all.
+fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) -> Result<()> {
+    let dir = run_dir.join("preflight");
+    fs::create_dir_all(&dir)?;
+    let charter_path = dir.join("charter.md");
+    let scope_path = dir.join("scope.diff");
+    fs::write(&charter_path, PREFLIGHT_CHARTER)?;
+    fs::write(&scope_path, PREFLIGHT_SCOPE)?;
+    let template = fs::read_to_string(root.join(EVAL_ROOT).join("prompts/preflight.md"))?;
+    let prompt = template
+        .replace("{{charter_path}}", &charter_path.display().to_string())
+        .replace("{{scope_path}}", &scope_path.display().to_string());
+    let schema = root
+        .join(EVAL_ROOT)
+        .join("schemas/reviewer-findings.schema.json");
+    let names: Vec<String> = (1..=PREFLIGHT_AGENTS)
+        .map(|index| format!("preflight-{index}"))
+        .collect();
+    let results = std::thread::scope(|scope| {
+        let handles: Vec<_> = names
+            .iter()
+            .map(|name| {
+                let dir = &dir;
+                let prompt = &prompt;
+                let schema = &schema;
+                scope.spawn(move || -> Result<(String, FindingsFile)> {
+                    let findings_path = dir.join(format!("{name}.findings.json"));
+                    let transcript_path = dir.join(format!("{name}.transcript.jsonl"));
+                    run_codex_json(
+                        tools,
+                        spec,
+                        dir,
+                        schema,
+                        &findings_path,
+                        &transcript_path,
+                        prompt,
+                    )
+                    .with_context(|| format!("preflight agent '{name}' failed"))?;
+                    Ok((name.clone(), read_json(&findings_path)?))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("preflight thread panicked"))
+            .collect::<Vec<_>>()
+    });
+    let mut agents = Vec::new();
+    for result in results {
+        let (name, findings) = result?;
+        let planted = findings
+            .findings
+            .iter()
+            .any(|finding| finding.location.contains(PREFLIGHT_PLANTED_FILE));
+        agents.push(PreflightAgentRecord {
+            agent: name,
+            findings: findings.findings.len(),
+            planted_issue_found: planted,
+        });
+    }
+    let passed = agents.iter().all(|agent| agent.planted_issue_found);
+    let record_path = dir.join("preflight.json");
+    write_json(
+        &record_path,
+        &PreflightRecord {
+            status: if passed { "passed" } else { "failed" }.to_string(),
+            agents,
+        },
+    )?;
+    ensure!(
+        passed,
+        "preflight failed: an agent did not surface the planted issue, so the \
+         agent-execution path cannot be trusted; see {}",
+        record_path.display()
+    );
+    println!(
+        "preflight: passed ({PREFLIGHT_AGENTS}/{PREFLIGHT_AGENTS} agents found the planted issue) — evidence: {}",
+        record_path.display()
+    );
+    Ok(())
 }
 
 /// How many reviewer agents run concurrently within one repeat. The agents
@@ -1711,10 +1849,28 @@ mod tests {
         let root = temp.path();
         write_eval_fixture(root)?;
         write_fake_bin(root, "git", fake_git_script())?;
+        // Preflight calls must succeed so the failure under test is the
+        // reviewer fan-out, not the preflight guard that runs before it.
         write_fake_bin(
             root,
             "codex",
-            "#!/usr/bin/env bash\ncat >/dev/null\necho 'fake reviewer crash' >&2\nexit 1\n",
+            r#"#!/usr/bin/env bash
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then out="$2"; shift 2; else shift; fi
+done
+cat >/dev/null
+case "$(basename "$out")" in
+  preflight-*)
+    mkdir -p "$(dirname "$out")"
+    printf '{"findings":[{"id":"P1","category":"correctness","summary":"planted","location":"src/even.rs:3","rationale":"planted"}]}' >"$out"
+    ;;
+  *)
+    echo 'fake reviewer crash' >&2
+    exit 1
+    ;;
+esac
+"#,
         )?;
         let tools = fake_tools(root);
 
@@ -1735,6 +1891,103 @@ mod tests {
         let message = format!("{error:#}");
         assert!(message.contains("reviewer '"));
         assert!(message.contains("failed"));
+        Ok(())
+    }
+
+    /// Every run must leave preflight evidence on disk: the record is what
+    /// lets the invoking agent verify that concurrent agent execution with
+    /// structured output actually worked before trusting the run's findings.
+    #[test]
+    fn preflight_records_evidence_on_success() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "codex", fake_codex_script())?;
+        let tools = fake_tools(root);
+
+        RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)?;
+
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let record: PreflightRecord = read_json(&run_dir.join("preflight/preflight.json"))?;
+        assert_eq!(record.status, "passed");
+        assert_eq!(record.agents.len(), PREFLIGHT_AGENTS);
+        for agent in &record.agents {
+            assert!(agent.planted_issue_found);
+            assert!(
+                run_dir
+                    .join("preflight")
+                    .join(format!("{}.transcript.jsonl", agent.agent))
+                    .is_file()
+            );
+        }
+        Ok(())
+    }
+
+    /// A preflight agent that runs but misses the planted issue means the
+    /// execution path cannot be trusted (wrong model behavior, degraded
+    /// output, unread scope). The run must abort before any real-eval spend,
+    /// and the failure record must still be written for diagnosis.
+    #[test]
+    fn preflight_miss_aborts_run_before_reviewers() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        write_fake_bin(root, "git", fake_git_script())?;
+        // Preflight agents return a finding that never references the
+        // planted file — execution "worked" but the review evidently did not.
+        write_fake_bin(
+            root,
+            "codex",
+            r#"#!/usr/bin/env bash
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then out="$2"; shift 2; else shift; fi
+done
+cat >/dev/null
+mkdir -p "$(dirname "$out")"
+printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","location":"src/other.rs:1","rationale":"generic"}]}' >"$out"
+"#,
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        assert!(error.to_string().contains("preflight failed"));
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let record: PreflightRecord = read_json(&run_dir.join("preflight/preflight.json"))?;
+        assert_eq!(record.status, "failed");
+        // No reviewer spend happened: the repeats loop never ran.
+        assert!(!run_dir.join("repeat-1").exists());
         Ok(())
     }
 
@@ -2641,6 +2894,10 @@ curation = "mined"
             "review {{charter_path}} in {{repo_path}} scope {{scope_path}} \
              range {{base_sha}}..{{subject_sha}}",
         )?;
+        fs::write(
+            root.join(EVAL_ROOT).join("prompts/preflight.md"),
+            "preflight {{charter_path}} scope {{scope_path}}",
+        )?;
         fs::write(root.join(EVAL_ROOT).join("prompts/judge.md"), "judge")?;
         fs::write(root.join(EVAL_ROOT).join("prompts/match.md"), "match")?;
         fs::write(
@@ -2919,11 +3176,28 @@ JSON
 JSON
     ;;
   *)
-    grep -F "pre-pr-review-swarm" <<<"$stdin_prompt" >/dev/null
-    grep -F "owner-repo" <<<"$stdin_prompt" >/dev/null
-    grep -F "base-sha..subject-remote-sha" <<<"$stdin_prompt" >/dev/null
-    printf '%s' "$stdin_prompt" >"$out.prompt"
-    cat >"$out" <<'JSON'
+    case "$(basename "$out")" in
+      preflight-*.findings.json)
+        cat >"$out" <<'JSON'
+{
+  "findings": [
+    {
+      "id": "P1",
+      "category": "correctness",
+      "summary": "planted parity bug",
+      "location": "src/even.rs:3",
+      "rationale": "n % 2 == 1 tests oddness, not evenness"
+    }
+  ]
+}
+JSON
+        ;;
+      *)
+        grep -F "pre-pr-review-swarm" <<<"$stdin_prompt" >/dev/null
+        grep -F "owner-repo" <<<"$stdin_prompt" >/dev/null
+        grep -F "base-sha..subject-remote-sha" <<<"$stdin_prompt" >/dev/null
+        printf '%s' "$stdin_prompt" >"$out.prompt"
+        cat >"$out" <<'JSON'
 {
   "findings": [
     {
@@ -2936,6 +3210,8 @@ JSON
   ]
 }
 JSON
+        ;;
+    esac
     ;;
 esac
 echo '{"event":"done"}'
