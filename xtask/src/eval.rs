@@ -41,13 +41,14 @@ impl EvalCommand {
 
 #[derive(Debug, Subcommand)]
 enum EvalSubcommand {
-    /// Run a skill eval case through Codex.
+    /// Run a skill eval case through the selected agent backend (codex or
+    /// claude).
     Run(RunCommand),
     /// Mark a completed run as a baseline.
     Baseline(BaselineCommand),
     /// Compare a candidate run against a baseline run.
     Compare(CompareCommand),
-    /// Ask Codex to suggest skill changes for likely regressions.
+    /// Ask an agent to suggest skill changes for likely regressions.
     Synthesize(SynthesizeCommand),
 }
 
@@ -77,13 +78,21 @@ struct RunCommand {
     /// restriction is recorded in run.json and `compare` refuses to mix them.
     #[arg(long)]
     reviewer: Option<String>,
-    /// Reasoning effort for the run's agents (minimal|low|medium|high).
+    /// Agent CLI the run's subject agents drive (codex|claude), default codex.
     ///
-    /// Passed to codex as `model_reasoning_effort`. When omitted the run uses
-    /// codex's built-in default — the harness ignores user config, so this
-    /// flag is the only way to control effort. Effort changes what a run
-    /// measures, so it is recorded in run.json and `compare` refuses to mix
-    /// runs with different efforts.
+    /// Selects both the invocation shape and the accepted `--effort`
+    /// vocabulary. Recorded in run.json; `compare` uses it to decide whether
+    /// two runs' efforts are comparable.
+    #[arg(long, value_enum, default_value_t = Backend::Codex)]
+    backend: Backend,
+    /// Reasoning effort for the run's agents. Vocabulary depends on
+    /// `--backend`: codex accepts minimal|low|medium|high, claude accepts
+    /// low|medium|high|xhigh|max.
+    ///
+    /// Both backends run with user config ignored, so this flag is the only
+    /// way to control effort; when omitted the run uses the backend's built-in
+    /// default. Effort changes what a run measures, so it is recorded in
+    /// run.json and `compare` refuses to mix runs with different efforts.
     #[arg(long)]
     effort: Option<String>,
 }
@@ -102,9 +111,14 @@ struct CompareCommand {
     candidate: PathBuf,
     #[arg(long)]
     model: Option<String>,
-    /// Reasoning effort for the judge and matcher agents
-    /// (minimal|low|medium|high). Independent of the effort the compared runs
-    /// used; when omitted the judges run at codex's built-in default.
+    /// Agent CLI the judge and matcher agents drive (codex|claude), default
+    /// codex. Independent of the backends the compared runs used, exactly like
+    /// `--effort`.
+    #[arg(long, value_enum, default_value_t = Backend::Codex)]
+    backend: Backend,
+    /// Reasoning effort for the judge and matcher agents. Vocabulary depends on
+    /// `--backend`. Independent of the effort the compared runs used; when
+    /// omitted the judges run at the backend's built-in default.
     #[arg(long)]
     effort: Option<String>,
 }
@@ -115,26 +129,92 @@ struct SynthesizeCommand {
     comparison: PathBuf,
     #[arg(long)]
     model: Option<String>,
-    /// Reasoning effort for the synthesis agent (minimal|low|medium|high).
-    /// When omitted, codex's built-in default.
+    /// Agent CLI the synthesis agent drives (codex|claude), default codex.
+    #[arg(long, value_enum, default_value_t = Backend::Codex)]
+    backend: Backend,
+    /// Reasoning effort for the synthesis agent. Vocabulary depends on
+    /// `--backend`. When omitted, the backend's built-in default.
     #[arg(long)]
     effort: Option<String>,
 }
 
-/// Reasoning-effort levels codex accepts for `model_reasoning_effort`.
-/// Validated up front, like the reviewer restriction, so a typo fails before
-/// any tokens are spent rather than mid-run inside codex.
-const EFFORT_LEVELS: [&str; 4] = ["minimal", "low", "medium", "high"];
+/// Reasoning-effort vocabulary codex accepts for `model_reasoning_effort`.
+const CODEX_EFFORT_LEVELS: [&str; 4] = ["minimal", "low", "medium", "high"];
 
-fn validate_effort(effort: Option<&str>) -> Result<()> {
-    if let Some(effort) = effort {
-        ensure!(
-            EFFORT_LEVELS.contains(&effort),
-            "unknown effort '{effort}'; expected one of {}",
-            EFFORT_LEVELS.join(", ")
-        );
+/// Reasoning-effort vocabulary the claude CLI accepts for `--effort`. Note the
+/// two backends do not share a scale: codex has `minimal` at the bottom and no
+/// tier above `high`, claude has no `minimal` but adds `xhigh`/`max` on top.
+/// That mismatch is why cross-backend compare refuses to treat an unset effort
+/// as comparable (see `CompareCommand`).
+const CLAUDE_EFFORT_LEVELS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+
+/// Which agent CLI a run drives its model invocations through. The two
+/// backends differ in command-line shape, transcript event schema, error
+/// reporting, effort vocabulary, and isolation flags; every one of those
+/// concerns dispatches on this enum rather than being hard-coded to codex.
+///
+/// Serialized lowercase into `run.json`/`comparison.json`. `Default` is
+/// `Codex` so artifacts written before the backend field existed — and every
+/// pre-claude run — read back as codex runs, preserving on-disk compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+enum Backend {
+    #[default]
+    Codex,
+    Claude,
+}
+
+impl Backend {
+    /// Stable lowercase name, used in metadata display and error text. Matches
+    /// the serde/clap wire form so what a user typed and what a message prints
+    /// are the same token.
+    fn as_str(self) -> &'static str {
+        match self {
+            Backend::Codex => "codex",
+            Backend::Claude => "claude",
+        }
     }
-    Ok(())
+
+    /// The reasoning-effort words this backend accepts. Kept per-backend rather
+    /// than shared because the two CLIs genuinely disagree on the scale.
+    fn effort_levels(self) -> &'static [&'static str] {
+        match self {
+            Backend::Codex => &CODEX_EFFORT_LEVELS,
+            Backend::Claude => &CLAUDE_EFFORT_LEVELS,
+        }
+    }
+
+    /// Reject an effort word this backend does not know, up front, like the
+    /// reviewer restriction — so a typo (or a codex effort handed to claude,
+    /// or vice versa) fails before any checkout or token spend rather than
+    /// mid-run inside the CLI.
+    fn validate_effort(self, effort: Option<&str>) -> Result<()> {
+        if let Some(effort) = effort {
+            ensure!(
+                self.effort_levels().contains(&effort),
+                "unknown effort '{effort}' for the {} backend; expected one of {}",
+                self.as_str(),
+                self.effort_levels().join(", ")
+            );
+        }
+        Ok(())
+    }
+
+    /// How an unset effort is displayed in metadata and compare diagnostics.
+    /// An omitted `--effort` means the backend's own built-in default, which
+    /// differs by vendor and is not comparable across them.
+    fn default_effort_label(self) -> &'static str {
+        match self {
+            Backend::Codex => "codex default",
+            Backend::Claude => "claude default",
+        }
+    }
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl RunCommand {
@@ -144,7 +224,7 @@ impl RunCommand {
             "only {DEFAULT_SKILL} is supported in v1"
         );
         ensure!(self.repeats > 0, "--repeats must be at least 1");
-        validate_effort(self.effort.as_deref())?;
+        self.backend.validate_effort(self.effort.as_deref())?;
 
         let case = load_cases(root)?
             .remove(&self.case_id)
@@ -194,6 +274,7 @@ impl RunCommand {
             base_sha: target.base_sha.clone(),
             curation: case.curation,
             reviewer: self.reviewer.clone(),
+            backend: self.backend,
             effort: self.effort.clone(),
             skill_source: skill.source,
             skill_path: skill.path.display().to_string(),
@@ -234,6 +315,7 @@ impl RunCommand {
         let context = PanelContext {
             tools,
             spec: ModelSpec {
+                backend: self.backend,
                 model: &self.model,
                 effort: self.effort.as_deref(),
             },
@@ -316,14 +398,17 @@ struct RepeatVerification {
 struct ReviewerVerification {
     reviewer: String,
     findings: usize,
-    /// Output tokens from the transcript's `turn.completed` usage record.
-    /// Absent when the transcript never reported a completed turn — which is
-    /// itself an anomaly.
+    /// Output tokens the agent reported for the run: codex's final
+    /// `turn.completed` usage, or claude's final `result` usage. Absent when
+    /// the transcript never reported completion — which is itself an anomaly.
     #[serde(skip_serializing_if = "Option::is_none")]
     output_tokens: Option<u64>,
-    /// Completed `command_execution` items in the transcript. Zero is not
-    /// flagged — a scope-only review without commands can be legitimate — but
-    /// it is recorded so the launching agent can weigh it.
+    /// Count of agent actions the transcript recorded — codex's completed
+    /// `command_execution` items, or claude's non-`StructuredOutput` tool_use
+    /// blocks. The two backends count different things (see the digest
+    /// functions), so this number is comparable only within a backend. Zero is
+    /// not flagged — a scope-only review can legitimately run no tools — but it
+    /// is recorded so the launching agent can weigh it.
     commands: usize,
     anomalies: Vec<String>,
 }
@@ -355,12 +440,23 @@ fn last_error_event(stdout: &str) -> Option<String> {
     last
 }
 
-/// Digest one reviewer transcript: output tokens from the final
+/// Digest one reviewer transcript into `(output_tokens, commands, anomalies)`,
+/// dispatching to the backend that produced it. The two CLIs emit different
+/// event streams and encode "no real work happened" differently, so each has
+/// its own parser; only the tuple shape is shared.
+fn digest_transcript(backend: Backend, path: &Path) -> (Option<u64>, usize, Vec<String>) {
+    match backend {
+        Backend::Codex => digest_codex_transcript(path),
+        Backend::Claude => digest_claude_transcript(path),
+    }
+}
+
+/// Digest a codex `--json` transcript: output tokens from the final
 /// `turn.completed` event, completed command count, and anomalies for the
 /// signals that indicate no real agent work happened. Unknown or non-JSON
 /// lines are ignored — the transcript format carries event types we do not
 /// consume.
-fn digest_transcript(path: &Path) -> (Option<u64>, usize, Vec<String>) {
+fn digest_codex_transcript(path: &Path) -> (Option<u64>, usize, Vec<String>) {
     let mut anomalies = Vec::new();
     let Ok(raw) = fs::read_to_string(path) else {
         return (
@@ -398,11 +494,125 @@ fn digest_transcript(path: &Path) -> (Option<u64>, usize, Vec<String>) {
     (output_tokens, commands, anomalies)
 }
 
+/// Digest a claude `stream-json` transcript: output tokens from the final
+/// `result` event's usage, a count of the agent's tool calls, and anomalies
+/// defined from claude's own stream shapes rather than translated from codex.
+///
+/// The command count deliberately counts every `tool_use` block except the
+/// `StructuredOutput` tool the harness forces to carry the final answer. This
+/// differs in kind from the codex digest, which counts only shell command
+/// executions: claude reads and searches the checkout through dedicated tools
+/// (Read, Grep, and the like), so restricting the count to `Bash` would report
+/// zero for a reviewer that did substantial real work through those tools.
+/// The number is therefore a proxy for agent activity, comparable only within
+/// the claude backend.
+///
+/// Anomalies flag the claude-native signatures of a run that did nothing: no
+/// terminal `result` event, a `result` that reported an error (`is_error`, or
+/// an error subtype — the same `is_error || subtype != "success"` predicate
+/// `run_claude_json` applies, since the two signals are independent), a
+/// success `result` carrying no `structured_output` (the shape the runtime
+/// path refuses as having no parseable answer), and a `result` that reported
+/// missing or zero output tokens. A missing result subsumes the token check —
+/// there is no usage to read — so it is reported alone, and the
+/// structured-output check applies only to non-error results, since error
+/// results never carry one. The digest exists so a later inspector can
+/// re-derive health from disk; a transcript shape the runtime path would have
+/// rejected must not digest as clean.
+fn digest_claude_transcript(path: &Path) -> (Option<u64>, usize, Vec<String>) {
+    let mut anomalies = Vec::new();
+    let Ok(raw) = fs::read_to_string(path) else {
+        return (
+            None,
+            0,
+            vec!["transcript missing or unreadable".to_string()],
+        );
+    };
+    let mut output_tokens = None;
+    let mut commands = 0;
+    let mut saw_result = false;
+    let mut is_error = false;
+    let mut error_subtype = None;
+    let mut missing_structured = false;
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        match event.get("type").and_then(|t| t.as_str()) {
+            Some("assistant") => {
+                if let Some(content) = event
+                    .pointer("/message/content")
+                    .and_then(|value| value.as_array())
+                {
+                    commands += content
+                        .iter()
+                        .filter(|block| {
+                            block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                                && block.get("name").and_then(|n| n.as_str())
+                                    != Some("StructuredOutput")
+                        })
+                        .count();
+                }
+            }
+            Some("result") => {
+                saw_result = true;
+                is_error = event
+                    .get("is_error")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                error_subtype = event
+                    .get("subtype")
+                    .and_then(|v| v.as_str())
+                    .filter(|subtype| *subtype != "success")
+                    .map(|subtype| subtype.to_string());
+                missing_structured = event
+                    .get("structured_output")
+                    .is_none_or(serde_json::Value::is_null);
+                output_tokens = event
+                    .pointer("/usage/output_tokens")
+                    .and_then(|v| v.as_u64());
+            }
+            _ => {}
+        }
+    }
+    if !saw_result {
+        anomalies.push("no result event in transcript".to_string());
+    } else {
+        match (is_error, error_subtype) {
+            (true, Some(subtype)) => {
+                anomalies.push(format!(
+                    "result event reported is_error (subtype '{subtype}')"
+                ));
+            }
+            (true, None) => anomalies.push("result event reported is_error".to_string()),
+            (false, Some(subtype)) => {
+                anomalies.push(format!("result event reported error subtype '{subtype}'"));
+            }
+            (false, None) => {
+                if missing_structured {
+                    anomalies.push("result event carried no structured output".to_string());
+                }
+            }
+        }
+        match output_tokens {
+            None => anomalies.push("result event reported no output tokens".to_string()),
+            Some(0) => anomalies.push("result event reported zero output tokens".to_string()),
+            Some(_) => {}
+        }
+    }
+    (output_tokens, commands, anomalies)
+}
+
 /// Build the post-run digest from disk. Reads the same artifacts a later
 /// inspector would (execution.json and per-reviewer transcripts) rather than
 /// trusting in-memory state, so the digest also validates that the evidence
 /// trail itself is complete.
 fn verify_run(run_dir: &Path, repeats: usize) -> Result<RunVerification> {
+    // Learn the backend from the on-disk run.json rather than a caller
+    // argument, so the digest is driven by the same recorded fact a later
+    // inspector would read — and so pre-backend run.json files digest as codex.
+    let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
+    let backend = metadata.backend;
     let mut repeat_records = Vec::new();
     let mut anomaly_count = 0;
     for repeat in 1..=repeats {
@@ -413,7 +623,7 @@ fn verify_run(run_dir: &Path, repeats: usize) -> Result<RunVerification> {
             let transcript = repeat_dir
                 .join("reviewers")
                 .join(format!("{}.transcript.jsonl", entry.reviewer));
-            let (output_tokens, commands, anomalies) = digest_transcript(&transcript);
+            let (output_tokens, commands, anomalies) = digest_transcript(backend, &transcript);
             anomaly_count += anomalies.len();
             reviewers.push(ReviewerVerification {
                 reviewer: entry.reviewer.clone(),
@@ -527,7 +737,7 @@ fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) 
                 scope.spawn(move || -> Result<(String, FindingsFile)> {
                     let findings_path = dir.join(format!("{name}.findings.json"));
                     let transcript_path = dir.join(format!("{name}.transcript.jsonl"));
-                    run_codex_json(
+                    run_agent(
                         tools,
                         spec,
                         dir,
@@ -790,7 +1000,7 @@ fn run_single_reviewer(
         .replace("{{subject_sha}}", &context.target.subject_sha);
     let findings_path = reviewers_dir.join(format!("{name}.findings.json"));
     let transcript_path = reviewers_dir.join(format!("{name}.transcript.jsonl"));
-    run_codex_json(
+    run_agent(
         context.tools,
         context.spec,
         &context.target.checkout,
@@ -850,15 +1060,56 @@ impl CompareCommand {
             baseline_meta.reviewer.as_deref().unwrap_or("full panel"),
             candidate_meta.reviewer.as_deref().unwrap_or("full panel")
         );
-        ensure!(
-            baseline_meta.effort == candidate_meta.effort,
-            "baseline effort ({}) does not match candidate ({})",
-            baseline_meta.effort.as_deref().unwrap_or("codex default"),
-            candidate_meta.effort.as_deref().unwrap_or("codex default")
-        );
-        validate_effort(self.effort.as_deref())?;
+        // Effort comparability is backend-relative. Within one backend the
+        // efforts must match exactly, as before. Across backends the A/B axis
+        // this change exists to enable is allowed, but only when both runs
+        // pinned an explicit effort: an unset effort means each vendor's own
+        // built-in default, and those are not the same operating point, so
+        // "default vs default" (or default vs pinned) would silently compare
+        // incomparable configurations.
+        if baseline_meta.backend == candidate_meta.backend {
+            ensure!(
+                baseline_meta.effort == candidate_meta.effort,
+                "baseline effort ({}) does not match candidate ({})",
+                baseline_meta
+                    .effort
+                    .as_deref()
+                    .unwrap_or_else(|| baseline_meta.backend.default_effort_label()),
+                candidate_meta
+                    .effort
+                    .as_deref()
+                    .unwrap_or_else(|| candidate_meta.backend.default_effort_label())
+            );
+        } else {
+            ensure!(
+                baseline_meta.effort.is_some() && candidate_meta.effort.is_some(),
+                "cross-backend compare ({} baseline vs {} candidate) requires both runs to \
+                 pin --effort explicitly, because an unset effort is each backend's own \
+                 built-in default and those defaults are not comparable across backends",
+                baseline_meta.backend,
+                candidate_meta.backend
+            );
+        }
+        self.backend.validate_effort(self.effort.as_deref())?;
+        // The judge model defaults to the candidate run's model, which only
+        // makes sense when the judge backend matches the backend that model id
+        // belongs to. Without this check, comparing a claude candidate with the
+        // default codex judge backend hands a claude model id to codex and
+        // fails only at judge spend time, after checkout — the opposite of the
+        // fail-before-spend rule every other misconfiguration here follows.
+        if self.model.is_none() {
+            ensure!(
+                self.backend == candidate_meta.backend,
+                "judge backend ({}) does not match the candidate run's backend ({}), so the \
+                 candidate model '{}' cannot be the default judge model; pass --model explicitly",
+                self.backend,
+                candidate_meta.backend,
+                candidate_meta.model
+            );
+        }
         let model = self.model.unwrap_or_else(|| candidate_meta.model.clone());
         let spec = ModelSpec {
+            backend: self.backend,
             model: &model,
             effort: self.effort.as_deref(),
         };
@@ -930,11 +1181,25 @@ impl SynthesizeCommand {
     fn run_with_tools(self, root: &Path, tools: &ToolEnv) -> Result<()> {
         let comparison_path = absolutize(root, &self.comparison);
         let comparison: ComparisonFile = read_json(&comparison_path)?;
+        // Same defaulting coherence rule as compare: the candidate model id is
+        // only a usable default when the synthesis backend matches the backend
+        // that produced it, and comparison.json records exactly that.
+        if self.model.is_none() && comparison.candidate_model.is_some() {
+            ensure!(
+                self.backend == comparison.candidate_backend,
+                "synthesis backend ({}) does not match the comparison's candidate backend ({}), \
+                 so the candidate model '{}' cannot be the default synthesis model; pass --model \
+                 explicitly",
+                self.backend,
+                comparison.candidate_backend,
+                comparison.candidate_model.as_deref().unwrap_or_default()
+            );
+        }
         let model = self
             .model
             .or_else(|| comparison.candidate_model.clone())
             .ok_or_else(|| anyhow!("--model is required when comparison has no candidate model"))?;
-        validate_effort(self.effort.as_deref())?;
+        self.backend.validate_effort(self.effort.as_deref())?;
         let prompt_template =
             fs::read_to_string(root.join(EVAL_ROOT).join("prompts/synthesize.md"))?;
         let schema = root.join(EVAL_ROOT).join("schemas/suggestions.schema.json");
@@ -945,9 +1210,10 @@ impl SynthesizeCommand {
         let prompt = format!("{prompt_template}\n\nComparison input:\n\n```json\n{input}\n```");
         let suggestions_path = out_dir.join("suggestions.json");
         let transcript_path = out_dir.join("synthesis-transcript.jsonl");
-        run_codex_json(
+        run_agent(
             tools,
             ModelSpec {
+                backend: self.backend,
                 model: &model,
                 effort: self.effort.as_deref(),
             },
@@ -1004,6 +1270,7 @@ struct PreparedCase {
 struct ToolEnv {
     git: PathBuf,
     codex: PathBuf,
+    claude: PathBuf,
 }
 
 impl Default for ToolEnv {
@@ -1011,6 +1278,7 @@ impl Default for ToolEnv {
         Self {
             git: PathBuf::from("git"),
             codex: PathBuf::from("codex"),
+            claude: PathBuf::from("claude"),
         }
     }
 }
@@ -1046,6 +1314,11 @@ struct RunMetadata {
     /// back as an unrestricted run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reviewer: Option<String>,
+    /// Agent CLI that ran this run's subject agents. `#[serde(default)]` makes
+    /// run.json files written before the field existed — every codex-only run —
+    /// read back as `Backend::Codex`, so old artifacts still parse and compare.
+    #[serde(default)]
+    backend: Backend,
     /// Reasoning effort the run's agents used, when set via `--effort`. Like
     /// the reviewer restriction, effort changes what the run measures, so
     /// `compare` requires it to match between baseline and candidate. Absent
@@ -1135,6 +1408,14 @@ struct ComparisonFile {
     candidate_run: String,
     case_id: String,
     candidate_model: Option<String>,
+    /// Backends of the compared runs, so `comparison.json` is self-describing —
+    /// a cross-backend comparison records which vendor produced each side.
+    /// `#[serde(default)]` keeps pre-backend comparison.json files parseable
+    /// (both fields read back as codex).
+    #[serde(default)]
+    baseline_backend: Backend,
+    #[serde(default)]
+    candidate_backend: Backend,
     matches: Vec<FindingMatch>,
     likely_regressions: Vec<LikelyRegression>,
     nondeterminism_notes: Vec<String>,
@@ -1319,13 +1600,45 @@ fn export_skill_ref(root: &Path, reference: &str, out: &Path, tools: &ToolEnv) -
     Ok(())
 }
 
-/// Model id plus optional reasoning effort — the two knobs every codex
-/// invocation takes together. Bundled so a call site cannot choose one
-/// without deciding the other.
+/// Backend, model id, and optional reasoning effort — the knobs every agent
+/// invocation takes together. Bundled so a call site cannot choose one without
+/// deciding the others; in particular the effort must be validated against the
+/// backend before this is built.
 #[derive(Clone, Copy)]
 struct ModelSpec<'a> {
+    backend: Backend,
     model: &'a str,
     effort: Option<&'a str>,
+}
+
+/// Run one agent invocation through the backend the spec selects, writing the
+/// raw event stream to `transcript` and the agent's final structured answer to
+/// `output_last_message` (the file downstream `read_json` consumers parse).
+/// This is the single seam every model call funnels through — preflight,
+/// reviewers, judges, matcher, synthesis — so backend choice is decided here
+/// and nowhere else.
+fn run_agent(
+    tools: &ToolEnv,
+    spec: ModelSpec,
+    cwd: &Path,
+    schema: &Path,
+    output_last_message: &Path,
+    transcript: &Path,
+    prompt: &str,
+) -> Result<()> {
+    let run = match spec.backend {
+        Backend::Codex => run_codex_json,
+        Backend::Claude => run_claude_json,
+    };
+    run(
+        tools,
+        spec,
+        cwd,
+        schema,
+        output_last_message,
+        transcript,
+        prompt,
+    )
 }
 
 fn run_codex_json(
@@ -1378,11 +1691,34 @@ fn run_codex_json(
         .stderr(Stdio::piped())
         .spawn()
         .context("failed to start codex exec")?;
-    child
+    // BrokenPipe means the child died before draining stdin (a flag rejected
+    // at parse time, for example). Tolerate it so wait_with_output still runs
+    // and the failure path below reports the real cause with a transcript,
+    // instead of a bare "Broken pipe" with no evidence trail. The tolerance is
+    // for the failure path only: a child that closed stdin early but then
+    // exits 0 ran on a truncated prompt, and trusting its output would be
+    // silent eval invalidation — the success path below refuses that shape.
+    let mut stdin_broken = false;
+    match child
         .stdin
         .as_mut()
         .ok_or_else(|| anyhow!("codex stdin unavailable"))?
-        .write_all(prompt.as_bytes())?;
+        .write_all(prompt.as_bytes())
+    {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {
+            stdin_broken = true;
+        }
+        Err(error) => {
+            // Kill and reap before propagating: Child's drop neither kills
+            // nor reaps, so a bare return would leave an unsandboxed agent
+            // running unsupervised with no transcript on disk. The write
+            // error is the real cause; kill/wait failures add nothing.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error).context("failed to write prompt to codex stdin");
+        }
+    }
     let output = child
         .wait_with_output()
         .context("failed to run codex exec")?;
@@ -1404,11 +1740,251 @@ fn run_codex_json(
         );
     }
     ensure!(
+        !stdin_broken,
+        "codex exited 0 but closed stdin before reading the full prompt; its output cannot \
+         be trusted; transcript: {}",
+        transcript.display()
+    );
+    ensure!(
         output_last_message.is_file(),
         "codex did not write {}",
         output_last_message.display()
     );
     Ok(())
+}
+
+/// Run one claude agent, saving the `stream-json` event stream as the
+/// transcript and extracting the final message into `output_last_message` so
+/// downstream consumers stay identical to the codex path.
+///
+/// Flag rationale (verified 2026-07-18 on this host; do not re-probe):
+///
+/// - `--safe-mode` is the isolation analog of codex's
+///   `--ignore-user-config --ignore-rules`. A probe with plain
+///   `claude -p --model haiku` confirmed the user's `~/.claude/CLAUDE.md`
+///   reaches the agent by default and that a `CLAUDE.md` in the cwd does too;
+///   the same probe with `--safe-mode` confirmed neither does. A second probe
+///   covered the executable channels, which matter more than prompt
+///   contamination because the child runs unsandboxed in the target checkout:
+///   a planted cwd `.claude/settings.json` (SessionStart and PreToolUse hooks)
+///   and cwd `.mcp.json` server all executed in default mode and none of them
+///   executed under `--safe-mode`. Both arms of the executable-channel probe
+///   included `--dangerously-skip-permissions`, so the exact flag combination
+///   shipped here is what was verified — skip-permissions does not re-enable
+///   project config that `--safe-mode` disabled. Auth still uses OAuth normally under
+///   `--safe-mode` (no `ANTHROPIC_API_KEY` in the environment), which is why
+///   `--bare` is deliberately NOT used: `--bare` forces API-key-only auth and
+///   breaks subscription-authenticated hosts.
+/// - `--dangerously-skip-permissions` is the sandbox-bypass analog of codex's
+///   `--dangerously-bypass-approvals-and-sandbox`. The same caveat applies:
+///   agent commands run unsandboxed, so the case list must stay hand-curated.
+/// - There is no `-o` last-message flag and no `-C` working-directory flag:
+///   the final answer is extracted from the terminal `result` event, and the
+///   cwd is set on the child process.
+/// - `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` raises print mode's 600s
+///   background-wait ceiling — which kills legitimate long agent work — to one
+///   hour, deliberately finite rather than 0 (unlimited): the harness has no
+///   watchdog of its own, so unlimited would turn a wedged child into an
+///   infinite hang of the whole eval. The ceiling's exit-0-with-diagnostic
+///   shape is refused loudly by the zero-exit checks in the function body.
+fn run_claude_json(
+    tools: &ToolEnv,
+    spec: ModelSpec,
+    cwd: &Path,
+    schema: &Path,
+    output_last_message: &Path,
+    transcript: &Path,
+    prompt: &str,
+) -> Result<()> {
+    // The claude CLI wants the schema as a literal string argument, not a
+    // path, so the harness reads it and hands over the contents.
+    let schema_contents = claude_schema_contents(schema)?;
+    let mut command = Command::new(&tools.claude);
+    command
+        .arg("-p")
+        .arg("--safe-mode")
+        .arg("--dangerously-skip-permissions")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--no-session-persistence")
+        .arg("--json-schema")
+        .arg(&schema_contents)
+        .arg("--model")
+        .arg(spec.model);
+    if let Some(effort) = spec.effort {
+        command.arg("--effort").arg(effort);
+    }
+    let mut child = command
+        // No `-C` flag: the target checkout is the child's working directory.
+        .current_dir(cwd)
+        // One hour, not 0 (unlimited): the default 600s ceiling kills
+        // legitimate long agent work, but unlimited would leave a wedged child
+        // as an infinite hang — the harness has no watchdog of its own, and
+        // one hung reviewer wedges the whole unattended eval. A ceiling kill
+        // exits 0 with a diagnostic instead of a result, a shape the zero-exit
+        // checks below refuse loudly, so a finite ceiling is safe.
+        .env("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "3600000")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to start claude")?;
+    // A child that dies before draining stdin — most plausibly an installed
+    // CLI version rejecting one of the newer flags at argument parse time —
+    // surfaces here as BrokenPipe. Tolerate exactly that error so
+    // wait_with_output still runs: the transcript still gets written and the
+    // failure path below reports the real cause instead of a bare
+    // "Broken pipe" with no evidence trail. Tolerated for the failure path
+    // only: a child that closed stdin early but exits 0 ran on a truncated
+    // prompt — even a schema-valid answer from it is untrustworthy, so the
+    // success path below refuses that shape.
+    let mut stdin_broken = false;
+    match child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| anyhow!("claude stdin unavailable"))?
+        .write_all(prompt.as_bytes())
+    {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {
+            stdin_broken = true;
+        }
+        Err(error) => {
+            // Kill and reap before propagating: Child's drop neither kills
+            // nor reaps, so a bare return would leave an unsandboxed agent
+            // running unsupervised with no transcript on disk. The write
+            // error is the real cause; kill/wait failures add nothing.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error).context("failed to write prompt to claude stdin");
+        }
+    }
+    let output = child.wait_with_output().context("failed to run claude")?;
+    fs::write(transcript, &output.stdout)?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        // Like codex, claude reports failures inside the event stream, not on
+        // stderr; surface the final result event's cause and the transcript
+        // path so the actual reason reaches the command output.
+        let cause = claude_error_cause(&stdout)
+            .map(|message| format!("; cause: {message}"))
+            .unwrap_or_default();
+        bail!(
+            "claude failed: {}{cause}; transcript: {}",
+            String::from_utf8_lossy(&output.stderr).trim(),
+            transcript.display()
+        );
+    }
+    ensure!(
+        !stdin_broken,
+        "claude exited 0 but closed stdin before reading the full prompt; its output cannot \
+         be trusted; transcript: {}",
+        transcript.display()
+    );
+    // A zero exit is not success by itself: claude can exit 0 while the
+    // terminal `result` event reports an error (the background-wait diagnostic
+    // documented above is one such shape). Check the event before trusting the
+    // payload, and fail loudly naming the transcript rather than write a bogus
+    // or empty last-message file.
+    let result = last_result_event(&stdout).ok_or_else(|| {
+        anyhow!(
+            "claude exited 0 but emitted no result event; transcript: {}",
+            transcript.display()
+        )
+    })?;
+    let is_error = result
+        .get("is_error")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let subtype = result.get("subtype").and_then(|value| value.as_str());
+    if is_error || subtype.is_some_and(|subtype| subtype != "success") {
+        let cause = claude_error_cause(&stdout)
+            .map(|message| format!(": {message}"))
+            .unwrap_or_default();
+        bail!(
+            "claude exited 0 but its result event reported an error{cause}; transcript: {}",
+            transcript.display()
+        );
+    }
+    let last_message = claude_last_message(&result).ok_or_else(|| {
+        anyhow!(
+            "claude exited 0 but produced no structured output; transcript: {}",
+            transcript.display()
+        )
+    })?;
+    fs::write(output_last_message, last_message)?;
+    Ok(())
+}
+
+/// Schema contents as claude's `--json-schema` will accept them. The checked-in
+/// schema files declare `"$schema": ".../draft/2020-12/schema"`, which codex
+/// accepts but claude's validator rejects outright ("no schema with key or ref
+/// ..." — it cannot resolve the meta-schema reference). Discovered on the first
+/// real claude smoke run, 2026-07-18. The files stay self-describing on disk;
+/// the key is stripped only from what is handed to claude.
+fn claude_schema_contents(schema: &Path) -> Result<String> {
+    let raw = fs::read_to_string(schema)
+        .with_context(|| format!("failed to read schema {}", schema.display()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&raw)
+        .with_context(|| format!("schema {} is not valid JSON", schema.display()))?;
+    if let Some(object) = value.as_object_mut() {
+        object.remove("$schema");
+    }
+    Ok(value.to_string())
+}
+
+/// The final `result` event of a claude `stream-json` stream, if any. Later
+/// events supersede earlier ones — a well-formed run emits exactly one — and
+/// non-JSON or non-result lines are skipped.
+fn last_result_event(stdout: &str) -> Option<serde_json::Value> {
+    let mut last = None;
+    for line in stdout.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("type").and_then(|t| t.as_str()) == Some("result") {
+            last = Some(event);
+        }
+    }
+    last
+}
+
+/// The agent's final answer: the parsed `structured_output` object from a
+/// `result` event, reserialized as JSON so the on-disk last-message file
+/// matches the codex path's shape. There is deliberately no fallback to the
+/// prose `result` string: every downstream consumer parses schema JSON, so
+/// with `--json-schema` enforced a success without `structured_output` has no
+/// usable answer, and writing prose here would only move the failure to a
+/// confusing serde error at read time. Returns None in that case so the caller
+/// can fail loudly naming the transcript.
+fn claude_last_message(result: &serde_json::Value) -> Option<String> {
+    let structured = result.get("structured_output")?;
+    if structured.is_null() {
+        return None;
+    }
+    serde_json::to_string_pretty(structured).ok()
+}
+
+/// The failure cause for a claude run, from the terminal `result` event: the
+/// error subtype (e.g. `error_during_execution`) and/or the `result` string
+/// that carries the error text. A `success` subtype is filtered out — a
+/// process can die after emitting a success result (killed in teardown, say),
+/// and a diagnostic reading "cause: success: ..." would mislead. Returns None
+/// when no result event was emitted, leaving stderr as the only evidence.
+fn claude_error_cause(stdout: &str) -> Option<String> {
+    let result = last_result_event(stdout)?;
+    let subtype = result
+        .get("subtype")
+        .and_then(|value| value.as_str())
+        .filter(|subtype| *subtype != "success");
+    let message = result.get("result").and_then(|value| value.as_str());
+    match (subtype, message) {
+        (Some(subtype), Some(message)) => Some(format!("{subtype}: {message}")),
+        (Some(subtype), None) => Some(subtype.to_string()),
+        (None, Some(message)) => Some(message.to_string()),
+        (None, None) => None,
+    }
 }
 
 fn collect_run_findings(run_dir: &Path) -> Result<Vec<Finding>> {
@@ -1470,7 +2046,7 @@ fn judge_findings(
     let schema = root.join(EVAL_ROOT).join("schemas/judgments.schema.json");
     let output_path = out_dir.join(format!("{name}-judgments.json"));
     let transcript_path = out_dir.join(format!("{name}-judge-transcript.jsonl"));
-    run_codex_json(
+    run_agent(
         tools,
         spec,
         &target.checkout,
@@ -1506,7 +2082,7 @@ fn match_findings(
     let schema = root.join(EVAL_ROOT).join("schemas/matches.schema.json");
     let output_path = out_dir.join("matches.json");
     let transcript_path = out_dir.join("match-transcript.jsonl");
-    run_codex_json(
+    run_agent(
         tools,
         spec,
         &target.checkout,
@@ -1623,6 +2199,8 @@ fn build_comparison(
         candidate_run: candidate_meta.id.clone(),
         case_id: baseline_meta.case_id.clone(),
         candidate_model: Some(candidate_meta.model.clone()),
+        baseline_backend: baseline_meta.backend,
+        candidate_backend: candidate_meta.backend,
         matches,
         likely_regressions,
         nondeterminism_notes,
@@ -1899,6 +2477,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -1983,6 +2562,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: Some("test-quality".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -2030,6 +2610,7 @@ mod tests {
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: Some("correctness".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2109,6 +2690,7 @@ esac
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2144,6 +2726,7 @@ esac
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -2180,14 +2763,15 @@ esac
         let temp = tempfile::tempdir()?;
         let dir = temp.path();
 
-        let (tokens, commands, anomalies) = digest_transcript(&dir.join("missing.jsonl"));
+        let (tokens, commands, anomalies) =
+            digest_transcript(Backend::Codex, &dir.join("missing.jsonl"));
         assert_eq!((tokens, commands), (None, 0));
         assert_eq!(anomalies.len(), 1);
         assert!(anomalies[0].contains("missing"));
 
         let no_turn = dir.join("no-turn.jsonl");
         fs::write(&no_turn, "{\"event\":\"done\"}\nnot-json\n")?;
-        let (tokens, _, anomalies) = digest_transcript(&no_turn);
+        let (tokens, _, anomalies) = digest_transcript(Backend::Codex, &no_turn);
         assert_eq!(tokens, None);
         assert!(anomalies[0].contains("no turn.completed"));
 
@@ -2196,7 +2780,7 @@ esac
             &zero,
             "{\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":0}}\n",
         )?;
-        let (tokens, _, anomalies) = digest_transcript(&zero);
+        let (tokens, _, anomalies) = digest_transcript(Backend::Codex, &zero);
         assert_eq!(tokens, Some(0));
         assert!(anomalies[0].contains("zero output tokens"));
 
@@ -2206,7 +2790,7 @@ esac
             "{\"type\":\"item.completed\",\"item\":{\"type\":\"command_execution\"}}\n\
              {\"type\":\"turn.completed\",\"usage\":{\"output_tokens\":7}}\n",
         )?;
-        let (tokens, commands, anomalies) = digest_transcript(&healthy);
+        let (tokens, commands, anomalies) = digest_transcript(Backend::Codex, &healthy);
         assert_eq!((tokens, commands), (Some(7), 1));
         assert!(anomalies.is_empty());
         Ok(())
@@ -2234,6 +2818,7 @@ esac
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -2291,6 +2876,7 @@ exit 1
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2344,6 +2930,7 @@ exit 1
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2406,6 +2993,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2443,6 +3031,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: Some("no-such-reviewer".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2476,6 +3065,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: Some("high".to_string()),
         }
         .run_with_tools(root, &tools)?;
@@ -2510,6 +3100,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: None,
             reviewer: None,
+            backend: Backend::Codex,
             effort: Some("extreme".to_string()),
         }
         .run_with_tools(root, &fake_tools(root))
@@ -2539,6 +3130,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -2731,6 +3323,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             skill_ref: None,
             skill_path: None,
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
@@ -2918,6 +3511,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -2933,6 +3527,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         SynthesizeCommand {
             comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)?;
@@ -2960,6 +3555,8 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
                 candidate_run: "candidate-run".to_string(),
                 case_id: "case".to_string(),
                 candidate_model: None,
+                baseline_backend: Backend::Codex,
+                candidate_backend: Backend::Codex,
                 matches: Vec::new(),
                 likely_regressions: Vec::new(),
                 nondeterminism_notes: Vec::new(),
@@ -2969,6 +3566,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         let error = SynthesizeCommand {
             comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
             model: None,
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
@@ -3001,6 +3599,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &fake_tools(root))
@@ -3038,6 +3637,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -3051,6 +3651,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -3071,6 +3672,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -3087,6 +3689,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             baseline: baseline.strip_prefix(root)?.to_path_buf(),
             candidate: candidate.strip_prefix(root)?.to_path_buf(),
             model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
             effort: None,
         }
         .run_with_tools(root, &tools)
@@ -3250,6 +3853,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             base_sha: "base".to_string(),
             curation: None,
             reviewer: None,
+            backend: Backend::Codex,
             effort: None,
             skill_source: "working-tree".to_string(),
             skill_path: DEFAULT_SKILL_PATH.to_string(),
@@ -3428,6 +4032,7 @@ curation = "mined"
         ToolEnv {
             git: root.join("bin/git"),
             codex: root.join("bin/codex"),
+            claude: root.join("bin/claude"),
         }
     }
 
@@ -3676,5 +4281,783 @@ echo '{"type":"item.completed","item":{"id":"item_1","type":"command_execution",
 echo '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":42,"reasoning_output_tokens":5}}'
 echo '{"event":"done"}'
 "#
+    }
+
+    /// A fake `claude` emitting a realistic `stream-json` transcript: an init
+    /// event, a thinking block, a Bash `tool_use` (real work), a tool_result,
+    /// the enforced `StructuredOutput` tool_use, and a terminal `result` event
+    /// carrying `structured_output` and `usage`.
+    ///
+    /// Unlike the codex fake, this cannot branch on the schema basename: claude
+    /// receives `--json-schema` as literal contents (and the fixture writes
+    /// identical `{}` for every schema), and there is no `-o` output path to
+    /// key on either. Preflight and reviewer runs even share one schema, so the
+    /// only signal that distinguishes every invocation is the prompt. This fake
+    /// therefore branches on prompt content, which cleanly separates preflight,
+    /// reviewer, judge, matcher, and synthesis calls.
+    fn fake_claude_script() -> &'static str {
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+model=""
+effort=""
+schema=""
+saw_safe_mode=0
+saw_skip_perms=0
+saw_stream_json=0
+saw_no_session=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --model) model="$2"; shift 2 ;;
+    --effort) effort="$2"; shift 2 ;;
+    --json-schema) schema="$2"; shift 2 ;;
+    --output-format)
+      test "$2" = "stream-json"
+      saw_stream_json=1
+      shift 2
+      ;;
+    --safe-mode) saw_safe_mode=1; shift ;;
+    --dangerously-skip-permissions) saw_skip_perms=1; shift ;;
+    --no-session-persistence) saw_no_session=1; shift ;;
+    --bare)
+      # --bare forces API-key-only auth; the harness must never use it.
+      echo "fake claude rejects --bare" >&2
+      exit 2
+      ;;
+    -C)
+      # claude has no -C; cwd must arrive via the child working directory.
+      echo "fake claude rejects -C" >&2
+      exit 2
+      ;;
+    *) shift ;;
+  esac
+done
+prompt="$(cat)"
+# Every isolation and format flag the harness promises must be present, and
+# the print-mode background ceiling must be raised to the finite one-hour
+# value on the child env (not 0/unlimited — a wedged child must not be able
+# to hang an unattended eval forever).
+test "$saw_safe_mode" = "1"
+test "$saw_skip_perms" = "1"
+test "$saw_stream_json" = "1"
+test "$saw_no_session" = "1"
+test -n "$schema"
+test -n "$model"
+test -n "$prompt"
+test "${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-}" = "3600000"
+
+# Emit a full stream whose final message is the given structured_output object.
+# The digest must count exactly the one Bash tool_use (StructuredOutput is
+# excluded) and read output_tokens=42 from the result event. The init event
+# records the model and effort that actually reached the command line — claude
+# has no -o sidecar to key a .config file on, so the transcript doubles as the
+# invocation evidence tests assert against (an implementation that drops
+# --effort must fail, mirroring effort_reaches_codex_config_and_metadata).
+emit() {
+  local structured="$1"
+  echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","fake_model":"'"$model"'","fake_effort":"'"$effort"'"}'
+  echo '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"considering"}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"true"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput","input":'"$structured"'}]}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"num_turns":4,"result":"done","structured_output":'"$structured"',"usage":{"input_tokens":100,"output_tokens":42}}'
+}
+
+if grep -F "preflight" <<<"$prompt" >/dev/null; then
+  emit '{"findings":[{"id":"P1","category":"correctness","summary":"planted parity bug","location":"src/even.rs:3","rationale":"n % 2 == 1 tests oddness, not evenness"}]}'
+elif grep -F "Review input:" <<<"$prompt" >/dev/null; then
+  # The codex fake keys the baseline/candidate judge split on the -o basename;
+  # claude has no -o, but each judge's prompt embeds only its own run's
+  # findings, so the ids present in the prompt identify which judge this is.
+  # A judge returning ids it was not asked about fails the harness's
+  # unknown-finding-id check.
+  if grep -F '"repeat-1:B1"' <<<"$prompt" >/dev/null; then
+    emit '{"judgments":[{"finding_id":"repeat-1:B1","classification":"good","rationale":"real"}]}'
+  else
+    emit '{"judgments":[{"finding_id":"repeat-1:C1","classification":"good","rationale":"real"}]}'
+  fi
+elif grep -F "Match input:" <<<"$prompt" >/dev/null; then
+  emit '{"matches":[]}'
+elif grep -F "Comparison input:" <<<"$prompt" >/dev/null; then
+  emit '{"suggestions":[{"summary":"tighten reviewer charter","rationale":"lost finding","target":"reviewers/correctness.md"}]}'
+else
+  grep -F "pre-pr-review-swarm" <<<"$prompt" >/dev/null
+  grep -F "owner-repo" <<<"$prompt" >/dev/null
+  grep -F "base-sha..subject-remote-sha" <<<"$prompt" >/dev/null
+  emit '{"findings":[{"id":"F1","category":"correctness","summary":"example finding","location":"src/lib.rs:1","rationale":"example rationale"}]}'
+fi
+"#
+    }
+
+    /// The claude backend must produce the same artifact tree as codex: a
+    /// run.json recording `backend: claude`, per-reviewer findings and
+    /// transcripts, execution.json, and a verification.json digested from the
+    /// claude `stream-json` transcripts. This is the claude analog of
+    /// `run_command_writes_artifacts_with_fake_git_and_codex`.
+    #[test]
+    fn run_command_writes_artifacts_on_claude_backend() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "claude", fake_claude_script())?;
+        let tools = fake_tools(root);
+
+        RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 2,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            backend: Backend::Claude,
+            effort: Some("high".to_string()),
+        }
+        .run_with_tools(root, &tools)?;
+
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
+        assert_eq!(metadata.backend, Backend::Claude);
+        assert_eq!(metadata.effort.as_deref(), Some("high"));
+        // The invocation itself must carry the effort, not just run.json: the
+        // fake stamps what it received into the init event, so a
+        // run_claude_json that drops --effort fails here even though the
+        // metadata (copied from the command struct) would still look right.
+        let transcript =
+            fs::read_to_string(run_dir.join("repeat-1/reviewers/test-quality.transcript.jsonl"))?;
+        assert!(
+            transcript.contains("\"fake_effort\":\"high\""),
+            "effort did not reach the claude command line: {transcript}"
+        );
+        assert!(transcript.contains("\"fake_model\":\"fake-model\""));
+        for repeat in ["repeat-1", "repeat-2"] {
+            for reviewer in ["docs-comments", "test-quality"] {
+                assert!(
+                    run_dir
+                        .join(repeat)
+                        .join("reviewers")
+                        .join(format!("{reviewer}.findings.json"))
+                        .is_file()
+                );
+                assert!(
+                    run_dir
+                        .join(repeat)
+                        .join("reviewers")
+                        .join(format!("{reviewer}.transcript.jsonl"))
+                        .is_file()
+                );
+            }
+        }
+        // Verification digests the claude transcripts: one non-StructuredOutput
+        // tool_use (the Bash call) and 42 output tokens per agent, no anomalies.
+        let verification: RunVerification = read_json(&run_dir.join("verification.json"))?;
+        assert_eq!(verification.status, "clean");
+        assert_eq!(verification.anomaly_count, 0);
+        for repeat in &verification.repeats {
+            for reviewer in &repeat.reviewers {
+                assert_eq!(reviewer.output_tokens, Some(42));
+                assert_eq!(reviewer.commands, 1);
+                assert!(reviewer.anomalies.is_empty());
+            }
+        }
+        Ok(())
+    }
+
+    /// claude's `--json-schema` validator cannot resolve the draft-2020-12
+    /// `$schema` meta-reference every checked-in schema file declares, and
+    /// rejects the whole schema over it — the first real claude smoke run
+    /// failed preflight exactly this way. The claude path must strip the key
+    /// from what it hands to the CLI while preserving the rest of the schema
+    /// and leaving the on-disk file untouched.
+    #[test]
+    fn claude_schema_contents_strips_meta_schema_key() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("schema.json");
+        let original = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "required": ["findings"]
+        }"#;
+        fs::write(&path, original)?;
+        let contents = claude_schema_contents(&path)?;
+        assert!(!contents.contains("$schema"), "got: {contents}");
+        assert!(contents.contains("\"required\""), "got: {contents}");
+        assert_eq!(fs::read_to_string(&path)?, original);
+        Ok(())
+    }
+
+    /// The claude digest must read output tokens and the tool-call count from
+    /// claude's own stream shapes, and flag the claude-native signatures of a
+    /// run that did nothing. It counts every tool_use except `StructuredOutput`
+    /// (so file-access tools like Read/Grep count as real work), which is a
+    /// deliberate semantic difference from the codex command-execution count.
+    #[test]
+    fn claude_transcript_digest_reads_tokens_and_flags_empty_work() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let dir = temp.path();
+
+        let (tokens, commands, anomalies) =
+            digest_transcript(Backend::Claude, &dir.join("missing.jsonl"));
+        assert_eq!((tokens, commands), (None, 0));
+        assert_eq!(anomalies.len(), 1);
+        assert!(anomalies[0].contains("missing"));
+
+        let no_result = dir.join("no-result.jsonl");
+        fs::write(
+            &no_result,
+            "{\"type\":\"system\",\"subtype\":\"init\"}\nnot-json\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &no_result);
+        assert_eq!(tokens, None);
+        assert!(anomalies.iter().any(|a| a.contains("no result event")));
+
+        let errored = dir.join("errored.jsonl");
+        fs::write(
+            &errored,
+            "{\"type\":\"result\",\"is_error\":true,\"usage\":{\"output_tokens\":9}}\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &errored);
+        assert_eq!(tokens, Some(9));
+        assert!(anomalies.iter().any(|a| a.contains("is_error")));
+
+        // An error subtype with is_error unset must also flag: the runtime
+        // failure check treats the two signals independently, and the digest
+        // must not call a transcript clean that the runner would have rejected.
+        let subtype_error = dir.join("subtype-error.jsonl");
+        fs::write(
+            &subtype_error,
+            "{\"type\":\"result\",\"subtype\":\"error_max_turns\",\"usage\":{\"output_tokens\":9}}\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &subtype_error);
+        assert_eq!(tokens, Some(9));
+        assert!(
+            anomalies
+                .iter()
+                .any(|a| a.contains("error subtype 'error_max_turns'")),
+            "got: {anomalies:?}"
+        );
+
+        let no_tokens = dir.join("no-tokens.jsonl");
+        fs::write(&no_tokens, "{\"type\":\"result\",\"is_error\":false}\n")?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &no_tokens);
+        assert_eq!(tokens, None);
+        assert!(anomalies.iter().any(|a| a.contains("no output tokens")));
+
+        let zero = dir.join("zero.jsonl");
+        fs::write(
+            &zero,
+            "{\"type\":\"result\",\"is_error\":false,\"usage\":{\"output_tokens\":0}}\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &zero);
+        assert_eq!(tokens, Some(0));
+        assert!(anomalies.iter().any(|a| a.contains("zero output tokens")));
+
+        // A success result with tokens but no structured_output is exactly the
+        // shape run_claude_json refuses ("produced no structured output"), so
+        // the digest must not call it clean either — runtime/digest parity is
+        // the digest's documented invariant.
+        let no_structured = dir.join("no-structured.jsonl");
+        fs::write(
+            &no_structured,
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"usage\":{\"output_tokens\":7}}\n",
+        )?;
+        let (tokens, _, anomalies) = digest_transcript(Backend::Claude, &no_structured);
+        assert_eq!(tokens, Some(7));
+        assert!(
+            anomalies.iter().any(|a| a.contains("no structured output")),
+            "got: {anomalies:?}"
+        );
+
+        // Healthy: a Bash tool_use and a StructuredOutput tool_use across two
+        // assistant events; only the Bash one counts.
+        let healthy = dir.join("healthy.jsonl");
+        fs::write(
+            &healthy,
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\"}]}}\n\
+             {\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"StructuredOutput\"}]}}\n\
+             {\"type\":\"result\",\"is_error\":false,\"structured_output\":{\"findings\":[]},\"usage\":{\"output_tokens\":7}}\n",
+        )?;
+        let (tokens, commands, anomalies) = digest_transcript(Backend::Claude, &healthy);
+        assert_eq!((tokens, commands), (Some(7), 1));
+        assert!(anomalies.is_empty(), "got: {anomalies:?}");
+        Ok(())
+    }
+
+    /// A failed claude run must surface the cause from the terminal `result`
+    /// event — claude, like codex, reports failures inside the stream rather
+    /// than on stderr — and name the transcript path, so a schema rejection or
+    /// tool crash reaches the command output instead of a manual dig.
+    #[test]
+    fn claude_failure_surfaces_result_cause_and_transcript() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "claude",
+            "#!/usr/bin/env bash\ncat >/dev/null\n\
+             echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n\
+             echo '{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"result\":\"tool crashed: boom\"}'\n\
+             exit 1\n",
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "crash".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            backend: Backend::Claude,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("error_during_execution"), "got: {message}");
+        assert!(message.contains("tool crashed: boom"), "got: {message}");
+        assert!(message.contains("transcript:"), "got: {message}");
+        Ok(())
+    }
+
+    /// Effort is validated against the selected backend's own vocabulary,
+    /// before any checkout or spend: `xhigh` is a claude word codex does not
+    /// know, and `minimal` is a codex word claude does not know. Each must be
+    /// rejected on the wrong backend with no run directory created.
+    #[test]
+    fn effort_validation_is_backend_specific() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+
+        let codex_error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: None,
+            reviewer: None,
+            backend: Backend::Codex,
+            effort: Some("xhigh".to_string()),
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+        assert!(codex_error.to_string().contains("unknown effort 'xhigh'"));
+        assert!(codex_error.to_string().contains("codex"));
+
+        let claude_error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "smoke".to_string(),
+            skill_ref: None,
+            skill_path: None,
+            reviewer: None,
+            backend: Backend::Claude,
+            effort: Some("minimal".to_string()),
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+        assert!(
+            claude_error
+                .to_string()
+                .contains("unknown effort 'minimal'")
+        );
+        assert!(claude_error.to_string().contains("claude"));
+
+        // Neither validation may create a run directory: both fail before spend.
+        assert!(!root.join(RUN_ROOT).exists());
+        Ok(())
+    }
+
+    /// Old run.json files predate the `backend` field. They must still parse,
+    /// reading back as codex runs, so pre-backend artifacts keep comparing.
+    #[test]
+    fn run_json_without_backend_parses_as_codex() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("run.json");
+        // A minimal run.json as written before the backend field existed.
+        fs::write(
+            &path,
+            r#"{
+              "id": "old-run",
+              "skill": "pre-pr-review-swarm",
+              "label": "old",
+              "model": "gpt-5.4",
+              "repeats": 1,
+              "case_id": "case",
+              "repo": "owner/repo",
+              "subject_ref": "subject",
+              "subject_sha": "subject",
+              "base_ref": "base",
+              "base_sha": "base",
+              "skill_source": "working-tree",
+              "skill_path": "agent-skills/pre-pr-review-swarm",
+              "created_at": "2026-01-01T00:00:00Z"
+            }"#,
+        )?;
+        let metadata: RunMetadata = read_json(&path)?;
+        assert_eq!(metadata.backend, Backend::Codex);
+        Ok(())
+    }
+
+    /// Cross-backend compare is the A/B axis this change exists to enable, but
+    /// only when both runs pinned an explicit effort: codex "high" and claude
+    /// "high" are different operating points, and an unset effort is each
+    /// vendor's own default, so a default cannot be compared across backends.
+    /// This pins both halves — allowed with efforts, refused without — and that
+    /// the comparison records both backends. Same-backend effort mismatch stays
+    /// covered by `compare_rejects_mismatched_cases_and_diffs`.
+    #[test]
+    fn compare_allows_cross_backend_only_with_explicit_efforts() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "codex", fake_codex_script())?;
+        let tools = fake_tools(root);
+
+        let baseline = root.join(RUN_ROOT).join("baseline-run");
+        let candidate = root.join(RUN_ROOT).join("candidate-run");
+        write_baseline_marker(&baseline)?;
+        let mut baseline_meta = run_meta("baseline-run", "fake-model");
+        baseline_meta.backend = Backend::Codex;
+        baseline_meta.effort = Some("high".to_string());
+        write_json(&baseline.join("run.json"), &baseline_meta)?;
+        write_json(
+            &baseline.join("repeat-1/findings.json"),
+            &FindingsFile {
+                findings: vec![finding("B1", "baseline bug", 1)],
+            },
+        )?;
+        write_json(
+            &candidate.join("repeat-1/findings.json"),
+            &FindingsFile {
+                findings: vec![finding("C1", "candidate bug", 1)],
+            },
+        )?;
+
+        // Unset candidate effort: refused, and the message explains why.
+        let mut unset = run_meta("candidate-run", "fake-model");
+        unset.backend = Backend::Claude;
+        unset.effort = None;
+        write_json(&candidate.join("run.json"), &unset)?;
+        let error = CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+        assert!(error.to_string().contains("cross-backend"));
+        assert!(error.to_string().contains("comparable across backends"));
+
+        // Both efforts pinned: allowed, and comparison records both backends.
+        let mut pinned = run_meta("candidate-run", "fake-model");
+        pinned.backend = Backend::Claude;
+        pinned.effort = Some("high".to_string());
+        write_json(&candidate.join("run.json"), &pinned)?;
+        CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)?;
+
+        let comparison_path = fs::read_dir(root.join(RUN_ROOT))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("comparison.json"))
+            .find(|path| path.exists())
+            .expect("expected comparison output");
+        let comparison: ComparisonFile = read_json(&comparison_path)?;
+        assert_eq!(comparison.baseline_backend, Backend::Codex);
+        assert_eq!(comparison.candidate_backend, Backend::Claude);
+        Ok(())
+    }
+
+    /// The full compare-then-synthesize pipeline must work on the claude
+    /// backend, not just `run`: judges, matcher, and synthesis all flow through
+    /// `run_agent`, and the claude `structured_output` extraction must produce
+    /// judgments/matches/suggestions files the downstream parsers accept. Runs
+    /// with `--model` omitted so the candidate-model default is exercised on
+    /// its coherent path (judge backend == candidate backend). This is the
+    /// claude analog of `compare_and_synthesize_use_fake_codex_artifacts`.
+    #[test]
+    fn compare_and_synthesize_use_fake_claude_artifacts() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(root, "claude", fake_claude_script())?;
+        let tools = fake_tools(root);
+
+        let baseline = root.join(RUN_ROOT).join("baseline-run");
+        let candidate = root.join(RUN_ROOT).join("candidate-run");
+        let mut baseline_meta = run_meta("baseline-run", "fake-model");
+        baseline_meta.backend = Backend::Claude;
+        let mut candidate_meta = run_meta("candidate-run", "fake-model");
+        candidate_meta.backend = Backend::Claude;
+        write_json(&baseline.join("run.json"), &baseline_meta)?;
+        write_json(&candidate.join("run.json"), &candidate_meta)?;
+        write_baseline_marker(&baseline)?;
+        write_json(
+            &baseline.join("repeat-1/findings.json"),
+            &FindingsFile {
+                findings: vec![finding("B1", "baseline bug", 1)],
+            },
+        )?;
+        write_json(
+            &candidate.join("repeat-1/findings.json"),
+            &FindingsFile {
+                findings: vec![finding("C1", "candidate bug", 1)],
+            },
+        )?;
+
+        CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: None,
+            backend: Backend::Claude,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)?;
+
+        let comparison_path = fs::read_dir(root.join(RUN_ROOT))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path().join("comparison.json"))
+            .find(|path| path.exists())
+            .expect("expected comparison output");
+        let comparison: ComparisonFile = read_json(&comparison_path)?;
+        assert_eq!(comparison.likely_regressions.len(), 1);
+        assert_eq!(comparison.candidate_backend, Backend::Claude);
+
+        SynthesizeCommand {
+            comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
+            model: None,
+            backend: Backend::Claude,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)?;
+        let suggestions: SuggestionsFile =
+            read_json(&comparison_path.parent().unwrap().join("suggestions.json"))?;
+        assert_eq!(suggestions.suggestions.len(), 1);
+
+        Ok(())
+    }
+
+    /// The judge model defaults to the candidate run's model, which is only
+    /// coherent when the judge backend matches the backend that model belongs
+    /// to. A claude candidate compared with the (default) codex judge backend
+    /// and no --model must fail up front — before checkout or spend — rather
+    /// than handing a claude model id to codex mid-run.
+    #[test]
+    fn compare_requires_explicit_model_when_judge_backend_differs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+
+        let baseline = root.join(RUN_ROOT).join("baseline-run");
+        let candidate = root.join(RUN_ROOT).join("candidate-run");
+        let mut baseline_meta = run_meta("baseline-run", "claude-model");
+        baseline_meta.backend = Backend::Claude;
+        let mut candidate_meta = run_meta("candidate-run", "claude-model");
+        candidate_meta.backend = Backend::Claude;
+        write_json(&baseline.join("run.json"), &baseline_meta)?;
+        write_json(&candidate.join("run.json"), &candidate_meta)?;
+        write_baseline_marker(&baseline)?;
+
+        let error = CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: None,
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("cannot be the default judge model"),
+            "got: {message}"
+        );
+        assert!(
+            message.contains("pass --model explicitly"),
+            "got: {message}"
+        );
+        Ok(())
+    }
+
+    /// Synthesize has the same defaulting rule as compare: the comparison's
+    /// candidate model is only a usable default when the synthesis backend
+    /// matches the recorded candidate backend.
+    #[test]
+    fn synthesize_requires_explicit_model_when_backend_differs() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let comparison_path = root.join(RUN_ROOT).join("comparison-run/comparison.json");
+        write_json(
+            &comparison_path,
+            &ComparisonFile {
+                baseline_run: "baseline-run".to_string(),
+                candidate_run: "candidate-run".to_string(),
+                case_id: "case".to_string(),
+                candidate_model: Some("claude-model".to_string()),
+                baseline_backend: Backend::Claude,
+                candidate_backend: Backend::Claude,
+                matches: Vec::new(),
+                likely_regressions: Vec::new(),
+                nondeterminism_notes: Vec::new(),
+            },
+        )?;
+
+        let error = SynthesizeCommand {
+            comparison: comparison_path.strip_prefix(root)?.to_path_buf(),
+            model: None,
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+        let message = error.to_string();
+        assert!(
+            message.contains("cannot be the default synthesis model"),
+            "got: {message}"
+        );
+        Ok(())
+    }
+
+    /// Old comparison.json files predate the backend fields. They must still
+    /// parse — synthesize reads comparison.json from disk — reading both
+    /// backends back as codex, mirroring `run_json_without_backend_parses_as_codex`.
+    #[test]
+    fn comparison_json_without_backends_parses_as_codex() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("comparison.json");
+        // A minimal comparison.json as written before the backend fields existed.
+        fs::write(
+            &path,
+            r#"{
+              "baseline_run": "old-baseline",
+              "candidate_run": "old-candidate",
+              "case_id": "case",
+              "candidate_model": "gpt-5.4",
+              "matches": [],
+              "likely_regressions": [],
+              "nondeterminism_notes": []
+            }"#,
+        )?;
+        let comparison: ComparisonFile = read_json(&path)?;
+        assert_eq!(comparison.baseline_backend, Backend::Codex);
+        assert_eq!(comparison.candidate_backend, Backend::Codex);
+        Ok(())
+    }
+
+    /// A claude run that exits 0 while its terminal result event reports an
+    /// error (the background-wait diagnostic shape, for example) must fail
+    /// with the cause and transcript path — not be accepted as success. Before
+    /// this check, the error diagnostic could be written to the last-message
+    /// file and surface later as a confusing serde parse error.
+    #[test]
+    fn claude_zero_exit_error_result_fails_run() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "claude",
+            "#!/usr/bin/env bash\ncat >/dev/null\n\
+             echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n\
+             echo '{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true,\"result\":\"Background tasks still running after 600s\"}'\n\
+             exit 0\n",
+        )?;
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "zero-exit-error".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            backend: Backend::Claude,
+            effort: None,
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("reported an error"), "got: {message}");
+        assert!(
+            message.contains("Background tasks still running"),
+            "got: {message}"
+        );
+        assert!(message.contains("transcript:"), "got: {message}");
+        Ok(())
+    }
+
+    /// A zero-exit claude run whose success result carries no structured
+    /// output has no parseable answer: with --json-schema enforced that shape
+    /// means something went wrong, and there is deliberately no fallback to
+    /// the prose result string (it would land in a .findings.json every
+    /// consumer parses as schema JSON). The run must fail naming the
+    /// transcript instead of writing a bogus last-message file.
+    #[test]
+    fn claude_zero_exit_without_structured_output_fails_run() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "claude",
+            "#!/usr/bin/env bash\ncat >/dev/null\n\
+             echo '{\"type\":\"system\",\"subtype\":\"init\"}'\n\
+             echo '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"prose answer, not schema JSON\",\"usage\":{\"output_tokens\":5}}'\n\
+             exit 0\n",
+        )?;
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "no-structured".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            backend: Backend::Claude,
+            effort: None,
+        }
+        .run_with_tools(root, &fake_tools(root))
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("no structured output"), "got: {message}");
+        assert!(message.contains("transcript:"), "got: {message}");
+        Ok(())
     }
 }

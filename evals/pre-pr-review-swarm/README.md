@@ -3,16 +3,17 @@
 NOTE: These commands spend model tokens. They are not part of CI and should be run only when there is a reason to
 compare skill behavior.
 
-NOTE: Cases should point at repositories and refs you are willing to let Codex read. The harness uses a read-only Codex
-sandbox, but it still runs the agent in the target checkout and should not be treated as a hard isolation boundary for
-host secrets.
+NOTE: Cases should point at repositories and refs you are willing to let the agent read. Runs currently execute the
+agent unsandboxed in the target checkout (see the next NOTE), so the checkout should not be treated as a hard isolation
+boundary for host secrets, on either backend.
 
 NOTE: Sandboxing is TEMPORARILY DISABLED and eval runs are restricted to hand-curated cases until the sandboxing
-situation is resolved. Codex's Linux sandbox wraps agent commands in bubblewrap, which fails on hosts that restrict
-unprivileged user namespaces (Ubuntu's `apparmor_restrict_unprivileged_userns`) unless a profiled system bwrap is
-installed. The failure is silent — every agent command exits 1 and the agent falls back to web/MCP lookups, invalidating
-the run. Until that is fixed, `eval run` passes `--dangerously-bypass-approvals-and-sandbox` and refuses `mined` cases,
-since running an unsandboxed agent against unvetted third-party code is not acceptable.
+situation is resolved. On the codex backend this is because codex's Linux sandbox wraps agent commands in bubblewrap,
+which fails on hosts that restrict unprivileged user namespaces (Ubuntu's `apparmor_restrict_unprivileged_userns`)
+unless a profiled system bwrap is installed; the failure is silent — every agent command exits 1 and the agent falls
+back to web/MCP lookups, invalidating the run. Until that is fixed, `eval run` runs both backends unsandboxed — codex
+with `--dangerously-bypass-approvals-and-sandbox`, claude with `--dangerously-skip-permissions` — and refuses `mined`
+cases, since running an unsandboxed agent against unvetted third-party code is not acceptable.
 
 The eval harness runs `pre-pr-review-swarm` against unpolished code refs. It does not need the historical polished PR.
 The useful signal is whether a candidate skill or model finds the same judge-approved issues as a baseline run.
@@ -40,12 +41,24 @@ charters that do not apply to the case are rejected. The restriction is recorded
 compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings and a full
 panel's findings measure different things.
 
-Use `--effort <minimal|low|medium|high>` to set the reasoning effort of the agents. This is the only way to control
-effort: the harness runs codex with `--ignore-user-config`, which strips the config file where `model_reasoning_effort`
-would normally live, so without the flag every agent runs at codex's built-in default. On `run` the effort applies to
-the subject agents and is recorded in `run.json`; like the reviewer restriction, `compare` refuses to mix runs with
-different efforts. On `compare` and `synthesize` the flag sets the judge/matcher/synthesis agents' effort independently
-of what the compared runs used.
+Use `--backend <codex|claude>` to choose the agent CLI (default `codex`). The backend is recorded in `run.json`. On
+`run` it selects the subject agents; on `compare` and `synthesize` it selects the judge/matcher/synthesis agents,
+independent of what the compared runs used — with one coupling: when `--model` is omitted, the default model is the
+candidate run's model, so the selected backend must match the backend that produced it (pass `--model` explicitly to
+judge on a different backend). Both backends run with user config and instruction files ignored — codex via
+`--ignore-user-config --ignore-rules`, claude via `--safe-mode` — so the user's `CLAUDE.md`/config and the target repo's
+own instruction files cannot contaminate the eval. (Claude uses `--safe-mode`, not `--bare`: `--bare` additionally
+forces API-key-only auth and would break subscription-authenticated hosts.)
+
+Use `--effort` to set the reasoning effort of the agents. The accepted vocabulary depends on the backend: codex accepts
+`minimal|low|medium|high`, claude accepts `low|medium|high|xhigh|max`. This is the only way to control effort — both
+backends ignore user config, which strips the place effort would normally be configured, so without the flag every agent
+runs at that backend's built-in default. On `run` the effort applies to the subject agents and is recorded in
+`run.json`; like the reviewer restriction, `compare` refuses to mix runs with different efforts. When the two runs used
+different backends, `compare` allows the comparison but requires both to have pinned an explicit `--effort`, because an
+unset effort is each vendor's own default and codex "high" and claude "high" are not the same operating point — a
+default is not comparable across backends. `comparison.json` records both runs' backends. On `compare` and `synthesize`
+the flag sets the judge/matcher/synthesis agents' effort independently of what the compared runs used.
 
 ## How does it work?
 
@@ -53,10 +66,10 @@ of what the compared runs used.
 explicit `base_ref` or the subject commit's first parent as the review base. The harness then owns the swarm fan-out
 itself: it materializes the review scope once into `scope.diff`, discovers the spawnable reviewer panel from the
 resolved skill's `reviewers/` directory (shared base charters are skipped, and `spec-compliance` runs only when the
-target checkout has a `SPEC.md`), and runs one `codex exec` per reviewer charter per repeat, a few reviewers at a time,
-each seeing only its own charter plus the shared scope. The command prints the new run directory. Inside it, `run.json`
-records the resolved SHAs, model, skill source, label, and repeat count; each `repeat-N/` directory contains the merged
-`findings.json`, per-reviewer findings and transcripts under `reviewers/`, and `execution.json`.
+target checkout has a `SPEC.md`), and runs one agent per reviewer charter per repeat, a few reviewers at a time, each
+seeing only its own charter plus the shared scope. The command prints the new run directory. Inside it, `run.json`
+records the resolved SHAs, model, backend, skill source, label, and repeat count; each `repeat-N/` directory contains
+the merged `findings.json`, per-reviewer findings and transcripts under `reviewers/`, and `execution.json`.
 
 NOTE: an earlier harness design asked a single codex session to run the whole skill and trusted it to spawn reviewer
 subagents. Observed transcripts showed it never spawned anything — collab waits on zero threads — and silently reviewed
@@ -73,18 +86,25 @@ must return a finding referencing the planted file; an agent failure or a miss a
 The verdict is recorded in `<run-dir>/preflight/preflight.json` and echoed on stdout.
 
 After the repeats complete, `run` digests the on-disk evidence into `<run-dir>/verification.json`: per reviewer and
-repeat, the output tokens from the transcript's completed turn, the number of commands the agent ran, and anomalies for
-the shapes that indicate no real work happened (missing transcript, no completed turn, zero output tokens). Anomalies do
-not abort the run — judging their severity is the launching agent's job — but the digest status and every anomaly are
-printed, followed by the inspection contract: the launching agent must always read the digest and spot-check at least
-one reviewer transcript per repeat before reporting or trusting the run's results. Do not infer health from a
-plausible-looking findings list alone; the solo-swarm incident this design replaced produced exactly that.
+repeat, the output tokens the agent reported, a count of the actions it took, and anomalies for the shapes that indicate
+no real work happened. The digest is backend-aware and reads each backend's own transcript shapes: for codex, output
+tokens from the final `turn.completed` event and a count of completed command executions; for claude, output tokens from
+the final `result` event and a count of tool calls (every `tool_use` except the enforced `StructuredOutput`, so
+file-access tools like Read/Grep count as work). Because the two backends count different things, the action count is
+comparable only within a backend. Anomalies flag each backend's native "did nothing" signatures — a missing transcript,
+no terminal completion event, zero or missing output tokens, and, on claude, a result event that reported an error or a
+success result carrying no structured output. Anomalies do not abort the run — judging their severity is the launching
+agent's job — but the digest status and every anomaly are printed, followed by the inspection contract: the launching
+agent must always read the digest and spot-check at least one reviewer transcript per repeat before reporting or
+trusting the run's results. Do not infer health from a plausible-looking findings list alone; the solo-swarm incident
+this design replaced produced exactly that.
 
 The stamped `reviewers` array is what lets a single full-panel run answer per-reviewer questions offline — which
 charters contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
-reviewer. The comparison flow does not consume it. Codex-facing agents get `reviewer-findings.schema.json`, which has no
-attribution field at all; the stored `findings.json` follows `findings.schema.json`, whose `reviewers` field the harness
-reads as optional so runs recorded before the field existed still parse.
+reviewer. The comparison flow does not consume it. Reviewer agents get `reviewer-findings.schema.json` (enforced by
+codex's `--output-schema` and claude's `--json-schema`), which has no attribution field at all; the stored
+`findings.json` follows `findings.schema.json`, whose `reviewers` field the harness reads as optional so runs recorded
+before the field existed still parse.
 
 `baseline` does not rerun the model. It writes `baseline.json` into an existing run directory so later comparisons know
 that run is the reference point. The command prints the path to that marker file.
@@ -94,8 +114,8 @@ that run is the reference point. The command prints the path to that marker file
 new comparison directory under `eval-runs/pre-pr-review-swarm/` and prints the path to `comparison.json`. That file
 contains matched findings, likely regressions, and notes about findings that appeared in only some repeats.
 
-`synthesize` reads a `comparison.json` and asks Codex for concrete skill-change suggestions for the likely regressions.
-It writes `suggestions.json` next to the comparison, plus a raw synthesis transcript for debugging.
+`synthesize` reads a `comparison.json` and asks an agent for concrete skill-change suggestions for the likely
+regressions. It writes `suggestions.json` next to the comparison, plus a raw synthesis transcript for debugging.
 
 ## Cases
 
