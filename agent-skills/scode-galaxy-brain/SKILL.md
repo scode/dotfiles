@@ -218,12 +218,12 @@ or default model, which misleads anyone watching progress.
 ### Shelling out to codex
 
 ```sh
-codex exec --yolo -m gpt-5.6-sol -c model_reasoning_effort=high -o <scratch-file> "<prompt>"
+codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "<prompt>"
 ```
 
-- Reasoning effort is set with `-c model_reasoning_effort=<low|medium|high>`. Always pass it explicitly rather than
-  relying on the user's config default; the startup header echoes the effective `reasoning effort:` if you need to
-  confirm.
+- Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
+  pass it explicitly rather than relying on the user's config default; the startup header echoes the effective
+  `reasoning effort:` if you need to confirm.
 - `-o` writes the agent's final message to a file; read that file for the result instead of parsing stdout.
 - Runs in the current working directory by default; pass `-C <dir>` to target elsewhere.
 - Long tasks can exceed your shell tool's default timeout. Set an explicit generous timeout, or run in the background
