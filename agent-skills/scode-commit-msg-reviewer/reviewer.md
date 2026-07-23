@@ -73,10 +73,14 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   needs. For a small self-contained documentation addition, prefer a concise statement of what the diff documents.
 - **Softened bug framing.** When a change fixes genuinely incorrect behavior, the message should say so directly. Be
   suspicious of phrasing that only narrates the call flow ("X asks Y but passes Z") or the consequence ("ends up
-  evaluating a different value") when the durable fact is "X was incorrectly sending Z where Y expects W". Directness
-  matters most for security, authorization, data-loss, and type-contract bugs, where the future reader's first question
-  is what exactly was broken. If the fix intentionally accepts technical debt instead of solving the underlying problem,
-  the message should name that debt.
+  evaluating a different value") when the durable fact is "X was incorrectly sending Z where Y expects W". The first
+  substantive claim should identify the bad behavior at the level its affected reader cares about. Do not accept an
+  opening that starts with diagnostic evidence, internal structure, or the particular setup that revealed the problem
+  when those facts are not needed to define it. Supporting mechanics can follow after the failure is clear; explaining
+  it later does not rescue an opening that made the reader infer it. Directness matters most for security,
+  authorization, data-loss, and type-contract bugs, where the future reader's first question is what exactly was broken.
+  If the fix intentionally accepts technical debt instead of solving the underlying problem, the message should name
+  that debt.
 - **Claims the diff contradicts.** If the message says the change does something the diff shows it does not do (or vice
   versa), that is the worst outcome a message can have — it actively misleads the future investigator. Note the
   asymmetry: motivation often lives _outside_ the diff (an incident, a user report, an upstream bug), and you cannot
