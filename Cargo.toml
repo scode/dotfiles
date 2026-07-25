@@ -12,11 +12,15 @@ default-members = [".", "xtask"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+# Provides the plain fsync(2) fallback the atomic-write fsyncs need and std
+# cannot express: on Apple targets File::sync_all is F_FULLFSYNC with no errno
+# fallback. Adds no dependency weight — tempfile already pulls rustix in.
+rustix = { version = "1", features = ["fs"] }
 # JsonEnsure rewrites only owned keys and should avoid gratuitously reordering
 # unrelated user-managed keys when it touches an existing config file.
 serde_json = { version = "1", features = ["preserve_order"] }
+# Atomic file replacement writes a sibling temporary file and renames it over
+# the destination, so this is a runtime dependency rather than a test-only one.
+tempfile = "3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[dev-dependencies]
-tempfile = "3"

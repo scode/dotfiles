@@ -123,6 +123,22 @@ fn test_install_creates_symlinks() {
     );
     assert_expected_claude_allow(&settings);
 
+    // The managed bashrc block is the only registration that writes a plain
+    // text file the installer does not own, so it is worth confirming that the
+    // wiring in main.rs reaches a real destination rather than only that the
+    // feature works in isolation.
+    let bashrc = fake_home.path().join(".bashrc");
+    assert!(
+        bashrc.is_file() && !bashrc.is_symlink(),
+        "expected ~/.bashrc to be created as a regular file"
+    );
+    let bashrc_contents = std::fs::read_to_string(&bashrc).unwrap();
+    assert!(
+        bashrc_contents.contains("# BEGIN managed-block(scode-dotfiles/bash)")
+            && bashrc_contents.contains("# END managed-block(scode-dotfiles/bash)"),
+        "expected managed block markers in ~/.bashrc, got: {bashrc_contents}"
+    );
+
     // Verify it points to the shared agent-instructions source with a relative path.
     let target = std::fs::read_link(&claude_md).unwrap();
     assert!(
@@ -250,6 +266,21 @@ fn test_uninstall_removes_symlinks() {
         settings_after,
         serde_json::json!({}),
         "managed settings values should be reverted on uninstall"
+    );
+
+    // Uninstall takes back the block but not the file. The file was created by
+    // this installer here, but that is an accident of a fresh fake home; on a
+    // real machine ~/.bashrc is the user's, and the uninstall path cannot tell
+    // the two apart.
+    let bashrc = fake_home.path().join(".bashrc");
+    assert!(
+        bashrc.is_file(),
+        "~/.bashrc should be left in place after uninstall"
+    );
+    let bashrc_after = std::fs::read_to_string(&bashrc).unwrap();
+    assert!(
+        !bashrc_after.contains("managed-block(scode-dotfiles/bash)"),
+        "managed block should be removed from ~/.bashrc, got: {bashrc_after}"
     );
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
