@@ -113,6 +113,13 @@ keeping their semantics separate lets later calibration change one without confl
 cross-family SOTA perspective may be worth its overhead for high-risk critical review. Orchestration is not a delegation
 profile; planning, decomposition, quality gating, and VCS ownership remain with the current SOTA session.
 
+Visual design is an exception to the GPT design-and-synthesis route. Real-world feedback on GPT-5.6 consistently rates
+sol below the Claude models on visual design taste even while its coding reputation holds up. When a
+design-and-synthesis task's output is primarily visual — UI, frontend styling, slides, anything judged by how it looks —
+use the Claude route even from a GPT-family orchestrator, and treat this as a sufficient reason to diverge from a
+prefer-gpt preference. Announce the divergence as usual. Non-visual design work such as API design, architecture, and
+copy stays on the normal routes.
+
 ### Native-path bias
 
 When models are roughly equally suitable, prefer the model in the orchestrator's family. Same-family delegates normally
