@@ -238,9 +238,16 @@ NOTE: This is a tool-call optimization, not permission to parallelize state muta
 to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence, instead
 of spending separate tool calls re-reading state after every successful step.
 
-For straightforward happy paths, batch ordered commands with `set -e` or `&&` in one shell invocation when the next
-command does not need the model to inspect fresh output. This is still sequential execution. It just avoids paying one
-tool call per command for state you already know.
+For straightforward happy paths, batch ordered commands with `&&` chaining or a per-command `|| exit 1` in one shell
+invocation when the next command does not need the model to inspect fresh output. This is still sequential execution. It
+just avoids paying one tool call per command for state you already know.
+
+NOTE: Never rely on `set -e` to stop a batched sequence. Agent harnesses commonly run the tool command via `eval` in a
+non-final position of an `&&` list, and bash ignores errexit for any command in that position — including everything the
+`eval` executes. The result is the worst failure shape: `set -e` shows as enabled in `$-` and `SHELLOPTS`, yet a failed
+guard falls through and the mutation it was supposed to stop runs anyway. This fails open and has caused a real
+unguarded `gh pr merge`. Give every command in a batch its own failure path (`&&` chaining or `|| exit 1`); an explicit
+`exit` does propagate out of the wrapper correctly.
 
 Do not batch an inspection command with the mutation it is supposed to guard. If the working-copy scope is uncertain,
 inspect `jj status` first and let the model decide what to include. Once the intended paths are known, use path-limited
@@ -277,30 +284,28 @@ jj status
 If the status output only shows the intended paths:
 
 ```bash
-set -e
-jj commit README.md -m "Add first change"
+jj commit README.md -m "Add first change" || exit 1
 
 # edit README.md again
-jj commit README.md -m "Add second change"
+jj commit README.md -m "Add second change" || exit 1
 
 first_bookmark=pr/first
 second_bookmark=pr/second
-test -n "$first_bookmark"
-test -n "$second_bookmark"
+test -n "$first_bookmark" || exit 1
+test -n "$second_bookmark" || exit 1
 printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
 
-jj bookmark set "$first_bookmark" -r @--
-jj bookmark set "$second_bookmark" -r @-
-jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark"
+jj bookmark set "$first_bookmark" -r @-- || exit 1
+jj bookmark set "$second_bookmark" -r @- || exit 1
+jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark" || exit 1
 ```
 
 Then create the PRs in order, using the safe title/body-file pattern below. The second PR's base is the first PR's
 bookmark:
 
 ```bash
-set -e
-gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
-gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
 ```
 
 If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`,
@@ -393,15 +398,14 @@ At that point the stack usually looks like:
 Create stable bookmarks on the reviewable commits, not on the empty working copy, then publish only those bookmarks:
 
 ```bash
-set -e
 first_bookmark=pr/first
 second_bookmark=pr/second
-test -n "$first_bookmark"
-test -n "$second_bookmark"
+test -n "$first_bookmark" || exit 1
+test -n "$second_bookmark" || exit 1
 printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
-jj bookmark set "$first_bookmark" -r @--
-jj bookmark set "$second_bookmark" -r @-
-jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark"
+jj bookmark set "$first_bookmark" -r @-- || exit 1
+jj bookmark set "$second_bookmark" -r @- || exit 1
+jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark" || exit 1
 ```
 
 Create PRs in order:
@@ -409,9 +413,8 @@ Create PRs in order:
 Prepare the correct `title` and `body_file` for each PR using the safe pattern above, then run:
 
 ```bash
-set -e
-gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
-gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
 ```
 
 The base branch of PR N should be the bookmark for PR N-1.
@@ -557,12 +560,15 @@ what order and confirm before the first merge; that requirement applies no matte
 Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named PR has landed and
 open descendants remain above it, rebase them onto the landed result, push every descendant bookmark the rebase moved —
 not just the lowest — and retarget the lowest remaining PR's base to the default branch before calling the job done. The
-base guards in the snippets below are this rule in executable form; keep them. Derive the default branch once per
-landing instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named
-`main`, which would turn a hardcoded guard into an authorization for the wrong-way merge:
+base guards in the snippets below are this rule in executable form; keep them — including the per-guard `|| exit`
+failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the errexit NOTE in "Fast
+path for the common case") and a guard without its own exit fails open. Derive the default branch once per landing
+instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named `main`,
+which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that `gh repo view` takes the
+repository as a positional argument, not via `-R`:
 
 ```bash
-default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 ```
 
 The `jj`-side commands below still say `main` for readability; substitute the repo's actual default branch and local
@@ -579,8 +585,8 @@ PR-number/bookmark pairs is the landing plan: it is what you show the user for c
 each entry's bookmark is the `$parent_bookmark`/`$child_bookmark` input for the merge steps below:
 
 ```bash
-set -e
-default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
+test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
 pr="$target_pr"
 chain=""
 while :; do
@@ -624,19 +630,22 @@ only decides whether branch deletion is allowed later. `--match-head-commit` pro
 protect the base, which is what the `test` lines are for:
 
 ```bash
-set -e
-default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
+test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
 read -r state base head head_sha <<EOF
 $(gh pr view "$parent_pr" -R "$repo" \
   --json state,baseRefName,headRefName,headRefOid \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
 EOF
-test "$state" = OPEN
-test "$base" = "$default_branch"
-test "$head" = "$parent_bookmark"
-test -n "$head_sha" || { echo "parent PR metadata did not match expected state/base/head" >&2; exit 1; }
-gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
-test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED
+test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
+test "$base" = "$default_branch" \
+  || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+test "$head" = "$parent_bookmark" \
+  || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
+test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
+gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
+test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
+  || { echo "PR #$parent_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
 ```
 
 That final `MERGED` check is not paranoia: on repos with a merge queue or auto-merge, `gh pr merge` can queue the merge
@@ -655,10 +664,9 @@ Restack downstream bookmarks in stack order. For a two-PR stack where the child 
 sequence is:
 
 ```bash
-set -e
-jj rebase -s "$child_bookmark" -d main
-jj git push --bookmark "exact:$child_bookmark"
-gh pr edit "$child_pr" -R "$repo" --base main
+jj rebase -s "$child_bookmark" -d main || exit 1
+jj git push --bookmark "exact:$child_bookmark" || exit 1
+gh pr edit "$child_pr" -R "$repo" --base main || exit 1
 gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
 
@@ -711,37 +719,43 @@ parent/child mapping because you just created the stack, you can skip rediscover
 specific PR you are about to merge:
 
 ```bash
-set -e
-default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
+test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
 read -r state base head head_sha <<EOF
 $(gh pr view "$parent_pr" -R "$repo" \
   --json state,baseRefName,headRefName,headRefOid \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
 EOF
-test "$state" = OPEN
-test "$base" = "$default_branch"
-test "$head" = "$parent_bookmark"
-test -n "$head_sha" || { echo "parent PR metadata did not match expected state/base/head" >&2; exit 1; }
-gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
-test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED
+test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
+test "$base" = "$default_branch" \
+  || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+test "$head" = "$parent_bookmark" \
+  || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
+test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
+gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
+test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
+  || { echo "PR #$parent_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
 
-jj git fetch --remote origin
-jj bookmark set main -r main@origin
-jj rebase -s "$child_bookmark" -d main
-jj git push --bookmark "exact:$child_bookmark"
-gh pr edit "$child_pr" -R "$repo" --base "$default_branch"
+jj git fetch --remote origin || exit 1
+jj bookmark set main -r main@origin || exit 1
+jj rebase -s "$child_bookmark" -d main || exit 1
+jj git push --bookmark "exact:$child_bookmark" || exit 1
+gh pr edit "$child_pr" -R "$repo" --base "$default_branch" || exit 1
 
 read -r state base head head_sha <<EOF
 $(gh pr view "$child_pr" -R "$repo" \
   --json state,baseRefName,headRefName,headRefOid \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
 EOF
-test "$state" = OPEN
-test "$base" = "$default_branch"
-test "$head" = "$child_bookmark"
-test -n "$head_sha" || { echo "child PR metadata did not match expected state/base/head" >&2; exit 1; }
-gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha"
-test "$(gh pr view "$child_pr" -R "$repo" --json state --jq .state)" = MERGED
+test "$state" = OPEN || { echo "PR #$child_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
+test "$base" = "$default_branch" \
+  || { echo "PR #$child_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+test "$head" = "$child_bookmark" \
+  || { echo "PR #$child_pr head is '$head', expected '$child_bookmark'" >&2; exit 1; }
+test -n "$head_sha" || { echo "no head sha for PR #$child_pr" >&2; exit 1; }
+gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
+test "$(gh pr view "$child_pr" -R "$repo" --json state --jq .state)" = MERGED \
+  || { echo "PR #$child_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
 ```
 
 You do not need to rediscover the child PR after `gh pr edit` when the command succeeds and the next operation is an
