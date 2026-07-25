@@ -55,6 +55,16 @@ everywhere. Still flag missing documentation when a change adds a contract, inva
 trust-boundary assumption, async/race behavior, portability assumption, or failure mode that a future reader would
 otherwise have to rediscover.
 
+## Docstrings on tests
+
+Docstrings on tests should do two things:
+
+- Explain _why_ the test is important.
+- Describe what is being tested, in a manner similar to a specification.
+
+The why helps future readers to not take down a chesterton's fence. The what helps skimmability as well as review and
+correction of the test itself, and acts a complement to a project level behavior specification (if any).
+
 ## Inline comments
 
 Inline comments are not decoration. Add them when a reader needs a signpost: non-obvious intent, a surprising
