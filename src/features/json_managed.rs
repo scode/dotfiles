@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 use tracing::debug;
 
 use super::{Feature, FeatureResult};
-use crate::util::fs::{expand_tilde, normalize_path};
+use crate::util::fs::{expand_tilde, normalize_path, write_file_atomically};
 
 /// Manages an installer-owned subset of values inside a user-owned JSON file.
 ///
@@ -244,7 +244,6 @@ impl JsonManaged {
 
         let state = self.load_destination_state(base_dir, &dest_path)?;
         let was_regular = matches!(state, DestinationState::Regular(_));
-        let was_legacy_symlink = matches!(state, DestinationState::LegacySymlink);
         let mut root = match state {
             DestinationState::Missing | DestinationState::LegacySymlink => {
                 Value::Object(Map::new())
@@ -260,10 +259,10 @@ impl JsonManaged {
             return Ok(FeatureResult::NoOp);
         }
 
-        if was_legacy_symlink {
-            fs::remove_file(&dest_path)?;
-        }
-
+        // A legacy symlink needs no removal step: write_file_atomically renames
+        // over it without following it, so the migration to a regular file is a
+        // single atomic replacement. An explicit remove-then-write here would
+        // reopen an ENOENT window where the settings file does not exist at all.
         write_pretty_json(&dest_path, &root)?;
         debug!(destination = %self.destination, "wrote managed json subset");
         Ok(FeatureResult::Changed)
@@ -444,11 +443,16 @@ fn to_path(path: &[&str]) -> Vec<String> {
     path.iter().map(|segment| (*segment).to_string()).collect()
 }
 
+/// Writes the merged document, replacing the destination atomically.
+///
+/// A settings file is read by tools on their own schedule rather than by this
+/// process, so a truncated write is discovered later, by something else, as
+/// malformed JSON. Replacing by rename also preserves the mode the user's file
+/// already had.
 fn write_pretty_json(path: &Path, value: &Value) -> Result<()> {
     let mut contents = serde_json::to_string_pretty(value)?;
     contents.push('\n');
-    fs::write(path, contents)?;
-    Ok(())
+    write_file_atomically(path, contents.as_bytes())
 }
 
 fn managed_value(root: &mut Value, path: &[String], value: Value) -> Result<bool> {
@@ -751,6 +755,28 @@ mod tests {
             serde_json::json!(["A", "B"])
         );
         assert_eq!(written["sandbox"]["enabled"], Value::Bool(true));
+    }
+
+    /// Merging into a user's settings file must not change its permissions.
+    ///
+    /// Worth testing at this level rather than only on the write helper: this
+    /// file can hold credentials and hook commands, so a user who tightened its
+    /// mode meant it, and the wiring is what decides whether that survives.
+    #[test]
+    fn install_preserves_the_destination_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let ctx = TestContext::new();
+        let dest = ctx.dest_path("settings.json");
+        fs::write(&dest, "{}").unwrap();
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o600)).unwrap();
+
+        let feature = JsonManaged::new(ctx.dest_path_str("settings.json"))
+            .managed_value(&["sandbox", "enabled"], Value::Bool(true));
+        feature.install_with_base_dir(ctx.base_dir()).unwrap();
+
+        let mode = fs::metadata(&dest).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

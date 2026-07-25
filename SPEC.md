@@ -148,10 +148,12 @@ installer runs is the intended trade.
 
 ## Atomic File Replacement
 
-`ManagedBlock` rewrites destination files via `write_file_atomically`: a temporary file in the destination's own
-directory, fsynced, renamed over the destination, followed by an fsync of the directory. A reader therefore sees either
-the entire old file or the entire new one. This matters because the files involved are read by the system on its own
-schedule, where a truncated write surfaces at the next login rather than during install.
+Every feature that rewrites a user-owned file — `ManagedBlock` and `JsonManaged` — does so via `write_file_atomically`:
+a temporary file in the destination's own directory, fsynced, renamed over the destination, followed by an fsync of the
+directory. A reader therefore sees either the entire old file or the entire new one. This matters because these files
+are read by other tools on their own schedule, so a truncated write surfaces later and elsewhere — at the next login, or
+as malformed JSON in an unrelated program — rather than during install. New features that rewrite user-owned files
+should use the same helper rather than `fs::write`.
 
 Permissions follow one rule: the installer never widens. An existing regular file keeps its own permission bits, wide
 ones included — preserving what the user set is not the same as choosing it. A file created from scratch requests 0644
@@ -175,6 +177,12 @@ the installing user and group, so preserving them would re-point them at a diffe
 attributes, and ACLs are lost too, but as an inherent consequence of replace-by-rename rather than a decision — the
 replacement is a new inode and carries only what is copied onto it explicitly. Replacing a file also requires write
 permission on its directory rather than on the file itself.
+
+ACL loss has one sharp edge worth naming: on a file carrying a POSIX ACL, the group bits of `st_mode` are the ACL mask,
+not the group entry. Preserving those bits onto the replacement turns the mask into real group permissions, so the new
+file can grant the owning group more than the ACL did — a narrow exception to "the installer never widens". This is
+accepted rather than defended against: destinations here are personal dotfiles, and detecting ACLs to fail or fall back
+to an in-place write would buy little for the checkout-driven single-user setup this installer targets.
 
 Flushing the directory entry after the rename is best-effort, and only in one specific sense: when the filesystem
 reports that it does not implement the operation (`ENOTSUP`, `EOPNOTSUPP`, `EINVAL`, `ENOTTY`), the write is already in
