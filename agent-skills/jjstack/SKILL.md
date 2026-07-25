@@ -70,12 +70,21 @@ environment already guarantees those operations work inside it.
   GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally. In practice, that
   usually means using `gh pr view 45` to find the head ref, then using `jj new <bookmark>` or another explicit move to
   that change.
-- "merge the PR" or "merge this PR" Default to squash merge unless the user explicitly asks for a different merge
-  strategy. In practice that usually means `gh pr merge --squash ...`, and in a stack it means landing the bottom PR
-  first, then restacking any descendants if the squash changed the commit shape GitHub sees. Do not use
-  `--delete-branch` automatically for a non-top stacked PR. In detached Git checkouts, do not rely on `gh` inferring the
-  current branch; pass the PR number explicitly, pass `-R owner/repo`, and prefer `--match-head-commit <sha>` when you
-  already know the expected head commit.
+- "merge the PR", "merge this PR", or a bare "merge it" In a stacked workflow, "merge" means "land this change on the
+  default branch", not "run `gh pr merge` on whatever PR is in focus". Those are different operations when the PR's
+  GitHub base is another stack bookmark: `gh pr merge` on such a PR folds it into its parent's branch, GitHub closes it
+  as "merged", and nothing reaches `main` at all. Before any merge, read the PR's `baseRefName`. If it is the default
+  branch, merge it directly, then restack and retarget any child PRs that were based on the merged bookmark per "Landing
+  stacked PRs safely" — a direct merge still leaves children pointing at the merged branch. If it is a stack bookmark,
+  the request means landing the stack bottom-up per "Landing stacked PRs safely": merge each PR separately in stack
+  order, restacking between merges, until the named PR has landed, then restack and retarget any still-open descendants
+  above it. When that interpretation implies landing more than one PR, tell the user which PRs will land in what order
+  and confirm before the first merge — a bare "merge it" that fans out to several irreversible merges is exactly where a
+  misread intent is most expensive. Each PR lands as its own merge on the default branch. Never merge a PR into its
+  parent bookmark, and never retarget a stacked PR's base to the default branch so one squash swallows its unmerged
+  ancestors — either shortcut collapses review units the stack exists to keep separate, and both need an explicit user
+  request. Default to squash merge unless the user explicitly asks for a different merge strategy, and do not use
+  `--delete-branch` automatically for a non-top stacked PR.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -202,6 +211,11 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 - Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
   repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
   shape this workflow is usually trying to preserve.
+- Before any `gh pr merge`, verify the PR's `baseRefName` is the default branch. Merging a PR whose base is another
+  stack bookmark does not land it — it folds the change into the parent PR's branch and closes the PR as "merged" while
+  `main` stays untouched. A merge request for such a PR means landing the stack bottom-up; see "Landing stacked PRs
+  safely". Do not retarget the PR's base to the default branch just to make this check pass — that squashes its unmerged
+  ancestors into one commit, which is the collapse the landing rules forbid.
 - Do not delete a merged stack branch while any open GitHub PR still names that branch as its base. GitHub PRs are
   attached to base branch names, not jj ancestry, so a locally-correct jj graph does not protect child PRs from being
   closed or misrepresented if their GitHub base branch disappears too early.
@@ -249,6 +263,10 @@ In that case, do not burn tool calls on `jj log`, `jj bookmark list`, `jj git pu
 post-create PR inspection unless a command fails or the user specifically asked for that detail. Use the command output
 you already have: `jj commit` tells you where `@-` landed, `jj bookmark set` tells you what it moved, `jj git push`
 reports the pushed refs, and `gh pr create` prints the PR URL.
+
+One check is exempt from that skip-the-reads advice: the pre-merge `baseRefName` verification required by the Default
+rules. Never skip it before `gh pr merge`, no matter how well you think you know the stack. It can be batched into the
+same shell invocation as the merge, the way the landing snippets do, so it costs nothing extra.
 
 For a fresh two-PR stack where you just edited `README.md`, this is the intended shape:
 
@@ -527,9 +545,66 @@ assume the examples here match the installed version's CLI surface; jj in partic
 
 ## Landing stacked PRs safely
 
+NOTE: Landing always proceeds bottom-up, and every individual `gh pr merge` must target a PR whose `baseRefName` is the
+default branch at the moment you merge it. Never merge a PR into another stack bookmark. GitHub will happily do it — the
+PR closes as "merged", the parent PR absorbs the child's changes, and nothing lands on `main` — which is exactly the
+wrong-way merge this section exists to prevent. If the user asks to merge a PR that sits above unmerged parents, that is
+a request to land the stack up to and including that PR — one merge per PR, in stack order, restacking between merges —
+not to merge it where it currently points, and not to retarget its base to the default branch and squash the whole stack
+into one commit. Each PR was made a separate review unit on purpose; landing must preserve one landed commit per PR
+unless the user explicitly asks to collapse them. When more than one PR will land, tell the user which PRs will land in
+what order and confirm before the first merge; that requirement applies no matter which section routed you here.
+Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named PR has landed and
+open descendants remain above it, rebase them onto the landed result, push every descendant bookmark the rebase moved —
+not just the lowest — and retarget the lowest remaining PR's base to the default branch before calling the job done. The
+base guards in the snippets below are this rule in executable form; keep them. Derive the default branch once per
+landing instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named
+`main`, which would turn a hardcoded guard into an authorization for the wrong-way merge:
+
+```bash
+default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+```
+
+The `jj`-side commands below still say `main` for readability; substitute the repo's actual default branch and local
+bookmark names when they differ.
+
 NOTE: Do not use `gh pr merge --delete-branch` for a non-top stacked PR. If a child PR still has the parent bookmark as
 its GitHub `baseRefName`, deleting the parent branch can cause GitHub to close the child PR before you can edit its
 base. `jj` ancestry may still be correct locally, but GitHub is tracking branch names here.
+
+When the merge request names a PR whose base is a stack bookmark and you do not already hold the stack mapping, first
+walk the ancestor chain upward to the stack bottom: read the PR's `baseRefName`, find the same-repo open PR whose
+`headRefName` is that branch, and repeat until a base equals the default branch. The resulting bottom-up list of
+PR-number/bookmark pairs is the landing plan: it is what you show the user for confirmation before the first merge, and
+each entry's bookmark is the `$parent_bookmark`/`$child_bookmark` input for the merge steps below:
+
+```bash
+set -e
+default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+pr="$target_pr"
+chain=""
+while :; do
+  read -r state base head <<EOF
+$(gh pr view "$pr" -R "$repo" --json state,baseRefName,headRefName \
+  --jq '[.state, .baseRefName, .headRefName] | @tsv')
+EOF
+  test "$state" = OPEN || { echo "PR #$pr is ${state:-unreadable}; refusing to plan a landing through it" >&2; exit 1; }
+  case " $chain" in *" #$pr:"*) echo "base/head cycle at PR #$pr" >&2; exit 1 ;; esac
+  chain="#$pr:$head $chain"
+  test "$base" = "$default_branch" && break
+  parents=$(gh pr list -R "$repo" --state open --head "$base" \
+    --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not) | .number] | join(" ")')
+  set -- $parents
+  test $# -eq 1 || { echo "expected exactly one same-repo open PR with head $base, got: '$parents'" >&2; exit 1; }
+  pr=$1
+done
+printf 'landing order (bottom-up), PR:bookmark: %s\n' "$chain"
+```
+
+The `isCrossRepository` filter matters: `gh pr list --head` matches branch names across forks, and silently picking a
+fork's PR would produce a landing plan through a stranger's branch. If the loop errors — a closed PR mid-chain, no
+same-repo parent, more than one candidate parent, or a cycle — stop and show the user what you found instead of
+improvising; the stack may have been partially landed, retargeted by another actor, or wired up wrong.
 
 Before merging a stacked PR, identify downstream PRs whose base is the bookmark you are about to land:
 
@@ -544,12 +619,30 @@ when another actor may have edited PR bases, when the local notes are incomplete
 Same-session mapping lets you skip rediscovering which PR number belongs to which bookmark. It does not replace checking
 the state, base, and head of the specific PR you are about to merge.
 
-If that returns any PRs, merge the parent without deleting its branch:
+Merge the parent with the full guard. The guard is the same whether or not downstream PRs exist; the downstream answer
+only decides whether branch deletion is allowed later. `--match-head-commit` protects the head SHA only — it does not
+protect the base, which is what the `test` lines are for:
 
 ```bash
-head_sha=$(gh pr view "$parent_pr" -R "$repo" --json headRefOid --jq .headRefOid)
+set -e
+default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+read -r state base head head_sha <<EOF
+$(gh pr view "$parent_pr" -R "$repo" \
+  --json state,baseRefName,headRefName,headRefOid \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
+EOF
+test "$state" = OPEN
+test "$base" = "$default_branch"
+test "$head" = "$parent_bookmark"
+test -n "$head_sha" || { echo "parent PR metadata did not match expected state/base/head" >&2; exit 1; }
 gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED
 ```
+
+That final `MERGED` check is not paranoia: on repos with a merge queue or auto-merge, `gh pr merge` can queue the merge
+and exit zero without anything having landed. If the check fails while the PR sits queued, wait and re-read instead of
+proceeding — fetching and restacking now would rebase descendants onto a stale default branch and retarget the next PR
+before its parent actually landed.
 
 Then fetch the landed state and move local `main` to the remote result:
 
@@ -619,22 +712,24 @@ specific PR you are about to merge:
 
 ```bash
 set -e
+default_branch=$(gh repo view -R "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 read -r state base head head_sha <<EOF
 $(gh pr view "$parent_pr" -R "$repo" \
   --json state,baseRefName,headRefName,headRefOid \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
 EOF
 test "$state" = OPEN
-test "$base" = main
+test "$base" = "$default_branch"
 test "$head" = "$parent_bookmark"
 test -n "$head_sha" || { echo "parent PR metadata did not match expected state/base/head" >&2; exit 1; }
 gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED
 
 jj git fetch --remote origin
 jj bookmark set main -r main@origin
 jj rebase -s "$child_bookmark" -d main
 jj git push --bookmark "exact:$child_bookmark"
-gh pr edit "$child_pr" -R "$repo" --base main
+gh pr edit "$child_pr" -R "$repo" --base "$default_branch"
 
 read -r state base head head_sha <<EOF
 $(gh pr view "$child_pr" -R "$repo" \
@@ -642,10 +737,11 @@ $(gh pr view "$child_pr" -R "$repo" \
   --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
 EOF
 test "$state" = OPEN
-test "$base" = main
+test "$base" = "$default_branch"
 test "$head" = "$child_bookmark"
 test -n "$head_sha" || { echo "child PR metadata did not match expected state/base/head" >&2; exit 1; }
 gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha"
+test "$(gh pr view "$child_pr" -R "$repo" --json state --jq .state)" = MERGED
 ```
 
 You do not need to rediscover the child PR after `gh pr edit` when the command succeeds and the next operation is an
@@ -653,13 +749,25 @@ explicit merge of that same PR. You still need to verify that the PR you are abo
 base and head. If `gh pr edit` fails, if the metadata check returns nothing, or if GitHub reports the child PR as
 closed, fall back to the full inspection flow above.
 
+The child guard in that snippet checks PR shape only. On repos where checks are expected to run, do not merge the child
+in the same breath as the base edit: split the batch after `gh pr edit`, wait for checks per the "no checks means
+pending" guidance above, and only then run the verify-and-merge block. The same split applies on merge-queue repos: the
+`MERGED` check after the parent merge will fail while the PR sits in the queue — that is the guard working, not an
+error. Wait for the queue to land it, then resume from the fetch.
+
 For a known stack with more than two PRs, use the same loop in stack order. After each landing, rebase the remaining
-local stack onto the landed base while preserving the relative order of the still-open PRs. Then edit only the next
-bottom PR's GitHub base to the newly landed branch; descendants should keep their bases on their immediate parent
-bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the
-mapping is already in hand, but do verify the state, base, and head of the specific PR before merging it.
+local stack onto the landed base while preserving the relative order of the still-open PRs, and push every bookmark the
+rebase moved — GitHub tracks branch heads, so an unpushed descendant keeps showing a stale diff against its rewritten
+parent. Then edit only the next bottom PR's GitHub base to the newly landed branch; descendants should keep their bases
+on their immediate parent bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on
+every iteration when the mapping is already in hand, but do verify the state, base, and head of the specific PR before
+merging it.
 
 ## After merging a PR
+
+This section applies after the final merge of a landing, when no open stacked PRs remain above what you merged. If open
+descendants remain, keep following the restack flow in "Landing stacked PRs safely" instead — the `jj rebase -s @` below
+moves only the working-copy commit, and running it mid-landing strands `@` away from the stack it was sitting on.
 
 After GitHub merges the PR, bring the local jj view back into sync before doing anything else:
 
@@ -673,7 +781,7 @@ The first command imports the new remote state. The second makes the local `main
 bookmark. The third moves the usually-empty working-copy commit on top of the new `main` so the checkout is coherent
 again.
 
-If you are landing a stacked PR that does not target `main`, use the correct local and remote bookmark names instead of
+If the repository's default branch is not named `main`, use the correct local and remote bookmark names instead of
 blindly pasting `main`.
 
 ## Practical notes
