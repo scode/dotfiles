@@ -87,7 +87,7 @@ overrides may remove or replace these defaults; see Local availability.
 | sonnet-5 low         | claude |      |
 | sonnet-5 medium      | claude |      |
 | sonnet-5 high        | claude |      |
-| opus-4.8 high        | claude |      |
+| opus-5 high          | claude |      |
 | fable-5 high         | claude | yes  |
 
 ### Work profiles
@@ -101,9 +101,9 @@ initial classification.
 | mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   |
 | routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  |
 | clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 medium → sonnet-5 high |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-4.8 high → fable-5 high    |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-4.8 high → fable-5 high    |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-4.8 high   |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     |
 | critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    |
 
 These assignments are defaults, not claims that every task in a profile is equivalent. Test quality is critical because
