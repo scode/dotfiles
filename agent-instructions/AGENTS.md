@@ -84,6 +84,16 @@ session while shell edits are opaque. Shell-based editing is acceptable only wit
 mechanical bulk transform (many call sites via regex, generated content) that would be impractical as individual edits —
 and never merely to avoid re-reading a file whose on-disk state drifted.
 
+# set -e is inert in agent shell tools
+
+Do not rely on `set -e` in commands run through an agent's shell tool. Agent harnesses commonly wrap the command in an
+`eval` placed in a non-final position of an `&&` list, and bash ignores errexit there — both for the `eval` itself and
+for everything it executes. The flag still shows as enabled in `$-` and `SHELLOPTS`, so every diagnostic says the script
+is guarded while every failed guard falls through to the next command. Guard-then-mutate scripts fail open; this has
+caused a real unguarded `gh pr merge`. Give each command its own failure path instead: chain with `&&`, or append
+`|| exit 1` (an explicit `exit` does propagate out of the wrapper). Standalone script files executed via their own
+shebang get a fresh shell and are unaffected.
+
 # Commit messages and PR titles/descriptions
 
 Always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR descriptions, or commit
