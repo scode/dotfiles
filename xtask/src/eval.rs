@@ -913,30 +913,17 @@ fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) 
 /// substantially without saturating the machine or the API.
 const REVIEWER_CONCURRENCY: usize = 6;
 
-/// Discover reviewer charters for restriction validation and swarm accounting.
+/// Discover reviewer charters eligible to run for this target.
 ///
 /// This does not choose the full swarm's active panel; the candidate skill
-/// does. It establishes the set the coordinator must account for as completed
-/// or deliberately skipped. The charter files carry the exclusion markers, so
-/// the audit follows exported skill versions without a separate harness
-/// manifest: shared base charters say "not spawned as a reviewer", and
-/// condition-gated charters say when they exist at all.
+/// does. It establishes the target-specific upper bound the coordinator must
+/// account for as completed or deliberately skipped. The charter files carry
+/// the exclusion markers, so the audit follows exported skill versions without
+/// a separate harness manifest.
 fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> {
     let dir = skill_path.join("reviewers");
     let mut panel = Vec::new();
-    for entry in fs::read_dir(&dir)
-        .with_context(|| format!("no reviewers directory at {}", dir.display()))?
-    {
-        let path = entry?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-            continue;
-        }
-        let name = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .ok_or_else(|| anyhow!("unreadable charter file name at {}", path.display()))?
-            .to_string();
-        let text = fs::read_to_string(&path)?;
+    for (name, text) in reviewer_charters(skill_path)? {
         if text.contains("not spawned as a reviewer") {
             continue;
         }
@@ -956,6 +943,47 @@ fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> 
     Ok(panel)
 }
 
+/// Return every charter that can represent a reviewer, including reviewers
+/// whose conditions exclude them from this target.
+///
+/// The coordinator may report those reviewers as deliberately skipped. Shared
+/// base charters are different: they can never be reviewer executions and must
+/// remain invalid output.
+fn known_reviewers(skill_path: &Path) -> Result<Vec<String>> {
+    let mut reviewers = reviewer_charters(skill_path)?
+        .into_iter()
+        .filter_map(|(name, text)| (!text.contains("not spawned as a reviewer")).then_some(name))
+        .collect::<Vec<_>>();
+    reviewers.sort();
+    Ok(reviewers)
+}
+
+/// Read reviewer charter names and contents in deterministic order.
+///
+/// Discovery and alias validation share this inventory so a candidate cannot
+/// get different answers merely because the filesystem returned directory
+/// entries in another order.
+fn reviewer_charters(skill_path: &Path) -> Result<Vec<(String, String)>> {
+    let dir = skill_path.join("reviewers");
+    let mut charters = Vec::new();
+    for entry in fs::read_dir(&dir)
+        .with_context(|| format!("no reviewers directory at {}", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| anyhow!("unreadable charter file name at {}", path.display()))?
+            .to_string();
+        charters.push((name, fs::read_to_string(&path)?));
+    }
+    charters.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(charters)
+}
+
 /// Resolve candidate-owned reviewer names to stable artifact keys.
 ///
 /// Charter basenames are durable machine keys, while the first Markdown
@@ -964,11 +992,21 @@ fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> 
 /// normalizes stored attribution for offline comparisons.
 fn reviewer_aliases(
     skill_path: &Path,
-    discoverable_panel: &[String],
+    known_reviewers: &[String],
 ) -> Result<BTreeMap<String, String>> {
     let mut aliases = BTreeMap::new();
-    for canonical in discoverable_panel {
-        aliases.insert(canonical.clone(), canonical.clone());
+    // Reserve every machine key before adding presentation aliases. Without
+    // this first pass, a title equal to a later charter's basename is silently
+    // overwritten or rejected depending on directory iteration order.
+    for canonical in known_reviewers {
+        ensure!(
+            aliases
+                .insert(canonical.clone(), canonical.clone())
+                .is_none(),
+            "reviewer key '{canonical}' appears more than once"
+        );
+    }
+    for canonical in known_reviewers {
         let charter_path = skill_path.join("reviewers").join(format!("{canonical}.md"));
         let text = fs::read_to_string(&charter_path)?;
         let Some(title) = text
@@ -1236,6 +1274,9 @@ fn run_swarm_coordinator(
     repeat_dir: &Path,
 ) -> Result<FindingsFile> {
     fs::create_dir_all(repeat_dir)?;
+    let known_panel = known_reviewers(context.skill_path)?;
+    let known: BTreeSet<_> = known_panel.iter().cloned().collect();
+    let aliases = reviewer_aliases(context.skill_path, &known_panel)?;
     let scope_label = format!(
         "eval range {}..{}",
         context.target.base_sha, context.target.subject_sha
@@ -1267,23 +1308,17 @@ fn run_swarm_coordinator(
     )
     .context("swarm coordinator failed")?;
     let mut result: SwarmResult = read_json(&result_path)?;
+    ensure_unique_finding_ids(&result.findings)
+        .context("coordinator returned duplicate finding identifiers")?;
 
     let discoverable: BTreeSet<_> = discoverable_panel.iter().cloned().collect();
-    let aliases = reviewer_aliases(context.skill_path, discoverable_panel)?;
     let mut accounted = BTreeSet::new();
     let mut completed = Vec::new();
     let mut skipped = Vec::new();
     let mut completed_names = BTreeSet::new();
     for execution in result.reviewer_execution {
-        let reviewer = canonical_reviewer(&aliases, &execution.reviewer).with_context(|| {
-            format!("discoverable reviewers: {}", discoverable_panel.join(", "))
-        })?;
-        ensure!(
-            discoverable.contains(&reviewer),
-            "coordinator reported unknown reviewer '{}'; discoverable reviewers: {}",
-            reviewer,
-            discoverable_panel.join(", ")
-        );
+        let reviewer = canonical_reviewer(&aliases, &execution.reviewer)
+            .with_context(|| format!("known reviewers: {}", known_panel.join(", ")))?;
         ensure!(
             accounted.insert(reviewer.clone()),
             "coordinator reported reviewer '{}' more than once",
@@ -1291,6 +1326,13 @@ fn run_swarm_coordinator(
         );
         match execution.status {
             SwarmReviewerStatus::Completed => {
+                ensure!(
+                    discoverable.contains(&reviewer),
+                    "coordinator completed condition-excluded reviewer '{}'; reviewers eligible \
+                     for this target: {}",
+                    reviewer,
+                    discoverable_panel.join(", ")
+                );
                 ensure!(
                     execution.passes > 0,
                     "completed reviewer '{}' reported zero passes",
@@ -1315,6 +1357,11 @@ fn run_swarm_coordinator(
                     "skipped reviewer '{}' has no rationale",
                     reviewer
                 );
+                ensure!(
+                    known.contains(&reviewer),
+                    "coordinator skipped unknown reviewer '{}'",
+                    reviewer
+                );
                 skipped.push(SkippedReviewerExecution {
                     reviewer,
                     rationale: execution.rationale,
@@ -1323,15 +1370,10 @@ fn run_swarm_coordinator(
         }
     }
     ensure!(
-        accounted == discoverable,
-        "coordinator reviewer accounting does not match the resolved skill; missing: {}; unexpected: {}",
+        discoverable.is_subset(&accounted),
+        "coordinator reviewer accounting does not match the resolved skill; missing eligible reviewers: {}",
         discoverable
             .difference(&accounted)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", "),
-        accounted
-            .difference(&discoverable)
             .cloned()
             .collect::<Vec<_>>()
             .join(", ")
@@ -1417,6 +1459,12 @@ struct CollaborationDigest {
     followups: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ClaudeCollaborationCall {
+    Spawn,
+    Followup,
+}
+
 /// Count native subagent creation and same-agent follow-ups from the parent
 /// transcript. This audit is intentionally structural: it knows the two host
 /// event formats, but not the swarm's reviewer policy.
@@ -1470,8 +1518,8 @@ fn digest_collaboration(backend: Backend, transcript: &Path) -> Result<Collabora
             })
         }
         Backend::Claude => {
-            let mut spawned_agents = 0;
-            let mut followups = 0;
+            let mut calls = BTreeMap::new();
+            let mut successful_results = BTreeSet::new();
             for line in raw.lines() {
                 let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
                     continue;
@@ -1483,20 +1531,41 @@ fn digest_collaboration(backend: Backend, transcript: &Path) -> Result<Collabora
                     continue;
                 };
                 for block in content {
-                    if block.get("type").and_then(|value| value.as_str()) != Some("tool_use") {
-                        continue;
-                    }
-                    match block.get("name").and_then(|value| value.as_str()) {
-                        Some("Agent" | "Task") => spawned_agents += 1,
-                        Some("SendMessage") => followups += 1,
+                    match block.get("type").and_then(|value| value.as_str()) {
+                        Some("tool_use") => {
+                            let Some(id) = block.get("id").and_then(|value| value.as_str()) else {
+                                continue;
+                            };
+                            let call = match block.get("name").and_then(|value| value.as_str()) {
+                                Some("Agent" | "Task") => ClaudeCollaborationCall::Spawn,
+                                Some("SendMessage") => ClaudeCollaborationCall::Followup,
+                                _ => continue,
+                            };
+                            calls.entry(id.to_string()).or_insert(call);
+                        }
+                        Some("tool_result")
+                            if block.get("is_error").and_then(|value| value.as_bool())
+                                != Some(true) =>
+                        {
+                            if let Some(id) =
+                                block.get("tool_use_id").and_then(|value| value.as_str())
+                            {
+                                successful_results.insert(id.to_string());
+                            }
+                        }
                         _ => {}
                     }
                 }
             }
-            Ok(CollaborationDigest {
-                spawned_agents,
-                followups,
-            })
+            let mut digest = CollaborationDigest::default();
+            for id in successful_results {
+                match calls.get(&id) {
+                    Some(ClaudeCollaborationCall::Spawn) => digest.spawned_agents += 1,
+                    Some(ClaudeCollaborationCall::Followup) => digest.followups += 1,
+                    None => {}
+                }
+            }
+            Ok(digest)
         }
     }
 }
@@ -1547,11 +1616,13 @@ impl CompareCommand {
             baseline_meta.reviewer.as_deref().unwrap_or("full panel"),
             candidate_meta.reviewer.as_deref().unwrap_or("full panel")
         );
+        let baseline_mode = baseline_meta.comparison_execution_mode();
+        let candidate_mode = candidate_meta.comparison_execution_mode();
         ensure!(
-            baseline_meta.execution_mode == candidate_meta.execution_mode,
+            baseline_mode == candidate_mode,
             "baseline execution mode ({:?}) does not match candidate ({:?})",
-            baseline_meta.execution_mode,
-            candidate_meta.execution_mode
+            baseline_mode,
+            candidate_mode
         );
         // Effort comparability is backend-relative. Within one backend the
         // efforts must match exactly, as before. Across backends the A/B axis
@@ -1828,6 +1899,23 @@ struct RunMetadata {
     skill_source: String,
     skill_path: String,
     created_at: String,
+}
+
+impl RunMetadata {
+    /// Return the workflow this artifact actually measured for comparison.
+    ///
+    /// Artifacts written before `execution_mode` existed deserialize as
+    /// `LegacyPanel`. Restricted runs from that era already used the same
+    /// direct-charter path as today's `Reviewer` mode, so treating them as a
+    /// legacy panel would invalidate compatible baselines. Only old
+    /// unrestricted runs used harness-owned panel fan-out.
+    fn comparison_execution_mode(&self) -> ExecutionMode {
+        if self.execution_mode == ExecutionMode::LegacyPanel && self.reviewer.is_some() {
+            ExecutionMode::Reviewer
+        } else {
+            self.execution_mode
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2503,6 +2591,23 @@ fn claude_error_cause(stdout: &str) -> Option<String> {
     }
 }
 
+/// Reject duplicate model-assigned identifiers before an artifact is accepted.
+///
+/// Finding ids are the join key for judging and matching. Keeping a malformed
+/// run around until `compare` would turn a completed, paid run into an
+/// artifact that can never be used.
+fn ensure_unique_finding_ids(findings: &[Finding]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for finding in findings {
+        ensure!(
+            seen.insert(&finding.id),
+            "duplicate finding id '{}'",
+            finding.id
+        );
+    }
+    Ok(())
+}
+
 fn collect_run_findings(run_dir: &Path) -> Result<Vec<Finding>> {
     let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
     let mut findings = Vec::new();
@@ -3015,6 +3120,8 @@ mod tests {
         let execution: ExecutionRecord = read_json(&run_dir.join("repeat-1/execution.json"))?;
         assert_eq!(execution.expected, 2);
         assert_eq!(execution.reviewers.len(), 2);
+        assert_eq!(execution.skipped_reviewers.len(), 1);
+        assert_eq!(execution.skipped_reviewers[0].reviewer, "spec-compliance");
         assert_eq!(execution.coordinator.as_ref().unwrap().spawned_agents, 2);
         assert_eq!(execution.coordinator.as_ref().unwrap().followups, 1);
         let findings: FindingsFile = read_json(&run_dir.join("repeat-1/findings.json"))?;
@@ -3194,7 +3301,12 @@ echo '{"type":"turn.completed","usage":{"output_tokens":42}}'
 
         let panel = discover_panel(&skill_path, &target_root)?;
         assert_eq!(panel, vec!["docs-comments", "test-quality"]);
-        let aliases = reviewer_aliases(&skill_path, &panel)?;
+        let known = known_reviewers(&skill_path)?;
+        assert_eq!(
+            known,
+            vec!["docs-comments", "spec-compliance", "test-quality"]
+        );
+        let aliases = reviewer_aliases(&skill_path, &known)?;
         assert_eq!(
             canonical_reviewer(&aliases, "docs-comments-reviewer")?,
             "docs-comments"
@@ -3203,6 +3315,10 @@ echo '{"type":"turn.completed","usage":{"output_tokens":42}}'
             canonical_reviewer(&aliases, "test-quality")?,
             "test-quality"
         );
+        assert_eq!(
+            canonical_reviewer(&aliases, "spec-compliance-reviewer")?,
+            "spec-compliance"
+        );
 
         fs::write(target_root.join("SPEC.md"), "# spec")?;
         let panel = discover_panel(&skill_path, &target_root)?;
@@ -3210,6 +3326,27 @@ echo '{"type":"turn.completed","usage":{"output_tokens":42}}'
             panel,
             vec!["docs-comments", "spec-compliance", "test-quality"]
         );
+        Ok(())
+    }
+
+    /// Reviewer aliases must not depend on charter enumeration order. A title
+    /// that collides with another charter's basename is ambiguous even if the
+    /// conflicting basename happens to be visited later.
+    #[test]
+    fn reviewer_aliases_reject_title_and_machine_key_collisions() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let skill_path = root.join(DEFAULT_SKILL_PATH);
+        fs::write(
+            skill_path.join("reviewers/docs-comments.md"),
+            "# test-quality",
+        )?;
+
+        let known = known_reviewers(&skill_path)?;
+        let error = reviewer_aliases(&skill_path, &known).unwrap_err();
+
+        assert!(error.to_string().contains("reviewer alias 'test-quality'"));
         Ok(())
     }
 
@@ -3395,6 +3532,44 @@ esac
             CollaborationDigest {
                 spawned_agents: 1,
                 followups: 0,
+            }
+        );
+        Ok(())
+    }
+
+    /// Claude records both the attempted tool call and its later result. Only
+    /// a non-error result proves that a reviewer or continuation actually ran;
+    /// counting attempts would reject allowed retries and let solo fallback
+    /// masquerade as a swarm when every spawn failed.
+    #[test]
+    fn collaboration_digest_ignores_failed_claude_calls() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let transcript = temp.path().join("collaboration.jsonl");
+        fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"spawn-ok\",\"name\":\"Agent\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"spawn-ok\",\"is_error\":false}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"spawn-failed\",\"name\":\"Agent\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"spawn-failed\",\"is_error\":true}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"followup-ok\",\"name\":\"SendMessage\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"followup-ok\"}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"followup-without-result\",\"name\":\"SendMessage\"}]}}\n",
+            ),
+        )?;
+
+        assert_eq!(
+            digest_collaboration(Backend::Claude, &transcript)?,
+            CollaborationDigest {
+                spawned_agents: 1,
+                followups: 1,
             }
         );
         Ok(())
@@ -3913,6 +4088,18 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         Ok(())
     }
 
+    /// Coordinator output is validated before the repeat is accepted, rather
+    /// than leaving a completed run that fails only when a later compare tries
+    /// to use model-assigned ids as join keys.
+    #[test]
+    fn swarm_output_rejects_duplicate_finding_ids_immediately() {
+        let findings = vec![finding("F1", "first", 1), finding("F1", "second", 1)];
+
+        let error = ensure_unique_finding_ids(&findings).unwrap_err();
+
+        assert!(error.to_string().contains("duplicate finding id 'F1'"));
+    }
+
     #[test]
     fn run_command_rejects_zero_repeats() -> Result<()> {
         let temp = tempfile::tempdir()?;
@@ -4341,6 +4528,32 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         .run_with_tools(root, &tools)
         .unwrap_err();
         assert!(error.to_string().contains("baseline effort"));
+        Ok(())
+    }
+
+    /// Restricted artifacts written before execution modes existed used the
+    /// same direct-charter workflow as current `Reviewer` runs. They remain
+    /// valid baselines even though serde fills their missing mode with the
+    /// unrestricted legacy default.
+    #[test]
+    fn legacy_restricted_runs_compare_as_reviewer_mode() -> Result<()> {
+        let mut legacy = run_meta("legacy", "fake-model");
+        legacy.reviewer = Some("test-quality".to_string());
+        let mut serialized = serde_json::to_value(&legacy)?;
+        serialized
+            .as_object_mut()
+            .expect("run metadata serializes as an object")
+            .remove("execution_mode");
+        let legacy: RunMetadata = serde_json::from_value(serialized)?;
+        let mut current = run_meta("current", "fake-model");
+        current.reviewer = Some("test-quality".to_string());
+        current.execution_mode = ExecutionMode::Reviewer;
+
+        assert_eq!(
+            legacy.comparison_execution_mode(),
+            current.comparison_execution_mode()
+        );
+        assert_eq!(legacy.comparison_execution_mode(), ExecutionMode::Reviewer);
         Ok(())
     }
 
@@ -4868,6 +5081,12 @@ case "$(basename "$schema")" in
       "status": "completed",
       "passes": 1,
       "rationale": ""
+    },
+    {
+      "reviewer": "spec-compliance",
+      "status": "skipped",
+      "passes": 0,
+      "rationale": "target has no SPEC.md"
     }
   ]
 }
@@ -5055,13 +5274,16 @@ emit() {
 }
 
 emit_swarm() {
-  local structured='{"findings":[{"id":"F1","category":"correctness","summary":"example finding","location":"src/lib.rs:1","rationale":"example rationale","reviewers":["docs-comments"]}],"reviewer_execution":[{"reviewer":"docs-comments","status":"completed","passes":2,"rationale":""},{"reviewer":"test-quality","status":"completed","passes":1,"rationale":""}]}'
+  local structured='{"findings":[{"id":"F1","category":"correctness","summary":"example finding","location":"src/lib.rs:1","rationale":"example rationale","reviewers":["docs-comments"]}],"reviewer_execution":[{"reviewer":"docs-comments","status":"completed","passes":2,"rationale":""},{"reviewer":"test-quality","status":"completed","passes":1,"rationale":""},{"reviewer":"spec-compliance","status":"skipped","passes":0,"rationale":"target has no SPEC.md"}]}'
   echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","fake_model":"'"$model"'","fake_effort":"'"$effort"'"}'
-  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"name":"docs-comments"}}]}}'
-  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Agent","input":{"name":"test-quality"}}]}}'
-  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"SendMessage","input":{"recipient":"docs-comments"}}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-docs","name":"Agent","input":{"name":"docs-comments"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-docs","content":"agent id: docs","is_error":false}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-tests","name":"Agent","input":{"name":"test-quality"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-tests","content":"agent id: tests","is_error":false}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"followup-docs","name":"SendMessage","input":{"recipient":"docs-comments"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"followup-docs","content":"sent","is_error":false}]}}'
   echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput","input":'"$structured"'}]}}'
-  echo '{"type":"result","subtype":"success","is_error":false,"num_turns":5,"result":"done","structured_output":'"$structured"',"usage":{"input_tokens":100,"output_tokens":42}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"num_turns":8,"result":"done","structured_output":'"$structured"',"usage":{"input_tokens":100,"output_tokens":42}}'
 }
 
 if grep -F "as coordinator" <<<"$prompt" >/dev/null; then
