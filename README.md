@@ -1,6 +1,7 @@
 # dotfiles
 
-A personal dotfiles manager for symlinks and a small amount of managed config state.
+A personal dotfiles manager for symlinks, a small amount of managed config state, and marker-fenced blocks inside files
+that belong to the user.
 
 ## Usage
 
@@ -21,6 +22,15 @@ exists.
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.
 
+`~/.bashrc` is also unconditional, and it is the one target where install edits a plain-text file it does not own (the
+other non-owned file is `~/.claude/settings.json`, described below). The installer claims a region delimited by
+`# BEGIN managed-block(scode-dotfiles/bash)` and a matching `END` line — other tools and your own edits can append,
+prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line separating
+the block from its neighbors and, if your file did not end in a newline, that newline. Anything you write _between_ the
+markers is overwritten on the next install. The file is created if it does not exist yet. If your `~/.bashrc` is a
+symlink — a common setup when it is managed from another checkout — install refuses it rather than writing through the
+link, and reports that feature as failed.
+
 NOTE: `uninstall` is not a full rollback for every feature. Claude settings are merged into `~/.claude/settings.json` as
 a regular user-owned JSON file, where the installer owns only the specific values it manages. Uninstall removes those
 owned values when they still match what install wrote (a value you edited is treated as yours and left alone) and prunes
@@ -30,6 +40,10 @@ removes that symlink outright, as it did back when the whole file was symlinked.
 that older installer versions wrote (retired permissions and hooks); those are one-way cleanups that uninstall does not
 re-add. Beyond the empty-container pruning above, values at paths the installer neither manages nor targets for cleanup
 are never touched.
+
+The `~/.bashrc` block is the same story in a different file: uninstall removes the marked region but never the file, not
+even when the block was all it contained. The blank line install inserted to separate the block from its neighbors stays
+behind, since it sits outside the markers.
 
 ## Disclaimer
 

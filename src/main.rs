@@ -5,8 +5,8 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 use dotfiles::{
-    DeleteSymlink, FeatureGraph, FeatureHandle, JsonManaged, ManagedDirectory, PathExists,
-    PayloadSymlink, RawSymlink,
+    DeleteSymlink, FeatureGraph, FeatureHandle, JsonManaged, ManagedBlock, ManagedDirectory,
+    MissingDestination, PathExists, PayloadSymlink, RawSymlink,
 };
 
 const CLAUDE_PERMISSIONS_ALLOW: &[&str] = &[
@@ -407,6 +407,32 @@ fn add_bin_features(g: &mut FeatureGraph) -> FeatureHandle {
     .build()
 }
 
+/// Registers the installer-owned region of the interactive shell startup file.
+///
+/// `~/.bashrc` is shared with every tool that ever wants a line in the user's
+/// shell, so the installer owns a marked block rather than the file. Creation is
+/// requested explicitly because a machine without a `~/.bashrc` is an
+/// unconfigured one, not one that has opted out.
+///
+/// The id and the default `Append` position are both effectively frozen once
+/// this has run anywhere, for different reasons. Renaming the id installs a
+/// fresh block everywhere and orphans the old one, so it needs a
+/// `DeleteManagedBlock` for the old id alongside it. Changing the position is
+/// worse: the marker is unchanged, so install leaves the block where it already
+/// sits and the new position applies only to machines that never installed. A
+/// `DeleteManagedBlock` does not help, even ordered ahead of the install with
+/// `depends_on` — it names the same marker the install writes back, so the pair
+/// would delete and re-insert the block on every run forever. Moving an
+/// installed block means renaming its id.
+fn add_shell_features(g: &mut FeatureGraph) {
+    g.add(
+        "bashrc-block",
+        ManagedBlock::new("payload/bashrc", "~/.bashrc", "bash")
+            .missing_destination(MissingDestination::Create),
+    )
+    .build();
+}
+
 fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-md",
@@ -536,6 +562,7 @@ fn features() -> FeatureGraph {
     let claude_statusline = add_bin_features(&mut g);
     add_claude_features(&mut g, &claude_statusline);
     add_codex_features(&mut g);
+    add_shell_features(&mut g);
     g
 }
 
