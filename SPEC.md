@@ -25,9 +25,15 @@ these evals. Comparisons are baseline-relative: a likely regression means a judg
 recovered as a judge-approved candidate finding across repeats for the same resolved diff.
 
 `compare` deliberately refuses runs whose configurations measure different things: mismatched reviewer restrictions,
-mismatched efforts within one backend, and cross-backend comparisons where either run left `--effort` unset (an unset
-effort is each vendor's own built-in default, and defaults are not comparable across backends). These refusals are
-intentional guards, not over-strictness to relax in review.
+mismatched execution modes, mismatched efforts within one backend, and cross-backend comparisons where either run left
+`--effort` unset (an unset effort is each vendor's own built-in default, and defaults are not comparable across
+backends). Legacy restricted artifacts count as direct-reviewer runs because that execution path did not change; legacy
+unrestricted artifacts used harness-owned panel fan-out and are not native-swarm baselines.
+
+A native-swarm repeat is valid only when the coordinator's reviewer accounting agrees with successful collaboration
+calls in the parent transcript. Failed spawns and continuation messages do not count. The run must abort instead of
+accepting coordinator-only review, a partial panel, condition-excluded reviewers reported as completed, or findings with
+duplicate identifiers. These refusals are intentional guards, not over-strictness to relax in review.
 
 ## Repo-Owned Symlink Migration
 

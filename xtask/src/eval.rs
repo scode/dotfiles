@@ -86,8 +86,9 @@ struct RunCommand {
     #[arg(long, value_enum, default_value_t = Backend::Codex)]
     backend: Backend,
     /// Reasoning effort for the run's agents. Vocabulary depends on
-    /// `--backend`: codex accepts minimal|low|medium|high, claude accepts
-    /// low|medium|high|xhigh|max.
+    /// `--backend`: codex accepts none|minimal|low|medium|high|xhigh, claude
+    /// accepts low|medium|high|xhigh|max. Individual models may support only a
+    /// subset; the preflight surfaces that before real eval spend.
     ///
     /// Both backends run with user config ignored, so this flag is the only
     /// way to control effort; when omitted the run uses the backend's built-in
@@ -138,8 +139,12 @@ struct SynthesizeCommand {
     effort: Option<String>,
 }
 
-/// Reasoning-effort vocabulary codex accepts for `model_reasoning_effort`.
-const CODEX_EFFORT_LEVELS: [&str; 4] = ["minimal", "low", "medium", "high"];
+/// Reasoning-effort vocabulary accepted by current codex model families.
+///
+/// The CLI forwards this value to the selected model, whose supported subset
+/// can differ. Preflight is the authoritative compatibility check: for
+/// example, Luna supports `none` but not `minimal`.
+const CODEX_EFFORT_LEVELS: [&str; 6] = ["none", "minimal", "low", "medium", "high", "xhigh"];
 
 /// Reasoning-effort vocabulary the claude CLI accepts for `--effort`. Note the
 /// two backends do not share a scale: codex has `minimal` at the bottom and no
@@ -162,6 +167,21 @@ enum Backend {
     #[default]
     Codex,
     Claude,
+}
+
+/// Which behavior a run measures.
+///
+/// Old artifacts predate this distinction and used harness-owned fan-out, so
+/// the serde default preserves their meaning instead of relabeling them as
+/// full-skill runs. New unrestricted runs execute the candidate coordinator;
+/// `--reviewer` keeps the cheaper direct-charter path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ExecutionMode {
+    #[default]
+    LegacyPanel,
+    Swarm,
+    Reviewer,
 }
 
 impl Backend {
@@ -274,6 +294,11 @@ impl RunCommand {
             base_sha: target.base_sha.clone(),
             curation: case.curation,
             reviewer: self.reviewer.clone(),
+            execution_mode: if self.reviewer.is_some() {
+                ExecutionMode::Reviewer
+            } else {
+                ExecutionMode::Swarm
+            },
             backend: self.backend,
             effort: self.effort.clone(),
             skill_source: skill.source,
@@ -282,13 +307,11 @@ impl RunCommand {
         };
         write_json(&run_dir.join("run.json"), &metadata)?;
 
-        // The harness owns the fan-out: one codex agent per reviewer charter,
-        // merged deterministically below. An earlier design asked a single
-        // codex session to run the whole skill, trusting it to spawn reviewer
-        // subagents; observed transcripts showed it never actually spawned
-        // anything (collab waits on zero threads) and silently reviewed solo
-        // with every charter loaded — the exact degraded mode the swarm
-        // exists to avoid, with no way to detect it from the findings alone.
+        // Charter discovery remains harness-owned only as an execution audit:
+        // unrestricted runs ask the candidate skill to choose and run its own
+        // panel, then account for every discoverable charter as completed or
+        // deliberately skipped. `--reviewer` is the intentional exception —
+        // it bypasses the coordinator so one charter can be tuned cheaply.
         let mut panel = discover_panel(&skill.path, &target.checkout)?;
         if let Some(reviewer) = &self.reviewer {
             ensure!(
@@ -307,33 +330,50 @@ impl RunCommand {
         let scope_path = run_dir.join("scope.diff");
         write_scope_file(tools, &target, &scope_path)?;
 
-        let prompt_template = fs::read_to_string(root.join(EVAL_ROOT).join("prompts/reviewer.md"))?;
-        let schema = root
-            .join(EVAL_ROOT)
-            .join("schemas/reviewer-findings.schema.json");
-        let charters_dir = skill.path.join("reviewers");
-        let context = PanelContext {
-            tools,
-            spec: ModelSpec {
-                backend: self.backend,
-                model: &self.model,
-                effort: self.effort.as_deref(),
-            },
-            prompt_template: &prompt_template,
-            schema: &schema,
-            scope_path: &scope_path,
-            charters_dir: &charters_dir,
-            target: &target,
+        let spec = ModelSpec {
+            backend: self.backend,
+            model: &self.model,
+            effort: self.effort.as_deref(),
+            max_concurrent_subagents: None,
         };
-        // Preflight before the real spend: prove the fan-out path works end
-        // to end with the exact model/effort this run will use. A run that
-        // reaches the repeats loop has evidence on disk that agent spawning
-        // and structured output actually function.
-        run_preflight(root, tools, context.spec, &run_dir)?;
+        run_preflight(root, tools, spec, &run_dir)?;
 
         for repeat in 1..=self.repeats {
             let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
-            let findings = run_reviewer_panel(&context, &panel, &repeat_dir)?;
+            let findings = if self.reviewer.is_some() {
+                let prompt_template =
+                    fs::read_to_string(root.join(EVAL_ROOT).join("prompts/reviewer.md"))?;
+                let schema = root
+                    .join(EVAL_ROOT)
+                    .join("schemas/reviewer-findings.schema.json");
+                let charters_dir = skill.path.join("reviewers");
+                let context = PanelContext {
+                    tools,
+                    spec,
+                    prompt_template: &prompt_template,
+                    schema: &schema,
+                    scope_path: &scope_path,
+                    charters_dir: &charters_dir,
+                    target: &target,
+                };
+                run_reviewer_panel(&context, &panel, &repeat_dir)?
+            } else {
+                let prompt_template =
+                    fs::read_to_string(root.join(EVAL_ROOT).join("prompts/swarm.md"))?;
+                let schema = root
+                    .join(EVAL_ROOT)
+                    .join("schemas/swarm-result.schema.json");
+                let context = SwarmContext {
+                    tools,
+                    spec,
+                    prompt_template: &prompt_template,
+                    schema: &schema,
+                    skill_path: &skill.path,
+                    scope_path: &scope_path,
+                    target: &target,
+                };
+                run_swarm_coordinator(&context, &panel, &repeat_dir)?
+            };
             write_json(&repeat_dir.join("findings.json"), &findings)?;
         }
 
@@ -352,6 +392,11 @@ impl RunCommand {
             run_dir.join("verification.json").display()
         );
         for repeat in &verification.repeats {
+            if let Some(coordinator) = &repeat.coordinator {
+                for anomaly in &coordinator.anomalies {
+                    println!("  anomaly repeat-{} coordinator: {anomaly}", repeat.repeat);
+                }
+            }
             for reviewer in &repeat.reviewers {
                 for anomaly in &reviewer.anomalies {
                     println!(
@@ -363,9 +408,10 @@ impl RunCommand {
         }
         println!(
             "REQUIRED for the launching agent: read the verification digest above, then \
-             spot-check at least one reviewer transcript per repeat \
-             (repeat-N/reviewers/<name>.transcript.jsonl) to confirm the agents actually \
-             reviewed the scope. Do not report this run's results without that inspection."
+             spot-check the coordinator transcript for swarm runs (repeat-N/transcript.jsonl), \
+             or the reviewer transcript for --reviewer runs \
+             (repeat-N/reviewers/<name>.transcript.jsonl). Confirm the agent actually reviewed \
+             the scope before reporting the run's results."
         );
 
         println!("{}", run_dir.display());
@@ -373,12 +419,13 @@ impl RunCommand {
     }
 }
 
-/// Post-run evidence digest, written to `verification.json`. Where the
-/// preflight gates the run up front, this summarizes what the real agents
-/// actually did — per-reviewer output tokens, command counts, and anomalies —
-/// so the launching agent can verify execution without reading dozens of raw
-/// transcripts. Status is `clean` or `attention`; anomalies never abort the
-/// run, because judging their severity is exactly the launching agent's job.
+/// Post-run evidence digest, written to `verification.json`.
+///
+/// Full-swarm runs expose coordinator activity and collaboration counts;
+/// restricted runs expose the directly invoked reviewer. Status is `clean` or
+/// `attention`; transcript-shape anomalies do not abort because the launching
+/// agent must judge their severity. Collaboration mismatches are different:
+/// those fail before this digest because they invalidate the run.
 #[derive(Debug, Serialize, Deserialize)]
 struct RunVerification {
     status: String,
@@ -392,12 +439,18 @@ struct RepeatVerification {
     expected_reviewers: usize,
     completed_reviewers: usize,
     reviewers: Vec<ReviewerVerification>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    skipped_reviewers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    coordinator: Option<CoordinatorVerification>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ReviewerVerification {
     reviewer: String,
     findings: usize,
+    #[serde(default = "one_pass")]
+    passes: usize,
     /// Output tokens the agent reported for the run: codex's final
     /// `turn.completed` usage, or claude's final `result` usage. Absent when
     /// the transcript never reported completion — which is itself an anomaly.
@@ -409,6 +462,16 @@ struct ReviewerVerification {
     /// functions), so this number is comparable only within a backend. Zero is
     /// not flagged — a scope-only review can legitimately run no tools — but it
     /// is recorded so the launching agent can weigh it.
+    commands: usize,
+    anomalies: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CoordinatorVerification {
+    spawned_agents: usize,
+    followups: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<u64>,
     commands: usize,
     anomalies: Vec<String>,
 }
@@ -619,25 +682,56 @@ fn verify_run(run_dir: &Path, repeats: usize) -> Result<RunVerification> {
         let repeat_dir = run_dir.join(format!("repeat-{repeat}"));
         let execution: ExecutionRecord = read_json(&repeat_dir.join("execution.json"))?;
         let mut reviewers = Vec::new();
-        for entry in &execution.reviewers {
-            let transcript = repeat_dir
-                .join("reviewers")
-                .join(format!("{}.transcript.jsonl", entry.reviewer));
+        let coordinator = if let Some(coordinator) = &execution.coordinator {
+            let transcript = repeat_dir.join(&coordinator.transcript);
             let (output_tokens, commands, anomalies) = digest_transcript(backend, &transcript);
             anomaly_count += anomalies.len();
-            reviewers.push(ReviewerVerification {
-                reviewer: entry.reviewer.clone(),
-                findings: entry.findings,
+            for entry in &execution.reviewers {
+                reviewers.push(ReviewerVerification {
+                    reviewer: entry.reviewer.clone(),
+                    findings: entry.findings,
+                    passes: entry.passes,
+                    output_tokens: None,
+                    commands: 0,
+                    anomalies: Vec::new(),
+                });
+            }
+            Some(CoordinatorVerification {
+                spawned_agents: coordinator.spawned_agents,
+                followups: coordinator.followups,
                 output_tokens,
                 commands,
                 anomalies,
-            });
-        }
+            })
+        } else {
+            for entry in &execution.reviewers {
+                let transcript = repeat_dir
+                    .join("reviewers")
+                    .join(format!("{}.transcript.jsonl", entry.reviewer));
+                let (output_tokens, commands, anomalies) = digest_transcript(backend, &transcript);
+                anomaly_count += anomalies.len();
+                reviewers.push(ReviewerVerification {
+                    reviewer: entry.reviewer.clone(),
+                    findings: entry.findings,
+                    passes: entry.passes,
+                    output_tokens,
+                    commands,
+                    anomalies,
+                });
+            }
+            None
+        };
         repeat_records.push(RepeatVerification {
             repeat,
             expected_reviewers: execution.expected,
             completed_reviewers: execution.reviewers.len(),
             reviewers,
+            skipped_reviewers: execution
+                .skipped_reviewers
+                .iter()
+                .map(|entry| entry.reviewer.clone())
+                .collect(),
+            coordinator,
         });
     }
     Ok(RunVerification {
@@ -819,31 +913,17 @@ fn run_preflight(root: &Path, tools: &ToolEnv, spec: ModelSpec, run_dir: &Path) 
 /// substantially without saturating the machine or the API.
 const REVIEWER_CONCURRENCY: usize = 6;
 
-/// Select the spawnable reviewer charters from a resolved skill.
+/// Discover reviewer charters eligible to run for this target.
 ///
-/// The charter files themselves carry the exclusion markers, so this works
-/// across skill versions without a separate manifest: shared base charters
-/// (read by lens reviewers, never spawned) say "not spawned as a reviewer",
-/// and condition-gated charters (spec-compliance) say "Only spawned when
-/// `SPEC.md` exists". Text markers are fragile in principle, but they are
-/// versioned with the skill export being evaluated, which a harness-side
-/// manifest would not be.
+/// This does not choose the full swarm's active panel; the candidate skill
+/// does. It establishes the target-specific upper bound the coordinator must
+/// account for as completed or deliberately skipped. The charter files carry
+/// the exclusion markers, so the audit follows exported skill versions without
+/// a separate harness manifest.
 fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> {
     let dir = skill_path.join("reviewers");
     let mut panel = Vec::new();
-    for entry in fs::read_dir(&dir)
-        .with_context(|| format!("no reviewers directory at {}", dir.display()))?
-    {
-        let path = entry?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-            continue;
-        }
-        let name = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .ok_or_else(|| anyhow!("unreadable charter file name at {}", path.display()))?
-            .to_string();
-        let text = fs::read_to_string(&path)?;
+    for (name, text) in reviewer_charters(skill_path)? {
         if text.contains("not spawned as a reviewer") {
             continue;
         }
@@ -861,6 +941,98 @@ fn discover_panel(skill_path: &Path, target_root: &Path) -> Result<Vec<String>> 
         dir.display()
     );
     Ok(panel)
+}
+
+/// Return every charter that can represent a reviewer, including reviewers
+/// whose conditions exclude them from this target.
+///
+/// The coordinator may report those reviewers as deliberately skipped. Shared
+/// base charters are different: they can never be reviewer executions and must
+/// remain invalid output.
+fn known_reviewers(skill_path: &Path) -> Result<Vec<String>> {
+    let mut reviewers = reviewer_charters(skill_path)?
+        .into_iter()
+        .filter_map(|(name, text)| (!text.contains("not spawned as a reviewer")).then_some(name))
+        .collect::<Vec<_>>();
+    reviewers.sort();
+    Ok(reviewers)
+}
+
+/// Read reviewer charter names and contents in deterministic order.
+///
+/// Discovery and alias validation share this inventory so a candidate cannot
+/// get different answers merely because the filesystem returned directory
+/// entries in another order.
+fn reviewer_charters(skill_path: &Path) -> Result<Vec<(String, String)>> {
+    let dir = skill_path.join("reviewers");
+    let mut charters = Vec::new();
+    for entry in fs::read_dir(&dir)
+        .with_context(|| format!("no reviewers directory at {}", dir.display()))?
+    {
+        let path = entry?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let name = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .ok_or_else(|| anyhow!("unreadable charter file name at {}", path.display()))?
+            .to_string();
+        charters.push((name, fs::read_to_string(&path)?));
+    }
+    charters.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(charters)
+}
+
+/// Resolve candidate-owned reviewer names to stable artifact keys.
+///
+/// Charter basenames are durable machine keys, while the first Markdown
+/// heading is the skill's human-facing reviewer identity. Accepting both
+/// keeps the eval adapter independent of a particular naming presentation and
+/// normalizes stored attribution for offline comparisons.
+fn reviewer_aliases(
+    skill_path: &Path,
+    known_reviewers: &[String],
+) -> Result<BTreeMap<String, String>> {
+    let mut aliases = BTreeMap::new();
+    // Reserve every machine key before adding presentation aliases. Without
+    // this first pass, a title equal to a later charter's basename is silently
+    // overwritten or rejected depending on directory iteration order.
+    for canonical in known_reviewers {
+        ensure!(
+            aliases
+                .insert(canonical.clone(), canonical.clone())
+                .is_none(),
+            "reviewer key '{canonical}' appears more than once"
+        );
+    }
+    for canonical in known_reviewers {
+        let charter_path = skill_path.join("reviewers").join(format!("{canonical}.md"));
+        let text = fs::read_to_string(&charter_path)?;
+        let Some(title) = text
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("# "))
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+        else {
+            continue;
+        };
+        if let Some(previous) = aliases.insert(title.to_string(), canonical.clone()) {
+            ensure!(
+                previous == *canonical,
+                "reviewer alias '{title}' is shared by '{previous}' and '{canonical}'"
+            );
+        }
+    }
+    Ok(aliases)
+}
+
+/// Convert one coordinator-reported reviewer identity to its artifact key.
+fn canonical_reviewer(aliases: &BTreeMap<String, String>, reported: &str) -> Result<String> {
+    aliases
+        .get(reported)
+        .cloned()
+        .ok_or_else(|| anyhow!("coordinator reported unknown reviewer '{reported}'"))
 }
 
 /// Materialize the review scope every reviewer receives: the base..subject
@@ -897,21 +1069,80 @@ fn write_scope_file(tools: &ToolEnv, target: &PreparedCase, scope_path: &Path) -
     Ok(())
 }
 
-/// Per-repeat ground-truth record of the fan-out: which reviewer agents ran
-/// and how many findings each returned. A repeat's findings.json only reaches
-/// disk after every panel member completed — any reviewer failure aborts the
-/// run — so this file is the evidence that the swarm actually executed,
-/// replacing an agent's unverifiable self-report.
+/// Per-repeat execution evidence shared by both run modes.
+///
+/// A restricted run records its directly invoked reviewer. A full swarm
+/// records the coordinator's claimed reviewer accounting only after the
+/// transcript proves that the same number of native subagents existed.
 #[derive(Debug, Serialize, Deserialize)]
 struct ExecutionRecord {
     expected: usize,
     reviewers: Vec<ReviewerExecution>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    skipped_reviewers: Vec<SkippedReviewerExecution>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    coordinator: Option<CoordinatorExecution>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ReviewerExecution {
     reviewer: String,
     findings: usize,
+    /// Number of passes the same reviewer context completed. Direct reviewer
+    /// evals always use one; swarm runs report the candidate skill's behavior.
+    #[serde(default = "one_pass")]
+    passes: usize,
+}
+
+/// Backward-compatible serde default for artifacts written before passes were
+/// recorded.
+fn one_pass() -> usize {
+    1
+}
+
+/// A discoverable charter the candidate skill deliberately excluded, such as
+/// a non-prose reviewer under the prose-only fast path.
+#[derive(Debug, Serialize, Deserialize)]
+struct SkippedReviewerExecution {
+    reviewer: String,
+    rationale: String,
+}
+
+/// Parent-agent collaboration evidence derived from the raw transcript rather
+/// than trusted from the coordinator's structured answer.
+#[derive(Debug, Serialize, Deserialize)]
+struct CoordinatorExecution {
+    spawned_agents: usize,
+    followups: usize,
+    transcript: String,
+}
+
+/// Structured adapter for a full-swarm final answer. It is intentionally
+/// generic: the candidate skill decides which reviewers run and how many
+/// passes they need.
+#[derive(Debug, Deserialize)]
+struct SwarmResult {
+    findings: Vec<Finding>,
+    reviewer_execution: Vec<SwarmReviewerExecution>,
+}
+
+/// One charter's coordinator-reported disposition before the harness
+/// cross-checks it against discoverable charter files and collaboration
+/// events.
+#[derive(Debug, Deserialize)]
+struct SwarmReviewerExecution {
+    reviewer: String,
+    status: SwarmReviewerStatus,
+    passes: usize,
+    rationale: String,
+}
+
+/// Whether the candidate skill ran a charter or deliberately excluded it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum SwarmReviewerStatus {
+    Completed,
+    Skipped,
 }
 
 /// Everything a reviewer spawn needs beyond its own name: shared invocation
@@ -926,10 +1157,24 @@ struct PanelContext<'a> {
     target: &'a PreparedCase,
 }
 
-/// Run every panel charter as its own codex agent (bounded concurrency),
-/// then merge: namespace finding ids by reviewer and stamp harness-side
-/// attribution. Attribution stamped here is ground truth — it cannot be
-/// fabricated or dropped by a coordinator agent.
+/// Inputs the candidate skill coordinator receives. The harness fixes only
+/// the eval boundary and artifact format; panel choice and review behavior
+/// remain inside the versioned SKILL.md under test.
+struct SwarmContext<'a> {
+    tools: &'a ToolEnv,
+    spec: ModelSpec<'a>,
+    prompt_template: &'a str,
+    schema: &'a Path,
+    skill_path: &'a Path,
+    scope_path: &'a Path,
+    target: &'a PreparedCase,
+}
+
+/// Run a directly selected reviewer panel with bounded concurrency.
+///
+/// Current callers use this for one `--reviewer` charter. Keeping the generic
+/// panel shape preserves old artifacts and makes the isolation path usable
+/// without involving the skill coordinator.
 fn run_reviewer_panel(
     context: &PanelContext,
     panel: &[String],
@@ -963,6 +1208,7 @@ fn run_reviewer_panel(
         executions.push(ReviewerExecution {
             reviewer: name.clone(),
             findings: file.findings.len(),
+            passes: 1,
         });
         for mut finding in file.findings {
             finding.id = format!("{name}:{}", finding.id);
@@ -975,6 +1221,8 @@ fn run_reviewer_panel(
         &ExecutionRecord {
             expected: panel.len(),
             reviewers: executions,
+            skipped_reviewers: Vec::new(),
+            coordinator: None,
         },
     )?;
     Ok(FindingsFile { findings: merged })
@@ -1012,6 +1260,314 @@ fn run_single_reviewer(
     .with_context(|| format!("reviewer '{name}' failed"))?;
     let findings: FindingsFile = read_json(&findings_path)?;
     Ok((name.to_string(), findings))
+}
+
+/// Run the candidate skill itself as coordinator.
+///
+/// This path deliberately does not reproduce panel selection, continuation,
+/// deduplication, or reporting in Rust. The harness supplies a fixed scope and
+/// a structured-output adapter, then audits the transcript so a coordinator
+/// that reviewed alone cannot pass as a swarm again.
+fn run_swarm_coordinator(
+    context: &SwarmContext,
+    discoverable_panel: &[String],
+    repeat_dir: &Path,
+) -> Result<FindingsFile> {
+    fs::create_dir_all(repeat_dir)?;
+    let known_panel = known_reviewers(context.skill_path)?;
+    let known: BTreeSet<_> = known_panel.iter().cloned().collect();
+    let aliases = reviewer_aliases(context.skill_path, &known_panel)?;
+    let scope_label = format!(
+        "eval range {}..{}",
+        context.target.base_sha, context.target.subject_sha
+    );
+    let prompt = context
+        .prompt_template
+        .replace(
+            "{{skill_path}}",
+            &context.skill_path.join("SKILL.md").display().to_string(),
+        )
+        .replace(
+            "{{repo_path}}",
+            &context.target.checkout.display().to_string(),
+        )
+        .replace("{{scope_path}}", &context.scope_path.display().to_string())
+        .replace("{{scope_label}}", &scope_label);
+    let result_path = repeat_dir.join("swarm-result.json");
+    let transcript_path = repeat_dir.join("transcript.jsonl");
+    run_agent(
+        context.tools,
+        context
+            .spec
+            .with_max_concurrent_subagents(discoverable_panel.len()),
+        &context.target.checkout,
+        context.schema,
+        &result_path,
+        &transcript_path,
+        &prompt,
+    )
+    .context("swarm coordinator failed")?;
+    let mut result: SwarmResult = read_json(&result_path)?;
+    ensure_unique_finding_ids(&result.findings)
+        .context("coordinator returned duplicate finding identifiers")?;
+
+    let discoverable: BTreeSet<_> = discoverable_panel.iter().cloned().collect();
+    let mut accounted = BTreeSet::new();
+    let mut completed = Vec::new();
+    let mut skipped = Vec::new();
+    let mut completed_names = BTreeSet::new();
+    for execution in result.reviewer_execution {
+        let reviewer = canonical_reviewer(&aliases, &execution.reviewer)
+            .with_context(|| format!("known reviewers: {}", known_panel.join(", ")))?;
+        ensure!(
+            accounted.insert(reviewer.clone()),
+            "coordinator reported reviewer '{}' more than once",
+            reviewer
+        );
+        match execution.status {
+            SwarmReviewerStatus::Completed => {
+                ensure!(
+                    discoverable.contains(&reviewer),
+                    "coordinator completed condition-excluded reviewer '{}'; reviewers eligible \
+                     for this target: {}",
+                    reviewer,
+                    discoverable_panel.join(", ")
+                );
+                ensure!(
+                    execution.passes > 0,
+                    "completed reviewer '{}' reported zero passes",
+                    reviewer
+                );
+                completed_names.insert(reviewer.clone());
+                completed.push(ReviewerExecution {
+                    reviewer,
+                    findings: 0,
+                    passes: execution.passes,
+                });
+            }
+            SwarmReviewerStatus::Skipped => {
+                ensure!(
+                    execution.passes == 0,
+                    "skipped reviewer '{}' reported {} passes",
+                    reviewer,
+                    execution.passes
+                );
+                ensure!(
+                    !execution.rationale.trim().is_empty(),
+                    "skipped reviewer '{}' has no rationale",
+                    reviewer
+                );
+                ensure!(
+                    known.contains(&reviewer),
+                    "coordinator skipped unknown reviewer '{}'",
+                    reviewer
+                );
+                skipped.push(SkippedReviewerExecution {
+                    reviewer,
+                    rationale: execution.rationale,
+                });
+            }
+        }
+    }
+    ensure!(
+        discoverable.is_subset(&accounted),
+        "coordinator reviewer accounting does not match the resolved skill; missing eligible reviewers: {}",
+        discoverable
+            .difference(&accounted)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    ensure!(
+        !completed.is_empty(),
+        "coordinator completed no reviewer agents"
+    );
+
+    for finding in &mut result.findings {
+        let reviewers = finding.reviewers.as_ref().ok_or_else(|| {
+            anyhow!(
+                "coordinator finding '{}' has no reviewer attribution",
+                finding.id
+            )
+        })?;
+        ensure!(
+            !reviewers.is_empty(),
+            "coordinator finding '{}' has empty reviewer attribution",
+            finding.id
+        );
+        let canonical_reviewers = reviewers
+            .iter()
+            .map(|reviewer| canonical_reviewer(&aliases, reviewer))
+            .collect::<Result<Vec<_>>>()
+            .with_context(|| format!("coordinator finding '{}'", finding.id))?;
+        finding.reviewers = Some(canonical_reviewers.clone());
+        for reviewer in &canonical_reviewers {
+            ensure!(
+                completed_names.contains(reviewer),
+                "coordinator finding '{}' attributes skipped or unknown reviewer '{}'",
+                finding.id,
+                reviewer
+            );
+            let execution = completed
+                .iter_mut()
+                .find(|entry| &entry.reviewer == reviewer)
+                .expect("completed reviewer set and records disagree");
+            execution.findings += 1;
+        }
+    }
+
+    let collaboration = digest_collaboration(context.spec.backend, &transcript_path)?;
+    let expected_followups: usize = completed
+        .iter()
+        .map(|reviewer| reviewer.passes.saturating_sub(1))
+        .sum();
+    let record = ExecutionRecord {
+        expected: completed.len(),
+        reviewers: completed,
+        skipped_reviewers: skipped,
+        coordinator: Some(CoordinatorExecution {
+            spawned_agents: collaboration.spawned_agents,
+            followups: collaboration.followups,
+            transcript: "transcript.jsonl".to_string(),
+        }),
+    };
+    write_json(&repeat_dir.join("execution.json"), &record)?;
+    ensure!(
+        collaboration.spawned_agents == record.expected,
+        "coordinator spawned {} reviewer agents but reported {} completed; transcript: {}",
+        collaboration.spawned_agents,
+        record.expected,
+        transcript_path.display()
+    );
+    ensure!(
+        collaboration.followups >= expected_followups,
+        "coordinator recorded {} same-agent follow-ups but reported {} continuation passes; \
+         transcript: {}",
+        collaboration.followups,
+        expected_followups,
+        transcript_path.display()
+    );
+
+    Ok(FindingsFile {
+        findings: result.findings,
+    })
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct CollaborationDigest {
+    spawned_agents: usize,
+    followups: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClaudeCollaborationCall {
+    Spawn,
+    Followup,
+}
+
+/// Count native subagent creation and same-agent follow-ups from the parent
+/// transcript. This audit is intentionally structural: it knows the two host
+/// event formats, but not the swarm's reviewer policy.
+fn digest_collaboration(backend: Backend, transcript: &Path) -> Result<CollaborationDigest> {
+    let raw = fs::read_to_string(transcript)
+        .with_context(|| format!("failed to read {}", transcript.display()))?;
+    match backend {
+        Backend::Codex => {
+            let mut receiver_threads = BTreeSet::new();
+            let mut followups = 0;
+            for line in raw.lines() {
+                let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                    continue;
+                };
+                if event.get("type").and_then(|value| value.as_str()) != Some("item.completed")
+                    || event.pointer("/item/type").and_then(|value| value.as_str())
+                        != Some("collab_tool_call")
+                    || event
+                        .pointer("/item/status")
+                        .and_then(|value| value.as_str())
+                        != Some("completed")
+                {
+                    continue;
+                }
+                let tool = event
+                    .pointer("/item/tool")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                if tool.contains("spawn_agent")
+                    && let Some(receivers) = event
+                        .pointer("/item/receiver_thread_ids")
+                        .and_then(|value| value.as_array())
+                {
+                    receiver_threads.extend(
+                        receivers
+                            .iter()
+                            .filter_map(|value| value.as_str())
+                            .map(str::to_string),
+                    );
+                }
+                if tool.contains("followup")
+                    || tool.contains("send_message")
+                    || tool.contains("send_input")
+                {
+                    followups += 1;
+                }
+            }
+            Ok(CollaborationDigest {
+                spawned_agents: receiver_threads.len(),
+                followups,
+            })
+        }
+        Backend::Claude => {
+            let mut calls = BTreeMap::new();
+            let mut successful_results = BTreeSet::new();
+            for line in raw.lines() {
+                let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                    continue;
+                };
+                let Some(content) = event
+                    .pointer("/message/content")
+                    .and_then(|value| value.as_array())
+                else {
+                    continue;
+                };
+                for block in content {
+                    match block.get("type").and_then(|value| value.as_str()) {
+                        Some("tool_use") => {
+                            let Some(id) = block.get("id").and_then(|value| value.as_str()) else {
+                                continue;
+                            };
+                            let call = match block.get("name").and_then(|value| value.as_str()) {
+                                Some("Agent" | "Task") => ClaudeCollaborationCall::Spawn,
+                                Some("SendMessage") => ClaudeCollaborationCall::Followup,
+                                _ => continue,
+                            };
+                            calls.entry(id.to_string()).or_insert(call);
+                        }
+                        Some("tool_result")
+                            if block.get("is_error").and_then(|value| value.as_bool())
+                                != Some(true) =>
+                        {
+                            if let Some(id) =
+                                block.get("tool_use_id").and_then(|value| value.as_str())
+                            {
+                                successful_results.insert(id.to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let mut digest = CollaborationDigest::default();
+            for id in successful_results {
+                match calls.get(&id) {
+                    Some(ClaudeCollaborationCall::Spawn) => digest.spawned_agents += 1,
+                    Some(ClaudeCollaborationCall::Followup) => digest.followups += 1,
+                    None => {}
+                }
+            }
+            Ok(digest)
+        }
+    }
 }
 
 impl BaselineCommand {
@@ -1059,6 +1615,14 @@ impl CompareCommand {
             "baseline reviewer restriction ({}) does not match candidate ({})",
             baseline_meta.reviewer.as_deref().unwrap_or("full panel"),
             candidate_meta.reviewer.as_deref().unwrap_or("full panel")
+        );
+        let baseline_mode = baseline_meta.comparison_execution_mode();
+        let candidate_mode = candidate_meta.comparison_execution_mode();
+        ensure!(
+            baseline_mode == candidate_mode,
+            "baseline execution mode ({:?}) does not match candidate ({:?})",
+            baseline_mode,
+            candidate_mode
         );
         // Effort comparability is backend-relative. Within one backend the
         // efforts must match exactly, as before. Across backends the A/B axis
@@ -1112,6 +1676,7 @@ impl CompareCommand {
             backend: self.backend,
             model: &model,
             effort: self.effort.as_deref(),
+            max_concurrent_subagents: None,
         };
         let comparison_id = unique_id(&format!(
             "compare-{}-{}",
@@ -1216,6 +1781,7 @@ impl SynthesizeCommand {
                 backend: self.backend,
                 model: &model,
                 effort: self.effort.as_deref(),
+                max_concurrent_subagents: None,
             },
             root,
             &schema,
@@ -1314,6 +1880,10 @@ struct RunMetadata {
     /// back as an unrestricted run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reviewer: Option<String>,
+    /// Whether this run exercised the skill coordinator or a direct reviewer.
+    /// The legacy default keeps older harness-fan-out artifacts honest.
+    #[serde(default)]
+    execution_mode: ExecutionMode,
     /// Agent CLI that ran this run's subject agents. `#[serde(default)]` makes
     /// run.json files written before the field existed — every codex-only run —
     /// read back as `Backend::Codex`, so old artifacts still parse and compare.
@@ -1329,6 +1899,23 @@ struct RunMetadata {
     skill_source: String,
     skill_path: String,
     created_at: String,
+}
+
+impl RunMetadata {
+    /// Return the workflow this artifact actually measured for comparison.
+    ///
+    /// Artifacts written before `execution_mode` existed deserialize as
+    /// `LegacyPanel`. Restricted runs from that era already used the same
+    /// direct-charter path as today's `Reviewer` mode, so treating them as a
+    /// legacy panel would invalidate compatible baselines. Only old
+    /// unrestricted runs used harness-owned panel fan-out.
+    fn comparison_execution_mode(&self) -> ExecutionMode {
+        if self.execution_mode == ExecutionMode::LegacyPanel && self.reviewer.is_some() {
+            ExecutionMode::Reviewer
+        } else {
+            self.execution_mode
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1600,15 +2187,27 @@ fn export_skill_ref(root: &Path, reference: &str, out: &Path, tools: &ToolEnv) -
     Ok(())
 }
 
-/// Backend, model id, and optional reasoning effort — the knobs every agent
-/// invocation takes together. Bundled so a call site cannot choose one without
-/// deciding the others; in particular the effort must be validated against the
-/// backend before this is built.
+/// Backend, model id, and execution overrides for one agent invocation.
+///
+/// Bundled so a call site cannot choose a model without deciding its backend
+/// and validated effort. Coordinator capacity belongs here too: it changes
+/// native execution plumbing without changing the candidate's review policy.
 #[derive(Clone, Copy)]
 struct ModelSpec<'a> {
     backend: Backend,
     model: &'a str,
     effort: Option<&'a str>,
+    max_concurrent_subagents: Option<usize>,
+}
+
+impl ModelSpec<'_> {
+    /// Supply native coordinator capacity derived from the candidate panel.
+    fn with_max_concurrent_subagents(self, max: usize) -> Self {
+        Self {
+            max_concurrent_subagents: Some(max),
+            ..self
+        }
+    }
 }
 
 /// Run one agent invocation through the backend the spec selects, writing the
@@ -1677,6 +2276,11 @@ fn run_codex_json(
         command
             .arg("-c")
             .arg(format!("model_reasoning_effort={effort}"));
+    }
+    if let Some(max_concurrent_subagents) = spec.max_concurrent_subagents {
+        command.arg("-c").arg(format!(
+            "agents.max_concurrent_threads_per_session={max_concurrent_subagents}"
+        ));
     }
     let mut child = command
         .arg("-C")
@@ -1985,6 +2589,23 @@ fn claude_error_cause(stdout: &str) -> Option<String> {
         (None, Some(message)) => Some(message.to_string()),
         (None, None) => None,
     }
+}
+
+/// Reject duplicate model-assigned identifiers before an artifact is accepted.
+///
+/// Finding ids are the join key for judging and matching. Keeping a malformed
+/// run around until `compare` would turn a completed, paid run into an
+/// artifact that can never be used.
+fn ensure_unique_finding_ids(findings: &[Finding]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for finding in findings {
+        ensure!(
+            seen.insert(&finding.id),
+            "duplicate finding id '{}'",
+            finding.id
+        );
+    }
+    Ok(())
 }
 
 fn collect_run_findings(run_dir: &Path) -> Result<Vec<Finding>> {
@@ -2489,45 +3110,30 @@ mod tests {
             .path();
         assert!(run_dir.join("run.json").is_file());
         assert!(run_dir.join("scope.diff").is_file());
-        // Per-reviewer artifacts: the fixture panel is docs-comments and
-        // test-quality (correctness is a base charter, spec-compliance is
-        // gated on a SPEC.md the fake checkout lacks).
+        // Unrestricted runs preserve the coordinator transcript and raw
+        // structured result. Reviewer details live in execution.json instead
+        // of pretending the harness directly ran those agents.
         for repeat in ["repeat-1", "repeat-2"] {
-            for reviewer in ["docs-comments", "test-quality"] {
-                assert!(
-                    run_dir
-                        .join(repeat)
-                        .join("reviewers")
-                        .join(format!("{reviewer}.findings.json"))
-                        .is_file()
-                );
-                assert!(
-                    run_dir
-                        .join(repeat)
-                        .join("reviewers")
-                        .join(format!("{reviewer}.transcript.jsonl"))
-                        .is_file()
-                );
-            }
+            assert!(run_dir.join(repeat).join("swarm-result.json").is_file());
+            assert!(run_dir.join(repeat).join("transcript.jsonl").is_file());
         }
         let execution: ExecutionRecord = read_json(&run_dir.join("repeat-1/execution.json"))?;
         assert_eq!(execution.expected, 2);
         assert_eq!(execution.reviewers.len(), 2);
-        // The merged findings carry harness-stamped attribution and
-        // reviewer-namespaced ids — ground truth, not agent self-report.
+        assert_eq!(execution.skipped_reviewers.len(), 1);
+        assert_eq!(execution.skipped_reviewers[0].reviewer, "spec-compliance");
+        assert_eq!(execution.coordinator.as_ref().unwrap().spawned_agents, 2);
+        assert_eq!(execution.coordinator.as_ref().unwrap().followups, 1);
         let findings: FindingsFile = read_json(&run_dir.join("repeat-1/findings.json"))?;
-        assert_eq!(findings.findings.len(), 2);
-        let ids: Vec<_> = findings.findings.iter().map(|f| f.id.as_str()).collect();
-        assert!(ids.contains(&"docs-comments:F1"));
-        assert!(ids.contains(&"test-quality:F1"));
-        for finding in &findings.findings {
-            let stamped = finding.reviewers.as_ref().expect("stamped attribution");
-            assert_eq!(stamped.len(), 1);
-            assert!(finding.id.starts_with(&format!("{}:", stamped[0])));
-        }
+        assert_eq!(findings.findings.len(), 1);
+        assert_eq!(
+            findings.findings[0].reviewers.as_deref(),
+            Some(&["docs-comments".to_string()][..])
+        );
         let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
         assert_eq!(metadata.base_sha, "base-sha");
         assert_eq!(metadata.subject_sha, "subject-remote-sha");
+        assert_eq!(metadata.execution_mode, ExecutionMode::Swarm);
 
         BaselineCommand {
             run: run_dir.strip_prefix(root)?.to_path_buf(),
@@ -2535,6 +3141,65 @@ mod tests {
         .run(root)?;
         assert!(run_dir.join("baseline.json").is_file());
 
+        Ok(())
+    }
+
+    /// A schema-valid answer from a coordinator that never delegated is not a
+    /// swarm. The transcript audit is the guard that the original
+    /// coordinator-owned harness lacked; keep the failure evidence on disk so
+    /// the next incident is diagnosable without rerunning it.
+    #[test]
+    fn swarm_run_rejects_solo_coordinator() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let _fake_bin_guard = fake_bin_lock();
+        write_fake_bin(root, "git", fake_git_script())?;
+        write_fake_bin(
+            root,
+            "codex",
+            r#"#!/usr/bin/env bash
+out=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-o" ]; then out="$2"; shift 2; else shift; fi
+done
+cat >/dev/null
+mkdir -p "$(dirname "$out")"
+case "$(basename "$out")" in
+  preflight-*)
+    printf '{"findings":[{"id":"P1","category":"correctness","summary":"planted","location":"src/even.rs:3","rationale":"planted"}]}' >"$out"
+    ;;
+  *)
+    printf '%s' '{"findings":[],"reviewer_execution":[{"reviewer":"docs-comments","status":"completed","passes":1,"rationale":""},{"reviewer":"test-quality","status":"completed","passes":1,"rationale":""}]}' >"$out"
+    ;;
+esac
+echo '{"type":"turn.completed","usage":{"output_tokens":42}}'
+"#,
+        )?;
+        let tools = fake_tools(root);
+
+        let error = RunCommand {
+            skill: DEFAULT_SKILL.to_string(),
+            case_id: "case-a".to_string(),
+            model: "fake-model".to_string(),
+            repeats: 1,
+            label: "solo".to_string(),
+            skill_ref: None,
+            skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
+            reviewer: None,
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+
+        assert!(error.to_string().contains("spawned 0 reviewer agents"));
+        let run_dir = fs::read_dir(root.join(RUN_ROOT))?
+            .next()
+            .expect("expected run dir")?
+            .path();
+        let execution: ExecutionRecord = read_json(&run_dir.join("repeat-1/execution.json"))?;
+        assert_eq!(execution.coordinator.unwrap().spawned_agents, 0);
         Ok(())
     }
 
@@ -2636,6 +3301,24 @@ mod tests {
 
         let panel = discover_panel(&skill_path, &target_root)?;
         assert_eq!(panel, vec!["docs-comments", "test-quality"]);
+        let known = known_reviewers(&skill_path)?;
+        assert_eq!(
+            known,
+            vec!["docs-comments", "spec-compliance", "test-quality"]
+        );
+        let aliases = reviewer_aliases(&skill_path, &known)?;
+        assert_eq!(
+            canonical_reviewer(&aliases, "docs-comments-reviewer")?,
+            "docs-comments"
+        );
+        assert_eq!(
+            canonical_reviewer(&aliases, "test-quality")?,
+            "test-quality"
+        );
+        assert_eq!(
+            canonical_reviewer(&aliases, "spec-compliance-reviewer")?,
+            "spec-compliance"
+        );
 
         fs::write(target_root.join("SPEC.md"), "# spec")?;
         let panel = discover_panel(&skill_path, &target_root)?;
@@ -2643,6 +3326,27 @@ mod tests {
             panel,
             vec!["docs-comments", "spec-compliance", "test-quality"]
         );
+        Ok(())
+    }
+
+    /// Reviewer aliases must not depend on charter enumeration order. A title
+    /// that collides with another charter's basename is ambiguous even if the
+    /// conflicting basename happens to be visited later.
+    #[test]
+    fn reviewer_aliases_reject_title_and_machine_key_collisions() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        write_eval_fixture(root)?;
+        let skill_path = root.join(DEFAULT_SKILL_PATH);
+        fs::write(
+            skill_path.join("reviewers/docs-comments.md"),
+            "# test-quality",
+        )?;
+
+        let known = known_reviewers(&skill_path)?;
+        let error = reviewer_aliases(&skill_path, &known).unwrap_err();
+
+        assert!(error.to_string().contains("reviewer alias 'test-quality'"));
         Ok(())
     }
 
@@ -2689,7 +3393,7 @@ esac
             label: "crash".to_string(),
             skill_ref: None,
             skill_path: Some(root.join(DEFAULT_SKILL_PATH)),
-            reviewer: None,
+            reviewer: Some("test-quality".to_string()),
             backend: Backend::Codex,
             effort: None,
         }
@@ -2742,11 +3446,15 @@ esac
         for repeat in &verification.repeats {
             assert_eq!(repeat.expected_reviewers, 2);
             assert_eq!(repeat.completed_reviewers, 2);
+            let coordinator = repeat.coordinator.as_ref().unwrap();
+            assert_eq!(coordinator.output_tokens, Some(42));
+            assert_eq!(coordinator.commands, 1);
+            assert_eq!(coordinator.spawned_agents, 2);
+            assert_eq!(coordinator.followups, 1);
+            assert!(coordinator.anomalies.is_empty());
             for reviewer in &repeat.reviewers {
-                // The fake codex stream emits one completed command and a
-                // 42-output-token turn per agent.
-                assert_eq!(reviewer.output_tokens, Some(42));
-                assert_eq!(reviewer.commands, 1);
+                assert_eq!(reviewer.output_tokens, None);
+                assert_eq!(reviewer.commands, 0);
                 assert!(reviewer.anomalies.is_empty());
             }
         }
@@ -2793,6 +3501,77 @@ esac
         let (tokens, commands, anomalies) = digest_transcript(Backend::Codex, &healthy);
         assert_eq!((tokens, commands), (Some(7), 1));
         assert!(anomalies.is_empty());
+        Ok(())
+    }
+
+    /// Failed collaboration attempts are not evidence that a reviewer ran or
+    /// that a continuation pass happened. Codex emits those attempts as
+    /// `item.completed` records too, so the nested status must gate both
+    /// counters.
+    #[test]
+    fn collaboration_digest_ignores_failed_codex_calls() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let transcript = temp.path().join("collaboration.jsonl");
+        fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\",",
+                "\"tool\":\"spawn_agent\",\"receiver_thread_ids\":[\"ok\"],",
+                "\"status\":\"completed\"}}\n",
+                "{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\",",
+                "\"tool\":\"spawn_agent\",\"receiver_thread_ids\":[\"failed\"],",
+                "\"status\":\"failed\"}}\n",
+                "{\"type\":\"item.completed\",\"item\":{\"type\":\"collab_tool_call\",",
+                "\"tool\":\"send_input\",\"receiver_thread_ids\":[\"ok\"],",
+                "\"status\":\"failed\"}}\n",
+            ),
+        )?;
+
+        assert_eq!(
+            digest_collaboration(Backend::Codex, &transcript)?,
+            CollaborationDigest {
+                spawned_agents: 1,
+                followups: 0,
+            }
+        );
+        Ok(())
+    }
+
+    /// Claude records both the attempted tool call and its later result. Only
+    /// a non-error result proves that a reviewer or continuation actually ran;
+    /// counting attempts would reject allowed retries and let solo fallback
+    /// masquerade as a swarm when every spawn failed.
+    #[test]
+    fn collaboration_digest_ignores_failed_claude_calls() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let transcript = temp.path().join("collaboration.jsonl");
+        fs::write(
+            &transcript,
+            concat!(
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"spawn-ok\",\"name\":\"Agent\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"spawn-ok\",\"is_error\":false}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"spawn-failed\",\"name\":\"Agent\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"spawn-failed\",\"is_error\":true}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"followup-ok\",\"name\":\"SendMessage\"}]}}\n",
+                "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",",
+                "\"tool_use_id\":\"followup-ok\"}]}}\n",
+                "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",",
+                "\"id\":\"followup-without-result\",\"name\":\"SendMessage\"}]}}\n",
+            ),
+        )?;
+
+        assert_eq!(
+            digest_collaboration(Backend::Claude, &transcript)?,
+            CollaborationDigest {
+                spawned_agents: 1,
+                followups: 1,
+            }
+        );
         Ok(())
     }
 
@@ -3076,10 +3855,9 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             .path();
         let metadata: RunMetadata = read_json(&run_dir.join("run.json"))?;
         assert_eq!(metadata.effort.as_deref(), Some("high"));
-        let config = fs::read_to_string(
-            run_dir.join("repeat-1/reviewers/test-quality.findings.json.config"),
-        )?;
+        let config = fs::read_to_string(run_dir.join("repeat-1/swarm-result.json.config"))?;
         assert!(config.contains("model_reasoning_effort=high"));
+        assert!(config.contains("agents.max_concurrent_threads_per_session=2"));
         Ok(())
     }
 
@@ -3310,6 +4088,18 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         Ok(())
     }
 
+    /// Coordinator output is validated before the repeat is accepted, rather
+    /// than leaving a completed run that fails only when a later compare tries
+    /// to use model-assigned ids as join keys.
+    #[test]
+    fn swarm_output_rejects_duplicate_finding_ids_immediately() {
+        let findings = vec![finding("F1", "first", 1), finding("F1", "second", 1)];
+
+        let error = ensure_unique_finding_ids(&findings).unwrap_err();
+
+        assert!(error.to_string().contains("duplicate finding id 'F1'"));
+    }
+
     #[test]
     fn run_command_rejects_zero_repeats() -> Result<()> {
         let temp = tempfile::tempdir()?;
@@ -3349,6 +4139,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         for schema in [
             "findings.schema.json",
             "reviewer-findings.schema.json",
+            "swarm-result.schema.json",
             "judgments.schema.json",
             "matches.schema.json",
             "suggestions.schema.json",
@@ -3394,6 +4185,31 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             "findings",
             &["id", "category", "summary", "location", "rationale"],
             &["id", "category", "summary", "location", "rationale"],
+        );
+        let swarm: serde_json::Value = read_json(
+            &root
+                .join(EVAL_ROOT)
+                .join("schemas/swarm-result.schema.json"),
+        )?;
+        assert_eq!(
+            swarm
+                .get("required")
+                .and_then(|value| value.as_array())
+                .map(|values| values
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .collect::<Vec<_>>()),
+            Some(vec!["findings", "reviewer_execution"])
+        );
+        assert_eq!(
+            swarm
+                .pointer("/properties/reviewer_execution/items/required")
+                .and_then(|value| value.as_array())
+                .map(|values| values
+                    .iter()
+                    .filter_map(|value| value.as_str())
+                    .collect::<Vec<_>>()),
+            Some(vec!["reviewer", "status", "passes", "rationale"])
         );
         let judgments: serde_json::Value =
             read_json(&root.join(EVAL_ROOT).join("schemas/judgments.schema.json"))?;
@@ -3679,6 +4495,23 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         .unwrap_err();
         assert!(error.to_string().contains("reviewer restriction"));
 
+        // Legacy unrestricted artifacts used harness-owned fan-out. They are
+        // not a valid baseline for a run that exercised the candidate
+        // coordinator, even though both have no --reviewer restriction.
+        let mut wrong_mode = run_meta("candidate-run", "fake-model");
+        wrong_mode.execution_mode = ExecutionMode::LegacyPanel;
+        write_json(&candidate.join("run.json"), &wrong_mode)?;
+        let error = CompareCommand {
+            baseline: baseline.strip_prefix(root)?.to_path_buf(),
+            candidate: candidate.strip_prefix(root)?.to_path_buf(),
+            model: Some("fake-model".to_string()),
+            backend: Backend::Codex,
+            effort: None,
+        }
+        .run_with_tools(root, &tools)
+        .unwrap_err();
+        assert!(error.to_string().contains("execution mode"));
+
         // Effort changes how hard the subject agents work, so runs at
         // different efforts measure different things, exactly like the
         // reviewer restriction.
@@ -3695,6 +4528,32 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
         .run_with_tools(root, &tools)
         .unwrap_err();
         assert!(error.to_string().contains("baseline effort"));
+        Ok(())
+    }
+
+    /// Restricted artifacts written before execution modes existed used the
+    /// same direct-charter workflow as current `Reviewer` runs. They remain
+    /// valid baselines even though serde fills their missing mode with the
+    /// unrestricted legacy default.
+    #[test]
+    fn legacy_restricted_runs_compare_as_reviewer_mode() -> Result<()> {
+        let mut legacy = run_meta("legacy", "fake-model");
+        legacy.reviewer = Some("test-quality".to_string());
+        let mut serialized = serde_json::to_value(&legacy)?;
+        serialized
+            .as_object_mut()
+            .expect("run metadata serializes as an object")
+            .remove("execution_mode");
+        let legacy: RunMetadata = serde_json::from_value(serialized)?;
+        let mut current = run_meta("current", "fake-model");
+        current.reviewer = Some("test-quality".to_string());
+        current.execution_mode = ExecutionMode::Reviewer;
+
+        assert_eq!(
+            legacy.comparison_execution_mode(),
+            current.comparison_execution_mode()
+        );
+        assert_eq!(legacy.comparison_execution_mode(), ExecutionMode::Reviewer);
         Ok(())
     }
 
@@ -3853,6 +4712,7 @@ printf '{"findings":[{"id":"X1","category":"correctness","summary":"generic","lo
             base_sha: "base".to_string(),
             curation: None,
             reviewer: None,
+            execution_mode: ExecutionMode::Swarm,
             backend: Backend::Codex,
             effort: None,
             skill_source: "working-tree".to_string(),
@@ -3940,6 +4800,11 @@ curation = "mined"
              range {{base_sha}}..{{subject_sha}}",
         )?;
         fs::write(
+            root.join(EVAL_ROOT).join("prompts/swarm.md"),
+            "Follow candidate skill {{skill_path}} as coordinator in {{repo_path}} \
+             with {{scope_path}} labeled {{scope_label}}",
+        )?;
+        fs::write(
             root.join(EVAL_ROOT).join("prompts/preflight.md"),
             "preflight {{charter_path}} scope {{scope_path}}",
         )?;
@@ -3952,6 +4817,7 @@ curation = "mined"
         for schema in [
             "findings.schema.json",
             "reviewer-findings.schema.json",
+            "swarm-result.schema.json",
             "judgments.schema.json",
             "matches.schema.json",
             "suggestions.schema.json",
@@ -4135,6 +5001,7 @@ saw_sandbox_bypass=0
 saw_ignore_user_config=0
 saw_ignore_rules=0
 stdin_prompt=""
+is_swarm=0
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then
     out="$2"
@@ -4186,6 +5053,45 @@ if [ -n "$config" ]; then
   printf '%s' "$config" >"$out.config"
 fi
 case "$(basename "$schema")" in
+  swarm-result.schema.json)
+    is_swarm=1
+    grep -F "Follow candidate skill" <<<"$stdin_prompt" >/dev/null
+    grep -F "owner-repo" <<<"$stdin_prompt" >/dev/null
+    cat >"$out" <<'JSON'
+{
+  "findings": [
+    {
+      "id": "F1",
+      "category": "correctness",
+      "summary": "example finding",
+      "location": "src/lib.rs:1",
+      "rationale": "example rationale",
+      "reviewers": ["docs-comments"]
+    }
+  ],
+  "reviewer_execution": [
+    {
+      "reviewer": "docs-comments",
+      "status": "completed",
+      "passes": 2,
+      "rationale": ""
+    },
+    {
+      "reviewer": "test-quality",
+      "status": "completed",
+      "passes": 1,
+      "rationale": ""
+    },
+    {
+      "reviewer": "spec-compliance",
+      "status": "skipped",
+      "passes": 0,
+      "rationale": "target has no SPEC.md"
+    }
+  ]
+}
+JSON
+    ;;
   judgments.schema.json)
     grep -F "Review input:" <<<"$stdin_prompt" >/dev/null
     grep -F "diff --git" <<<"$stdin_prompt" >/dev/null
@@ -4278,6 +5184,11 @@ esac
 # verification: one completed command, a turn.completed with usage, and an
 # unknown trailing event that digesting must tolerate.
 echo '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"true","status":"completed"}}'
+if [ "$is_swarm" = "1" ]; then
+  echo '{"type":"item.completed","item":{"id":"spawn_1","type":"collab_tool_call","tool":"spawn_agent","receiver_thread_ids":["reviewer-1"],"status":"completed"}}'
+  echo '{"type":"item.completed","item":{"id":"spawn_2","type":"collab_tool_call","tool":"spawn_agent","receiver_thread_ids":["reviewer-2"],"status":"completed"}}'
+  echo '{"type":"item.completed","item":{"id":"followup_1","type":"collab_tool_call","tool":"send_input","receiver_thread_ids":["reviewer-1"],"status":"completed"}}'
+fi
 echo '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":42,"reasoning_output_tokens":5}}'
 echo '{"event":"done"}'
 "#
@@ -4362,7 +5273,22 @@ emit() {
   echo '{"type":"result","subtype":"success","is_error":false,"num_turns":4,"result":"done","structured_output":'"$structured"',"usage":{"input_tokens":100,"output_tokens":42}}'
 }
 
-if grep -F "preflight" <<<"$prompt" >/dev/null; then
+emit_swarm() {
+  local structured='{"findings":[{"id":"F1","category":"correctness","summary":"example finding","location":"src/lib.rs:1","rationale":"example rationale","reviewers":["docs-comments"]}],"reviewer_execution":[{"reviewer":"docs-comments","status":"completed","passes":2,"rationale":""},{"reviewer":"test-quality","status":"completed","passes":1,"rationale":""},{"reviewer":"spec-compliance","status":"skipped","passes":0,"rationale":"target has no SPEC.md"}]}'
+  echo '{"type":"system","subtype":"init","cwd":"'"$PWD"'","fake_model":"'"$model"'","fake_effort":"'"$effort"'"}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-docs","name":"Agent","input":{"name":"docs-comments"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-docs","content":"agent id: docs","is_error":false}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"agent-tests","name":"Agent","input":{"name":"test-quality"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"agent-tests","content":"agent id: tests","is_error":false}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"followup-docs","name":"SendMessage","input":{"recipient":"docs-comments"}}]}}'
+  echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"followup-docs","content":"sent","is_error":false}]}}'
+  echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"StructuredOutput","input":'"$structured"'}]}}'
+  echo '{"type":"result","subtype":"success","is_error":false,"num_turns":8,"result":"done","structured_output":'"$structured"',"usage":{"input_tokens":100,"output_tokens":42}}'
+}
+
+if grep -F "as coordinator" <<<"$prompt" >/dev/null; then
+  emit_swarm
+elif grep -F "preflight" <<<"$prompt" >/dev/null; then
   emit '{"findings":[{"id":"P1","category":"correctness","summary":"planted parity bug","location":"src/even.rs:3","rationale":"n % 2 == 1 tests oddness, not evenness"}]}'
 elif grep -F "Review input:" <<<"$prompt" >/dev/null; then
   # The codex fake keys the baseline/candidate judge split on the -o basename;
@@ -4388,10 +5314,9 @@ fi
 "#
     }
 
-    /// The claude backend must produce the same artifact tree as codex: a
-    /// run.json recording `backend: claude`, per-reviewer findings and
-    /// transcripts, execution.json, and a verification.json digested from the
-    /// claude `stream-json` transcripts. This is the claude analog of
+    /// The claude backend must produce the same coordinator-owned artifact
+    /// tree as codex, and the verification digest must understand Claude's
+    /// native Agent/SendMessage events. This is the claude analog of
     /// `run_command_writes_artifacts_with_fake_git_and_codex`.
     #[test]
     fn run_command_writes_artifacts_on_claude_backend() -> Result<()> {
@@ -4428,42 +5353,28 @@ fi
         // fake stamps what it received into the init event, so a
         // run_claude_json that drops --effort fails here even though the
         // metadata (copied from the command struct) would still look right.
-        let transcript =
-            fs::read_to_string(run_dir.join("repeat-1/reviewers/test-quality.transcript.jsonl"))?;
+        let transcript = fs::read_to_string(run_dir.join("repeat-1/transcript.jsonl"))?;
         assert!(
             transcript.contains("\"fake_effort\":\"high\""),
             "effort did not reach the claude command line: {transcript}"
         );
         assert!(transcript.contains("\"fake_model\":\"fake-model\""));
         for repeat in ["repeat-1", "repeat-2"] {
-            for reviewer in ["docs-comments", "test-quality"] {
-                assert!(
-                    run_dir
-                        .join(repeat)
-                        .join("reviewers")
-                        .join(format!("{reviewer}.findings.json"))
-                        .is_file()
-                );
-                assert!(
-                    run_dir
-                        .join(repeat)
-                        .join("reviewers")
-                        .join(format!("{reviewer}.transcript.jsonl"))
-                        .is_file()
-                );
-            }
+            assert!(run_dir.join(repeat).join("swarm-result.json").is_file());
+            assert!(run_dir.join(repeat).join("transcript.jsonl").is_file());
         }
-        // Verification digests the claude transcripts: one non-StructuredOutput
-        // tool_use (the Bash call) and 42 output tokens per agent, no anomalies.
+        // The Agent and SendMessage events are coordinator activity, so the
+        // backend-aware digest reports three non-StructuredOutput calls.
         let verification: RunVerification = read_json(&run_dir.join("verification.json"))?;
         assert_eq!(verification.status, "clean");
         assert_eq!(verification.anomaly_count, 0);
         for repeat in &verification.repeats {
-            for reviewer in &repeat.reviewers {
-                assert_eq!(reviewer.output_tokens, Some(42));
-                assert_eq!(reviewer.commands, 1);
-                assert!(reviewer.anomalies.is_empty());
-            }
+            let coordinator = repeat.coordinator.as_ref().unwrap();
+            assert_eq!(coordinator.output_tokens, Some(42));
+            assert_eq!(coordinator.commands, 3);
+            assert_eq!(coordinator.spawned_agents, 2);
+            assert_eq!(coordinator.followups, 1);
+            assert!(coordinator.anomalies.is_empty());
         }
         Ok(())
     }
@@ -4632,7 +5543,7 @@ fi
     }
 
     /// Effort is validated against the selected backend's own vocabulary,
-    /// before any checkout or spend: `xhigh` is a claude word codex does not
+    /// before any checkout or spend: `max` is a claude word codex does not
     /// know, and `minimal` is a codex word claude does not know. Each must be
     /// rejected on the wrong backend with no run directory created.
     #[test]
@@ -4650,11 +5561,11 @@ fi
             skill_path: None,
             reviewer: None,
             backend: Backend::Codex,
-            effort: Some("xhigh".to_string()),
+            effort: Some("max".to_string()),
         }
         .run_with_tools(root, &fake_tools(root))
         .unwrap_err();
-        assert!(codex_error.to_string().contains("unknown effort 'xhigh'"));
+        assert!(codex_error.to_string().contains("unknown effort 'max'"));
         assert!(codex_error.to_string().contains("codex"));
 
         let claude_error = RunCommand {

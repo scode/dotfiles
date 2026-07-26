@@ -39,7 +39,8 @@ swarm costs one agent per reviewer charter per repeat, which is wasted spend whe
 must match a spawnable `reviewers/<name>.md` charter in the resolved skill — shared base charters and condition-gated
 charters that do not apply to the case are rejected. The restriction is recorded in `run.json`, and `compare` refuses to
 compare a restricted run against a run with a different (or no) restriction — a single reviewer's findings and a full
-panel's findings measure different things.
+swarm's findings measure different things. Restricted runs intentionally bypass `SKILL.md`: they measure the selected
+charter in isolation, using the harness only to provide a fixed scope and structured output.
 
 Use `--backend <codex|claude>` to choose the agent CLI (default `codex`). The backend is recorded in `run.json`. On
 `run` it selects the subject agents; on `compare` and `synthesize` it selects the judge/matcher/synthesis agents,
@@ -51,60 +52,69 @@ own instruction files cannot contaminate the eval. (Claude uses `--safe-mode`, n
 forces API-key-only auth and would break subscription-authenticated hosts.)
 
 Use `--effort` to set the reasoning effort of the agents. The accepted vocabulary depends on the backend: codex accepts
-`minimal|low|medium|high`, claude accepts `low|medium|high|xhigh|max`. This is the only way to control effort — both
-backends ignore user config, which strips the place effort would normally be configured, so without the flag every agent
-runs at that backend's built-in default. On `run` the effort applies to the subject agents and is recorded in
-`run.json`; like the reviewer restriction, `compare` refuses to mix runs with different efforts. When the two runs used
-different backends, `compare` allows the comparison but requires both to have pinned an explicit `--effort`, because an
-unset effort is each vendor's own default and codex "high" and claude "high" are not the same operating point — a
-default is not comparable across backends. `comparison.json` records both runs' backends. On `compare` and `synthesize`
-the flag sets the judge/matcher/synthesis agents' effort independently of what the compared runs used.
+`none|minimal|low|medium|high|xhigh`, while claude accepts `low|medium|high|xhigh|max`. A particular model may support
+only a subset (Luna accepts `none` but not `minimal`); preflight catches an incompatible pair before reviewer spend.
+This is the only way to control effort — both backends ignore user config, which strips the place effort would normally
+be configured, so without the flag every agent runs at that backend's built-in default. On `run` the effort applies to
+the subject agents and is recorded in `run.json`; like the reviewer restriction, `compare` refuses to mix runs with
+different efforts. When the two runs used different backends, `compare` allows the comparison but requires both to have
+pinned an explicit `--effort`, because an unset effort is each vendor's own default and codex "high" and claude "high"
+are not the same operating point — a default is not comparable across backends. `comparison.json` records both runs'
+backends. On `compare` and `synthesize` the flag sets the judge/matcher/synthesis agents' effort independently of what
+the compared runs used.
 
 ## How does it work?
 
 `run` prepares the target repository under `eval-worktrees/repos/`, resolves the case's subject ref, and uses either the
-explicit `base_ref` or the subject commit's first parent as the review base. The harness then owns the swarm fan-out
-itself: it materializes the review scope once into `scope.diff`, discovers the spawnable reviewer panel from the
-resolved skill's `reviewers/` directory (shared base charters are skipped, and `spec-compliance` runs only when the
-target checkout has a `SPEC.md`), and runs one agent per reviewer charter per repeat, a few reviewers at a time, each
-seeing only its own charter plus the shared scope. The command prints the new run directory. Inside it, `run.json`
-records the resolved SHAs, model, backend, skill source, label, and repeat count; each `repeat-N/` directory contains
-the merged `findings.json`, per-reviewer findings and transcripts under `reviewers/`, and `execution.json`.
+explicit `base_ref` or the subject commit's first parent as the review base. The harness materializes that exact
+boundary once into `scope.diff`; scope selection is deliberately fixed outside the model so baseline and candidate runs
+remain comparable.
 
-NOTE: an earlier harness design asked a single codex session to run the whole skill and trusted it to spawn reviewer
-subagents. Observed transcripts showed it never spawned anything — collab waits on zero threads — and silently reviewed
-solo with every charter loaded, which is exactly the degraded single-context mode the swarm exists to avoid, and it was
-undetectable from the findings alone. The harness-side fan-out replaces trust with ground truth: `execution.json`
-records which reviewer agents actually ran and how many findings each returned, any reviewer failure aborts the run, and
-finding ids are namespaced by reviewer with the `reviewers` attribution stamped by the harness after each agent returns.
-An agent can neither fabricate nor drop attribution, and a "swarm" that did not actually fan out can no longer
-masquerade as a completed run.
+Without `--reviewer`, the harness invokes the resolved candidate `SKILL.md` as the coordinator. The skill under test
+owns panel selection, native subagent spawning, continuation, merge/deduplication, and reporting. The eval wrapper adds
+only the fixed scope and a JSON artifact adapter. On Codex it also raises the documented concurrent-agent cap to the
+candidate's resolved charter count because user configuration is deliberately ignored. That capacity is derived from the
+charter directory; the harness does not encode reviewer names or orchestration rules. This is the full-swarm path.
+
+With `--reviewer`, the harness runs that charter directly. The skill coordinator is intentionally absent, so a charter
+change can be measured without paying for unrelated agents. The harness stamps reviewer attribution on this path because
+there is no coordinator to do it.
+
+NOTE: the first coordinator-owned harness trusted the final answer and was invalid. Its transcripts showed a collab wait
+on zero threads: the coordinator had loaded every charter and reviewed alone. The current full-swarm path audits the
+native collaboration events in the coordinator transcript and requires the number of distinct spawned agents to match
+the completed reviewers in `execution.json`. Reported continuation passes must likewise have enough native same-agent
+follow-up events. A schema-valid answer with zero agents, a partial panel reported as complete, or invented extra passes
+aborts the run.
+
+The command prints the new run directory. `run.json` records the resolved SHAs, model, backend, skill source, execution
+mode, label, and repeat count. A full-swarm `repeat-N/` contains `findings.json`, the raw `swarm-result.json`,
+`transcript.jsonl`, and `execution.json`. A restricted repeat keeps its per-reviewer findings and transcript under
+`reviewers/`. Artifacts created before execution modes were recorded read back as `legacy_panel`; `compare` refuses to
+mix those harness-fan-out runs with current full-swarm runs.
 
 Before any real spend, every `run` executes a preflight: two concurrent agents review a tiny synthetic scope with a
 planted defect (a parity check claiming to test evenness), at the exact model and effort the run will use. Each agent
 must return a finding referencing the planted file; an agent failure or a miss aborts the run before the first repeat.
 The verdict is recorded in `<run-dir>/preflight/preflight.json` and echoed on stdout.
 
-After the repeats complete, `run` digests the on-disk evidence into `<run-dir>/verification.json`: per reviewer and
-repeat, the output tokens the agent reported, a count of the actions it took, and anomalies for the shapes that indicate
-no real work happened. The digest is backend-aware and reads each backend's own transcript shapes: for codex, output
-tokens from the final `turn.completed` event and a count of completed command executions; for claude, output tokens from
-the final `result` event and a count of tool calls (every `tool_use` except the enforced `StructuredOutput`, so
-file-access tools like Read/Grep count as work). Because the two backends count different things, the action count is
-comparable only within a backend. Anomalies flag each backend's native "did nothing" signatures — a missing transcript,
-no terminal completion event, zero or missing output tokens, and, on claude, a result event that reported an error or a
-success result carrying no structured output. Anomalies do not abort the run — judging their severity is the launching
-agent's job — but the digest status and every anomaly are printed, followed by the inspection contract: the launching
-agent must always read the digest and spot-check at least one reviewer transcript per repeat before reporting or
-trusting the run's results. Do not infer health from a plausible-looking findings list alone; the solo-swarm incident
-this design replaced produced exactly that.
+After the repeats complete, `run` digests the on-disk evidence into `<run-dir>/verification.json`. Full-swarm runs
+record the coordinator's output tokens, actions, spawned-agent count, and same-agent follow-up count; restricted runs
+record those values for the reviewer itself. The digest is backend-aware: codex reports `turn.completed`, command
+executions, and collaboration thread ids, while claude reports `result`, tool calls, `Agent`, and `SendMessage` events.
+Action counts are comparable only within one backend.
 
-The stamped `reviewers` array is what lets a single full-panel run answer per-reviewer questions offline — which
-charters contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
-reviewer. The comparison flow does not consume it. Reviewer agents get `reviewer-findings.schema.json` (enforced by
-codex's `--output-schema` and claude's `--json-schema`), which has no attribution field at all; the stored
-`findings.json` follows `findings.schema.json`, whose `reviewers` field the harness reads as optional so runs recorded
-before the field existed still parse.
+Missing completion events, zero or missing output tokens, and backend-native error shapes become verification anomalies.
+They do not abort the run, because the launching agent must judge their severity. Failed collaboration accounting does
+abort: findings from a coordinator that did not run the reported reviewer agents are not eval evidence. Always read the
+digest and spot-check `repeat-N/transcript.jsonl` for a full swarm or the selected reviewer transcript for a restricted
+run before trusting the findings.
+
+The `reviewers` array is what lets a single full-swarm run answer per-reviewer questions offline — which charters
+contribute unique findings, and which only duplicate their siblings — without paying for one restricted run per
+reviewer. The coordinator reports attribution on full-swarm runs; the harness stamps it on restricted runs. The
+comparison flow does not consume it. `findings.json` follows `findings.schema.json`, whose `reviewers` field the harness
+reads as optional so older runs still parse.
 
 `baseline` does not rerun the model. It writes `baseline.json` into an existing run directory so later comparisons know
 that run is the reference point. The command prints the path to that marker file.

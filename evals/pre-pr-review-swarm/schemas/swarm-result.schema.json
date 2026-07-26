@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings", "reviewer_execution"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "summary", "location", "rationale", "reviewers"],
+        "properties": {
+          "id": { "type": "string" },
+          "category": { "type": "string" },
+          "summary": { "type": "string" },
+          "location": { "type": "string" },
+          "rationale": { "type": "string" },
+          "reviewers": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "reviewer_execution": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reviewer", "status", "passes", "rationale"],
+        "properties": {
+          "reviewer": { "type": "string" },
+          "status": { "enum": ["completed", "skipped"] },
+          "passes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Agent turns used: the initial spawn plus same-agent continuation turns."
+          },
+          "rationale": { "type": "string" }
+        }
+      }
+    }
+  }
+}

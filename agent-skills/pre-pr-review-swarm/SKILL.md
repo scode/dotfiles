@@ -96,21 +96,54 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    job is to decide which model and reasoning effort each delegated task or subagent runs on — then which model and
    effort each reviewer runs at is that skill's decision: route each spawn through it and pass explicit model/effort
    overrides where the spawn mechanism supports them, rather than letting reviewers silently inherit the coordinator's
-   model. This applies equally to the reduced prose-only panel. If the environment cannot spawn reviewer agents and wait
-   for their results, stop and report that the swarm could not be run. Do not replace the swarm with a coordinator-only
-   read-through and do not report PR readiness from a review that did not actually spawn reviewers.
+   model. This applies equally to the reduced prose-only panel. Retain each reviewer's stable agent or thread handle
+   until finding collection is complete so productive reviewers can continue in the context they already paid to build.
+   Track the selected charters before spawning and create exactly one initial agent for each. A spawn that fails without
+   returning a thread handle may be retried; once a charter has a live handle, never spawn it again. Continuations go to
+   that handle instead of creating replacements or duplicate reviewers. If the environment cannot spawn the complete
+   reviewer panel and wait for its results, stop and report that the swarm could not be run. Do not treat a host
+   capacity limit as an unavailable reviewer, replace the swarm with a coordinator-only read-through, or report PR
+   readiness from a partial review.
 7. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
    its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
    reviewers that files listed under `Omitted from scope:` were part of the change but were excluded as generated or
    lock files; they exist in the checkout and may be consulted when a charter needs them. Do not describe the review
    scope only in prose, and do not let reviewers infer which changes to review from the working tree. Charter files live
-   in the `reviewers/` directory next to this skill file.
+   in the `reviewers/` directory next to this skill file. Make the initial prompt explicit that this is a complete
+   charter review, not a top-N search: finding an issue is not a stopping condition, and the reviewer must finish its
+   main pass and make a deliberate second sweep for unrelated issues before returning.
 8. Require each reviewer to return only findings with a concrete recommended action, each tagged as **definite** or
    **possible**, with file references and a short rationale. Actionability is a quality bar, not an invitation to
    summarize: a reviewer that spots the same pattern in several independently editable places returns one finding per
    place, not one aggregate finding for the pattern. If a reviewer has zero findings, it returns an empty list—do not
    invent low-value observations. Every expected reviewer must return a result before the coordinator can merge
-   findings. A missing reviewer result is a failed swarm run, not an empty finding list.
+   findings. A missing reviewer result is a failed swarm run, not an empty finding list. Before merging, continue
+   productive reviewers through a bounded search. Run eligible continuations concurrently when the host supports it; one
+   reviewer's extra pass must not serialize the rest of the panel.
+   - A pass is one agent turn: the initial spawn is pass 1, and each later message to that same stable handle starts one
+     additional pass. The deliberate second sweep required by step 7 happens inside pass 1; it does not become pass 2
+     unless the coordinator resumes the reviewer after receiving its first result.
+   - An empty first pass completes that reviewer. After a non-empty first pass, send one follow-up to the same reviewer
+     using the host's stable-handle continuation mechanism (`followup_task` on Codex, or `SendMessage` to the original
+     agent ID on Claude Code). Tell it that the earlier findings are recorded, to reuse its existing context, and to
+     return only new independently actionable findings or an empty list. Repeating or rephrasing an earlier finding does
+     not count as new.
+   - A third pass is allowed only when the coordinator judges that at least one new second-pass finding is both
+     significant and credible. A credible finding is grounded in the reviewed code, supported by concrete evidence,
+     independently actionable, and neither a duplicate nor speculation presented as fact. A significant finding would
+     materially affect correctness, security, data integrity, resource behavior, externally visible behavior, spec
+     compliance, test adequacy, or PR readiness. Style-only observations, marginal simplifications, optional polish, and
+     fixes whose complexity outweighs their likely benefit do not qualify.
+   - When that gate passes, send one final follow-up to the same reviewer with the same no-repeat instruction. Three
+     total passes is a hard cap. Never start a fourth pass; if the third pass still returns new findings, record that
+     the reviewer reached the cap before saturation.
+   - Every finding from every completed pass still enters the normal merge and accounting flow. The third-pass gate
+     controls search depth, not whether second-pass feedback is retained.
+   - Keep the checkout at the same after-state until all scheduled continuations return. A failed scheduled continuation
+     makes the swarm incomplete just like a failed first pass.
+   - If the host can spawn reviewers but cannot resume a completed reviewer, do not spawn a fresh replacement and repay
+     the exploration cost. Keep the first-pass result, disclose that continuation was unavailable, and rely on the
+     mandatory internal sweep from step 7.
 9. Merge and deduplicate findings using these rules. Granularity is an output invariant of this step, not a style
    preference: every independently editable location a reviewer surfaced must still be visible as its own finding
    afterwards. Deduplication exists to remove same-location overlap between reviewers, and for nothing else.
@@ -247,6 +280,13 @@ present an empty finding set as a successful swarm unless every expected reviewe
 `<expected>` is the size of the selected panel. When the prose-only fast path applied, say so on the same line and name
 the reviewers it skipped. A skipped reviewer's findings section must say it was skipped by the fast path — an unspawned
 reviewer did not return an empty finding list, and the report must not read as if it did.
+
+Always include
+`Reviewer continuation: <p2>/<eligible2> second passes, <p3>/<eligible3> third passes; unavailable: <names or none>; capped with new findings: <names or none>`
+before the findings sections. A reviewer is eligible for a second pass when its first pass was non-empty, and eligible
+for a third when its second pass produced at least one significant, credible new finding. A reviewer belongs in
+`unavailable` when the host could not resume it, and in `capped with new findings` when its third pass was non-empty.
+This line distinguishes a bounded search from both a one-shot review and a claim that every reviewer reached saturation.
 
 Always include `Finding accounting: <r> reviewer findings → <n> reported (<m> same-location merges, <k> rejected)`
 before the findings sections, where the numbers satisfy `r = n + m + k`. This is the count-based guard against lossy
