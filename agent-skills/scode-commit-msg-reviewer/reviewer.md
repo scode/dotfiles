@@ -107,6 +107,12 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   reasonable big-picture answer is a strong sign that the message is ordered backwards. Move the purpose or TLDR up; let
   mechanics, exceptions, and side points come later. Length is not the problem — a useful two-page description is fine
   when it progresses from the big picture into the weeds.
+- **Justification before the decision.** A body that opens by arguing for a choice the reader has not yet been shown
+  exists — defending a flag spelling, a picked alternative, or a workaround before establishing that anything was there
+  to decide. Read the opening as someone who has seen only the title, not the diff and not the conversation that
+  produced the change: a body can be accurate line by line and still read as the answer to a question the reader never
+  saw asked. The fix is sequencing, not content — name the decision or tension first, then justify it. A why-focused
+  body is not license to open mid-argument, and the one orienting clause that names the decision is not diff narration.
 - **Undifferentiated detail.** Several distinct points packed into one unbroken paragraph, or a literal enumeration
   written as a chain of sentences. Use paragraphs at genuine transitions and bullets for actual lists. The inverse also
   holds: nuanced reasoning often needs connected prose, so do not demand bullets merely because a description is long.
