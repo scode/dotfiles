@@ -1,6 +1,6 @@
 ---
 name: pre-pr-review-swarm
-description: Run a concurrent multi-angle review only when the user explicitly invokes `pre-pr-review-swarm` by name. Spawn parallel reviewers for documentation/comment correctness and README drift, simplification opportunities, language idiomaticity, correctness risks, security vulnerabilities, test quality gaps, AI slop detection, and SPEC.md compliance (when a SPEC.md exists at the project root).
+description: Run a concurrent multi-angle review only when the user explicitly invokes `pre-pr-review-swarm` by name. Spawn parallel reviewers for documentation/comment correctness and README drift, simplification opportunities, language idiomaticity, correctness risks including systems behavior and resource bounds, security vulnerabilities, test quality gaps, AI slop detection, and SPEC.md compliance (when a SPEC.md exists at the project root).
 ---
 
 # Pre-PR Review Swarm
@@ -84,13 +84,13 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      and the user should be able to see that before reviewers spend anything on it.
 3. Report the selected scope before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
-5. Decide the reviewer panel. By default every reviewer runs (twelve always, plus a thirteenth if `SPEC.md` exists). If
-   every file touched by the change — including files listed under `Omitted from scope:` — has a prose extension (`.md`,
-   `.markdown`, `.txt`), apply the prose-only fast path instead: spawn only the docs-comments, ai-slop, simplification,
-   and (when `SPEC.md` exists) spec-compliance reviewers. The correctness and security reviewers and the test-quality
-   and idiomaticity charters have nothing to bite on in a prose-only change, so skipping them saves their agent contexts
-   rather than paying each to return an empty list. The trigger is purely mechanical: a file with any other extension
-   anywhere in the change means the full panel runs. When in doubt, run the full panel.
+5. Decide the reviewer panel. By default every reviewer runs (thirteen always, plus a fourteenth if `SPEC.md` exists).
+   If every file touched by the change — including files listed under `Omitted from scope:` — has a prose extension
+   (`.md`, `.markdown`, `.txt`), apply the prose-only fast path instead: spawn only the docs-comments, ai-slop,
+   simplification, and (when `SPEC.md` exists) spec-compliance reviewers. The correctness and security reviewers and the
+   test-quality and idiomaticity charters have nothing to bite on in a prose-only change, so skipping them saves their
+   agent contexts rather than paying each to return an empty list. The trigger is purely mechanical: a file with any
+   other extension anywhere in the change means the full panel runs. When in doubt, run the full panel.
 6. Run the selected reviewer charters concurrently when the environment supports it. Keep each reviewer focused on its
    own charter so the review instructions stay separate. If the session has an active model-routing skill — one whose
    job is to decide which model and reasoning effort each delegated task or subagent runs on — then which model and
@@ -207,6 +207,7 @@ to each finding by its feedback identifier.
 | correctness-general-reviewer                            | `reviewers/correctness-general.md`         |
 | correctness-data-flow-reviewer                          | `reviewers/correctness-data-flow.md`       |
 | correctness-state-lifecycle-reviewer                    | `reviewers/correctness-state-lifecycle.md` |
+| correctness-systems-reviewer                            | `reviewers/correctness-systems.md`         |
 | correctness-edge-inputs-reviewer                        | `reviewers/correctness-edge-inputs.md`     |
 | security-general-reviewer                               | `reviewers/security-general.md`            |
 | security-input-trust-reviewer                           | `reviewers/security-input-trust.md`        |
