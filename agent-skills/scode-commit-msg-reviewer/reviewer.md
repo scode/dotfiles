@@ -121,6 +121,12 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   impressive.
 - **Overlong or vague title.** A first line that runs on, or that is so generic ("fix bug", "update code") it could head
   any commit in the repo.
+- **Zoomed-in or insider title.** The opposite pole of vague. Judge the title at list altitude: someone scanning commit
+  or PR titles should get the category of the change, not an inventory of its contents — specific flag names, alias
+  spellings, and option values belong in the body. Equally blocking: a title term that is repo-internal vocabulary (a
+  feature's internal name, a type name) when a plainer word locates the change just as well. A title can describe the
+  user-visible effect with perfect accuracy and still fail here by describing it at the wrong zoom, or in words only
+  someone who has read the codebase can parse.
 
 ## Reading the diff
 
