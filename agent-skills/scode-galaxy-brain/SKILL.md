@@ -100,7 +100,7 @@ initial classification.
 | ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- |
 | mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   |
 | routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 medium → sonnet-5 high |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high |
 | complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
 | mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     |
@@ -119,6 +119,14 @@ design-and-synthesis task's output is primarily visual — UI, frontend styling,
 use the Claude route even from a GPT-family orchestrator, and treat this as a sufficient reason to diverge from a
 prefer-gpt preference. Announce the divergence as usual. Non-visual design work such as API design, architecture, and
 copy stays on the normal routes.
+
+Long context is an exception to the GPT mechanical route. gpt-5.6-luna's long-context retrieval is far below the rest of
+the family (reported around 41% on MRCR versus roughly 90% for terra and sol), so a mechanical task whose input is
+genuinely large — whole-repo scans, big log files, long-document analysis — starts at gpt-5.6-terra medium instead of
+luna, escalating to gpt-5.6-sol medium. This is about input size the model must actually reason across, not task
+difficulty; small-input mechanical churn stays on luna. A luna delegate that loses track of earlier context mid-task is
+this weakness surfacing, not a generic substantive failure — reroute to terra rather than counting it against the
+profile.
 
 ### Native-path bias
 
