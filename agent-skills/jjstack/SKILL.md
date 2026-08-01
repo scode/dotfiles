@@ -78,13 +78,16 @@ environment already guarantees those operations work inside it.
   stacked PRs safely" — a direct merge still leaves children pointing at the merged branch. If it is a stack bookmark,
   the request means landing the stack bottom-up per "Landing stacked PRs safely": merge each PR separately in stack
   order, restacking between merges, until the named PR has landed, then restack and retarget any still-open descendants
-  above it. When that interpretation implies landing more than one PR, tell the user which PRs will land in what order
-  and confirm before the first merge — a bare "merge it" that fans out to several irreversible merges is exactly where a
-  misread intent is most expensive. Each PR lands as its own merge on the default branch. Never merge a PR into its
-  parent bookmark, and never retarget a stacked PR's base to the default branch so one squash swallows its unmerged
-  ancestors — either shortcut collapses review units the stack exists to keep separate, and both need an explicit user
-  request. Default to squash merge unless the user explicitly asks for a different merge strategy, and do not use
-  `--delete-branch` automatically for a non-top stacked PR.
+  above it. Always say which PRs will land in what order before the first merge. Stop and wait for confirmation only
+  when landing them means going wider than the user asked: a request naming one PR that turns out to sit above unmerged
+  parents also lands those parents, and choosing to land work the user did not name is theirs to make. When the request
+  already covers the whole set — "merge the stack", "land all of it" — the plan is an announcement, not a question, so
+  state the order and proceed. Bottom-up is the only valid order, so there is nothing for the user to decide about it.
+  Do not re-ask partway through a landing they already approved. Each PR lands as its own merge on the default branch.
+  Never merge a PR into its parent bookmark, and never retarget a stacked PR's base to the default branch so one squash
+  swallows its unmerged ancestors — either shortcut collapses review units the stack exists to keep separate, and both
+  need an explicit user request. Default to squash merge unless the user explicitly asks for a different merge strategy,
+  and do not use `--delete-branch` automatically for a non-top stacked PR.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -555,17 +558,18 @@ wrong-way merge this section exists to prevent. If the user asks to merge a PR t
 a request to land the stack up to and including that PR — one merge per PR, in stack order, restacking between merges —
 not to merge it where it currently points, and not to retarget its base to the default branch and squash the whole stack
 into one commit. Each PR was made a separate review unit on purpose; landing must preserve one landed commit per PR
-unless the user explicitly asks to collapse them. When more than one PR will land, tell the user which PRs will land in
-what order and confirm before the first merge; that requirement applies no matter which section routed you here.
-Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named PR has landed and
-open descendants remain above it, rebase them onto the landed result, push every descendant bookmark the rebase moved —
-not just the lowest — and retarget the lowest remaining PR's base to the default branch before calling the job done. The
-base guards in the snippets below are this rule in executable form; keep them — including the per-guard `|| exit`
-failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the errexit NOTE in "Fast
-path for the common case") and a guard without its own exit fails open. Derive the default branch once per landing
-instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named `main`,
-which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that `gh repo view` takes the
-repository as a positional argument, not via `-R`:
+unless the user explicitly asks to collapse them. Say which PRs will land in what order before the first merge, no
+matter which section routed you here. Whether to wait for an answer is the narrower question decided by the "merge the
+PR" bullet under Expected user commands: wait when the landing set is wider than the request, and otherwise just state
+the plan and go. Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named
+PR has landed and open descendants remain above it, rebase them onto the landed result, push every descendant bookmark
+the rebase moved — not just the lowest — and retarget the lowest remaining PR's base to the default branch before
+calling the job done. The base guards in the snippets below are this rule in executable form; keep them — including the
+per-guard `|| exit` failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the
+errexit NOTE in "Fast path for the common case") and a guard without its own exit fails open. Derive the default branch
+once per landing instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch
+literally named `main`, which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that
+`gh repo view` takes the repository as a positional argument, not via `-R`:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
@@ -581,8 +585,10 @@ base. `jj` ancestry may still be correct locally, but GitHub is tracking branch 
 When the merge request names a PR whose base is a stack bookmark and you do not already hold the stack mapping, first
 walk the ancestor chain upward to the stack bottom: read the PR's `baseRefName`, find the same-repo open PR whose
 `headRefName` is that branch, and repeat until a base equals the default branch. The resulting bottom-up list of
-PR-number/bookmark pairs is the landing plan: it is what you show the user for confirmation before the first merge, and
-each entry's bookmark is the `$parent_bookmark`/`$child_bookmark` input for the merge steps below:
+PR-number/bookmark pairs is the landing plan: it is what you show the user before the first merge, and each entry's
+bookmark is the `$parent_bookmark`/`$child_bookmark` input for the merge steps below. Reaching this walk at all means
+the request named a PR above unmerged parents, so the chain is wider than what was asked for and the plan needs an
+answer before you merge:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
