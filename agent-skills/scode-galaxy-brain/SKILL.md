@@ -232,6 +232,13 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file
   pass it explicitly rather than relying on the user's config default; the startup header echoes the effective
   `reasoning effort:` if you need to confirm.
 - `-o` writes the agent's final message to a file; read that file for the result instead of parsing stdout.
+- A zero exit status is necessary but not sufficient. `codex exec` does return nonzero when the turn itself fails, but a
+  turn that completes normally exits 0 even when its final message declines the task, reports a tool or sandbox failure
+  the agent could not work around, or gives status instead of the work. Judge the `-o` file against the task's explicit
+  acceptance criteria and reject anything that does not meet them. A result far shorter than the task warrants is the
+  cheapest tell, though it is a reason to look rather than grounds to reject on its own — some correct answers really
+  are one line. When a whole fan-out fails the same way, treat it as one broken execution path rather than N model
+  failures: stop the batch and fix the path instead of escalating each delegate through it.
 - Runs in the current working directory by default; pass `-C <dir>` to target elsewhere.
 - Long tasks can exceed your shell tool's default timeout. Set an explicit generous timeout, or run in the background
   and wait for completion.
