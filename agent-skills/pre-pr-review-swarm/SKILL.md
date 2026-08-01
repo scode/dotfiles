@@ -115,19 +115,29 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
 8. Require each reviewer to return only findings with a concrete recommended action, each tagged as **definite** or
    **possible**, with file references and a short rationale. Actionability is a quality bar, not an invitation to
    summarize: a reviewer that spots the same pattern in several independently editable places returns one finding per
-   place, not one aggregate finding for the pattern. If a reviewer has zero findings, it returns an empty list—do not
-   invent low-value observations. Every expected reviewer must return a result before the coordinator can merge
-   findings. A missing reviewer result is a failed swarm run, not an empty finding list. Before merging, continue
-   productive reviewers through a bounded search. Run eligible continuations concurrently when the host supports it; one
-   reviewer's extra pass must not serialize the rest of the panel.
+   place, not one aggregate finding for the pattern. If a reviewer has zero findings, it returns an empty list together
+   with a one-line statement that it reviewed the scope and found nothing—do not invent low-value observations. That
+   statement is the only thing that makes an empty result checkable, so require it in the spawn prompt: a bare empty
+   list is indistinguishable from a reviewer that never got to review. Every expected reviewer must return a result
+   before the coordinator can merge findings. A missing reviewer result is a failed swarm run, not an empty finding
+   list. So is a result that arrived without the review behind it. Treat an empty result as clean only when it carries
+   that statement; a reply reporting a blocked tool, an unreadable scope file, a refusal, or any other reason the
+   reviewer could not do the work is a failed reviewer wearing the same shape as a clean one, and neither a zero exit
+   status nor a returned result distinguishes them. Watch hardest when the whole panel comes back empty at once, because
+   a shared cause — a scope path nobody can read, a sandbox that will not start — fails every reviewer identically and
+   leaves a broken swarm looking unanimously clean. A failed reviewer does not count toward the completed-reviewer
+   total, is not eligible for continuation, and makes the swarm incomplete: stop before merging and report the failure
+   and its cause instead of a finding set. Before merging, continue productive reviewers through a bounded search. Run
+   eligible continuations concurrently when the host supports it; one reviewer's extra pass must not serialize the rest
+   of the panel.
    - A pass is one agent turn: the initial spawn is pass 1, and each later message to that same stable handle starts one
      additional pass. The deliberate second sweep required by step 7 happens inside pass 1; it does not become pass 2
      unless the coordinator resumes the reviewer after receiving its first result.
-   - An empty first pass completes that reviewer. After a non-empty first pass, send one follow-up to the same reviewer
-     using the host's stable-handle continuation mechanism (`followup_task` on Codex, or `SendMessage` to the original
-     agent ID on Claude Code). Tell it that the earlier findings are recorded, to reuse its existing context, and to
-     return only new independently actionable findings or an empty list. Repeating or rephrasing an earlier finding does
-     not count as new.
+   - A confirmed-empty first pass completes that reviewer. After a first pass that returned findings, send one follow-up
+     to the same reviewer using the host's stable-handle continuation mechanism (`followup_task` on Codex, or
+     `SendMessage` to the original agent ID on Claude Code). Tell it that the earlier findings are recorded, to reuse
+     its existing context, and to return only new independently actionable findings or an empty list. Repeating or
+     rephrasing an earlier finding does not count as new.
    - A third pass is allowed only when the coordinator judges that at least one new second-pass finding is both
      significant and credible. A credible finding is grounded in the reviewed code, supported by concrete evidence,
      independently actionable, and neither a duplicate nor speculation presented as fact. A significant finding would
@@ -143,7 +153,8 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      makes the swarm incomplete just like a failed first pass.
    - If the host can spawn reviewers but cannot resume a completed reviewer, do not spawn a fresh replacement and repay
      the exploration cost. Keep the first-pass result, disclose that continuation was unavailable, and rely on the
-     mandatory internal sweep from step 7.
+     mandatory internal sweep from step 7. This salvages a pass that actually reviewed something. It never applies to a
+     failed reviewer, which did not run the sweep it is being credited with.
 9. Merge and deduplicate findings using these rules. Granularity is an output invariant of this step, not a style
    preference: every independently editable location a reviewer surfaced must still be visible as its own finding
    afterwards. Deduplication exists to remove same-location overlap between reviewers, and for nothing else.
@@ -275,7 +286,8 @@ change is a whole in-flight commit) or giving different reviewers different scop
 
 Always include `Reviewer execution: <n>/<expected> reviewers completed` before the findings sections. If that number is
 not complete, the report must say `PR Readiness: not ready` and explain that the swarm did not run to completion. Do not
-present an empty finding set as a successful swarm unless every expected reviewer actually returned a result.
+present an empty finding set as a successful swarm unless every expected reviewer actually completed a review. A
+reviewer that returned something other than a review did not complete one, however promptly it answered.
 
 `<expected>` is the size of the selected panel. When the prose-only fast path applied, say so on the same line and name
 the reviewers it skipped. A skipped reviewer's findings section must say it was skipped by the fast path — an unspawned

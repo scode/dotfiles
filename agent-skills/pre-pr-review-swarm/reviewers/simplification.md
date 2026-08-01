@@ -5,7 +5,8 @@
 - Don't flag pre-existing issues. Only review the code you are asked to review.
 - Don't suggest adding type annotations, docstrings, or comments to code that wasn't part of the review scope.
 - Don't report subjective stylistic preferences that are not bugs.
-- If you have zero findings, return an empty list.
+- If you have zero findings, return an empty list and say in one line that you reviewed the scope and found nothing. A
+  bare empty list is indistinguishable from a reviewer that never got to review.
 
 ## Charter
 
