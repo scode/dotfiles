@@ -361,6 +361,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-ssh-delegate",
+        PayloadSymlink::new(
+            "agent-skills/scode-ssh-delegate",
+            "~/.claude/skills/scode-ssh-delegate",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-commit-msg-reviewer",
         PayloadSymlink::new(
             "agent-skills/scode-commit-msg-reviewer",
@@ -522,6 +531,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "agent-skills/scode-galaxy-brain",
             "~/.codex/skills/scode-galaxy-brain",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-ssh-delegate",
+        PayloadSymlink::new(
+            "agent-skills/scode-ssh-delegate",
+            "~/.codex/skills/scode-ssh-delegate",
         ),
     )
     .depends_on(&codex_skills_dir)
