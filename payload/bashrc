@@ -1,9 +1,10 @@
-# Agent launchers.
-alias claude-yolo='claude --dangerously-skip-permissions'
-alias codex-yolo='codex --yolo'
+# Agent launchers. Model and reasoning effort are pinned explicitly on every
+# launcher so the CLIs' own model-selection defaults never decide for us.
+alias claude-yolo='claude --model claude-fable-5 --effort high --dangerously-skip-permissions'
+alias codex-yolo='codex -m gpt-5.6-sol -c model_reasoning_effort=high --yolo'
 # on-request: the model approves its own commands and asks only when it judges
 # human approval is warranted; writes stay inside the workspace sandbox.
-alias codex-full-auto='codex --sandbox workspace-write --ask-for-approval on-request'
+alias codex-full-auto='codex -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval on-request'
 # Short forms of the launchers above.
 alias cly=claude-yolo
 alias coy=codex-yolo
