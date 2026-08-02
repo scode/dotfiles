@@ -4,3 +4,7 @@ alias codex-yolo='codex --yolo'
 # on-request: the model approves its own commands and asks only when it judges
 # human approval is warranted; writes stay inside the workspace sandbox.
 alias codex-full-auto='codex --sandbox workspace-write --ask-for-approval on-request'
+# Short forms of the launchers above.
+alias cly=claude-yolo
+alias coy=codex-yolo
+alias cof=codex-full-auto
