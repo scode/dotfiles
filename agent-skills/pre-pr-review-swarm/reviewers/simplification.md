@@ -7,6 +7,10 @@
 - Don't report subjective stylistic preferences that are not bugs.
 - If you have zero findings, return an empty list and say in one line that you reviewed the scope and found nothing. A
   bare empty list is indistinguishable from a reviewer that never got to review.
+- Write each finding for a reader with no detailed knowledge of the codebase. Explain what the relevant code does, what
+  complexity is unnecessary, and the simpler replacement. File references and unexplained project jargon do not replace
+  that explanation. Use the literal fields `What happens:`, `Why it matters:`, and `Suggested change:` for every
+  finding.
 
 ## Charter
 

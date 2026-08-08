@@ -111,25 +111,33 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    scope only in prose, and do not let reviewers infer which changes to review from the working tree. Charter files live
    in the `reviewers/` directory next to this skill file. Make the initial prompt explicit that this is a complete
    charter review, not a top-N search: finding an issue is not a stopping condition, and the reviewer must finish its
-   main pass and make a deliberate second sweep for unrelated issues before returning.
+   main pass and make a deliberate second sweep for unrelated issues before returning. Pass the plain-language finding
+   requirements from step 8 in the prompt as well. They are part of every reviewer's output contract, not cleanup left
+   for the coordinator.
 8. Require each reviewer to return only findings with a concrete recommended action, each tagged as **definite** or
-   **possible**, with file references and a short rationale. Actionability is a quality bar, not an invitation to
-   summarize: a reviewer that spots the same pattern in several independently editable places returns one finding per
-   place, not one aggregate finding for the pattern. If a reviewer has zero findings, it returns an empty list together
-   with a one-line statement that it reviewed the scope and found nothing—do not invent low-value observations. That
-   statement is the only thing that makes an empty result checkable, so require it in the spawn prompt: a bare empty
-   list is indistinguishable from a reviewer that never got to review. Every expected reviewer must return a result
-   before the coordinator can merge findings. A missing reviewer result is a failed swarm run, not an empty finding
-   list. So is a result that arrived without the review behind it. Treat an empty result as clean only when it carries
-   that statement; a reply reporting a blocked tool, an unreadable scope file, a refusal, or any other reason the
-   reviewer could not do the work is a failed reviewer wearing the same shape as a clean one, and neither a zero exit
-   status nor a returned result distinguishes them. Watch hardest when the whole panel comes back empty at once, because
-   a shared cause — a scope path nobody can read, a sandbox that will not start — fails every reviewer identically and
-   leaves a broken swarm looking unanimously clean. A failed reviewer does not count toward the completed-reviewer
-   total, is not eligible for continuation, and makes the swarm incomplete: stop before merging and report the failure
-   and its cause instead of a finding set. Before merging, continue productive reviewers through a bounded search. Run
-   eligible continuations concurrently when the host supports it; one reviewer's extra pass must not serialize the rest
-   of the panel.
+   **possible**, with file references. Each finding must make sense to a reader who has no detailed knowledge of the
+   codebase. Explain in plain terms what the relevant code currently does, the concrete failure or needless complexity,
+   why that matters, and the recommended action. Introduce project-specific terms before relying on them; labels such as
+   "cache contract," "assembly path," or "trust boundary" are not explanations on their own. A file reference is
+   evidence, not a substitute for context. Keep the explanation specific rather than long: the reader should not need to
+   open the code merely to understand the claim and decide whether it is worth addressing. Return each finding with the
+   literal fields `What happens:`, `Why it matters:`, and `Suggested change:` from the Output Contract. Do not collapse
+   them into one rationale paragraph. Actionability is a quality bar, not an invitation to summarize: a reviewer that
+   spots the same pattern in several independently editable places returns one finding per place, not one aggregate
+   finding for the pattern. If a reviewer has zero findings, it returns an empty list together with a one-line statement
+   that it reviewed the scope and found nothing—do not invent low-value observations. That statement is the only thing
+   that makes an empty result checkable, so require it in the spawn prompt: a bare empty list is indistinguishable from
+   a reviewer that never got to review. Every expected reviewer must return a result before the coordinator can merge
+   findings. A missing reviewer result is a failed swarm run, not an empty finding list. So is a result that arrived
+   without the review behind it. Treat an empty result as clean only when it carries that statement; a reply reporting a
+   blocked tool, an unreadable scope file, a refusal, or any other reason the reviewer could not do the work is a failed
+   reviewer wearing the same shape as a clean one, and neither a zero exit status nor a returned result distinguishes
+   them. Watch hardest when the whole panel comes back empty at once, because a shared cause — a scope path nobody can
+   read, a sandbox that will not start — fails every reviewer identically and leaves a broken swarm looking unanimously
+   clean. A failed reviewer does not count toward the completed-reviewer total, is not eligible for continuation, and
+   makes the swarm incomplete: stop before merging and report the failure and its cause instead of a finding set. Before
+   merging, continue productive reviewers through a bounded search. Run eligible continuations concurrently when the
+   host supports it; one reviewer's extra pass must not serialize the rest of the panel.
    - A pass is one agent turn: the initial spawn is pass 1, and each later message to that same stable handle starts one
      additional pass. The deliberate second sweep required by step 7 happens inside pass 1; it does not become pass 2
      unless the coordinator resumes the reviewer after receiving its first result.
@@ -173,13 +181,20 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    - Theme summaries are additive, never a substitute. When many findings share a category, a one-line theme
      introduction above them is welcome, but each location keeps its own finding and identifier beneath it. Concision
      must not erase the inventory.
+   - Preserve the plain-language explanation while merging. The coordinator may rewrite a reviewer finding for clarity,
+     but must not compress away what the code does, the concrete consequence, or the recommended action. Before
+     reporting, read each retained finding on its own and fix it if understanding the claim still requires detailed
+     codebase knowledge or unexplained project jargon.
    - Account for every reviewer finding. After this step each one is either retained as its own finding, merged into a
      retained finding at the same location, or rejected as incorrect or non-actionable with a stated reason. A finding
      that silently vanishes into a broader summary is a coordinator bug: category-level compression is exactly the
      failure mode the location rule guards against, and the accounting is what makes a violation visible.
 10. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
-11. Present all findings to the user. Every user-visible finding must include its feedback identifier, and the report
-    must include the selected scope label.
+11. Present all findings to the user. Every user-visible finding must include its feedback identifier, follow the
+    plain-language structure in the Output Contract, and include enough context to understand without opening the code.
+    The report must include the selected scope label. Before sending the final answer, verify that every finding
+    contains the literal labels `What happens:`, `Why it matters:`, and `Suggested change:`. If any label is absent, the
+    output is invalid: rewrite that finding instead of sending a compact substitute.
 12. If `nofix` was specified, stop here — do not make any changes.
 13. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
 14. If no actionable findings remain, state that explicitly before asking for PR creation.
@@ -280,6 +295,22 @@ duplicates them is a slot that can be reclaimed.
 Report results in this structure. Each finding in every section must begin with its feedback identifier and be tagged
 **definite** or **possible**.
 
+Write findings for a reader who does not already know the codebase. The following shape is mandatory for every finding:
+
+- `` `Fn / TYPE-MNEMONIC` — **definite|possible** — `path:line` — <plain-language title> ``
+  - `What happens:` Explain the relevant behavior and the problem in ordinary language. Give enough local context to
+    understand any project-specific term used in the title.
+  - `Why it matters:` Name the concrete failure, risk, maintenance cost, or user-visible effect. Do not leave the reader
+    to infer the consequence from code vocabulary.
+  - `Suggested change:` State the direct remediation. For a test finding, say what the test must prove and what broken
+    behavior it must catch.
+
+Keep these explanations compact, but never trade away the context needed to understand the feedback. The common failure
+mode is a polished one-line summary such as "cover the cached assembly path" that is technically accurate but useful
+only after the reader reconstructs the code. Spell out that the application build may be reused from a cache while a new
+catalog still has to be copied into the deployed output. Do not replace the three labeled fields with a single paragraph
+even when that paragraph contains the same facts; the labels force the explanation to survive coordinator compression.
+
 Always include `Reviewed scope: <selected scope label>` before the findings sections. This is not cosmetic: it is the
 user-visible guard against reviewing an empty or under-sized scope (such as a sliver of uncommitted fixes when the real
 change is a whole in-flight commit) or giving different reviewers different scope.
@@ -308,7 +339,11 @@ thorough than it was.
 
 Example finding:
 
-- `F1 / SEC-PRIVSEC` — **definite** — `src/auth.rs:42` leaks private session material into logs.
+- `F1 / SEC-PRIVSEC` — **definite** — `src/auth.rs:42` — login requests write session secrets to the application log.
+  - `What happens:` The changed log statement records the value that proves a user is logged in, not merely a harmless
+    request identifier.
+  - `Why it matters:` Anyone who can read the logs can copy that value and act as the user until the session expires.
+  - `Suggested change:` Remove the session value from the log and record a non-secret request identifier instead.
 
 - `Correctness`: findings from the correctness lens reviewers, presented as one section.
 - `Security`: findings from the security lens reviewers, presented as one section.
