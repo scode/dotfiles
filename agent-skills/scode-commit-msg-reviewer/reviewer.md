@@ -102,6 +102,11 @@ These are the patterns this review exists to catch. Treat them as blocking when 
   references such as "the hard cap", "the earlier refactor", or "the rc" are warning signs when the message never
   establishes what they mean. Before referring back to an unfamiliar detail, introduce it with enough plain-language
   context that a cold reader can follow the point.
+- **Only legible alongside the patch.** A description may name code elements, but it must not require the reader to
+  assemble their interactions to learn the reason for the commit. Hide the patch and ask whether a maintainer can
+  recount the initial condition, the practical stakes, and the intended end state. If the answer depends on inspecting
+  source or already knowing local shorthand, block it. Code-level detail belongs after that account, with enough
+  orientation to show why each detail matters. References can support the account but cannot replace it.
 - **Buried purpose.** An opening that enumerates low-level details without telling the reader why the change matters or
   clearly establishing background needed to explain it. Reaching hundreds of characters into a description without a
   reasonable big-picture answer is a strong sign that the message is ordered backwards. Move the purpose or TLDR up; let
