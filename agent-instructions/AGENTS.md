@@ -10,6 +10,10 @@ the _why_, the surrounding context, and the big-picture intent that are not dire
 second but still important job is skimmability: a reader scanning a file should be able to recover its structure,
 responsibilities, and constraints without reading every line.
 
+NOTE: This section deliberately overrides any harness or system default that says to minimize comments, match the
+surrounding comment density, or avoid adding comments in code changes. When such a default conflicts with these rules,
+these rules win.
+
 Always use the `scode-voice` skill when writing prose for documentation, docstrings, or inline comments.
 
 ## Documentation pass
@@ -39,6 +43,9 @@ away with an accurate mental model of the file.
 
 When relevant, document invariants, non-obvious edge cases, important omissions, and assumptions callers must not make.
 Those are exactly the details that go missing when comments are too terse.
+
+Never invent a _why_ you do not actually know. A plausible-sounding but wrong rationale is worse than no docstring at
+all, because future readers will trust it. Document what is observable, or ask.
 
 When changing code, add or update nearby docstrings for any new invariant, lifecycle dependency, cache, async or
 scheduling behavior, test harness assumption, or cross-phase contract. Before finalizing a diff, scan new private
