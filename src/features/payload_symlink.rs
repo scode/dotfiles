@@ -1,13 +1,15 @@
 use std::fmt;
 use std::fs;
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Result, bail};
 use tracing::debug;
 
 use super::{Feature, FeatureResult};
-use crate::util::fs::{compute_relative_path, expand_tilde, normalize_path};
+use crate::util::fs::{
+    RepoTarget, compute_relative_path, expand_tilde, normalize_path, repo_target,
+};
 
 /// Creates a destination symlink to a payload path in the dotfiles repository.
 ///
@@ -72,7 +74,7 @@ impl PayloadSymlink {
             if let Ok(link_target) = fs::read_link(&dest_path) {
                 let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
                 let resolved = dest_dir.join(&link_target);
-                match Self::repo_target(base_dir, &base_canonical, &resolved) {
+                match repo_target(base_dir, &base_canonical, &resolved) {
                     RepoTarget::Resolved(resolved_canonical) => {
                         if resolved_canonical == source_canonical {
                             debug!(destination = %self.destination, "already installed");
@@ -122,35 +124,6 @@ impl PayloadSymlink {
         Ok(FeatureResult::Changed)
     }
 
-    fn repo_target(base_dir: &Path, base_canonical: &Path, target: &Path) -> RepoTarget {
-        if let Ok(canonical) = target.canonicalize() {
-            if canonical.starts_with(base_canonical) {
-                return RepoTarget::Resolved(canonical);
-            }
-            return RepoTarget::Outside;
-        }
-
-        let normalized = normalize_path(target);
-        if !normalized.starts_with(normalize_path(base_dir)) {
-            return RepoTarget::Outside;
-        }
-
-        let mut ancestor = target;
-        while !ancestor.exists() {
-            let Some(parent) = ancestor.parent() else {
-                return RepoTarget::Outside;
-            };
-            ancestor = parent;
-        }
-
-        match ancestor.canonicalize() {
-            Ok(canonical) if canonical.starts_with(base_canonical) => {
-                RepoTarget::Broken(normalized)
-            }
-            _ => RepoTarget::Outside,
-        }
-    }
-
     fn uninstall_with_base_dir(&self, base_dir: &Path) -> Result<FeatureResult> {
         let dest_path = expand_tilde(&self.destination)?;
         let base_canonical = base_dir.canonicalize()?;
@@ -169,7 +142,7 @@ impl PayloadSymlink {
         let dest_dir = dest_path.parent().unwrap_or(Path::new("/"));
         let resolved = dest_dir.join(&link_target);
 
-        let target_owned_by_repo = match Self::repo_target(base_dir, &base_canonical, &resolved) {
+        let target_owned_by_repo = match repo_target(base_dir, &base_canonical, &resolved) {
             RepoTarget::Resolved(_) | RepoTarget::Broken(_) => true,
             RepoTarget::Outside => normalize_path(&resolved) == normalize_path(&source_path),
         };
@@ -182,12 +155,6 @@ impl PayloadSymlink {
         debug!(destination = %self.destination, "removed symlink");
         Ok(FeatureResult::Changed)
     }
-}
-
-enum RepoTarget {
-    Resolved(PathBuf),
-    Broken(PathBuf),
-    Outside,
 }
 
 impl Feature for PayloadSymlink {

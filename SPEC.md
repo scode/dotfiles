@@ -42,6 +42,12 @@ On install, it repoints that symlink to the current source path. On uninstall, i
 they point at a previous source path. Symlinks to targets outside the repository must still block install and uninstall
 rather than being overwritten or removed.
 
+`DeleteSymlink` shares the same ownership boundary: it removes an obsolete installed link only when the link's target —
+live or broken — is verified to lie inside this repository, and refuses everything else. Broken targets are the normal
+case (the source was renamed or deleted), but a broken target that merely reads as repository-internal while escaping
+through an intermediate symlink is not repo-owned and must not be deleted. Deletion is irreversible and happens on
+install, so the outside-repository refusal is a hard guard, not a convenience.
+
 ## Managed JSON Ownership
 
 `JsonManaged` edits user-owned JSON files and owns only the paths its `managed_*` operations declare. Declaring a path

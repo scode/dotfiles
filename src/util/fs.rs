@@ -51,6 +51,75 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     result
 }
 
+/// Classification of a symlink target against the repository ownership
+/// boundary. Produced by [`repo_target`]; see it for the exact rules.
+///
+/// The installer only ever repoints or deletes symlinks it owns, and ownership
+/// is defined as "the target lies inside this repository checkout". This enum
+/// is that judgment, with the resolved path carried along so callers can log
+/// or compare it:
+///
+/// - `Resolved`: the target exists and canonicalizes to a path inside the
+///   repository. Carries the canonical path.
+/// - `Broken`: the target does not fully resolve, but both its lexical form
+///   and its nearest existing ancestor land inside the repository. This is the
+///   normal shape for a stale link whose source was renamed or deleted.
+///   Carries the lexically normalized path.
+/// - `Outside`: everything else — the link is not installer-owned and must not
+///   be touched.
+#[derive(Debug)]
+pub enum RepoTarget {
+    Resolved(PathBuf),
+    Broken(PathBuf),
+    Outside,
+}
+
+/// Decides whether a symlink target is owned by this repository checkout.
+///
+/// `target` is the link's destination resolved against the link's parent
+/// directory (relative link targets mean nothing without that anchor).
+/// `base_dir` is the repository root and `base_canonical` its canonicalized
+/// form — callers already hold both, so this takes them instead of
+/// re-canonicalizing per call.
+///
+/// For an existing target, `canonicalize()` answers directly. For a target
+/// that fails to canonicalize (typically a broken link, but any I/O failure
+/// lands here too), the lexical check alone is not enough: a path can read as
+/// repository-internal while an intermediate directory symlink carries it
+/// outside (`<repo>/escape/missing` where `escape` links elsewhere). So the
+/// broken path must pass both the lexical prefix check and canonicalization of
+/// its nearest existing ancestor. The remaining asymmetry fails closed: a link
+/// written through a symlinked directory *into* the repository is classified
+/// `Outside` because the lexical check runs on the unresolved text — the
+/// installer then refuses to touch it rather than deleting something it
+/// cannot prove it owns.
+pub fn repo_target(base_dir: &Path, base_canonical: &Path, target: &Path) -> RepoTarget {
+    if let Ok(canonical) = target.canonicalize() {
+        if canonical.starts_with(base_canonical) {
+            return RepoTarget::Resolved(canonical);
+        }
+        return RepoTarget::Outside;
+    }
+
+    let normalized = normalize_path(target);
+    if !normalized.starts_with(normalize_path(base_dir)) {
+        return RepoTarget::Outside;
+    }
+
+    let mut ancestor = target;
+    while !ancestor.exists() {
+        let Some(parent) = ancestor.parent() else {
+            return RepoTarget::Outside;
+        };
+        ancestor = parent;
+    }
+
+    match ancestor.canonicalize() {
+        Ok(canonical) if canonical.starts_with(base_canonical) => RepoTarget::Broken(normalized),
+        _ => RepoTarget::Outside,
+    }
+}
+
 /// Computes a relative path from one directory to another path.
 ///
 /// Given a starting directory and a target path, returns a relative path
