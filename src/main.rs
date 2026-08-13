@@ -396,6 +396,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-build-goal",
+        PayloadSymlink::new(
+            "agent-skills/scode-build-goal",
+            "~/.claude/skills/scode-build-goal",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "delete-claude-skill-scode-stax",
         DeleteSymlink::new("~/.claude/skills/scode-stax"),
     )
@@ -584,6 +593,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "delete-codex-skill-scode-fable-resume",
         DeleteSymlink::new("~/.codex/skills/scode-fable-resume"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-build-goal",
+        PayloadSymlink::new(
+            "agent-skills/scode-build-goal",
+            "~/.codex/skills/scode-build-goal",
+        ),
     )
     .depends_on(&codex_skills_dir)
     .build();
