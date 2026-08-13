@@ -379,11 +379,19 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
-        "claude-skill-scode-fable-resume",
+        "claude-skill-agent-resumeable",
         PayloadSymlink::new(
-            "agent-skills/scode-fable-resume",
-            "~/.claude/skills/scode-fable-resume",
+            "agent-skills/agent-resumeable",
+            "~/.claude/skills/agent-resumeable",
         ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    // The skill was previously named scode-fable-resume; clean up installs
+    // from before the rename.
+    g.add(
+        "delete-claude-skill-scode-fable-resume",
+        DeleteSymlink::new("~/.claude/skills/scode-fable-resume"),
     )
     .depends_on(&claude_skills_dir)
     .build();
@@ -563,11 +571,19 @@ fn add_codex_features(g: &mut FeatureGraph) {
     .depends_on(&codex_skills_dir)
     .build();
     g.add(
-        "codex-skill-scode-fable-resume",
+        "codex-skill-agent-resumeable",
         PayloadSymlink::new(
-            "agent-skills/scode-fable-resume",
-            "~/.codex/skills/scode-fable-resume",
+            "agent-skills/agent-resumeable",
+            "~/.codex/skills/agent-resumeable",
         ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    // The skill was previously named scode-fable-resume; clean up installs
+    // from before the rename.
+    g.add(
+        "delete-codex-skill-scode-fable-resume",
+        DeleteSymlink::new("~/.codex/skills/scode-fable-resume"),
     )
     .depends_on(&codex_skills_dir)
     .build();

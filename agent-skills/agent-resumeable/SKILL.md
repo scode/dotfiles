@@ -1,9 +1,9 @@
 ---
-name: scode-fable-resume
-description: Use only when the user explicitly invokes `$fable-resume PATH` or `/scode-fable-resume PATH`. Puts the session under a resume-log protocol anchored at PATH; if the log exists, read it and resume the work, otherwise create it. Either way, keep logging for the rest of the session so a fresh session can pick up after an abrupt break.
+name: agent-resumeable
+description: Use only when the user explicitly invokes `$agent-resumeable PATH` or `/agent-resumeable PATH`. Puts the session under a resume-log protocol anchored at PATH; if the log exists, read it and resume the work, otherwise create it. Either way, keep logging for the rest of the session so a fresh session can pick up after an abrupt break.
 ---
 
-# scode-fable-resume
+# agent-resumeable
 
 Sessions die abruptly — crashes, context exhaustion, safeguard triggers, network drops. This skill maintains a working
 log at a user-specified path so that a fresh session can read it and continue the work with minimal loss. Invocation
@@ -11,14 +11,14 @@ means the whole session runs under this protocol: everything below applies until
 stops it. Finishing a task does not end it, and neither does context compaction — a summary that has gone quiet about
 the protocol is a summarization artifact, not a decision anyone made.
 
-After compaction or resume, if retained context says or implies a fable log is being kept, re-read this SKILL.md and the
-log itself before further substantive work; the details of the protocol do not survive summarization reliably. When
+After compaction or resume, if retained context says or implies a resume log is being kept, re-read this SKILL.md and
+the log itself before further substantive work; the details of the protocol do not survive summarization reliably. When
 writing a handoff or pre-compaction note, include the log's absolute path and the fact that this protocol is active.
 
-The invocation is `$fable-resume <path>` (equivalently `/scode-fable-resume <path>`) where `<path>` points at a markdown
-file (which may not exist yet). The path is the anchor; the same path handed to a later session is how resumption works.
-Resolve it to an absolute path immediately and use the absolute form from then on — a relative path reinterpreted from a
-different working directory silently splits the log in two.
+The invocation is `$agent-resumeable <path>` (equivalently `/agent-resumeable <path>`) where `<path>` points at a
+markdown file (which may not exist yet). The path is the anchor; the same path handed to a later session is how
+resumption works. Resolve it to an absolute path immediately and use the absolute form from then on — a relative path
+reinterpreted from a different working directory silently splits the log in two.
 
 ## On invocation
 
@@ -49,7 +49,7 @@ no goal there may be no real next action; write `Next: await user direction` rat
 The header states what the file is for and names the resume contract:
 
 ```md
-# Fable log: <short goal description, or the session's subject if no goal has formed>
+# Resume log: <short goal description, or the session's subject if no goal has formed>
 
 Working log for <goal, with a pointer to any plan or spec file — or the area being explored>. This file is the resume
 point: a fresh session reads this, cross-checks against reality (VCS state, open PRs, files on disk), and continues.
@@ -58,6 +58,9 @@ Reality wins over this log when they disagree.
 
 The header is descriptive metadata, not history: unlike entries, update it in place as the goal crystallizes or shifts,
 and record the shift itself as an entry.
+
+NOTE: This skill used to be named `scode-fable-resume`, and logs written under it start with `# Fable log:` instead.
+Treat those as the same format — resume from them without asking; do not reject them as foreign files.
 
 Entries are appended dated sections, newest last:
 
