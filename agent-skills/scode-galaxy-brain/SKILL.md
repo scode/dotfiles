@@ -19,9 +19,9 @@ capability where it matters (planning, judgment, design, quality control) and ro
 finish it at lower total cost without significantly compromising quality. You stay in charge the whole time: you
 decompose the goal, you decide what to delegate, you judge every result, and you own the overall change.
 
-The goal is cost-effective quality; parallelize freely when it helps. The one hard limit is writes: delegates share the
-working tree and this skill deliberately ships without write-concurrency tooling (worktrees and the like), so tasks that
-write to the tree run one at a time (see Concurrency below).
+The goal is cost-effective quality; parallelize freely when it helps. The one hard limit is write concurrency: writers
+that share a working tree run one at a time, and concurrent writers are allowed only when each one is genuinely isolated
+from the others, with you integrating the results serially (see Concurrency below).
 
 Delegation is for steps toward a change, never for managing the change itself. You always own version control: commits,
 branches, pushes, PR creation and updates. Delegates must not commit, branch, push, or open PRs — your session carries
@@ -279,15 +279,40 @@ The delegate has none of your conversation context. Every delegation prompt must
 - Always: no commits, no branches, no pushes, no PRs.
 - Ask it to report what it did and call out any deviations from the spec.
 
-Before delegating a task that writes to the tree, note the current `git status`/`git diff` state so you can attribute
-the delegate's changes cleanly afterwards.
+Before delegating a task that writes to your working tree, note the current working-copy state — `git status`/`git diff`
+or the equivalent in whatever VCS is in use — so you can attribute the delegate's changes cleanly afterwards. Writers in
+isolated trees (see Concurrency) are attributable as long as the tree started clean from a recorded base — the normal
+state of a fresh worktree or clone; note that base when you create it.
 
 ## Concurrency
 
 - Read-only tasks (log scanning, code search, independent reviews) may run concurrently whenever they are independent of
   each other. Use this freely for fan-out work like scanning many logs or directories.
-- Anything that writes to the working tree runs one at a time. Delegates share the tree and there is no worktree tooling
-  in this skill, so never run two writers concurrently.
+- Writers that share a working tree run one at a time, no exceptions. "They edit different files" is not a safe basis
+  for parallelism: file-disjoint writers still see each other's half-finished edits when they run checks, still collide
+  on lock files, generated code, and build state, and delegates drift out of their predicted scope. The failure mode is
+  an interleaved diff nobody can attribute or cleanly revert.
+- Writers may run concurrently when each one is isolated so that no delegate can observe or clobber another's
+  in-progress work. Use whatever mechanism your harness offers at your discretion — native worktree isolation on a sub
+  agent, a manually created `git worktree` that a shelled-out delegate is pointed at, a separate clone, or anything
+  equivalent. The bar is that the tasks cannot conflict through any mutable state they touch, not a plan for writers to
+  stay out of each other's way. A separate tree covers the files, but shared out-of-tree resources — build caches
+  pointed outside the tree, test databases, ports, daemons — conflict straight through it; isolate those too or
+  serialize.
+- Isolation moves the merge to you instead of eliminating it. Integrate serially: extract each delegate's complete
+  change set (plain `git diff` misses untracked files — new files, renames, and mode changes all count), gate it as
+  usual, and apply it to the main tree one at a time. Keep each isolated tree until its result has been applied and
+  validated. A broadly wrong result is discarded along with its tree, which is cheaper than untangling it from a shared
+  one.
+- Conflicts between accepted results are yours to resolve and an expected cost of this mode — disjoint task scopes make
+  them rare, not impossible. Textual conflicts surface at apply time, but semantic conflicts apply cleanly, and a
+  delegate's own checks only ever validated its isolated baseline. Re-run the relevant checks on the integrated main
+  tree after each apply, and again after the last one.
+- Two caveats before choosing isolation: isolated trees start from committed state, so delegates will not see
+  uncommitted work in the main tree — commit it first if they need it (stashing does not help: it hides the work from
+  the main tree without making it visible anywhere else), or serialize rather than committing user work merely to
+  parallelize. And a fresh tree typically has no build cache, so writers that run checks may rebuild from scratch; weigh
+  that against the parallelism gain.
 
 ## The gate
 
