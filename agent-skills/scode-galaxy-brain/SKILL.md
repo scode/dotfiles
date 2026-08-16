@@ -233,13 +233,25 @@ or default model, which misleads anyone watching progress.
 ### Shelling out to codex
 
 ```sh
-codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "<prompt>"
+codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
 ```
 
 - Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
   pass it explicitly rather than relying on the user's config default; the startup header echoes the effective
   `reasoning effort:` if you need to confirm.
 - `-o` writes the agent's final message to a file; read that file for the result instead of parsing stdout.
+- Always keep the trailing `< /dev/null`. Given a prompt argument and a non-TTY stdin, `codex exec` reads stdin to EOF
+  before starting work (its `Reading additional input from stdin...` startup line is that read), so a stdin that never
+  delivers EOF blocks it at startup indefinitely. At least one agent harness omits its own stdin redirect from the
+  wrapper exactly when the command text contains a heredoc, handing the child a pipe that never closes — the hang
+  strikes only sometimes and is indistinguishable from a slow run except by its log. The explicit redirect holds even
+  then.
+- Keep heredocs out of the command that launches codex; a heredoc anywhere in the command text is the known trigger for
+  that dropped redirect. Build the prompt in its own earlier command — write it to a scratch file — and pass it as
+  `"$(cat <file>)"`.
+- Treat a background run whose log stays at `Reading additional input from stdin...` and never reaches the version
+  header as this startup hang, not a slow model. Kill it and relaunch with the redirect instead of waiting for a
+  completion that will never come; a healthy run prints the header immediately after that line.
 - A zero exit status is necessary but not sufficient. `codex exec` does return nonzero when the turn itself fails, but a
   turn that completes normally exits 0 even when its final message declines the task, reports a tool or sandbox failure
   the agent could not work around, or gives status instead of the work. Judge the `-o` file against the task's explicit
@@ -255,7 +267,7 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file
 
 ```sh
 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
-  claude -p --model <alias> --effort <level> --dangerously-skip-permissions "<prompt>"
+  claude -p --model <alias> --effort <level> --dangerously-skip-permissions "$(cat <prompt-file>)" < /dev/null
 ```
 
 - Model aliases: `sonnet`, `opus`, `haiku`, `fable`. Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. The final
@@ -266,6 +278,10 @@ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
   the task's explicit acceptance criteria. Also reject the termination diagnostic, which starts with
   `Background tasks still running after`.
 - The same outer shell timeout caveat applies.
+- Use the same defensive launch pattern as for codex: keep the explicit `< /dev/null` and build the prompt in an earlier
+  command instead of a heredoc. This is a precaution against the harness-side dropped redirect, worth taking for any
+  shelled-out delegate — it does not claim that `claude -p` reads piped stdin after a prompt argument the way codex
+  does.
 
 ### Writing the task spec
 
