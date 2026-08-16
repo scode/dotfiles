@@ -3,7 +3,8 @@ name: scode-galaxy-brain
 description: >
   Accomplish a goal by delegating suitable parts of the work to cost-effective models while the current session stays
   in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
-  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword.
+  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword
+  and/or a request to work with concurrency.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
   the user expressly stops it, unless the invocation itself limited the scope up front; if retained context says it was
@@ -19,9 +20,9 @@ capability where it matters (planning, judgment, design, quality control) and ro
 finish it at lower total cost without significantly compromising quality. You stay in charge the whole time: you
 decompose the goal, you decide what to delegate, you judge every result, and you own the overall change.
 
-The goal is cost-effective quality; parallelize freely when it helps. The one hard limit is write concurrency: writers
-that share a working tree run one at a time, and concurrent writers are allowed only when each one is genuinely isolated
-from the others, with you integrating the results serially (see Concurrency below).
+The goal is cost-effective quality; parallelize when it helps. The one hard limit is write concurrency: writers that
+share a working tree run one at a time, and concurrent writers are allowed only when each one is genuinely isolated from
+the others, with you integrating the results serially (see Concurrency below).
 
 Delegation is for steps toward a change, never for managing the change itself. You always own version control: commits,
 branches, pushes, PR creation and updates. Delegates must not commit, branch, push, or open PRs — your session carries
@@ -182,6 +183,20 @@ When a preference is given, route every delegation to the preferred family unles
 to diverge — for example repeated poor output, no suitable model for the selected profile, or a goal that explicitly
 needs an independent cross-family perspective. An explicit provider preference overrides the default native-path bias.
 When you diverge, say so and why.
+
+## Concurrency preference
+
+The invocation may ask for concurrency in plain words — "with concurrency", "parallelize where you can", or similar.
+Absent such wording, the default stands: parallelize when it helps, but don't hunt for opportunities.
+
+When the user asks for concurrency, treat parallelism as an active goal rather than an available tool. During planning,
+decompose the work to surface independent units: fan out read-only work by default, and prefer isolated-writer fan-out
+(see Concurrency) over a serial writer sequence whenever the tasks can be specified independently and the isolation
+overhead — including the riskier merge — is worth the speed-up. When you keep a plausibly parallel step serial, briefly
+say why.
+
+The preference buys speed, never quality: every rule in Concurrency and The gate applies unchanged, and escalation or
+review steps are never skipped to keep a fan-out moving.
 
 ## Local availability
 

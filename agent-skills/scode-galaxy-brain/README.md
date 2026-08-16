@@ -99,8 +99,11 @@ The skill needs both the `claude` and `codex` CLIs installed and authenticated w
 delegation bypasses permission checks with `codex --yolo` or `claude --dangerously-skip-permissions`. Use it only where
 you would accept the same permissions for the orchestrating session.
 
-Delegates share the working tree. Independent read-only tasks may run concurrently. Anything that writes runs one at a
-time because the skill deliberately has no worktree-based write-concurrency layer.
+Independent read-only tasks may run concurrently. Writers that share the working tree run one at a time; writers may run
+concurrently only when each one is isolated (a separate worktree or clone), with the orchestrator integrating and
+re-validating the results serially. By default the skill parallelizes when it helps but does not hunt for opportunities;
+ask for concurrency in the invocation ("with concurrency" or similar) to make parallelism an active goal, subject to the
+same isolation and integration rules.
 
 ## Provider preference and local configuration
 
