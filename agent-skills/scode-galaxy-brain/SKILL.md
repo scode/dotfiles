@@ -260,8 +260,8 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file
   are one line. When a whole fan-out fails the same way, treat it as one broken execution path rather than N model
   failures: stop the batch and fix the path instead of escalating each delegate through it.
 - Runs in the current working directory by default; pass `-C <dir>` to target elsewhere.
-- Long tasks can exceed your shell tool's default timeout. Set an explicit generous timeout, or run in the background
-  and wait for completion.
+- Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them (see Monitoring
+  below); use a foreground timeout only when it is shorter than the monitoring interval.
 
 ### Shelling out to claude
 
@@ -282,6 +282,37 @@ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
   command instead of a heredoc. This is a precaution against the harness-side dropped redirect, worth taking for any
   shelled-out delegate — it does not claim that `claude -p` reads piped stdin after a prompt argument the way codex
   does.
+
+### Monitoring long-running delegates
+
+The stdin hang above was found only after an orchestrator waited hours on a shelled-out code review that was never going
+to finish. The lesson generalizes beyond that one bug: a background delegate has no guaranteed liveness or
+forward-progress signal before it exits, and "no news yet" is not evidence of progress.
+
+- Never wait open-endedly on a shelled-out delegate, and never make a foreground call whose timeout exceeds the
+  monitoring interval — a blocked foreground wait bypasses monitoring entirely. Run long delegates in the background and
+  record what you need to check on and kill them later: job handle or pid, log path, output path, start time, expected
+  duration, and a hard deadline. Include still-running delegates in any handoff or pre-compaction note.
+- Wake up and check every running delegate at least every 30 minutes — sooner when the expected duration is shorter —
+  using whatever timer, scheduled wake-up, or bounded-wait mechanism your harness offers. Failing all else, cap each
+  blocking wait at 30 minutes and re-check between waits. In a fan-out, check every member at each wake-up: the batch is
+  only done when its slowest member is, and one hung member silently holds the whole batch.
+- Check known hang signatures first; they are cheap and decisive. For codex, apply the startup-hang test from above —
+  the stdin line is the last output and the version header never appeared — and kill and relaunch with the corrected
+  invocation, since more waiting cannot help.
+- Otherwise weigh the evidence by what the tool shows. `codex exec` streams a transcript while working: compare the log
+  against the last check's baseline, and record the new observation for the next one. New output proves activity, not
+  necessarily useful progress; a log that has not grown across a full interval is a reason to inspect the run, not by
+  itself grounds to kill it — long reasoning stretches can be quiet. `claude -p` prints only the final response by
+  default, so silence means nothing there; when a long run needs observability, launch it with a streaming output format
+  (`--output-format stream-json --verbose`) instead.
+- Use the estimate and the deadline for different decisions. Crossing the expected duration triggers investigation, not
+  a kill. Crossing the hard deadline means the run is over budget regardless of apparent liveness: kill it, capture the
+  log, and treat the result as inconclusive.
+- A hang or launch failure is an execution-path failure, not a substantive model failure — fix the path and relaunch
+  once rather than escalating models over it. Make sure the kill takes down the delegate's children too, and before
+  relaunching a writer in a shared tree, remove its attributable partial changes (or discard its isolated tree) so the
+  retry starts from a known baseline.
 
 ### Writing the task spec
 
