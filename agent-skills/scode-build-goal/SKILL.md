@@ -1,6 +1,6 @@
 ---
 name: scode-build-goal
-description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a goal file path, a log file path, and a natural-language goal; interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file meant to be passed to /goal. `scode-build-goal help` prints a usage TLDR instead.
+description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a goal file path, a log file path, and a natural-language goal; interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file that requires scode-galaxy-brain and is meant to be passed to /goal. `scode-build-goal help` prints a usage TLDR instead.
 ---
 
 # scode-build-goal
@@ -61,12 +61,16 @@ has none of this conversation's context. Include, at minimum:
   Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and resume
   where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather than
   starting over. If it does not exist, this is a fresh start. This is what makes the goal file self-resumeable.
+- **Galaxy-brain execution.** State explicitly that the user requires the executing agent to use `$scode-galaxy-brain`
+  to achieve the entire goal. Invoke that skill immediately after setting up the resume protocol and keep it active for
+  the whole run, including every delegation. Merely reading it for delegation mechanics does not satisfy this
+  requirement.
 - **PR discipline.** Split the work into a linear stack of reviewable PRs using the `jjstack` skill. Err on the side of
   bite-sized PRs, but do not create churn — code added in one PR and deleted in a later PR of the same stack means the
   stack should have been shaped differently. Restructure the stack instead of stacking a correction on top.
-- **Review gate.** Before finishing any PR, delegate a review to gpt-5.6-sol running the `pre-pr-review-swarm` skill
-  against that PR's changes, and address what it finds before moving on. From a Claude session the delegation seam is
-  `codex exec` (see the scode-galaxy-brain skill for the mechanics), e.g.:
+- **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` routing layer to delegate a review to
+  gpt-5.6-sol running the `pre-pr-review-swarm` skill against that PR's changes, and address what it finds before moving
+  on. From a Claude session the delegation seam is `codex exec`, e.g.:
 
   ```
   codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "<self-contained review prompt>"
