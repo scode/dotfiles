@@ -62,8 +62,9 @@ environment already guarantees those operations work inside it.
 - "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, push
   it, and create a new PR whose base is the bookmark below it.
 - "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with
-  `jj new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the affected
-  bookmarks, create the new PR, then update downstream GitHub PR bases.
+  `jj new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the inserted
+  bookmark, create the new PR, retarget the immediate downstream GitHub PR, then push every rewritten descendant
+  bookmark.
 - "restack the stack" Use `jj` to rewrite or rebase the local stack. If bookmark ancestry changes in a way GitHub cares
   about, update the affected PR bases afterwards with `gh pr edit --base ...`.
 - "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
@@ -497,21 +498,25 @@ commit.
 After that:
 
 1. resolve any descendant conflicts
-2. push the new bookmark and every descendant bookmark that moved
+2. push the new bookmark
 3. create the new PR
-4. update downstream PR bases in GitHub
+4. update the immediate downstream PR's base in GitHub
+5. push every descendant bookmark that moved
 
 Example:
 
 Assuming `title` and `body_file` were prepared with the safe pattern above:
 
 ```bash
-jj git push --bookmark 'exact:pr/inserted' --bookmark 'exact:pr/downstream'
+jj git push --bookmark 'exact:pr/inserted'
 gh pr create -R owner/repo --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
 gh pr edit -R owner/repo <downstream-pr-number> --base pr/inserted
+jj git push --bookmark 'exact:pr/downstream'
 ```
 
-That last `gh pr edit` step is mandatory whenever GitHub's PR parent should change.
+The `gh pr edit` step is mandatory whenever GitHub's PR parent should change, and it must happen before pushing the
+rewritten downstream head. A base-dependent required check must see the final base when the push starts workflows for
+the new head commit.
 
 ## Sanity checks
 
@@ -562,14 +567,15 @@ unless the user explicitly asks to collapse them. Say which PRs will land in wha
 matter which section routed you here. Whether to wait for an answer is the narrower question decided by the "merge the
 PR" bullet under Expected user commands: wait when the landing set is wider than the request, and otherwise just state
 the plan and go. Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named
-PR has landed and open descendants remain above it, rebase them onto the landed result, push every descendant bookmark
-the rebase moved — not just the lowest — and retarget the lowest remaining PR's base to the default branch before
-calling the job done. The base guards in the snippets below are this rule in executable form; keep them — including the
-per-guard `|| exit` failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the
-errexit NOTE in "Fast path for the common case") and a guard without its own exit fails open. Derive the default branch
-once per landing instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch
-literally named `main`, which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that
-`gh repo view` takes the repository as a positional argument, not via `-R`:
+PR has landed and open descendants remain above it, rebase them onto the landed result, retarget the lowest remaining
+PR's base to the default branch, then push every descendant bookmark the rebase moved — not just the lowest. Finish the
+landing by deleting landed bookmarks after no open PR depends on them. The base guards in the snippets below are this
+rule in executable form; keep them — including the per-guard `|| exit` failure paths, which exist because `set -e` is
+silently inert under agent shell wrappers (see the errexit NOTE in "Fast path for the common case") and a guard without
+its own exit fails open. Derive the default branch once per landing instead of hardcoding `main` — a repo whose default
+is `master` can even contain a stack branch literally named `main`, which would turn a hardcoded guard into an
+authorization for the wrong-way merge. Note that `gh repo view` takes the repository as a positional argument, not via
+`-R`:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
@@ -671,10 +677,20 @@ sequence is:
 
 ```bash
 jj rebase -s "$child_bookmark" -d main || exit 1
-jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr edit "$child_pr" -R "$repo" --base main || exit 1
+jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
+
+Retarget before pushing the rewritten bookmark. The push starts workflows for the new head, and a base-dependent
+required check such as `require-main-base` must evaluate that head against its final base. Pushing first can attach a
+failing run created from the old base to the new head. Rerunning that job does not fix it because GitHub reuses the
+original event payload.
+
+If the wrong-order race has already happened, do not rerun the failed job. Set the correct base, inspect the workflow's
+event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles
+`pull_request: edited`, a reversible PR body edit can create that evaluation; preserve and restore the exact body with
+the file-based safe-text procedure above. Do not assume every pull-request workflow handles body edits.
 
 After creating a PR, pushing a bookmark, or editing a PR base, use
 `gh pr view --json
@@ -683,26 +699,80 @@ waits. GitHub can briefly report no checks for a just-pushed or just-retargeted 
 runs. Treat "no checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it
 as success. Use workflow logs only when checks fail or get stuck.
 
-For a larger stack, repeat the same rebase, push, and `gh pr edit --base ...` process from bottom to top. The new base
-is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. If this
-is not a known stack you just created, re-read GitHub state between steps instead of assuming a prior local graph
-observation still describes the PRs.
+For a larger stack, repeat the same rebase, `gh pr edit --base ...`, and push process from bottom to top. The new base
+is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Retarget
+the lowest remaining PR before pushing any rewritten descendant bookmarks; descendants keep their immediate parent bases
+unless that parent changed. If this is not a known stack you just created, re-read GitHub state between steps instead of
+assuming a prior local graph observation still describes the PRs.
 
-Before deleting the old merged branch, query GitHub again:
+### Clean up landed stack branches
+
+After the final merge and restack of every landing, delete each merged stack branch remotely and its matching local
+bookmark unless the user explicitly asked to keep branches. This also applies when the landing stops below open
+descendants: retarget and push those descendants first, then clean up every landed branch they no longer use. Preserve
+the PR number, bookmark, and exact head SHA from each pre-merge guard until its cleanup finishes; if that evidence is
+lost across an interruption, stop instead of guessing which current ref is safe to delete.
+
+Before each deletion, use the exact `$head_sha` captured by the guarded pre-merge check as `$merged_head_sha`. Verify
+that the PR came from this repository, was based on the default branch, reached `MERGED`, and still names the expected
+bookmark and head commit. Then verify that both the remote ref and local bookmark still point to that exact commit and
+that no open PR uses the bookmark as either a base or head:
 
 ```bash
-gh pr list -R "$repo" --state open --base "$parent_bookmark" \
-  --json number,title,headRefName,baseRefName
+read -r state base head current_pr_head is_cross_repo <<EOF
+$(gh pr view "$merged_pr" -R "$repo" \
+  --json state,baseRefName,headRefName,headRefOid,isCrossRepository \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid, .isCrossRepository] | @tsv')
+EOF
+test "$state" = MERGED \
+  || { echo "PR #$merged_pr is ${state:-unreadable}, not MERGED" >&2; exit 1; }
+test "$base" = "$default_branch" \
+  || { echo "PR #$merged_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+test "$head" = "$merged_bookmark" \
+  || { echo "PR #$merged_pr head is '$head', expected '$merged_bookmark'" >&2; exit 1; }
+test "$current_pr_head" = "$merged_head_sha" \
+  || { echo "PR #$merged_pr head changed from '$merged_head_sha' to '$current_pr_head'" >&2; exit 1; }
+test "$is_cross_repo" = false \
+  || { echo "PR #$merged_pr is cross-repository; refusing base-repository cleanup" >&2; exit 1; }
+
+remote_sha=$(gh api "repos/$repo/git/ref/heads/$merged_bookmark" --jq .object.sha) \
+  || { echo "could not read remote ref '$merged_bookmark'; refusing cleanup" >&2; exit 1; }
+test "$remote_sha" = "$merged_head_sha" \
+  || { echo "remote '$merged_bookmark' moved to '$remote_sha'" >&2; exit 1; }
+
+local_sha=$(jj log -r "$merged_bookmark" --no-graph -T 'commit_id ++ "\n"') || exit 1
+test "$local_sha" = "$merged_head_sha" \
+  || { echo "local '$merged_bookmark' moved to '$local_sha'" >&2; exit 1; }
+
+open_bases=$(gh pr list -R "$repo" --state open --base "$merged_bookmark" \
+  --json number --jq 'map(.number) | join(" ")') || exit 1
+test -z "$open_bases" \
+  || { echo "open PRs still use '$merged_bookmark' as base: $open_bases" >&2; exit 1; }
+
+open_heads=$(gh pr list -R "$repo" --state open --head "$merged_bookmark" \
+  --limit 1000 --json number,isCrossRepository \
+  --jq '[.[] | select(.isCrossRepository | not) | .number] | join(" ")') || exit 1
+test -z "$open_heads" \
+  || { echo "open PRs still use '$merged_bookmark' as head: $open_heads" >&2; exit 1; }
 ```
 
-If that returns any PRs, do not delete the branch yet. It is safe to delete the old merged branch only after no open PR
-uses it as `baseRefName`, or after every downstream PR base has already been moved away from it and verified open.
+If either query returns a PR, do not delete the branch. Fix or finish the remaining stack relationship first; branches
+whose own PRs are still open are never cleanup targets.
 
-If deletion is desired after that guard passes, delete the remote ref explicitly:
+After the guards pass, delete both names:
 
 ```bash
-gh api -X DELETE "repos/$repo/git/refs/heads/$parent_bookmark"
+gh api -X DELETE "repos/$repo/git/refs/heads/$merged_bookmark" || exit 1
+jj bookmark delete "$merged_bookmark" || exit 1
 ```
+
+If repository settings already removed the remote ref, the read above returns an explicit HTTP 404. In that one case,
+re-run the PR, local-target, and open-PR guards without the remote-target comparison, then delete only the local
+bookmark. Treat authentication failures, rate limits, network errors, and every non-404 response as a hard stop; none of
+them proves the branch is absent.
+
+Use the PR's `MERGED` state together with its recorded default-branch base as the evidence that a squash-merged branch
+landed. Its old tip is not an ancestor of the default branch, so an ancestry test would reject a correctly merged PR.
 
 After every base edit, confirm the downstream PR is still open and that checks have started or are already green:
 
@@ -745,8 +815,8 @@ test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
 jj git fetch --remote origin || exit 1
 jj bookmark set main -r main@origin || exit 1
 jj rebase -s "$child_bookmark" -d main || exit 1
-jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr edit "$child_pr" -R "$repo" --base "$default_branch" || exit 1
+jj git push --bookmark "exact:$child_bookmark" || exit 1
 
 read -r state base head head_sha <<EOF
 $(gh pr view "$child_pr" -R "$repo" \
@@ -776,12 +846,12 @@ pending" guidance above, and only then run the verify-and-merge block. The same 
 error. Wait for the queue to land it, then resume from the fetch.
 
 For a known stack with more than two PRs, use the same loop in stack order. After each landing, rebase the remaining
-local stack onto the landed base while preserving the relative order of the still-open PRs, and push every bookmark the
-rebase moved — GitHub tracks branch heads, so an unpushed descendant keeps showing a stale diff against its rewritten
-parent. Then edit only the next bottom PR's GitHub base to the newly landed branch; descendants should keep their bases
-on their immediate parent bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on
-every iteration when the mapping is already in hand, but do verify the state, base, and head of the specific PR before
-merging it.
+local stack onto the landed base while preserving the relative order of the still-open PRs. Edit the next bottom PR's
+GitHub base to the newly landed branch before pushing every bookmark the rebase moved — GitHub tracks branch heads, so
+an unpushed descendant keeps showing a stale diff against its rewritten parent, while a pushed bottom bookmark can start
+a base-dependent check against stale PR metadata. Descendants should keep their bases on their immediate parent
+bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the
+mapping is already in hand, but do verify the state, base, and head of the specific PR before merging it.
 
 ## After merging a PR
 
@@ -800,6 +870,9 @@ jj rebase -s @ -d main
 The first command imports the new remote state. The second makes the local `main` bookmark match the merged remote
 bookmark. The third moves the usually-empty working-copy commit on top of the new `main` so the checkout is coherent
 again.
+
+Then run the guarded branch cleanup from "Landing stacked PRs safely" for every PR/bookmark pair landed in this
+operation. Remote stack branches and local bookmarks are part of the landing's cleanup, not an optional follow-up.
 
 If the repository's default branch is not named `main`, use the correct local and remote bookmark names instead of
 blindly pasting `main`.
