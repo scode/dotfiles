@@ -118,26 +118,28 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    **possible**, with file references. Each finding must make sense to a reader who has no detailed knowledge of the
    codebase. Explain in plain terms what the relevant code currently does, the concrete failure or needless complexity,
    why that matters, and the recommended action. Introduce project-specific terms before relying on them; labels such as
-   "cache contract," "assembly path," or "trust boundary" are not explanations on their own. A file reference is
-   evidence, not a substitute for context. Keep the explanation specific rather than long: the reader should not need to
-   open the code merely to understand the claim and decide whether it is worth addressing. Return each finding with the
-   literal fields `What happens:`, `Why it matters:`, and `Suggested change:` from the Output Contract. Do not collapse
-   them into one rationale paragraph. Actionability is a quality bar, not an invitation to summarize: a reviewer that
-   spots the same pattern in several independently editable places returns one finding per place, not one aggregate
-   finding for the pattern. If a reviewer has zero findings, it returns an empty list together with a one-line statement
-   that it reviewed the scope and found nothing—do not invent low-value observations. That statement is the only thing
-   that makes an empty result checkable, so require it in the spawn prompt: a bare empty list is indistinguishable from
-   a reviewer that never got to review. Every expected reviewer must return a result before the coordinator can merge
-   findings. A missing reviewer result is a failed swarm run, not an empty finding list. So is a result that arrived
-   without the review behind it. Treat an empty result as clean only when it carries that statement; a reply reporting a
-   blocked tool, an unreadable scope file, a refusal, or any other reason the reviewer could not do the work is a failed
-   reviewer wearing the same shape as a clean one, and neither a zero exit status nor a returned result distinguishes
-   them. Watch hardest when the whole panel comes back empty at once, because a shared cause — a scope path nobody can
-   read, a sandbox that will not start — fails every reviewer identically and leaves a broken swarm looking unanimously
-   clean. A failed reviewer does not count toward the completed-reviewer total, is not eligible for continuation, and
-   makes the swarm incomplete: stop before merging and report the failure and its cause instead of a finding set. Before
-   merging, continue productive reviewers through a bounded search. Run eligible continuations concurrently when the
-   host supports it; one reviewer's extra pass must not serialize the rest of the panel.
+   "cache contract," "assembly path," or "trust boundary" are not explanations on their own. Every finding must carry at
+   least one specific source file reference; that reference is evidence and an anchor, not a substitute for context.
+   Length follows the explanation: a quarter to half a page is fine when the claim needs it, and neither forced brevity
+   nor padding is acceptable. The reader should not need to open the code merely to understand the claim and decide
+   whether it is worth addressing. Return each finding with the literal fields `What happens:`, `Why it matters:`, and
+   `Suggested change:` from the Output Contract. Do not collapse them into one rationale paragraph. Actionability is a
+   quality bar, not an invitation to summarize: a reviewer that spots the same pattern in several independently editable
+   places returns one finding per place, not one aggregate finding for the pattern. If a reviewer has zero findings, it
+   returns an empty list together with a one-line statement that it reviewed the scope and found nothing—do not invent
+   low-value observations. That statement is the only thing that makes an empty result checkable, so require it in the
+   spawn prompt: a bare empty list is indistinguishable from a reviewer that never got to review. Every expected
+   reviewer must return a result before the coordinator can merge findings. A missing reviewer result is a failed swarm
+   run, not an empty finding list. So is a result that arrived without the review behind it. Treat an empty result as
+   clean only when it carries that statement; a reply reporting a blocked tool, an unreadable scope file, a refusal, or
+   any other reason the reviewer could not do the work is a failed reviewer wearing the same shape as a clean one, and
+   neither a zero exit status nor a returned result distinguishes them. Watch hardest when the whole panel comes back
+   empty at once, because a shared cause — a scope path nobody can read, a sandbox that will not start — fails every
+   reviewer identically and leaves a broken swarm looking unanimously clean. A failed reviewer does not count toward the
+   completed-reviewer total, is not eligible for continuation, and makes the swarm incomplete: stop before merging and
+   report the failure and its cause instead of a finding set. Before merging, continue productive reviewers through a
+   bounded search. Run eligible continuations concurrently when the host supports it; one reviewer's extra pass must not
+   serialize the rest of the panel.
    - A pass is one agent turn: the initial spawn is pass 1, and each later message to that same stable handle starts one
      additional pass. The deliberate second sweep required by step 7 happens inside pass 1; it does not become pass 2
      unless the coordinator resumes the reviewer after receiving its first result.
@@ -190,14 +192,39 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      that silently vanishes into a broader summary is a coordinator bug: category-level compression is exactly the
      failure mode the location rule guards against, and the accounting is what makes a violation visible.
 10. Assign feedback identifiers after merge/deduplication. See "Feedback identifiers" below.
-11. Present all findings to the user. Every user-visible finding must include its feedback identifier, follow the
-    plain-language structure in the Output Contract, and include enough context to understand without opening the code.
-    The report must include the selected scope label. Before sending the final answer, verify that every finding
-    contains the literal labels `What happens:`, `Why it matters:`, and `Suggested change:`. If any label is absent, the
-    output is invalid: rewrite that finding instead of sending a compact substitute.
-12. If `nofix` was specified, stop here — do not make any changes.
-13. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
-14. If no actionable findings remain, state that explicitly before asking for PR creation.
+11. Restate the findings through a fresh agent before presenting them. Spawn one new sub agent with the charter in
+    `restater.md` next to this skill file, and give it the complete merged finding list (identifiers, confidence tags,
+    anchors, sections, and all three labeled fields), the scope file path, and the checkout path. The restater rewrites
+    every finding as prose for a reader who does not know the codebase, and it must investigate the code to do so — it
+    is not a paraphraser. Skip this step only when there are zero findings.
+    - The coordinator is the wrong agent for this job, by construction. It has the whole diff, every charter, and every
+      reviewer's version of each finding in context, so it cannot tell which parts of an explanation only make sense to
+      someone who already knows the code. The restater starts without that knowledge; what it has to look up is exactly
+      what the reader would have had to look up, and it writes that down instead.
+    - The restater's output deliberately drops the three labeled fields. Those labels are a guard against reviewers
+      compressing a finding to a one-liner; they are not the shape a good explanation takes, and forcing the rewrite
+      back into them costs exactly the fluency the restater was spawned for. Do not re-impose the labels on restated
+      findings, and do not reject a restated finding for lacking them.
+    - Validate the restated list before using it: the same number of findings, in the same order, each with its original
+      identifier, confidence tag, at least one source file reference, and a non-trivial body. If the restater merged,
+      split, dropped, reordered, or retagged anything, discard its output for that finding and use the pre-restatement
+      version (which keeps its three labels); do not attempt to repair a partial restatement by hand.
+    - `Restater note:` lines are the restater disputing a claim it could not confirm against the code, or reporting that
+      it could not restate a finding at all. Read each one and decide: keep the finding, downgrade it to **possible**,
+      or reject it with a stated reason in the finding accounting. Do not present a disputed finding as **definite**
+      without having checked.
+    - If the host cannot spawn the restater, or it returns something other than a restated list, present the
+      pre-restatement findings and say on the `Restatement:` line that restatement did not run. A missing restatement is
+      not a failed swarm, but it must not be reported as if it happened.
+12. Present all findings to the user. Every user-visible finding must include its feedback identifier, follow the
+    structure in the Output Contract, and include enough context to understand without opening the code. The report must
+    include the selected scope label. Before sending the final answer, verify that every finding that did not go through
+    restatement contains the literal labels `What happens:`, `Why it matters:`, and `Suggested change:`, and that every
+    finding that did has a body that explains the claim rather than a one-line summary. A finding that satisfies neither
+    is invalid: rewrite it instead of sending a compact substitute.
+13. If `nofix` was specified, stop here — do not make any changes.
+14. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
+15. If no actionable findings remain, state that explicitly before asking for PR creation.
 
 ## Feedback identifiers
 
@@ -295,21 +322,42 @@ duplicates them is a slot that can be reclaimed.
 Report results in this structure. Each finding in every section must begin with its feedback identifier and be tagged
 **definite** or **possible**.
 
-Write findings for a reader who does not already know the codebase. The following shape is mandatory for every finding:
+Write findings for a reader who does not already know the codebase. Every finding starts with the same header line:
 
 - `` `Fn / TYPE-MNEMONIC` — **definite|possible** — `path:line` — <plain-language title> ``
-  - `What happens:` Explain the relevant behavior and the problem in ordinary language. Give enough local context to
-    understand any project-specific term used in the title.
-  - `Why it matters:` Name the concrete failure, risk, maintenance cost, or user-visible effect. Do not leave the reader
-    to infer the consequence from code vocabulary.
-  - `Suggested change:` State the direct remediation. For a test finding, say what the test must prove and what broken
-    behavior it must catch.
 
-Keep these explanations compact, but never trade away the context needed to understand the feedback. The common failure
-mode is a polished one-line summary such as "cover the cached assembly path" that is technically accurate but useful
-only after the reader reconstructs the code. Spell out that the application build may be reused from a cache while a new
-catalog still has to be copied into the deployed output. Do not replace the three labeled fields with a single paragraph
-even when that paragraph contains the same facts; the labels force the explanation to survive coordinator compression.
+What follows the header depends on whether the finding went through restatement (step 11).
+
+A finding that was restated is prose: one or more paragraphs, written by an agent that did not know the code and went
+and read it, covering what the code does, what goes wrong, why anyone should care, and what to change, in whatever order
+explains it best.
+
+A finding that was not restated (restatement did not run, or the restater's output for it was rejected) keeps the
+reviewer shape, with three labeled fields:
+
+- `What happens:` Explain the relevant behavior and the problem in ordinary language. Give enough local context to
+  understand any project-specific term used in the title.
+- `Why it matters:` Name the concrete failure, risk, maintenance cost, or user-visible effect. Do not leave the reader
+  to infer the consequence from code vocabulary.
+- `Suggested change:` State the direct remediation. For a test finding, say what the test must prove and what broken
+  behavior it must catch.
+
+The labels are a guard, not a house style: they stop a reviewer or the coordinator from compressing a finding into a
+polished one-liner such as "cover the cached assembly path" that is technically accurate but useful only after the
+reader reconstructs the code. Spell out that the application build may be reused from a cache while a new catalog still
+has to be copied into the deployed output. Before restatement, do not replace the three labeled fields with a single
+paragraph even when that paragraph contains the same facts; the labels force the explanation to survive coordinator
+compression. After restatement the guard has done its job, and the prose form is the one the reader gets.
+
+In either form, state the finding in the plainest terms that do not lose precision. Assume the reader does not know the
+codebase at all. Use project or domain jargon only when necessary, and introduce a term before relying on it: say what
+the thing is in ordinary words the first time it appears. A quarter to half a page per finding is fine — do not force it
+shorter, and do not pad it either.
+
+Every finding must be anchored to at least one specific source file reference (`path:line`, or `path` when the finding
+concerns a whole file). Plain language is not a license to drift into generalities: the reference is what makes the
+feedback checkable and fixable, and a finding that cannot name the code it is about is not ready to report. A reference
+is an anchor, not an explanation — it never substitutes for the body.
 
 Always include `Reviewed scope: <selected scope label>` before the findings sections. This is not cosmetic: it is the
 user-visible guard against reviewing an empty or under-sized scope (such as a sliver of uncommitted fixes when the real
@@ -330,6 +378,11 @@ before the findings sections. A reviewer is eligible for a second pass when its 
 for a third when its second pass produced at least one significant, credible new finding. A reviewer belongs in
 `unavailable` when the host could not resume it, and in `capped with new findings` when its third pass was non-empty.
 This line distinguishes a bounded search from both a one-shot review and a claim that every reviewer reached saturation.
+
+Always include `Restatement: <n>/<n> findings restated` before the findings sections, or
+`Restatement: did not run (<reason>)` when step 11 could not complete. This tells the reader whether the prose they are
+about to read went through the fresh-reader rewrite or is the coordinator's merge output, which reads noticeably more
+like the code than like an explanation.
 
 Always include `Finding accounting: <r> reviewer findings → <n> reported (<m> same-location merges, <k> rejected)`
 before the findings sections, where the numbers satisfy `r = n + m + k`. This is the count-based guard against lossy
