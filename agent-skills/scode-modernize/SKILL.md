@@ -508,3 +508,47 @@ comment is the only documentation of this load-bearing ordering constraint, and 
 **Verify:** In `cliff.toml`, the first `changelog\s*:\s*include` rule appears on a later line than the `^fix` grouping
 rule, and the rationale comment matches the current template in the reference file. When the ordering changed,
 regenerating the changelog puts `fix:` commits under "### Fixed", not "### Changed".
+
+### 12. Declare whether the project is public or private in `AGENTS.md`
+
+**Detect:** The repository has an `AGENTS.md` and/or `CLAUDE.md` at the root. Check whether it contains a visibility
+declaration: a statement that the project is (or may become) public and must not contain personal information, or a
+statement that the project is intentionally private and local/personal assumptions are fine. Match on intent, not exact
+wording — an existing paragraph that clearly makes either declaration counts.
+
+**Skip if:** Either declaration is already present. Also skip if neither `AGENTS.md` nor `CLAUDE.md` exists; do not
+create an instruction file only to hold this statement.
+
+**Why:** Whether usernames, hostnames, local paths, and similar environment details are allowed in a repo depends
+entirely on whether the repo will ever be public, and an agent cannot infer that from the code. Without an explicit
+statement the agent either leaks personal details into something that later gets published, or wastes effort scrubbing a
+repo that was never going to leave the machine. The declaration has to be made by the user; there is no safe default to
+guess.
+
+**Replace with:**
+
+- Ask the user which of the two applies. Do not pick one on their behalf, and do not infer it from the presence of a
+  GitHub remote or a license file — a public remote today does not mean personal details were intended to be there, and
+  a private remote does not mean it will stay private.
+- Add the chosen statement, verbatim, to `AGENTS.md` (preferred) or `CLAUDE.md`, near the top or alongside other
+  project-wide constraints:
+
+  For public or possibly-public projects:
+
+  ```markdown
+  This project is either public now, or may become public in the future. No content in this project should contain
+  personal information such as personal usernames, hostnames, details about the local environments, etc.
+  ```
+
+  For intentionally private projects:
+
+  ```markdown
+  This project is intentionally and definitely private. It's ok to have local/personal assumptions in the content of this
+  repo.
+  ```
+
+- If the user picks the public statement, that is only the declaration. Scanning the repo for existing personal details
+  is out of scope for this item; mention it as a possible follow-up rather than doing it unasked.
+
+**Verify:** The instruction file contains exactly one of the two declarations. Read it back and confirm it matches the
+user's answer.
