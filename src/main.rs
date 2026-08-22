@@ -442,15 +442,22 @@ fn add_bin_features(g: &mut FeatureGraph) -> FeatureHandle {
     .build()
 }
 
-/// Registers the installer-owned region of the interactive shell startup file.
+/// Registers the installer-owned region of each interactive shell startup file.
 ///
-/// `~/.bashrc` is shared with every tool that ever wants a line in the user's
-/// shell, so the installer owns a marked block rather than the file. Creation is
-/// requested explicitly because a machine without a `~/.bashrc` is an
-/// unconfigured one, not one that has opted out.
+/// `~/.bashrc` and `~/.zshrc` are shared with every tool that ever wants a line
+/// in the user's shell, so the installer owns a marked block rather than the
+/// file. Both shells get the same body from `payload/shellrc`: it holds only
+/// aliases and comments, which the two shells parse identically, so one source
+/// is deliberately shared rather than forked. Anything shell-specific that
+/// lands there later — bash-only `shopt`, zsh-only `setopt`, completion hooks —
+/// must split the payload instead of being guarded inline, because the block is
+/// installed unconditionally into both files. Creation is requested explicitly
+/// for both because a machine without the file is an unconfigured one, not one
+/// that has opted out; for zsh in particular, a stock macOS account has no
+/// `~/.zshrc` until something writes one.
 ///
-/// The id and the default `Append` position are both effectively frozen once
-/// this has run anywhere, for different reasons. Renaming the id installs a
+/// The ids and the default `Append` position are all effectively frozen once
+/// this has run anywhere, for different reasons. Renaming an id installs a
 /// fresh block everywhere and orphans the old one, so it needs a
 /// `DeleteManagedBlock` for the old id alongside it. Changing the position is
 /// worse: the marker is unchanged, so install leaves the block where it already
@@ -462,7 +469,13 @@ fn add_bin_features(g: &mut FeatureGraph) -> FeatureHandle {
 fn add_shell_features(g: &mut FeatureGraph) {
     g.add(
         "bashrc-block",
-        ManagedBlock::new("payload/bashrc", "~/.bashrc", "bash")
+        ManagedBlock::new("payload/shellrc", "~/.bashrc", "bash")
+            .missing_destination(MissingDestination::Create),
+    )
+    .build();
+    g.add(
+        "zshrc-block",
+        ManagedBlock::new("payload/shellrc", "~/.zshrc", "zsh")
             .missing_destination(MissingDestination::Create),
     )
     .build();

@@ -62,6 +62,19 @@ fn assert_expected_claude_allow(settings: &serde_json::Value) {
     }
 }
 
+/// Extracts the text between a managed block's BEGIN and END marker lines.
+///
+/// `begin` and `end` are the marker keys; the BEGIN line carries trailing
+/// notice text, so the body starts at the newline after the key rather than
+/// immediately after it. The END line is excluded. Panics when either marker is
+/// missing, which is the caller's assertion to make first.
+fn managed_block_body(contents: &str, begin: &str, end: &str) -> String {
+    let begin_at = contents.find(begin).expect("BEGIN marker");
+    let body_start = begin_at + contents[begin_at..].find('\n').expect("BEGIN line end") + 1;
+    let end_at = contents[body_start..].find(end).expect("END marker") + body_start;
+    contents[body_start..end_at].to_string()
+}
+
 fn assert_no_leiter_settings(settings: &serde_json::Value) {
     let rendered = serde_json::to_string(settings).unwrap();
     assert!(
@@ -123,21 +136,38 @@ fn test_install_creates_symlinks() {
     );
     assert_expected_claude_allow(&settings);
 
-    // The managed bashrc block is the only registration that writes a plain
+    // The managed shell blocks are the only registrations that write a plain
     // text file the installer does not own, so it is worth confirming that the
     // wiring in main.rs reaches a real destination rather than only that the
-    // feature works in isolation.
-    let bashrc = fake_home.path().join(".bashrc");
-    assert!(
-        bashrc.is_file() && !bashrc.is_symlink(),
-        "expected ~/.bashrc to be created as a regular file"
-    );
-    let bashrc_contents = std::fs::read_to_string(&bashrc).unwrap();
-    assert!(
-        bashrc_contents.contains("# BEGIN managed-block(scode-dotfiles/bash)")
-            && bashrc_contents.contains("# END managed-block(scode-dotfiles/bash)"),
-        "expected managed block markers in ~/.bashrc, got: {bashrc_contents}"
-    );
+    // feature works in isolation. Both shells are checked because they are
+    // separate registrations sharing one payload: a regression that drops or
+    // retargets one of them would not show up in the other.
+    // The markers alone only prove the registration exists; the body check is
+    // what proves it was wired to the shared payload rather than to some other
+    // readable file.
+    let payload = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("payload/shellrc"),
+    )
+    .unwrap();
+    for (file, id) in [(".bashrc", "bash"), (".zshrc", "zsh")] {
+        let rc = fake_home.path().join(file);
+        assert!(
+            rc.is_file() && !rc.is_symlink(),
+            "expected ~/{file} to be created as a regular file"
+        );
+        let contents = std::fs::read_to_string(&rc).unwrap();
+        let begin = format!("# BEGIN managed-block(scode-dotfiles/{id})");
+        let end = format!("# END managed-block(scode-dotfiles/{id})");
+        assert!(
+            contents.contains(&begin) && contents.contains(&end),
+            "expected managed block markers in ~/{file}, got: {contents}"
+        );
+        assert_eq!(
+            managed_block_body(&contents, &begin, &end),
+            payload,
+            "~/{file} block body should be payload/shellrc verbatim"
+        );
+    }
 
     // Verify it points to the shared agent-instructions source with a relative path.
     let target = std::fs::read_link(&claude_md).unwrap();
@@ -270,18 +300,20 @@ fn test_uninstall_removes_symlinks() {
 
     // Uninstall takes back the block but not the file. The file was created by
     // this installer here, but that is an accident of a fresh fake home; on a
-    // real machine ~/.bashrc is the user's, and the uninstall path cannot tell
-    // the two apart.
-    let bashrc = fake_home.path().join(".bashrc");
-    assert!(
-        bashrc.is_file(),
-        "~/.bashrc should be left in place after uninstall"
-    );
-    let bashrc_after = std::fs::read_to_string(&bashrc).unwrap();
-    assert!(
-        !bashrc_after.contains("managed-block(scode-dotfiles/bash)"),
-        "managed block should be removed from ~/.bashrc, got: {bashrc_after}"
-    );
+    // real machine ~/.bashrc or ~/.zshrc is the user's, and the uninstall path
+    // cannot tell the two apart.
+    for (file, id) in [(".bashrc", "bash"), (".zshrc", "zsh")] {
+        let rc = fake_home.path().join(file);
+        assert!(
+            rc.is_file(),
+            "~/{file} should be left in place after uninstall"
+        );
+        let after = std::fs::read_to_string(&rc).unwrap();
+        assert!(
+            !after.contains(&format!("managed-block(scode-dotfiles/{id})")),
+            "managed block should be removed from ~/{file}, got: {after}"
+        );
+    }
     assert!(
         !codex_stax_skill.exists() && !codex_stax_skill.is_symlink(),
         "codex stax skill symlink should be removed after uninstall"
@@ -950,6 +982,36 @@ fn test_install_removes_legacy_code_review_specialist_agent_symlinks() {
             !legacy_path.exists() && !legacy_path.is_symlink(),
             "legacy agent symlink should be removed: {}",
             legacy_path.display()
+        );
+    }
+}
+
+/// The shared shell payload must load cleanly in both shells it is installed
+/// into.
+///
+/// `payload/shellrc` goes into `~/.bashrc` and `~/.zshrc` unconditionally, so a
+/// construct only one shell accepts would break the other's every interactive
+/// startup while the Rust suite stays green. Sourcing the payload in each shell
+/// with errors fatal is the cheapest check that catches that. zsh is sourced
+/// only where it is installed; the skip is printed rather than silent so a
+/// machine without zsh knows it ran half the check.
+#[test]
+fn test_shell_payload_loads_in_bash_and_zsh() {
+    let payload = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("payload/shellrc");
+    let script = format!(". '{}'", payload.display());
+    for shell in ["bash", "zsh"] {
+        let output = match Command::new(shell).args(["-eu", "-c", &script]).output() {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("{shell} not installed; skipping payload load check for it");
+                continue;
+            }
+            Err(error) => panic!("failed to run {shell}: {error}"),
+        };
+        assert!(
+            output.status.success(),
+            "payload/shellrc failed to load in {shell}: {}",
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }
