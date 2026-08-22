@@ -22,14 +22,17 @@ exists.
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.
 
-`~/.bashrc` is also unconditional, and it is the one target where install edits a plain-text file it does not own (the
-other non-owned file is `~/.claude/settings.json`, described below). The installer claims a region delimited by
-`# BEGIN managed-block(scode-dotfiles/bash)` and a matching `END` line — other tools and your own edits can append,
-prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line separating
-the block from its neighbors and, if your file did not end in a newline, that newline. Anything you write _between_ the
-markers is overwritten on the next install. The file is created if it does not exist yet. If your `~/.bashrc` is a
-symlink — a common setup when it is managed from another checkout — install refuses it rather than writing through the
-link, and reports that feature as failed.
+`~/.bashrc` and `~/.zshrc` are also unconditional, and they are the targets where install edits a plain-text file it
+does not own (the other non-owned file is `~/.claude/settings.json`, described below). Both receive the same block of
+shell aliases from `payload/shellrc`. The installer claims a region delimited by
+`# BEGIN managed-block(scode-dotfiles/bash)` (or `.../zsh`) and a matching `END` line — other tools and your own edits
+can append, prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line
+separating the block from its neighbors and, if your file did not end in a newline, that newline. Anything you write
+_between_ the markers is overwritten on the next install. Either file is created if it does not exist yet, so a machine
+that never runs zsh ends up with a small `~/.zshrc` it does not use. The zsh path is always `~/.zshrc`; a setup that
+relocates startup files with `ZDOTDIR` gets a block zsh never reads, and needs to source it from the real one. If your
+`~/.bashrc` or `~/.zshrc` is a symlink — a common setup when it is managed from another checkout — install refuses it
+rather than writing through the link, and reports that feature as failed.
 
 NOTE: `uninstall` is not a full rollback for every feature. Claude settings are merged into `~/.claude/settings.json` as
 a regular user-owned JSON file, where the installer owns only the specific values it manages. Uninstall removes those
@@ -41,9 +44,9 @@ that older installer versions wrote (retired permissions and hooks); those are o
 re-add. Beyond the empty-container pruning above, values at paths the installer neither manages nor targets for cleanup
 are never touched.
 
-The `~/.bashrc` block is the same story in a different file: uninstall removes the marked region but never the file, not
-even when the block was all it contained. The blank line install inserted to separate the block from its neighbors stays
-behind, since it sits outside the markers.
+The `~/.bashrc` and `~/.zshrc` blocks are the same story in a different file: uninstall removes the marked region but
+never the file, not even when the block was all it contained. The blank line install inserted to separate the block from
+its neighbors stays behind, since it sits outside the markers.
 
 ## Disclaimer
 

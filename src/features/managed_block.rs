@@ -298,7 +298,7 @@ impl ManagedBlock {
     /// The source must resolve inside the repository, the same rule
     /// `PayloadSymlink` applies to its own source. It matters more here: a
     /// symlink is a pointer a reader can inspect, while this copies the bytes
-    /// into a file on the login path. A `payload/bashrc` symlinked at anything
+    /// into a file on the login path. A `payload/shellrc` symlinked at anything
     /// outside the checkout — a key, a credentials file — would otherwise be
     /// inlined verbatim into the destination, and the installer would report it
     /// as an ordinary success. Git stores symlinks, so the vector is a branch
