@@ -29,12 +29,13 @@ The skill now classifies work into profiles:
 - Critical review for correctness, security, concurrency, data integrity, and test quality.
 - Orchestration, which remains with the frontier session.
 
-Each family has a primary and escalation model for each profile. The first model gets one well-specified attempt. Small
-defects are cheaper to fix in the orchestrator; substantive failure moves to the escalation model instead of repeatedly
-spending tokens on the same underpowered route. Producing prose belongs to routine authored work; reviewing prose is
-mechanical review unless correctness, security, or another critical dimension raises the stakes. A route already at its
-family's trusted endpoint has no automatic retry: the orchestrator handles a substantive failure or deliberately crosses
-families.
+Each family has a primary and escalation model for each profile where it has a suitable model at all; a profile with no
+route in the preferred family falls back to the orchestrator's own family, announced as a divergence. The first model
+gets one well-specified attempt. Small defects are cheaper to fix in the orchestrator; substantive failure moves to the
+escalation model instead of repeatedly spending tokens on the same underpowered route. Producing prose belongs to
+routine authored work; reviewing prose is mechanical review unless correctness, security, or another critical dimension
+raises the stakes. A route already at its family's trusted endpoint has no automatic retry: the orchestrator handles a
+substantive failure or deliberately crosses families.
 
 This is intentionally a policy table rather than a capability leaderboard. The assignments should change when repeated
 real use shows that a model succeeds, fails, or incurs different latency for a particular class of work. Profiles may
@@ -51,7 +52,8 @@ jumping directly from Haiku to Opus.
 
 ## Native delegation matters
 
-Crossing from Codex to the Claude CLI, or from Claude Code to the Codex CLI, has a real cost beyond model tokens:
+Crossing from Codex to the Claude CLI, from Claude Code to the Codex CLI, or from either to the Muse CLI, has a real
+cost beyond model tokens:
 
 - A new process and model session must start.
 - The orchestrator must serialize context into a standalone prompt.
@@ -95,9 +97,15 @@ escalation model for a fresh implementation informed by concrete acceptance fail
 
 ## Permissions and concurrency
 
-The skill needs both the `claude` and `codex` CLIs installed and authenticated when it crosses families. Foreign-harness
-delegation bypasses permission checks with `codex --yolo` or `claude --dangerously-skip-permissions`. Use it only where
-you would accept the same permissions for the orchestrating session.
+The skill needs the `claude`, `codex`, and `muse` CLIs installed and authenticated for whichever families it crosses
+into. Foreign-harness delegation bypasses permission checks with `codex --yolo`, `muse exec --yolo`, or
+`claude --dangerously-skip-permissions`. Use it only where you would accept the same permissions for the orchestrating
+session.
+
+Meta's Muse Code is never chosen on its own. It becomes a route only through `prefer-muse`, an explicit request, or a
+deliberate cross-family decision announced as such. Its profile placements are provisional, based on vendor-reported
+benchmarks, and it has no SOTA mark, so it never acts as the sole critical-review gate. A missing `muse` executable
+makes the family unavailable rather than a launch failure to retry.
 
 Independent read-only tasks may run concurrently. Writers that share the working tree run one at a time; writers may run
 concurrently only when each one is isolated (a separate worktree or clone), with the orchestrator integrating and
@@ -107,9 +115,9 @@ same isolation and integration rules.
 
 ## Provider preference and local configuration
 
-Add `prefer-gpt` or `prefer-claude` to the invocation when subscription capacity or another non-performance constraint
-should steer delegation. An explicit preference overrides the normal native-family bias unless the preferred family has
-no suitable route or repeatedly fails the task.
+Add `prefer-gpt`, `prefer-claude`, or `prefer-muse` to the invocation when subscription capacity or another
+non-performance constraint should steer delegation. An explicit preference overrides the normal native-family bias
+unless the preferred family has no suitable route or repeatedly fails the task.
 
 Use `~/.scode-galaxy-brainrc.md` for environment-specific availability and routing changes. It may:
 

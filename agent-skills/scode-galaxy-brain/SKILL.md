@@ -3,8 +3,8 @@ name: scode-galaxy-brain
 description: >
   Accomplish a goal by delegating suitable parts of the work to cost-effective models while the current session stays
   in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
-  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt or prefer-claude keyword
-  and/or a request to work with concurrency.
+  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt, prefer-claude, or
+  prefer-muse keyword and/or a request to work with concurrency.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
   the user expressly stops it, unless the invocation itself limited the scope up front; if retained context says it was
@@ -77,19 +77,30 @@ Each model name includes its configured reasoning effort. The family determines 
 section applies. `sota` marks models trusted with critical review and the orchestrator role. Availability and user
 overrides may remove or replace these defaults; see Local availability.
 
-| model                | family | sota |
-| -------------------- | ------ | ---- |
-| gpt-5.6-luna medium  | gpt    |      |
-| gpt-5.6-terra medium | gpt    |      |
-| gpt-5.6-sol low      | gpt    |      |
-| gpt-5.6-sol medium   | gpt    |      |
-| gpt-5.6-sol high     | gpt    | yes  |
-| haiku-4.5 high       | claude |      |
-| sonnet-5 low         | claude |      |
-| sonnet-5 medium      | claude |      |
-| sonnet-5 high        | claude |      |
-| opus-5 high          | claude |      |
-| fable-5 high         | claude | yes  |
+| model                 | family | sota |
+| --------------------- | ------ | ---- |
+| gpt-5.6-luna medium   | gpt    |      |
+| gpt-5.6-terra medium  | gpt    |      |
+| gpt-5.6-sol low       | gpt    |      |
+| gpt-5.6-sol medium    | gpt    |      |
+| gpt-5.6-sol high      | gpt    | yes  |
+| haiku-4.5 high        | claude |      |
+| sonnet-5 low          | claude |      |
+| sonnet-5 medium       | claude |      |
+| sonnet-5 high         | claude |      |
+| opus-5 high           | claude |      |
+| fable-5 high          | claude | yes  |
+| muse-spark-1.2 low    | muse   |      |
+| muse-spark-1.2 medium | muse   |      |
+| muse-spark-1.2 high   | muse   |      |
+| muse-spark-1.2 xhigh  | muse   |      |
+
+The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
+on your own initiative. It enters a route only through an explicit `prefer-muse` preference, a user request naming it,
+or a deliberate cross-family decision announced as such. Its profile placements below are provisional: they rest on
+vendor-reported benchmarks rather than calibrated use, and until real use calibrates them neither its benchmark tier nor
+its token price counts as a reason to cross families on your own. It carries no `sota` mark, so it is never the sole
+critical-review gate, and no muse route ends at a trusted endpoint (see Delegation and escalation rules).
 
 ### Work profiles
 
@@ -97,15 +108,19 @@ Classify the task before choosing a model. Use the primary for the orchestrator'
 available. Move to the escalation model after a substantive failure or when the task proves more demanding than its
 initial classification.
 
-| profile                   | use when                                                                 | GPT route                                  | Claude route                    |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   |
-| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    |
+| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                  |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2 low → muse-spark-1.2 medium  |
+| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2 medium → muse-spark-1.2 high |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2 medium → muse-spark-1.2 high |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2 high → muse-spark-1.2 xhigh  |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                        |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2 high → muse-spark-1.2 xhigh  |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                        |
+
+A `none` route means the family has no suitable model for that profile. When a provider preference points at such a
+route, that is the "no suitable model" reason to diverge: fall back to the orchestrator's own family's route for the
+profile and announce the divergence as usual.
 
 These assignments are defaults, not claims that every task in a profile is equivalent. Test quality is critical because
 weak tests are how correctness defects survive review. Reviews route above similarly sized implementation work because
@@ -160,8 +175,11 @@ bias.
   apparent line count alone.
 - Give a primary model one well-specified attempt. Fix trivial defects locally. After one substantive failure, escalate
   instead of repeatedly spending tokens on the same underpowered model.
-- A route with no listed escalation is already at the family's trusted endpoint. If it fails substantively, handle the
-  work in the orchestrator or make a deliberate cross-family attempt; do not retry it mechanically.
+- A GPT or Claude route with no listed escalation is already at the family's trusted endpoint. If it fails
+  substantively, handle the work in the orchestrator or make a deliberate cross-family attempt; do not retry it
+  mechanically. Muse routes are the exception: none of them ends at a trusted endpoint, so a substantive failure at the
+  last listed muse model gets the same treatment — orchestrator or deliberate cross-family attempt — even though the
+  model that failed is not trusted.
 - When the primary's output is broadly wrong rather than fixable, preserve pre-existing user work, remove only the
   delegate's changes, and give the escalation model a fresh implementation task. Include concrete acceptance failures as
   evidence, but do not ask it to repair a structurally bad patch.
@@ -175,9 +193,9 @@ bias.
 
 ## Provider preference
 
-The invocation may include the keyword `prefer-gpt` or `prefer-claude`. This expresses a preference unrelated to model
-performance — typically the user has a large subscription with one provider and a small one with the other, and wants
-spend steered accordingly. The default, absent a keyword, is no preference.
+The invocation may include the keyword `prefer-gpt`, `prefer-claude`, or `prefer-muse`. This expresses a preference
+unrelated to model performance — typically the user has a large subscription with one provider and a small one with the
+others, and wants spend steered accordingly. The default, absent a keyword, is no preference.
 
 When a preference is given, route every delegation to the preferred family unless there is a very clear, strong reason
 to diverge — for example repeated poor output, no suitable model for the selected profile, or a goal that explicitly
@@ -208,11 +226,11 @@ from every profile and use the next suitable option rather than preserving a pre
 
 The rc file may replace the model inventory, override profile assignments, or add natural-language routing constraints.
 An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for delegation. Model
-names are the ids to invoke — pass GPT names to `codex -m` without the trailing effort word and map Claude names to the
-nearest `--model` alias. When a replacement inventory introduces models absent from the built-in profiles, the rc file
-must assign them to profiles or describe their roles well enough to do so. Ask instead of inventing profile assignments
-when that information is missing. A new family also needs an invocation mechanism; treat it as unavailable until the rc
-file provides one.
+names are the ids to invoke — pass GPT names to `codex -m` and muse names to `muse exec --model` without the trailing
+effort word, and map Claude names to the nearest `--model` alias. When a replacement inventory introduces models absent
+from the built-in profiles, the rc file must assign them to profiles or describe their roles well enough to do so. Ask
+instead of inventing profile assignments when that information is missing. A new family also needs an invocation
+mechanism; treat it as unavailable until the rc file provides one.
 
 Legacy rc files may still contain the old `cost`, `intelligence`, and `taste` columns. Treat known rows as an
 availability inventory and preserve family/SOTA metadata, but ignore the numeric scores. Apply the built-in work
@@ -224,8 +242,11 @@ model inventory and work-profile table into `~/.scode-galaxy-brainrc.md`, preced
 defaults and are meant to be edited. Never discard existing content: append when safe, and stop to ask if the file
 already contains an inventory or profile table.
 
-If the file does not exist, all inventory models are assumed available. Apart from the seeding request above, do not
-create or edit this file yourself; it belongs to the user.
+If the file does not exist, all inventory models are assumed available, with one practical exception: a shelled-out
+family whose CLI is not installed (`codex`, `claude`, or `muse` missing from `PATH`) is unavailable regardless of the rc
+file. Treat that as a missing family when honoring a provider preference — say so and fall back — rather than as a
+launch failure to retry. Apart from the seeding request above, do not create or edit this file yourself; it belongs to
+the user.
 
 ## Delegation mechanics
 
@@ -237,6 +258,8 @@ running in, then:
 - **Claude session → gpt model**: shell out to `codex exec` (see below).
 - **Codex session → gpt model**: use your native sub agent mechanism, specifying the target model.
 - **Codex session → claude model**: shell out to `claude -p` (see below).
+- **Any session → muse model**: shell out to `muse exec` (see below). Muse Code is only ever a delegate here, never the
+  orchestrator, so there is no native muse path.
 
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
@@ -298,6 +321,63 @@ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
   shelled-out delegate — it does not claim that `claude -p` reads piped stdin after a prompt argument the way codex
   does.
 
+### Shelling out to muse
+
+```sh
+muse exec --yolo --model muse-spark-1.2 --reasoning-effort medium --user-input-auto-resolve \
+  --max-model-steps <N> --prompt-file <prompt-file> > <result-file> 2> <log-file> < /dev/null
+```
+
+The flag surface below comes from `muse exec --help`. The runtime behavior — output shape, exit codes, stdin handling,
+policy enforcement, worktree lifecycle — was observed with Muse Code 0.2.1 rather than read from documentation; treat it
+as an observation to re-check when the CLI changes, not as a stable contract.
+
+- `--model` takes the id without the effort word; `--reasoning-effort` accepts
+  `none|minimal|low|medium|high|xhigh|ultra` and defaults to `high`, so always pass it explicitly to match the inventory
+  row you chose. Omitting `--model` uses the account's default, which was observed to be a variant id
+  (`muse-spark-1.2-contributor`) rather than the public `muse-spark-1.2`; pass the public id explicitly.
+- Without `--json`, stdout carries only the final message, so redirecting stdout to a result file captures exactly what
+  you need to judge. Muse writes its own status lines (`muse: workspace root: ...`) to stderr, so keep the two streams
+  separate as in the template. With `--json`, stdout is a JSONL event stream instead: the final message is the `text`
+  field of the `run.terminal.completed` event, with `run.output.delta` events streaming before it.
+- `--prompt-file` reads the prompt from a file, which removes the quoting problem that makes the other harnesses take
+  the prompt as `"$(cat <file>)"`. Still build the prompt in its own earlier command and keep the explicit
+  `< /dev/null`: the dropped-redirect precaution from the codex section applies to every shelled-out delegate.
+  `muse exec` was observed to complete with a never-closing stdin, so the redirect here is defense in depth rather than
+  a known hang fix.
+- A headless run does not hang on a question either way: without `--user-input-auto-resolve` the delegate has no way to
+  ask and simply ends its turn with the question as its final message; with it, the delegate is offered a
+  `request_user_input` tool that cancels itself, so it learns explicitly that nobody is there and reports what it could
+  not decide. Both exit 0, so a final message that is a question is a gate failure to catch by content, not by exit
+  status. The flag stays in the template because the explicit cancel produced the more useful report.
+  `--max-model-steps` is a runaway guard, not a budget: set it well above what the task should need (tens of steps for a
+  small bounded edit, hundreds for implementation work that runs checks) so it only trips on a runaway.
+- A zero exit status is necessary but not sufficient, exactly as for codex. A failed turn (unknown model, auth error,
+  agent loop failure) was observed to exit 1 with the reason on stderr, while a turn that completes normally exits 0
+  even when the final message declines or reports that tool policy blocked the work. Judge the captured message against
+  the acceptance criteria.
+- For read-only delegates add both `--disable-write` and `--disable-shell`. They cover different paths — the first
+  blocks the non-shell filesystem tools, the second removes shell execution, which is otherwise a way to write — so one
+  without the other is not read-only. Combined with `--yolo`, a write attempt was observed to be denied by tool policy
+  with the delegate reporting the denial. Keep the prompt-level "do not edit" instruction too, so the delegate plans a
+  read-only run instead of discovering the denial mid-task.
+- Runs in the current working directory by default; `--workspace <PATH>` is the analogue of codex's `-C`. For concurrent
+  writers, `-w create` gives a native isolated tree. Pass `--session-id <uuid>` (a fresh `uuidgen`) so the tree is
+  predictable: it is created at `.muse/worktrees/<repo-name>-<uuid>` on branch `muse/session-<uuid>`, muse adds
+  `/.muse/worktrees/` to `.git/info/exclude`, and the worktree is retained after the run only when dirty — a run that
+  changed nothing removes it. `-w` requires session logging, so do not combine it with `--no-session-log`. Integration
+  and cleanup are yours, per Concurrency: extract the change set, apply and gate it in the main tree, then
+  `git worktree remove --force` the tree and delete the branch.
+- Killing a run is safe in both directions. `muse` is a wrapper around a `muse-bin-<version>` process; record that
+  process's pid, since a backgrounded launch can hand you the wrapper's. The delegate's shell commands run in their own
+  session, so a process-group kill would miss them, but both SIGTERM and SIGKILL to `muse-bin` were observed to take
+  down every child (its helper process, the shell, and whatever the shell was running). SIGTERM additionally flushes the
+  session log. A worktree run that is killed keeps its dirty worktree either way, so partial work is inspectable and the
+  usual pre-relaunch cleanup applies.
+- Foreign-harness caveats carry over: `--yolo` disables approval, the sandbox, and workspace trust checks, so use it
+  only where you would accept the same for the orchestrating session, and the shell timeout / background monitoring
+  rules below apply unchanged.
+
 ### Monitoring long-running delegates
 
 The stdin hang above was found only after an orchestrator waited hours on a shelled-out code review that was never going
@@ -320,7 +400,8 @@ forward-progress signal before it exits, and "no news yet" is not evidence of pr
   necessarily useful progress; a log that has not grown across a full interval is a reason to inspect the run, not by
   itself grounds to kill it — long reasoning stretches can be quiet. `claude -p` prints only the final response by
   default, so silence means nothing there; when a long run needs observability, launch it with a streaming output format
-  (`--output-format stream-json --verbose`) instead.
+  (`--output-format stream-json --verbose`) instead. `muse exec` is the same on stdout: silent until the final message
+  unless launched with `--json`, in which case its event log can be compared across checks like the codex transcript.
 - Use the estimate and the deadline for different decisions. Crossing the expected duration triggers investigation, not
   a kill. Crossing the hard deadline means the run is over budget regardless of apparent liveness: kill it, capture the
   log, and treat the result as inconclusive.
