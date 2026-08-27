@@ -354,13 +354,12 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   small bounded edit, hundreds for implementation work that runs checks) so it only trips on a runaway.
 - A zero exit status is necessary but not sufficient, exactly as for codex. A failed turn (unknown model, auth error,
   agent loop failure) was observed to exit 1 with the reason on stderr, while a turn that completes normally exits 0
-  even when the final message declines or reports that tool policy blocked the work. Judge the captured message against
-  the acceptance criteria.
-- For read-only delegates add both `--disable-write` and `--disable-shell`. They cover different paths — the first
-  blocks the non-shell filesystem tools, the second removes shell execution, which is otherwise a way to write — so one
-  without the other is not read-only. Combined with `--yolo`, a write attempt was observed to be denied by tool policy
-  with the delegate reporting the denial. Keep the prompt-level "do not edit" instruction too, so the delegate plans a
-  read-only run instead of discovering the denial mid-task.
+  even when the final message declines or reports that it could not finish. Judge the captured message against the
+  acceptance criteria.
+- Always run with `--yolo`, for read-only delegates too. Muse has narrower policy switches (`--disable-write`,
+  `--disable-shell`), but do not use them: a review or scan that looks read-only often still needs to write a scratch
+  file to feed a tool, and a policy denial mid-task breaks the run instead of protecting anything. Read-only is a
+  prompt-level instruction here, exactly as for the other harnesses.
 - Runs in the current working directory by default; `--workspace <PATH>` is the analogue of codex's `-C`. For concurrent
   writers, `-w create` gives a native isolated tree. Pass `--session-id <uuid>` (a fresh `uuidgen`) so the tree is
   predictable: it is created at `.muse/worktrees/<repo-name>-<uuid>` on branch `muse/session-<uuid>`, muse adds
