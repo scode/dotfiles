@@ -3,7 +3,7 @@ name: scode-galaxy-brain
 description: >
   Accomplish a goal by delegating suitable parts of the work to cost-effective models while the current session stays
   in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
-  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt, prefer-claude,
+  scode-galaxy-brain, e.g. "Use scode-galaxy-brain for a goal", optionally with a prefer-gpt, prefer-claude,
   prefer-muse, or prefer-glm keyword and/or a request to work with concurrency.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
@@ -102,26 +102,26 @@ Each model name includes its configured reasoning effort. The family determines 
 section applies. `sota` marks models trusted with critical review and the orchestrator role. Availability and user
 overrides may remove or replace these defaults; see Local availability.
 
-| model                 | family | sota |
-| --------------------- | ------ | ---- |
-| gpt-5.6-luna medium   | gpt    |      |
-| gpt-5.6-terra medium  | gpt    |      |
-| gpt-5.6-sol low       | gpt    |      |
-| gpt-5.6-sol medium    | gpt    |      |
-| gpt-5.6-sol high      | gpt    | yes  |
-| haiku-4.5 high        | claude |      |
-| sonnet-5 low          | claude |      |
-| sonnet-5 medium       | claude |      |
-| sonnet-5 high         | claude |      |
-| opus-5 high           | claude |      |
-| fable-5 high          | claude | yes  |
-| muse-spark-1.2 low    | muse   |      |
-| muse-spark-1.2 medium | muse   |      |
-| muse-spark-1.2 high   | muse   |      |
-| muse-spark-1.2 xhigh  | muse   |      |
-| glm-5.3-flash low     | glm    |      |
-| glm-5.3-flash high    | glm    |      |
-| glm-5.3-flash max     | glm    |      |
+| model                             | family | sota |
+| --------------------------------- | ------ | ---- |
+| gpt-5.6-luna medium               | gpt    |      |
+| gpt-5.6-terra medium              | gpt    |      |
+| gpt-5.6-sol low                   | gpt    |      |
+| gpt-5.6-sol medium                | gpt    |      |
+| gpt-5.6-sol high                  | gpt    | yes  |
+| haiku-4.5 high                    | claude |      |
+| sonnet-5 low                      | claude |      |
+| sonnet-5 medium                   | claude |      |
+| sonnet-5 high                     | claude |      |
+| opus-5 high                       | claude |      |
+| fable-5 high                      | claude | yes  |
+| muse-spark-1.2-contributor low    | muse   |      |
+| muse-spark-1.2-contributor medium | muse   |      |
+| muse-spark-1.2-contributor high   | muse   |      |
+| muse-spark-1.2-contributor xhigh  | muse   |      |
+| glm-5.3-flash low                 | glm    |      |
+| glm-5.3-flash high                | glm    |      |
+| glm-5.3-flash max                 | glm    |      |
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `prefer-muse` preference, a user request naming it,
@@ -144,15 +144,15 @@ Classify the task before choosing a model. Use the primary for the orchestrator'
 available. Move to the escalation model after a substantive failure or when the task proves more demanding than its
 initial classification.
 
-| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                  | GLM route                              |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2 low → muse-spark-1.2 medium  | glm-5.3-flash low → glm-5.3-flash high |
-| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2 medium → muse-spark-1.2 high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2 medium → muse-spark-1.2 high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2 high → muse-spark-1.2 xhigh  | glm-5.3-flash max                      |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                        | none                                   |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2 high → muse-spark-1.2 xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                        | none                                   |
+| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                                          | GLM route                              |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2-contributor low → muse-spark-1.2-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
+| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                                                | none                                   |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
 
 A `none` route means the family has no suitable model for that profile. When a provider preference points at such a
 route, that is the "no suitable model" reason to diverge: fall back to the orchestrator's own family's route for the

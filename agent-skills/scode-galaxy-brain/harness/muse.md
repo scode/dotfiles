@@ -3,7 +3,7 @@
 Read this file in full before the first `muse exec` launch of a session, after `harness/shell-out.md`.
 
 ```sh
-muse exec --yolo --model muse-spark-1.2 --reasoning-effort medium --user-input-auto-resolve \
+muse exec --yolo --model muse-spark-1.2-contributor --reasoning-effort medium --user-input-auto-resolve \
   --max-model-steps <N> --prompt-file <prompt-file> > <result-file> 2> <log-file> < /dev/null
 ```
 
@@ -13,8 +13,9 @@ as an observation to re-check when the CLI changes, not as a stable contract.
 
 - `--model` takes the id without the effort word; `--reasoning-effort` accepts
   `none|minimal|low|medium|high|xhigh|ultra` and defaults to `high`, so always pass it explicitly to match the inventory
-  row you chose. Omitting `--model` uses the account's default, which was observed to be a variant id
-  (`muse-spark-1.2-contributor`) rather than the public `muse-spark-1.2`; pass the public id explicitly.
+  row you chose. Always pass `muse-spark-1.2-contributor` explicitly: it is the intended billing route for this skill,
+  and using the public `muse-spark-1.2` model has a materially different cost. Do not use the public model as a
+  fallback.
 - Without `--json`, stdout carries only the final message, so redirecting stdout to a result file captures exactly what
   you need to judge. Muse writes its own status lines (`muse: workspace root: ...`) to stderr, so keep the two streams
   separate as in the template. With `--json`, stdout is a JSONL event stream instead: the final message is the `text`
