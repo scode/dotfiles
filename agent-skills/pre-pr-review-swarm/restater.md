@@ -45,6 +45,11 @@ wording. Go and find out, then explain.
 ## Output
 
 Return the complete restated finding list in the same section structure you received, followed by one line:
-`Restated: <n>/<n> findings`, where both numbers are the count you were given. If you could not restate a finding — the
-code it references is missing from the checkout, for example — keep it verbatim, add a `Restater note:` explaining why,
-and count it in the denominator but not the numerator.
+`Restated: <n>/<n> findings`, where both numbers are the count you were given. Every finding gets prose; there is no
+"could not restate" outcome. If the code a finding references is missing from the checkout, or you cannot confirm the
+claim against what is there, write the finding as best the reviewer's text and the surrounding code allow and put what
+you could not verify in a `Restater note:` under it. The coordinator uses that note to downgrade or reject the finding;
+what it cannot do is write the prose in your place, which is why a verbatim passthrough is not an option.
+
+Your output is what the user reads. The coordinator copies each finding into the final report unchanged, so write each
+one as the finished text, not as a draft for someone else to polish.
