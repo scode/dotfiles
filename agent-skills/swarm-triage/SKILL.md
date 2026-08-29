@@ -24,14 +24,16 @@ vary from run to run and none is the skill's business.
 
 ## Inputs
 
-- **The run log.** A file the swarm writes under `~/.local/state/pre-pr-review-swarm/runs/`; the swarm's session output
-  ends with a `Run log: <path>` line. Read it in full at the start. It holds every finding verbatim as the user saw it,
-  with the identifiers this skill keys on. Identifiers are per run, so the log must be the one for the findings the user
-  is looking at: if the swarm said `Run log: not written (...)`, stop and say so rather than falling back to an older
-  log whose identifiers will not match. If no `Run log:` line is available at all, take the most recent log whose header
-  names the current repository root (the filename carries only the basename, and basenames collide), say which one you
-  took, and confirm its finding list matches what the user has in front of them before proceeding. If there is no log,
-  stop: without it there is nothing to join to.
+- **The run log.** A file the swarm writes to `~/.local/state/pre-pr-review-swarm/runs/<run name>.md`, where the run
+  name looks like `20260829-0412-62d866d-9c2e` and the swarm's session output ends with `Swarm run: <run name>` and
+  `Run log: <path>`. The user normally invokes this skill with the run name (`swarm-triage 20260829-0412-62d866d-9c2e`);
+  a path works too. Read the log in full at the start. It holds every finding verbatim as the user saw it, with the
+  identifiers this skill keys on. Identifiers are per run, so the log must be the one for the findings the user is
+  looking at: if the swarm said `Run log: not written (...)`, stop and say so rather than falling back to an older log
+  whose identifiers will not match. If the user names no run and no `Run log:` line is at hand, list the recent logs
+  whose header names the current repository root — the name's commit id and time usually make the right one obvious —
+  and confirm the choice with the user before proceeding. If there is no log, stop: without it there is nothing to join
+  to.
 - **The working document, if any.** Where the user does the triage. This skill has no opinion about what it is, and must
   not acquire one: a Claude artifact, a Google Doc, an internal review tool the agent can only reach by handing text to
   the user to paste, a scratch file — whatever the user says ("working doc: Claude artifact", "working doc: the internal

@@ -80,7 +80,15 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      `commit <id> + uncommitted changes (7 files, 480 diff lines)`. The counts are a guard, not decoration: a label
      showing a handful of diff lines when the in-flight change is known to be large means the wrong scope was selected,
      and the user should be able to see that before reviewers spend anything on it.
-3. Report the selected scope before spawning reviewers.
+   - Name the run: `<YYYYMMDD>-<HHMM>-<short commit id>-<4 hex of scope hash>`, for example
+     `20260829-0412-62d866d-9c2e`, built from `date -u +%Y%m%d-%H%M`, the abbreviated id of the current commit (the
+     parent, when the working copy is itself a commit), and the first four characters of `sha256sum` over the scope
+     file. The name is how a run is referred to afterwards — by the user who has lost the console output, and by
+     `swarm-triage` — so it has to be unique in practice and cheap to read in a directory listing. Every part carries
+     meaning: the same commit re-swarmed later shares a commit id and differs in time; the same uncommitted content
+     re-swarmed shares the content hash as well, so "same input, re-run" is visible at a glance, while a changed hash
+     says the input moved. Compute every component with shell commands; never invent characters to look random.
+3. Report the selected scope and the run name before spawning reviewers.
 4. Check whether a `SPEC.md` exists at the project root.
 5. Decide the reviewer panel. By default every reviewer runs (thirteen always, plus a fourteenth if `SPEC.md` exists).
    If every file touched by the change — including files listed under `Omitted from scope:` — has a prose extension
@@ -376,17 +384,17 @@ applied), surfaced (with the question), or rejected (with the reason). Refer to 
 
 ### Run log
 
-Write one markdown file per run to `~/.local/state/pre-pr-review-swarm/runs/<UTC timestamp>-<repo basename>.md`,
-creating the directory if missing. The log exists so the eligibility rules can be tuned from what actually happened
-instead of from memory: the pattern worth catching is "findings that look like X keep getting fixed and should not have
-been" (or the reverse), and spotting that needs the finding text, the decision, and the resulting diff side by side. A
-row of counters cannot show it; a directory of self-contained run files can be grepped, skimmed, or handed to an agent
-to look for patterns across runs.
+Write one markdown file per run to `~/.local/state/pre-pr-review-swarm/runs/<run name>.md`, using the name chosen in
+step 2 and creating the directory if missing. The log exists so the eligibility rules can be tuned from what actually
+happened instead of from memory: the pattern worth catching is "findings that look like X keep getting fixed and should
+not have been" (or the reverse), and spotting that needs the finding text, the decision, and the resulting diff side by
+side. A row of counters cannot show it; a directory of self-contained run files can be grepped, skimmed, or handed to an
+agent to look for patterns across runs.
 
 Each file contains, in this order:
 
-1. A header: timestamp, repository root, the commit id and scope label from step 2, the skill arguments, and the
-   coordinator model if known.
+1. A header: the run name, timestamp, repository root, the commit id and scope label from step 2, the skill arguments,
+   and the coordinator model if known.
 2. The complete findings report exactly as presented to the user in step 12 — every finding with its identifier,
    confidence tag, anchors, and restated body — plus the accounting lines. Copy, do not summarize; the whole point is
    that the finding is readable later without the session.
@@ -406,8 +414,7 @@ is real — a `nofix` run spends coordinator time re-reading code after the repo
 Present the report first and do the sorting afterwards, so the user is never waiting on the classification to read the
 findings. The log lives outside the reviewed checkout; if the user asked for a fully read-only run or prohibited file
 writes, skip it and say so. A failure to write the log is reported but never blocks the fixes. Runs get their own files,
-so concurrent swarms never contend for one; include seconds in the timestamp and the basename so simultaneous runs on
-different repositories do not collide.
+named by the run name, so concurrent swarms never contend for one.
 
 ## Reviewers
 
@@ -530,7 +537,8 @@ never consulted in practice and invited the coordinator to argue about which fin
 them. Readers judge readiness from the findings themselves.
 
 After the run log has been written (which happens after the report is presented, in step 13 or 14), end the session
-output with `Run log: <path>`, or `Run log: not written (<reason>)` if the write failed or was skipped. This line comes
-after the findings, never delays them, and is never a substitute for them: the report in the session stays the primary
-output, and the path exists so a later step — the `swarm-triage` skill, or the user by hand — can find the record that
-matches what was just read.
+output with two lines: `Swarm run: <run name>` and `Run log: <path>`, or `Run log: not written (<reason>)` if the write
+failed or was skipped. They come after the findings, never delay them, and are never a substitute for them: the report
+in the session stays the primary output. The name and path exist so a later step — the `swarm-triage` skill, or the user
+by hand — can find the record that matches what was just read, and the name is repeated here because it is the thing
+worth copying when the console is about to be lost.
