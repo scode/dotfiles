@@ -206,22 +206,40 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
       back into them costs exactly the fluency the restater was spawned for. Do not re-impose the labels on restated
       findings, and do not reject a restated finding for lacking them.
     - Validate the restated list before using it: the same number of findings, in the same order, each with its original
-      identifier, confidence tag, at least one source file reference, and a non-trivial body. If the restater merged,
-      split, dropped, reordered, or retagged anything, discard its output for that finding and use the pre-restatement
-      version (which keeps its three labels); do not attempt to repair a partial restatement by hand.
-    - `Restater note:` lines are the restater disputing a claim it could not confirm against the code, or reporting that
-      it could not restate a finding at all. Read each one and decide: keep the finding, downgrade it to **possible**,
-      or reject it with a stated reason in the finding accounting. Do not present a disputed finding as **definite**
-      without having checked.
-    - If the host cannot spawn the restater, or it returns something other than a restated list, present the
-      pre-restatement findings and say on the `Restatement:` line that restatement did not run. A missing restatement is
-      not a failed swarm, but it must not be reported as if it happened.
-12. Present all findings to the user. Every user-visible finding must include its feedback identifier, follow the
-    structure in the Output Contract, and include enough context to understand without opening the code. The report must
-    include the selected scope label. Before sending the final answer, verify that every finding that did not go through
-    restatement contains the literal labels `What happens:`, `Why it matters:`, and `Suggested change:`, and that every
-    finding that did has a body that explains the claim rather than a one-line summary. A finding that satisfies neither
-    is invalid: rewrite it instead of sending a compact substitute.
+      identifier, confidence tag, at least one source file reference, and a non-trivial prose body. If the restater
+      merged, split, dropped, reordered, or retagged anything, or returned something other than a restated list, run it
+      again from scratch with the validation failure spelled out in its input. If the second attempt also fails
+      validation, or the host cannot spawn the restater at all, the review has failed: report that, name the failure,
+      and leave the merged finding list in a file the user can point a later restatement at. Do not present the
+      pre-restatement findings as the review, do not hand-repair a partial restatement, and do not mix restated and
+      unrestated findings in one report. Restatement is the last step and the cheap one; retrying it is far cheaper than
+      re-running the swarm, and a report whose findings were written by the agent that cannot judge their readability is
+      not worth sending.
+    - Once the restated list passes validation, every header and body in it is final. Copy them into the user-facing
+      report verbatim: do not summarize, shorten, tighten, merge or split sentences, change the tone, convert prose to
+      bullets, or re-impose the three labels. The only permitted changes are mechanical rendering ones — turning a
+      `path:line` into a clickable reference, or escaping the output renderer requires — and those must not alter the
+      finding's words. This is a hard rule because the coordinator is exactly the reader who cannot judge it: with the
+      whole diff in context, a shortened explanation still looks readable, and a "polish" pass silently recreates the
+      compression the restater was spawned to undo. Response length is not a reason to compress either. If the full
+      report does not fit, keep the finding blocks intact and split the response, or stop and say the output limit was
+      hit; never substitute summaries for restated findings.
+    - `Restater note:` lines are the restater disputing a claim it could not confirm against the code. Read each one and
+      decide: keep the finding, downgrade it to **possible**, or reject it with a stated reason in the finding
+      accounting. Do not present a disputed finding as **definite** without having checked. A downgrade changes only the
+      confidence tag in the header; the body stays as the restater wrote it. A rejection removes the finding and adjusts
+      the accounting line.
+12. Present all findings to the user. The report must follow the Output Contract and include the selected scope label.
+    After composing the response and before sending it, check two things:
+    - Every restated finding appears with its identifier, in the restater's order, with a body that is word-for-word the
+      validated restater output (modulo the rendering changes allowed in step 11 and any confidence downgrade). This is
+      an exact comparison, not a similarity judgment: a body that keeps the identifier and conclusion but has been
+      shortened fails, and the fix is to paste the restater's text back in. The `Restatement:` line is a claim that the
+      reader is getting the restater's prose, and this check is what makes that claim true.
+    - The metadata around the findings (scope, execution, continuation, accounting, readiness) does not contradict
+      qualifiers inside them. A finding the restater describes as optional, documentation-only, or internal cleanup is
+      not a PR blocker; listing it under `PR Readiness: not ready` without a separate reason for why it blocks this
+      change makes the report internally inconsistent.
 13. If `nofix` was specified, stop here — do not make any changes.
 14. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
 15. If no actionable findings remain, state that explicitly before asking for PR creation.
@@ -326,33 +344,18 @@ Write findings for a reader who does not already know the codebase. Every findin
 
 - `` `Fn / TYPE-MNEMONIC` — **definite|possible** — `path:line` — <plain-language title> ``
 
-What follows the header depends on whether the finding went through restatement (step 11).
+The body is the restater's prose, verbatim (step 11): one or more paragraphs, written by an agent that did not know the
+code and went and read it, covering what the code does, what goes wrong, why anyone should care, and what to change, in
+whatever order explains it best. The three labeled fields reviewers use (`What happens:`, `Why it matters:`,
+`Suggested change:`) are a wire format between reviewers and the coordinator, there to stop a reviewer from compressing
+a finding into a polished one-liner such as "cover the cached assembly path" that is technically accurate but useful
+only after the reader reconstructs the code. They never appear in the user-facing report. If there is no validated
+restater output, there is no report — see step 11.
 
-A finding that was restated is prose: one or more paragraphs, written by an agent that did not know the code and went
-and read it, covering what the code does, what goes wrong, why anyone should care, and what to change, in whatever order
-explains it best.
-
-A finding that was not restated (restatement did not run, or the restater's output for it was rejected) keeps the
-reviewer shape, with three labeled fields:
-
-- `What happens:` Explain the relevant behavior and the problem in ordinary language. Give enough local context to
-  understand any project-specific term used in the title.
-- `Why it matters:` Name the concrete failure, risk, maintenance cost, or user-visible effect. Do not leave the reader
-  to infer the consequence from code vocabulary.
-- `Suggested change:` State the direct remediation. For a test finding, say what the test must prove and what broken
-  behavior it must catch.
-
-The labels are a guard, not a house style: they stop a reviewer or the coordinator from compressing a finding into a
-polished one-liner such as "cover the cached assembly path" that is technically accurate but useful only after the
-reader reconstructs the code. Spell out that the application build may be reused from a cache while a new catalog still
-has to be copied into the deployed output. Before restatement, do not replace the three labeled fields with a single
-paragraph even when that paragraph contains the same facts; the labels force the explanation to survive coordinator
-compression. After restatement the guard has done its job, and the prose form is the one the reader gets.
-
-In either form, state the finding in the plainest terms that do not lose precision. Assume the reader does not know the
-codebase at all. Use project or domain jargon only when necessary, and introduce a term before relying on it: say what
-the thing is in ordinary words the first time it appears. A quarter to half a page per finding is fine — do not force it
-shorter, and do not pad it either.
+The prose states the finding in the plainest terms that do not lose precision, for a reader who does not know the
+codebase at all. Project or domain jargon appears only when necessary and is introduced before it is relied on. A
+quarter to half a page per finding is fine — the coordinator does not force it shorter, and the restater does not pad
+it.
 
 Every finding must be anchored to at least one specific source file reference (`path:line`, or `path` when the finding
 concerns a whole file). Plain language is not a license to drift into generalities: the reference is what makes the
@@ -379,10 +382,14 @@ for a third when its second pass produced at least one significant, credible new
 `unavailable` when the host could not resume it, and in `capped with new findings` when its third pass was non-empty.
 This line distinguishes a bounded search from both a one-shot review and a claim that every reviewer reached saturation.
 
-Always include `Restatement: <n>/<n> findings restated` before the findings sections, or
-`Restatement: did not run (<reason>)` when step 11 could not complete. This tells the reader whether the prose they are
-about to read went through the fresh-reader rewrite or is the coordinator's merge output, which reads noticeably more
-like the code than like an explanation.
+Always include `Restatement: <n>/<n> findings restated, <a> attempt(s)` before the findings sections, where both counts
+are the number of reported findings and the attempt count is 1 or 2. A successful report always says `n/n`; the line is
+a tripwire, not a status. Its presence is the coordinator's claim that every body below is the restater's prose, which
+step 12 verifies, and the attempt count tells the reader whether the first restatement was rejected. When there are zero
+findings, say `Restatement: skipped (no findings)`. When restatement failed (step 11), the report carries no findings
+sections at all; say `Restatement: failed after <a> attempt(s) (<reason>)`, keep the scope, execution, continuation, and
+accounting lines so the swarm's work is still visible, name the file holding the merged list, and set
+`PR Readiness: not ready` with the failed restatement as the stated reason.
 
 Always include `Finding accounting: <r> reviewer findings → <n> reported (<m> same-location merges, <k> rejected)`
 before the findings sections, where the numbers satisfy `r = n + m + k`. This is the count-based guard against lossy
@@ -393,10 +400,13 @@ thorough than it was.
 Example finding:
 
 - `F1 / SEC-PRIVSEC` — **definite** — `src/auth.rs:42` — login requests write session secrets to the application log.
-  - `What happens:` The changed log statement records the value that proves a user is logged in, not merely a harmless
-    request identifier.
-  - `Why it matters:` Anyone who can read the logs can copy that value and act as the user until the session expires.
-  - `Suggested change:` Remove the session value from the log and record a non-secret request identifier instead.
+
+  The login handler issues a session token: a random value the browser sends back on every later request, and the only
+  thing that proves the user is logged in. The changed log statement at `src/auth.rs:42` writes that token into the
+  application log alongside the request path, where before it wrote only the request identifier. Anyone who can read the
+  logs — an operator, a log-aggregation service, anyone who obtains a log export — can copy the token and act as that
+  user until the session expires. Remove the token from the log statement and record the non-secret request identifier
+  instead; nothing else in the handler depends on the token being logged.
 
 - `Correctness`: findings from the correctness lens reviewers, presented as one section.
 - `Security`: findings from the security lens reviewers, presented as one section.
@@ -407,4 +417,6 @@ Example finding:
 - `Docs/README Drift`: findings from the docs-comments reviewer, which also owns README drift.
 - `Idiomaticity`: non-idiomatic patterns found.
 - `Simplification`: safe simplification opportunities.
-- `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready.
+- `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready. A blocker is a finding whose own body
+  supports blocking; do not list every finding as a blocker by default, and do not list a finding whose body calls it
+  optional or documentation-only unless this section separately explains why it blocks.
