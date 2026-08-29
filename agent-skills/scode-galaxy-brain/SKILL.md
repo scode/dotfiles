@@ -3,8 +3,8 @@ name: scode-galaxy-brain
 description: >
   Accomplish a goal by delegating suitable parts of the work to cost-effective models while the current session stays
   in charge of planning, quality gating, and all commit/PR management. Use when the user explicitly invokes
-  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt, prefer-claude, or
-  prefer-muse keyword and/or a request to work with concurrency.
+  scode-galaxy-brain, e.g. "Use scode-galaxy-brain to <goal>", optionally with a prefer-gpt, prefer-claude,
+  prefer-muse, or prefer-glm keyword and/or a request to work with concurrency.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
   the user expressly stops it, unless the invocation itself limited the scope up front; if retained context says it was
@@ -94,6 +94,9 @@ overrides may remove or replace these defaults; see Local availability.
 | muse-spark-1.2 medium | muse   |      |
 | muse-spark-1.2 high   | muse   |      |
 | muse-spark-1.2 xhigh  | muse   |      |
+| glm-5.3-flash low     | glm    |      |
+| glm-5.3-flash high    | glm    |      |
+| glm-5.3-flash max     | glm    |      |
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `prefer-muse` preference, a user request naming it,
@@ -102,21 +105,29 @@ vendor-reported benchmarks rather than calibrated use, and until real use calibr
 its token price counts as a reason to cross families on your own. It carries no `sota` mark, so it is never the sole
 critical-review gate, and no muse route ends at a trusted endpoint (see Delegation and escalation rules).
 
+The glm family is Z.ai's GLM-5.3-Flash (the model that ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode)
+driven through the OpenCode harness, `opencode run`. Everything said about muse above applies to it unchanged: opt-in
+only, via `prefer-glm`, a request naming it, or an announced cross-family decision; provisional placements; no `sota`
+mark; no route ending at a trusted endpoint. Its evidence base is one clean clear-spec smoke run plus vendor benchmarks,
+and its per-token price is roughly an order of magnitude below the other families — which is exactly the number that
+must not tempt an unprompted cross-family route until real use has calibrated it. The three effort levels are the only
+ones Z.ai accepts for this model; see Shelling out to opencode.
+
 ### Work profiles
 
 Classify the task before choosing a model. Use the primary for the orchestrator's family when it is suitable and
 available. Move to the escalation model after a substantive failure or when the task proves more demanding than its
 initial classification.
 
-| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                  |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2 low → muse-spark-1.2 medium  |
-| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2 medium → muse-spark-1.2 high |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2 medium → muse-spark-1.2 high |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2 high → muse-spark-1.2 xhigh  |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                        |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2 high → muse-spark-1.2 xhigh  |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                        |
+| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                  | GLM route                              |
+| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------- | -------------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2 low → muse-spark-1.2 medium  | glm-5.3-flash low → glm-5.3-flash high |
+| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2 medium → muse-spark-1.2 high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2 medium → muse-spark-1.2 high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2 high → muse-spark-1.2 xhigh  | glm-5.3-flash max                      |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                        | none                                   |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2 high → muse-spark-1.2 xhigh  | glm-5.3-flash max                      |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                        | none                                   |
 
 A `none` route means the family has no suitable model for that profile. When a provider preference points at such a
 route, that is the "no suitable model" reason to diverge: fall back to the orchestrator's own family's route for the
@@ -177,9 +188,9 @@ bias.
   instead of repeatedly spending tokens on the same underpowered model.
 - A GPT or Claude route with no listed escalation is already at the family's trusted endpoint. If it fails
   substantively, handle the work in the orchestrator or make a deliberate cross-family attempt; do not retry it
-  mechanically. Muse routes are the exception: none of them ends at a trusted endpoint, so a substantive failure at the
-  last listed muse model gets the same treatment — orchestrator or deliberate cross-family attempt — even though the
-  model that failed is not trusted.
+  mechanically. Families without a `sota` model (muse and glm) are the exception: none of their routes ends at a trusted
+  endpoint, so a substantive failure at the last listed model in such a route gets the same treatment — orchestrator or
+  deliberate cross-family attempt — even though the model that failed is not trusted.
 - When the primary's output is broadly wrong rather than fixable, preserve pre-existing user work, remove only the
   delegate's changes, and give the escalation model a fresh implementation task. Include concrete acceptance failures as
   evidence, but do not ask it to repair a structurally bad patch.
@@ -193,9 +204,9 @@ bias.
 
 ## Provider preference
 
-The invocation may include the keyword `prefer-gpt`, `prefer-claude`, or `prefer-muse`. This expresses a preference
-unrelated to model performance — typically the user has a large subscription with one provider and a small one with the
-others, and wants spend steered accordingly. The default, absent a keyword, is no preference.
+The invocation may include the keyword `prefer-gpt`, `prefer-claude`, `prefer-muse`, or `prefer-glm`. This expresses a
+preference unrelated to model performance — typically the user has a large subscription with one provider and a small
+one with the others, and wants spend steered accordingly. The default, absent a keyword, is no preference.
 
 When a preference is given, route every delegation to the preferred family unless there is a very clear, strong reason
 to diverge — for example repeated poor output, no suitable model for the selected profile, or a goal that explicitly
@@ -227,8 +238,10 @@ from every profile and use the next suitable option rather than preserving a pre
 The rc file may replace the model inventory, override profile assignments, or add natural-language routing constraints.
 An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for delegation. Model
 names are the ids to invoke — pass GPT names to `codex -m` and muse names to `muse exec --model` without the trailing
-effort word, and map Claude names to the nearest `--model` alias. When a replacement inventory introduces models absent
-from the built-in profiles, the rc file must assign them to profiles or describe their roles well enough to do so. Ask
+effort word, map Claude names to the nearest `--model` alias, and pass GLM names to `opencode run -m` prefixed with the
+provider (`zai/` by default; the rc file may name another provider that serves the same model, such as a coding-plan or
+router endpoint) with the effort word going to `--variant`. When a replacement inventory introduces models absent from
+the built-in profiles, the rc file must assign them to profiles or describe their roles well enough to do so. Ask
 instead of inventing profile assignments when that information is missing. A new family also needs an invocation
 mechanism; treat it as unavailable until the rc file provides one.
 
@@ -243,10 +256,12 @@ defaults and are meant to be edited. Never discard existing content: append when
 already contains an inventory or profile table.
 
 If the file does not exist, all inventory models are assumed available, with one practical exception: a shelled-out
-family whose CLI is not installed (`codex`, `claude`, or `muse` missing from `PATH`) is unavailable regardless of the rc
-file. Treat that as a missing family when honoring a provider preference — say so and fall back — rather than as a
-launch failure to retry. Apart from the seeding request above, do not create or edit this file yourself; it belongs to
-the user.
+family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is unavailable
+regardless of the rc file, and so is the glm family when `opencode providers list` shows no credential for the provider
+the model id names — `opencode run` with a model it cannot reach fails immediately, but with no model at all it hangs,
+so check rather than probe. Treat either as a missing family when honoring a provider preference — say so and fall back
+— rather than as a launch failure to retry. Apart from the seeding request above, do not create or edit this file
+yourself; it belongs to the user.
 
 ## Delegation mechanics
 
@@ -260,6 +275,7 @@ running in, then:
 - **Codex session → claude model**: shell out to `claude -p` (see below).
 - **Any session → muse model**: shell out to `muse exec` (see below). Muse Code is only ever a delegate here, never the
   orchestrator, so there is no native muse path.
+- **Any session → glm model**: shell out to `opencode run` (see below). OpenCode is likewise only ever a delegate here.
 
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
@@ -377,6 +393,62 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   only where you would accept the same for the orchestrating session, and the shell timeout / background monitoring
   rules below apply unchanged.
 
+### Shelling out to opencode
+
+```sh
+OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":{"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}' \
+  opencode run -m zai/glm-5.3-flash --variant high --auto --format json --dir <dir> \
+  "$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
+```
+
+The flag surface comes from `opencode run --help`. The runtime behavior — stdin handling, exit codes, how permissions
+and effort actually resolve, process layout — was observed with OpenCode 1.18.20 against `zai/glm-5.3-flash` rather than
+read from documentation; treat it as an observation to re-check when the CLI changes, not as a stable contract.
+
+- The `OPENCODE_CONFIG_CONTENT` block is not optional decoration: it is how effort reaches the model at all. OpenCode
+  ships no reasoning variants for the `zai` provider, so without it `--variant` is silently ignored — even
+  `--variant bogus` exits 0 and runs at the default — and the inventory's effort word would mean nothing. Z.ai accepts
+  exactly `low`, `high`, and `max` for this model (`medium` is rejected with HTTP 400: thinking cannot be disabled), and
+  with the variants defined, reasoning tokens were observed to scale monotonically across the three. Leaving the variant
+  off was observed to spend about as much reasoning as `max`, so "no variant" is the expensive default, not the cheap
+  one. The env var is per-launch and merges over the user's own config file, so it never touches
+  `~/.config/opencode/opencode.json`.
+- Given a prompt argument, `opencode run` reads stdin to EOF before starting, exactly like codex: an open pipe was
+  observed to block it indefinitely with no output. Keep the explicit `< /dev/null`, and keep heredocs out of the launch
+  command for the same dropped-redirect reason as codex. Always pass `-m`; with no model and no configured default the
+  run hangs instead of erroring.
+- `--auto` is the `--yolo` analogue and belongs in every launch. Without it a permission that resolves to `ask` does not
+  hang the headless run — the tool call is rejected and the turn ends with `reason: "tool-calls"` and exit 0 — but the
+  delegate then reports failure instead of doing the work. The default `build` agent already allows everything except
+  `doom_loop` and writes outside the project directory, which is what `--auto` approves.
+- A read-only delegate is made by removing tools, not by denying permissions. A global `permission.edit: deny` in the
+  config content was observed to do nothing against the default agent's own allow-all rule, and with edit and bash both
+  "denied" the model spawned a subagent through `task` that wrote the file. What holds is a custom agent with the
+  writing tools absent — add
+  `"agent":{"ro":{"mode":"primary","tools":{"write":false,"edit":false,"patch":false,"bash":false,"task":false}}}` to
+  the config content and pass `--agent ro`. The model then sees only glob, grep, read, and webfetch, and under an
+  adversarial "create this file by any means" prompt correctly reported that it could not. `task` must be in that list
+  or the escape hatch stays open. Keep the prompt-level "do not edit" instruction too.
+- A zero exit status is necessary but not sufficient, as for every harness. API and model errors (unknown model,
+  rejected `reasoning_effort`, auth) exit 1 with an `error` event on stdout; a completed turn exits 0 even when a tool
+  call was rejected or the delegate stopped to ask a question. The `question` tool is denied for the default agent, so a
+  delegate that wants input ends its turn with the question as plain text — a gate failure to catch by content.
+- With `--format json`, stdout is a JSONL event stream: `step_start`, `tool_use`, `tool`, `text`, `step_finish`. The
+  final answer is the `part.text` of the last `text` event; each `step_finish` carries token counts (including
+  `reasoning`) and `cost`, which is the cheapest way to see what a run actually spent. Without `--format json` stdout is
+  only the final message and stderr carries a banner. One run was observed to emit nothing at all for two minutes before
+  its first event, so silence early in a run is provider latency until proven otherwise.
+- Tool commands run in their own session (their own `sess` and `pgid`), so SIGTERM to `opencode run` was observed to end
+  the run and orphan its shell child, and a process-group kill would miss the child the same way. Kill by walking
+  descendants first — `for c in $(ps -o pid= --ppid "$pid"); do <recurse on c>; done; kill "$pid"` — which was observed
+  to take everything down. `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
+- Runs in the current working directory by default; `--dir <path>` is the analogue of codex's `-C` and was observed to
+  put the delegate's relative writes under that path. There is no native worktree mode; for concurrent writers create
+  the tree yourself and point `--dir` at it. Three simultaneous runs in one directory completed cleanly.
+- Foreign-harness caveats carry over: `--auto` approves everything not explicitly denied, so use it only where you would
+  accept the same for the orchestrating session, and the shell timeout / background monitoring rules below apply
+  unchanged.
+
 ### Monitoring long-running delegates
 
 The stdin hang above was found only after an orchestrator waited hours on a shelled-out code review that was never going
@@ -401,6 +473,8 @@ forward-progress signal before it exits, and "no news yet" is not evidence of pr
   default, so silence means nothing there; when a long run needs observability, launch it with a streaming output format
   (`--output-format stream-json --verbose`) instead. `muse exec` is the same on stdout: silent until the final message
   unless launched with `--json`, in which case its event log can be compared across checks like the codex transcript.
+  `opencode run --format json` streams tool and step events the same way, with the caveat that its first event can take
+  minutes to arrive.
 - Use the estimate and the deadline for different decisions. Crossing the expected duration triggers investigation, not
   a kill. Crossing the hard deadline means the run is over budget regardless of apparent liveness: kill it, capture the
   log, and treat the result as inconclusive.
