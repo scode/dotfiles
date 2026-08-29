@@ -328,6 +328,12 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-swarm-triage",
+        PayloadSymlink::new("agent-skills/swarm-triage", "~/.claude/skills/swarm-triage"),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-stax",
         PayloadSymlink::new("agent-skills/stax", "~/.claude/skills/stax"),
     )
@@ -538,6 +544,12 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-repo-swarm",
         PayloadSymlink::new("agent-skills/repo-swarm", "~/.codex/skills/repo-swarm"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-swarm-triage",
+        PayloadSymlink::new("agent-skills/swarm-triage", "~/.codex/skills/swarm-triage"),
     )
     .depends_on(&codex_skills_dir)
     .build();

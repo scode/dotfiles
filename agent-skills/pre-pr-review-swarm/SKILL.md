@@ -5,9 +5,6 @@ description: Run a concurrent multi-angle review only when the user explicitly i
 
 # Pre-PR Review Swarm
 
-Run this skill only when the user explicitly invokes `pre-pr-review-swarm` by name. Do not infer it from ordinary PR
-creation, submission, or readiness work.
-
 ## Arguments
 
 The skill accepts optional keyword arguments (case-insensitive, any order):
@@ -531,3 +528,9 @@ Example finding:
 There is deliberately no overall ready/not-ready verdict. The findings are the output; a one-word summary of them was
 never consulted in practice and invited the coordinator to argue about which findings "block" instead of describing
 them. Readers judge readiness from the findings themselves.
+
+After the run log has been written (which happens after the report is presented, in step 13 or 14), end the session
+output with `Run log: <path>`, or `Run log: not written (<reason>)` if the write failed or was skipped. This line comes
+after the findings, never delays them, and is never a substitute for them: the report in the session stays the primary
+output, and the path exists so a later step — the `swarm-triage` skill, or the user by hand — can find the record that
+matches what was just read.
