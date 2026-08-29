@@ -156,8 +156,8 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
      significant and credible. A credible finding is grounded in the reviewed code, supported by concrete evidence,
      independently actionable, and neither a duplicate nor speculation presented as fact. A significant finding would
      materially affect correctness, security, data integrity, resource behavior, externally visible behavior, spec
-     compliance, test adequacy, or PR readiness. Style-only observations, marginal simplifications, optional polish, and
-     fixes whose complexity outweighs their likely benefit do not qualify.
+     compliance, or test adequacy. Style-only observations, marginal simplifications, optional polish, and fixes whose
+     complexity outweighs their likely benefit do not qualify.
    - When that gate passes, send one final follow-up to the same reviewer with the same no-repeat instruction. Three
      total passes is a hard cap. Never start a fourth pass; if the third pass still returns new findings, record that
      the reviewer reached the cap before saturation.
@@ -245,18 +245,16 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
       an exact comparison, not a similarity judgment: a body that keeps the identifier and conclusion but has been
       shortened fails, and the fix is to paste the restater's text back in. The `Restatement:` line is a claim that the
       reader is getting the restater's prose, and this check is what makes that claim true.
-    - The metadata around the findings (scope, execution, continuation, accounting, readiness) does not contradict
-      qualifiers inside them. A finding the restater describes as optional, documentation-only, or internal cleanup is
-      not a PR blocker; listing it under `PR Readiness: not ready` without a separate reason for why it blocks this
-      change makes the report internally inconsistent.
+    - The metadata around the findings (scope, execution, continuation, accounting) does not contradict qualifiers
+      inside them. A finding the restater describes as optional, documentation-only, or internal cleanup must not be
+      described as blocking anywhere else in the report without a separate reason.
 13. If `nofix` was specified, sort the findings into buckets exactly as the default mode would — including the
     confirm-against-code step — but apply nothing; write the run log with the would-have-been buckets and stop. Do not
     modify the reviewed checkout.
 14. Otherwise, sort and fix the findings. Follow the rules in "Fixing findings" below: confirm each claim against the
     code, fix only eligible findings, keep every fix minimal, and surface the rest.
-15. If no actionable findings remain, state that explicitly before asking for PR creation. Surfaced findings are
-    unresolved by definition: while any wait on the user, the report says `PR Readiness: not ready` and lists them as
-    the blockers.
+15. If no actionable findings remain, state that explicitly. Surfaced findings are unresolved by definition; list the
+    ones waiting on the user together at the end of the fix report so they are not lost among the fixed ones.
 
 ## Feedback identifiers
 
@@ -480,8 +478,8 @@ user-visible guard against reviewing an empty or under-sized scope (such as a sl
 change is a whole in-flight commit) or giving different reviewers different scope.
 
 Always include `Reviewer execution: <n>/<expected> reviewers completed` before the findings sections. If that number is
-not complete, the report must say `PR Readiness: not ready` and explain that the swarm did not run to completion. Do not
-present an empty finding set as a successful swarm unless every expected reviewer actually completed a review. A
+not complete, the report must say plainly that the swarm did not run to completion and which reviewers are missing. Do
+not present an empty finding set as a successful swarm unless every expected reviewer actually completed a review. A
 reviewer that returned something other than a review did not complete one, however promptly it answered.
 
 `<expected>` is the size of the selected panel. When the prose-only fast path applied, say so on the same line and name
@@ -501,8 +499,7 @@ a tripwire, not a status. Its presence is the coordinator's claim that every bod
 step 12 verifies, and the attempt count tells the reader whether the first restatement was rejected. When there are zero
 findings, say `Restatement: skipped (no findings)`. When restatement failed (step 11), the report carries no findings
 sections at all; say `Restatement: failed after <a> attempt(s) (<reason>)`, keep the scope, execution, continuation, and
-accounting lines so the swarm's work is still visible, name the file holding the merged list, and set
-`PR Readiness: not ready` with the failed restatement as the stated reason.
+accounting lines so the swarm's work is still visible, and name the file holding the merged list.
 
 Always include `Finding accounting: <r> reviewer findings → <n> reported (<m> same-location merges, <k> rejected)`
 before the findings sections, where the numbers satisfy `r = n + m + k`. This is the count-based guard against lossy
@@ -530,6 +527,7 @@ Example finding:
 - `Docs/README Drift`: findings from the docs-comments reviewer, which also owns README drift.
 - `Idiomaticity`: non-idiomatic patterns found.
 - `Simplification`: safe simplification opportunities.
-- `PR Readiness`: `ready` or `not ready`, with blockers listed if not ready. A blocker is a finding whose own body
-  supports blocking; do not list every finding as a blocker by default, and do not list a finding whose body calls it
-  optional or documentation-only unless this section separately explains why it blocks.
+
+There is deliberately no overall ready/not-ready verdict. The findings are the output; a one-word summary of them was
+never consulted in practice and invited the coordinator to argue about which findings "block" instead of describing
+them. Readers judge readiness from the findings themselves.
