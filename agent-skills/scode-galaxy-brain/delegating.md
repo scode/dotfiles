@@ -14,6 +14,12 @@ The delegate has none of your conversation context. Every delegation prompt must
 - For read-only tasks: state explicitly that it must not edit any files.
 - Always: no commits, no branches, no pushes, no PRs.
 - Ask it to report what it did and call out any deviations from the spec.
+- When the deliverable is prose rather than code — a review, an analysis, a scan result — name a file the delegate must
+  write it to, and make that file part of the acceptance criteria. Every harness captures only the delegate's final
+  message (`codex -o`, `claude -p` stdout, opencode's last `text` event), and a delegate that emits its real output
+  mid-run and closes with a summary leaves the deliverable stranded in its transcript. That has happened: a review
+  delegate's result file held a two-kilobyte recap while the twenty findings it produced lived only in a megabyte of
+  transcript, and recovering them meant grepping the log. The gate reads artifacts; make the delegate produce one.
 
 Before delegating a task that writes to your working tree, note the current working-copy state — `git status`/`git diff`
 or the equivalent in whatever VCS is in use — so you can attribute the delegate's changes cleanly afterwards. Writers in
