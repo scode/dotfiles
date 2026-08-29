@@ -28,6 +28,28 @@ Delegation is for steps toward a change, never for managing the change itself. Y
 branches, pushes, PR creation and updates. Delegates must not commit, branch, push, or open PRs — your session carries
 the user's VCS workflow preferences and skills, and those do not transfer to a sub agent.
 
+## What to read, and when
+
+This file is the routing policy: everything needed to decide whether to delegate, what to delegate, and to which model.
+The procedure for carrying a decision out lives in files next to this one, and each is read only at the moment it
+becomes relevant — a session that never shells out never reads a harness file. "Next to this one" means the same
+directory this SKILL.md was loaded from, whatever path that is in the current harness.
+
+| read                   | in full, the first time in a session that you...                                          |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `delegating.md`        | decide to delegate anything at all, native or shelled out                                 |
+| `harness/shell-out.md` | decide to shell out to any external harness                                               |
+| `harness/codex.md`     | route to a gpt model from a non-Codex session (`codex exec`)                              |
+| `harness/claude.md`    | route to a claude model from a non-Claude session (`claude -p`)                           |
+| `harness/muse.md`      | route to a muse model (`muse exec`)                                                       |
+| `harness/opencode.md`  | route to a glm model (`opencode run`)                                                     |
+| `rc-file.md`           | find that `~/.scode-galaxy-brainrc.md` exists, or are asked to seed it                    |
+| `feedback.md`          | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
+
+The harness files are the only place launch commands live. That is deliberate: a launch built from memory of a previous
+session, or improvised from a harness's `--help`, skips the observed-behavior notes that exist because each one cost
+someone a hung or silently wrong run. Read the file, then launch.
+
 ## Composing with other skills
 
 Galaxy-brain is a routing layer, not a workflow. When another skill or instruction defines its own process — roles,
@@ -56,15 +78,18 @@ the scope up front ("use scode-galaxy-brain for <this one thing>"). Finishing th
 Context compaction, session resume, a tool restart, or a summary that fails to mention the skill does not end it either;
 treat retained context that has gone quiet about galaxy-brain as a summarization artifact, not a decision anyone made.
 
-After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md and
-`~/.scode-galaxy-brainrc.md` (if it exists) before doing further substantive work — the routing rules do not survive
-summarization reliably. If the retained context is ambiguous but mentions outstanding delegated work, model or effort
-routing, or galaxy-brain at all, assume the skill is still active and say that you are assuming it.
+After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md, every
+sidecar file you had loaded (at minimum `delegating.md` if any delegation happened, plus the harness files for any
+harness in use), and `~/.scode-galaxy-brainrc.md` (if it exists) before doing further substantive work — the routing
+rules and the launch details do not survive summarization reliably. If the retained context is ambiguous but mentions
+outstanding delegated work, model or effort routing, or galaxy-brain at all, assume the skill is still active and say
+that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
-goal, any provider preference, rc-file assumptions, delegations still in flight, and the next routing decision. Do this
-even when no delegate is currently running — between delegations is exactly when a summary is most likely to drop the
-skill. This is a backstop, not the mechanism: stickiness applies whether or not a handoff was ever written.
+goal, any provider preference, rc-file assumptions, which sidecar files were loaded, delegations still in flight, and
+the next routing decision. Do this even when no delegate is currently running — between delegations is exactly when a
+summary is most likely to drop the skill. This is a backstop, not the mechanism: stickiness applies whether or not a
+handoff was ever written.
 
 ## Routing model
 
@@ -111,7 +136,7 @@ only, via `prefer-glm`, a request naming it, or an announced cross-family decisi
 mark; no route ending at a trusted endpoint. Its evidence base is one clean clear-spec smoke run plus vendor benchmarks,
 and its per-token price is roughly an order of magnitude below the other families — which is exactly the number that
 must not tempt an unprompted cross-family route until real use has calibrated it. The three effort levels are the only
-ones Z.ai accepts for this model; see Shelling out to opencode.
+ones Z.ai accepts for this model.
 
 ### Work profiles
 
@@ -181,7 +206,8 @@ bias.
 ### Delegation and escalation rules
 
 - First ask whether delegation is worthwhile. If specifying and reviewing the task costs more than doing it, do it
-  yourself. This is especially common for tiny tasks.
+  yourself. This is especially common for tiny tasks. "Reviewing" means the gate below — reading the diff and re-running
+  the checks yourself — so price that in, not a glance at the delegate's report.
 - Set the profile by ambiguity, verification strength, required taste, and the cost of a wrong or missed result — not by
   apparent line count alone.
 - Give a primary model one well-specified attempt. Fix trivial defects locally. After one substantive failure, escalate
@@ -230,38 +256,19 @@ review steps are never skipped to keep a fan-out moving.
 ## Local availability
 
 The inventory and profiles describe models that exist; they do not know which ones the user can access in this
-environment. Before your first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read it and honor it:
-it contains natural language adjustments from the user, most commonly availability restrictions like "fable-5 is not
-available, do not use" or "only claude models work here". Treat its contents as authoritative. Remove unavailable models
-from every profile and use the next suitable option rather than preserving a preferred slot mechanically.
-
-The rc file may replace the model inventory, override profile assignments, or add natural-language routing constraints.
-An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for delegation. Model
-names are the ids to invoke — pass GPT names to `codex -m` and muse names to `muse exec --model` without the trailing
-effort word, map Claude names to the nearest `--model` alias, and pass GLM names to `opencode run -m` prefixed with the
-provider (`zai/` by default; the rc file may name another provider that serves the same model, such as a coding-plan or
-router endpoint) with the effort word going to `--variant`. When a replacement inventory introduces models absent from
-the built-in profiles, the rc file must assign them to profiles or describe their roles well enough to do so. Ask
-instead of inventing profile assignments when that information is missing. A new family also needs an invocation
-mechanism; treat it as unavailable until the rc file provides one.
-
-Legacy rc files may still contain the old `cost`, `intelligence`, and `taste` columns. Treat known rows as an
-availability inventory and preserve family/SOTA metadata, but ignore the numeric scores. Apply the built-in work
-profiles after filtering them to the listed models. Unknown models still require explicit profile roles under the rule
-above. Tell the user that profile overrides are now the supported way to customize routing.
-
-To spare the user manual copy-paste, they can ask you to seed the file. On that explicit request only, write the current
-model inventory and work-profile table into `~/.scode-galaxy-brainrc.md`, preceded by a note that they replace the
-defaults and are meant to be edited. Never discard existing content: append when safe, and stop to ask if the file
-already contains an inventory or profile table.
+environment. Before your first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read `rc-file.md` next
+to this file and then honor the rc file: it contains natural language adjustments from the user, most commonly
+availability restrictions like "fable-5 is not available, do not use" or "only claude models work here", and may replace
+the inventory or the profile table outright. Treat its contents as authoritative. Remove unavailable models from every
+profile and use the next suitable option rather than preserving a preferred slot mechanically. Apart from the seeding
+request described in `rc-file.md`, do not create or edit the rc file yourself; it belongs to the user.
 
 If the file does not exist, all inventory models are assumed available, with one practical exception: a shelled-out
 family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is unavailable
 regardless of the rc file, and so is the glm family when `opencode providers list` shows no credential for the provider
 the model id names — `opencode run` with a model it cannot reach fails immediately, but with no model at all it hangs,
 so check rather than probe. Treat either as a missing family when honoring a provider preference — say so and fall back
-— rather than as a launch failure to retry. Apart from the seeding request above, do not create or edit this file
-yourself; it belongs to the user.
+— rather than as a launch failure to retry.
 
 ## Delegation mechanics
 
@@ -270,12 +277,19 @@ running in, then:
 
 - **Claude session → claude model**: use your native sub agent mechanism (e.g. the Agent/Task tool) with the model
   parameter set to the target model.
-- **Claude session → gpt model**: shell out to `codex exec` (see below).
+- **Claude session → gpt model**: shell out to `codex exec` per `harness/codex.md`.
 - **Codex session → gpt model**: use your native sub agent mechanism, specifying the target model.
-- **Codex session → claude model**: shell out to `claude -p` (see below).
-- **Any session → muse model**: shell out to `muse exec` (see below). Muse Code is only ever a delegate here, never the
-  orchestrator, so there is no native muse path.
-- **Any session → glm model**: shell out to `opencode run` (see below). OpenCode is likewise only ever a delegate here.
+- **Codex session → claude model**: shell out to `claude -p` per `harness/claude.md`.
+- **Any session → muse model**: shell out to `muse exec` per `harness/muse.md`. Muse Code is only ever a delegate here,
+  never the orchestrator, so there is no native muse path.
+- **Any session → glm model**: shell out to `opencode run` per `harness/opencode.md`. OpenCode is likewise only ever a
+  delegate here.
+
+Before the first delegation of any kind, read `delegating.md`: it holds the task-spec checklist, the baseline you must
+record before a writer runs, and how isolated writers get integrated. Before the first shell-out, read
+`harness/shell-out.md` and then the file for the harness you are about to launch; the harness files carry the launch
+templates and the observed behaviors (stdin hangs, exit-code semantics, how effort and read-only actually get enforced,
+kill semantics) that a launch improvised from `--help` would miss.
 
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
@@ -284,223 +298,10 @@ Name every sub agent (label, description, or whatever your mechanism displays) s
 model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
 or default model, which misleads anyone watching progress.
 
-### Shelling out to codex
-
-```sh
-codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
-```
-
-- Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
-  pass it explicitly rather than relying on the user's config default; the startup header echoes the effective
-  `reasoning effort:` if you need to confirm.
-- `-o` writes the agent's final message to a file; read that file for the result instead of parsing stdout.
-- Always keep the trailing `< /dev/null`. Given a prompt argument and a non-TTY stdin, `codex exec` reads stdin to EOF
-  before starting work (its `Reading additional input from stdin...` startup line is that read), so a stdin that never
-  delivers EOF blocks it at startup indefinitely. At least one agent harness omits its own stdin redirect from the
-  wrapper exactly when the command text contains a heredoc, handing the child a pipe that never closes — the hang
-  strikes only sometimes and is indistinguishable from a slow run except by its log. The explicit redirect holds even
-  then.
-- Keep heredocs out of the command that launches codex; a heredoc anywhere in the command text is the known trigger for
-  that dropped redirect. Build the prompt in its own earlier command — write it to a scratch file — and pass it as
-  `"$(cat <file>)"`.
-- Treat a background run whose log stays at `Reading additional input from stdin...` and never reaches the version
-  header as this startup hang, not a slow model. Kill it and relaunch with the redirect instead of waiting for a
-  completion that will never come; a healthy run prints the header immediately after that line.
-- A zero exit status is necessary but not sufficient. `codex exec` does return nonzero when the turn itself fails, but a
-  turn that completes normally exits 0 even when its final message declines the task, reports a tool or sandbox failure
-  the agent could not work around, or gives status instead of the work. Judge the `-o` file against the task's explicit
-  acceptance criteria and reject anything that does not meet them. A result far shorter than the task warrants is the
-  cheapest tell, though it is a reason to look rather than grounds to reject on its own — some correct answers really
-  are one line. When a whole fan-out fails the same way, treat it as one broken execution path rather than N model
-  failures: stop the batch and fix the path instead of escalating each delegate through it.
-- Runs in the current working directory by default; pass `-C <dir>` to target elsewhere.
-- Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them (see Monitoring
-  below); use a foreground timeout only when it is shorter than the monitoring interval.
-
-### Shelling out to claude
-
-```sh
-CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
-  claude -p --model <alias> --effort <level> --dangerously-skip-permissions "$(cat <prompt-file>)" < /dev/null
-```
-
-- Model aliases: `sonnet`, `opus`, `haiku`, `fable`. Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. The final
-  response is printed to stdout.
-- Print mode otherwise terminates background tasks after 600 seconds and exits successfully with a diagnostic instead of
-  the requested result. Keep its inner wait unlimited; the outer orchestrator already owns monitoring and cancellation.
-- A zero exit status is necessary but not sufficient. Reject empty or truncated output and results that do not satisfy
-  the task's explicit acceptance criteria. Also reject the termination diagnostic, which starts with
-  `Background tasks still running after`.
-- The same outer shell timeout caveat applies.
-- Use the same defensive launch pattern as for codex: keep the explicit `< /dev/null` and build the prompt in an earlier
-  command instead of a heredoc. This is a precaution against the harness-side dropped redirect, worth taking for any
-  shelled-out delegate — it does not claim that `claude -p` reads piped stdin after a prompt argument the way codex
-  does.
-
-### Shelling out to muse
-
-```sh
-muse exec --yolo --model muse-spark-1.2 --reasoning-effort medium --user-input-auto-resolve \
-  --max-model-steps <N> --prompt-file <prompt-file> > <result-file> 2> <log-file> < /dev/null
-```
-
-The flag surface below comes from `muse exec --help`. The runtime behavior — output shape, exit codes, stdin handling,
-policy enforcement, worktree lifecycle — was observed with Muse Code 0.2.1 rather than read from documentation; treat it
-as an observation to re-check when the CLI changes, not as a stable contract.
-
-- `--model` takes the id without the effort word; `--reasoning-effort` accepts
-  `none|minimal|low|medium|high|xhigh|ultra` and defaults to `high`, so always pass it explicitly to match the inventory
-  row you chose. Omitting `--model` uses the account's default, which was observed to be a variant id
-  (`muse-spark-1.2-contributor`) rather than the public `muse-spark-1.2`; pass the public id explicitly.
-- Without `--json`, stdout carries only the final message, so redirecting stdout to a result file captures exactly what
-  you need to judge. Muse writes its own status lines (`muse: workspace root: ...`) to stderr, so keep the two streams
-  separate as in the template. With `--json`, stdout is a JSONL event stream instead: the final message is the `text`
-  field of the `run.terminal.completed` event, with `run.output.delta` events streaming before it.
-- `--prompt-file` reads the prompt from a file, which removes the quoting problem that makes the other harnesses take
-  the prompt as `"$(cat <file>)"`. Still build the prompt in its own earlier command and keep the explicit
-  `< /dev/null`: the dropped-redirect precaution from the codex section applies to every shelled-out delegate.
-  `muse exec` was observed to complete with a never-closing stdin, so the redirect here is defense in depth rather than
-  a known hang fix.
-- A headless run does not hang on a question either way: without `--user-input-auto-resolve` the delegate has no way to
-  ask and simply ends its turn with the question as its final message; with it, the delegate is offered a
-  `request_user_input` tool that cancels itself, so it learns explicitly that nobody is there and reports what it could
-  not decide. Both exit 0, so a final message that is a question is a gate failure to catch by content, not by exit
-  status. The flag stays in the template because the explicit cancel produced the more useful report.
-  `--max-model-steps` is a runaway guard, not a budget: set it well above what the task should need (tens of steps for a
-  small bounded edit, hundreds for implementation work that runs checks) so it only trips on a runaway.
-- A zero exit status is necessary but not sufficient, exactly as for codex. A failed turn (unknown model, auth error,
-  agent loop failure) was observed to exit 1 with the reason on stderr, while a turn that completes normally exits 0
-  even when the final message declines or reports that it could not finish. Judge the captured message against the
-  acceptance criteria.
-- Always run with `--yolo`, for read-only delegates too. Muse has narrower policy switches (`--disable-write`,
-  `--disable-shell`), but do not use them: a review or scan that looks read-only often still needs to write a scratch
-  file to feed a tool, and a policy denial mid-task breaks the run instead of protecting anything. Read-only is a
-  prompt-level instruction here, exactly as for the other harnesses.
-- Runs in the current working directory by default; `--workspace <PATH>` is the analogue of codex's `-C`. For concurrent
-  writers, `-w create` gives a native isolated tree. Pass `--session-id <uuid>` (a fresh `uuidgen`) so the tree is
-  predictable: it is created at `.muse/worktrees/<repo-name>-<uuid>` on branch `muse/session-<uuid>`, muse adds
-  `/.muse/worktrees/` to `.git/info/exclude`, and the worktree is retained after the run only when dirty — a run that
-  changed nothing removes it. `-w` requires session logging, so do not combine it with `--no-session-log`. Integration
-  and cleanup are yours, per Concurrency: extract the change set, apply and gate it in the main tree, then
-  `git worktree remove --force` the tree and delete the branch.
-- Killing a run is safe in both directions. `muse` is a wrapper around a `muse-bin-<version>` process; record that
-  process's pid, since a backgrounded launch can hand you the wrapper's. The delegate's shell commands run in their own
-  session, so a process-group kill would miss them, but both SIGTERM and SIGKILL to `muse-bin` were observed to take
-  down every child (its helper process, the shell, and whatever the shell was running). SIGTERM additionally flushes the
-  session log. A worktree run that is killed keeps its dirty worktree either way, so partial work is inspectable and the
-  usual pre-relaunch cleanup applies.
-- Foreign-harness caveats carry over: `--yolo` disables approval, the sandbox, and workspace trust checks, so use it
-  only where you would accept the same for the orchestrating session, and the shell timeout / background monitoring
-  rules below apply unchanged.
-
-### Shelling out to opencode
-
-```sh
-OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":{"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}' \
-  opencode run -m zai/glm-5.3-flash --variant high --auto --format json --dir <dir> \
-  "$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
-```
-
-The flag surface comes from `opencode run --help`. The runtime behavior — stdin handling, exit codes, how permissions
-and effort actually resolve, process layout — was observed with OpenCode 1.18.20 against `zai/glm-5.3-flash` rather than
-read from documentation; treat it as an observation to re-check when the CLI changes, not as a stable contract.
-
-- The `OPENCODE_CONFIG_CONTENT` block is not optional decoration: it is how effort reaches the model at all. OpenCode
-  ships no reasoning variants for the `zai` provider, so without it `--variant` is silently ignored — even
-  `--variant bogus` exits 0 and runs at the default — and the inventory's effort word would mean nothing. Z.ai accepts
-  exactly `low`, `high`, and `max` for this model (`medium` is rejected with HTTP 400: thinking cannot be disabled), and
-  with the variants defined, reasoning tokens were observed to scale monotonically across the three. Leaving the variant
-  off was observed to spend about as much reasoning as `max`, so "no variant" is the expensive default, not the cheap
-  one. The env var is per-launch and merges over the user's own config file, so it never touches
-  `~/.config/opencode/opencode.json`.
-- Given a prompt argument, `opencode run` reads stdin to EOF before starting, exactly like codex: an open pipe was
-  observed to block it indefinitely with no output. Keep the explicit `< /dev/null`, and keep heredocs out of the launch
-  command for the same dropped-redirect reason as codex. Always pass `-m`; with no model and no configured default the
-  run hangs instead of erroring.
-- `--auto` is the `--yolo` analogue and belongs in every launch. Without it a permission that resolves to `ask` does not
-  hang the headless run — the tool call is rejected and the turn ends with `reason: "tool-calls"` and exit 0 — but the
-  delegate then reports failure instead of doing the work. The default `build` agent already allows everything except
-  `doom_loop` and writes outside the project directory, which is what `--auto` approves.
-- A read-only delegate is made by removing tools, not by denying permissions. A global `permission.edit: deny` in the
-  config content was observed to do nothing against the default agent's own allow-all rule, and with edit and bash both
-  "denied" the model spawned a subagent through `task` that wrote the file. What holds is a custom agent with the
-  writing tools absent — add
-  `"agent":{"ro":{"mode":"primary","tools":{"write":false,"edit":false,"patch":false,"bash":false,"task":false}}}` to
-  the config content and pass `--agent ro`. The model then sees only glob, grep, read, and webfetch, and under an
-  adversarial "create this file by any means" prompt correctly reported that it could not. `task` must be in that list
-  or the escape hatch stays open. Keep the prompt-level "do not edit" instruction too.
-- A zero exit status is necessary but not sufficient, as for every harness. API and model errors (unknown model,
-  rejected `reasoning_effort`, auth) exit 1 with an `error` event on stdout; a completed turn exits 0 even when a tool
-  call was rejected or the delegate stopped to ask a question. The `question` tool is denied for the default agent, so a
-  delegate that wants input ends its turn with the question as plain text — a gate failure to catch by content.
-- With `--format json`, stdout is a JSONL event stream: `step_start`, `tool_use`, `tool`, `text`, `step_finish`. The
-  final answer is the `part.text` of the last `text` event; each `step_finish` carries token counts (including
-  `reasoning`) and `cost`, which is the cheapest way to see what a run actually spent. Without `--format json` stdout is
-  only the final message and stderr carries a banner. One run was observed to emit nothing at all for two minutes before
-  its first event, so silence early in a run is provider latency until proven otherwise.
-- Tool commands run in their own session (their own `sess` and `pgid`), so SIGTERM to `opencode run` was observed to end
-  the run and orphan its shell child, and a process-group kill would miss the child the same way. Kill by walking
-  descendants first — `for c in $(ps -o pid= --ppid "$pid"); do <recurse on c>; done; kill "$pid"` — which was observed
-  to take everything down. `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
-- Runs in the current working directory by default; `--dir <path>` is the analogue of codex's `-C` and was observed to
-  put the delegate's relative writes under that path. There is no native worktree mode; for concurrent writers create
-  the tree yourself and point `--dir` at it. Three simultaneous runs in one directory completed cleanly.
-- Foreign-harness caveats carry over: `--auto` approves everything not explicitly denied, so use it only where you would
-  accept the same for the orchestrating session, and the shell timeout / background monitoring rules below apply
-  unchanged.
-
-### Monitoring long-running delegates
-
-The stdin hang above was found only after an orchestrator waited hours on a shelled-out code review that was never going
-to finish. The lesson generalizes beyond that one bug: a background delegate has no guaranteed liveness or
-forward-progress signal before it exits, and "no news yet" is not evidence of progress.
-
-- Never wait open-endedly on a shelled-out delegate, and never make a foreground call whose timeout exceeds the
-  monitoring interval — a blocked foreground wait bypasses monitoring entirely. Run long delegates in the background and
-  record what you need to check on and kill them later: job handle or pid, log path, output path, start time, expected
-  duration, and a hard deadline. Include still-running delegates in any handoff or pre-compaction note.
-- Wake up and check every running delegate at least every 30 minutes — sooner when the expected duration is shorter —
-  using whatever timer, scheduled wake-up, or bounded-wait mechanism your harness offers. Failing all else, cap each
-  blocking wait at 30 minutes and re-check between waits. In a fan-out, check every member at each wake-up: the batch is
-  only done when its slowest member is, and one hung member silently holds the whole batch.
-- Check known hang signatures first; they are cheap and decisive. For codex, apply the startup-hang test from above —
-  the stdin line is the last output and the version header never appeared — and kill and relaunch with the corrected
-  invocation, since more waiting cannot help.
-- Otherwise weigh the evidence by what the tool shows. `codex exec` streams a transcript while working: compare the log
-  against the last check's baseline, and record the new observation for the next one. New output proves activity, not
-  necessarily useful progress; a log that has not grown across a full interval is a reason to inspect the run, not by
-  itself grounds to kill it — long reasoning stretches can be quiet. `claude -p` prints only the final response by
-  default, so silence means nothing there; when a long run needs observability, launch it with a streaming output format
-  (`--output-format stream-json --verbose`) instead. `muse exec` is the same on stdout: silent until the final message
-  unless launched with `--json`, in which case its event log can be compared across checks like the codex transcript.
-  `opencode run --format json` streams tool and step events the same way, with the caveat that its first event can take
-  minutes to arrive.
-- Use the estimate and the deadline for different decisions. Crossing the expected duration triggers investigation, not
-  a kill. Crossing the hard deadline means the run is over budget regardless of apparent liveness: kill it, capture the
-  log, and treat the result as inconclusive.
-- A hang or launch failure is an execution-path failure, not a substantive model failure — fix the path and relaunch
-  once rather than escalating models over it. Make sure the kill takes down the delegate's children too, and before
-  relaunching a writer in a shared tree, remove its attributable partial changes (or discard its isolated tree) so the
-  retry starts from a known baseline.
-
-### Writing the task spec
-
-The delegate has none of your conversation context. Every delegation prompt must be self-contained:
-
-- The goal and any constraints that bound it.
-- Exact file paths or directories in scope.
-- Acceptance criteria: what done looks like, concretely.
-- Which checks to run (tests, linters, formatters) before reporting back.
-- For read-only tasks: state explicitly that it must not edit any files.
-- Always: no commits, no branches, no pushes, no PRs.
-- Ask it to report what it did and call out any deviations from the spec.
-
-Before delegating a task that writes to your working tree, note the current working-copy state — `git status`/`git diff`
-or the equivalent in whatever VCS is in use — so you can attribute the delegate's changes cleanly afterwards. Writers in
-isolated trees (see Concurrency) are attributable as long as the tree started clean from a recorded base — the normal
-state of a fresh worktree or clone; note that base when you create it.
-
 ## Concurrency
+
+These are the constraints that decide whether a plan may fan out at all; the mechanics of doing it are in
+`delegating.md`.
 
 - Read-only tasks (log scanning, code search, independent reviews) may run concurrently whenever they are independent of
   each other. Use this freely for fan-out work like scanning many logs or directories.
@@ -515,16 +316,10 @@ state of a fresh worktree or clone; note that base when you create it.
   stay out of each other's way. A separate tree covers the files, but shared out-of-tree resources — build caches
   pointed outside the tree, test databases, ports, daemons — conflict straight through it; isolate those too or
   serialize.
-- Isolation moves the merge to you instead of eliminating it. Integrate serially: extract each delegate's complete
-  change set (plain `git diff` misses untracked files — new files, renames, and mode changes all count), gate it as
-  usual, and apply it to the main tree one at a time. Keep each isolated tree until its result has been applied and
-  validated. A broadly wrong result is discarded along with its tree, which is cheaper than untangling it from a shared
-  one.
-- Conflicts between accepted results are yours to resolve and an expected cost of this mode — disjoint task scopes make
-  them rare, not impossible. Textual conflicts surface at apply time, but semantic conflicts apply cleanly, and a
-  delegate's own checks only ever validated its isolated baseline. Re-run the relevant checks on the integrated main
-  tree after each apply, and again after the last one.
-- Two caveats before choosing isolation: isolated trees start from committed state, so delegates will not see
+- Isolation moves the merge to you instead of eliminating it: every accepted result is extracted, gated, and applied to
+  the main tree by you, serially, with checks re-run after each apply, and conflicts between accepted results are yours
+  to resolve. Price that in when deciding whether the speed-up is worth it.
+- Two more costs before choosing isolation: isolated trees start from committed state, so delegates will not see
   uncommitted work in the main tree — commit it first if they need it (stashing does not help: it hides the work from
   the main tree without making it visible anywhere else), or serialize rather than committing user work merely to
   parallelize. And a fresh tree typically has no build cache, so writers that run checks may rebuild from scratch; weigh
@@ -553,21 +348,4 @@ In your final report to the user, briefly note which parts were delegated and to
 ## Feedback capture
 
 When the user says "galaxy brain feedback: ..." (or clearly signals feedback about how this skill performed), pause
-whatever you are doing and record the feedback before resuming. The record exists so the skill's author can later hand
-it to an agent working in the skill's source repository and ask for improvements — write it with that reader in mind.
-
-Append (never overwrite) a markdown entry to `$XDG_STATE_HOME/scode-galaxy-brain/feedback.md`, defaulting to
-`~/.local/state/scode-galaxy-brain/feedback.md` when `XDG_STATE_HOME` is unset. Create the directory if needed. After
-writing, tell the user explicitly which file you appended to.
-
-Each entry should be self-contained — the future reader has no access to this session:
-
-- A `## <date> — <short title>` heading.
-- The user's feedback, verbatim or near-verbatim.
-- What you were doing when the problem occurred: the task, which model and delegation path was involved, the actual
-  commands or prompts where relevant, and what went wrong (exact errors beat paraphrases).
-- Your own analysis if you have one: root cause, and what change to the skill instructions would have prevented the
-  problem. Mark speculation as such.
-
-Avoid including private information (credentials, personal data), but do not sacrifice clarity of the problem
-description to scrub aggressively — the user reviews the file before forwarding it anywhere.
+whatever you are doing, read `feedback.md` next to this file, and record the feedback as it describes before resuming.

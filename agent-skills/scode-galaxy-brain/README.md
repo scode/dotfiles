@@ -16,5 +16,7 @@ Add `prefer-gpt`, `prefer-claude`, `prefer-muse`, or `prefer-glm` to steer spend
 `~/.scode-galaxy-brainrc.md` to declare which models exist in your environment. Say `galaxy brain feedback: ...` to
 record a report about how the skill performed.
 
-The full routing rules live in [SKILL.md](SKILL.md). The reasoning behind them is archived under [lore/](lore/) and is
-not maintained.
+The routing rules live in [SKILL.md](SKILL.md), which is what an agent loads up front. The procedure files next to it —
+`delegating.md`, `harness/*.md`, `rc-file.md`, `feedback.md` — are read on demand when a session actually delegates,
+shells out to a particular harness, finds an rc file, or gets feedback, so that a session which never does those things
+never pays for that text. The reasoning behind the rules is archived under [lore/](lore/) and is not maintained.
