@@ -12,7 +12,8 @@ creation, submission, or readiness work.
 
 The skill accepts optional keyword arguments (case-insensitive, any order):
 
-- `nofix` — report findings only; do not make any changes to the code.
+- `nofix` — report findings only; do not make any changes to the code. Findings are still sorted into the fix buckets
+  (without applying anything) so the run log records what the default mode would have done.
 - `commit` — review only the current commit (in git: `git show`), ignoring uncommitted changes.
 - `uncommitted` — review only the uncommitted working-copy diff, even when the current commit is itself unpublished
   work.
@@ -115,31 +116,34 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    requirements from step 8 in the prompt as well. They are part of every reviewer's output contract, not cleanup left
    for the coordinator.
 8. Require each reviewer to return only findings with a concrete recommended action, each tagged as **definite** or
-   **possible**, with file references. Each finding must make sense to a reader who has no detailed knowledge of the
-   codebase. Explain in plain terms what the relevant code currently does, the concrete failure or needless complexity,
-   why that matters, and the recommended action. Introduce project-specific terms before relying on them; labels such as
-   "cache contract," "assembly path," or "trust boundary" are not explanations on their own. Every finding must carry at
-   least one specific source file reference; that reference is evidence and an anchor, not a substitute for context.
-   Length follows the explanation: a quarter to half a page is fine when the claim needs it, and neither forced brevity
-   nor padding is acceptable. The reader should not need to open the code merely to understand the claim and decide
-   whether it is worth addressing. Return each finding with the literal fields `What happens:`, `Why it matters:`, and
-   `Suggested change:` from the Output Contract. Do not collapse them into one rationale paragraph. Actionability is a
-   quality bar, not an invitation to summarize: a reviewer that spots the same pattern in several independently editable
-   places returns one finding per place, not one aggregate finding for the pattern. If a reviewer has zero findings, it
-   returns an empty list together with a one-line statement that it reviewed the scope and found nothing—do not invent
-   low-value observations. That statement is the only thing that makes an empty result checkable, so require it in the
-   spawn prompt: a bare empty list is indistinguishable from a reviewer that never got to review. Every expected
-   reviewer must return a result before the coordinator can merge findings. A missing reviewer result is a failed swarm
-   run, not an empty finding list. So is a result that arrived without the review behind it. Treat an empty result as
-   clean only when it carries that statement; a reply reporting a blocked tool, an unreadable scope file, a refusal, or
-   any other reason the reviewer could not do the work is a failed reviewer wearing the same shape as a clean one, and
-   neither a zero exit status nor a returned result distinguishes them. Watch hardest when the whole panel comes back
-   empty at once, because a shared cause — a scope path nobody can read, a sandbox that will not start — fails every
-   reviewer identically and leaves a broken swarm looking unanimously clean. A failed reviewer does not count toward the
-   completed-reviewer total, is not eligible for continuation, and makes the swarm incomplete: stop before merging and
-   report the failure and its cause instead of a finding set. Before merging, continue productive reviewers through a
-   bounded search. Run eligible continuations concurrently when the host supports it; one reviewer's extra pass must not
-   serialize the rest of the panel.
+   **possible**, with file references. **Definite** means the code, the applicable contract, and the claimed consequence
+   establish a real defect with no unresolved assumption; **possible** means at least one material premise is still open
+   (an unverified caller, an assumed contract, an uncertain regression value). The tag drives what gets fixed without
+   asking (see "Fixing findings"), so reviewers must not inflate it. Each finding must make sense to a reader who has no
+   detailed knowledge of the codebase. Explain in plain terms what the relevant code currently does, the concrete
+   failure or needless complexity, why that matters, and the recommended action. Introduce project-specific terms before
+   relying on them; labels such as "cache contract," "assembly path," or "trust boundary" are not explanations on their
+   own. Every finding must carry at least one specific source file reference; that reference is evidence and an anchor,
+   not a substitute for context. Length follows the explanation: a quarter to half a page is fine when the claim needs
+   it, and neither forced brevity nor padding is acceptable. The reader should not need to open the code merely to
+   understand the claim and decide whether it is worth addressing. Return each finding with the literal fields
+   `What happens:`, `Why it matters:`, and `Suggested change:` from the Output Contract. Do not collapse them into one
+   rationale paragraph. Actionability is a quality bar, not an invitation to summarize: a reviewer that spots the same
+   pattern in several independently editable places returns one finding per place, not one aggregate finding for the
+   pattern. If a reviewer has zero findings, it returns an empty list together with a one-line statement that it
+   reviewed the scope and found nothing—do not invent low-value observations. That statement is the only thing that
+   makes an empty result checkable, so require it in the spawn prompt: a bare empty list is indistinguishable from a
+   reviewer that never got to review. Every expected reviewer must return a result before the coordinator can merge
+   findings. A missing reviewer result is a failed swarm run, not an empty finding list. So is a result that arrived
+   without the review behind it. Treat an empty result as clean only when it carries that statement; a reply reporting a
+   blocked tool, an unreadable scope file, a refusal, or any other reason the reviewer could not do the work is a failed
+   reviewer wearing the same shape as a clean one, and neither a zero exit status nor a returned result distinguishes
+   them. Watch hardest when the whole panel comes back empty at once, because a shared cause — a scope path nobody can
+   read, a sandbox that will not start — fails every reviewer identically and leaves a broken swarm looking unanimously
+   clean. A failed reviewer does not count toward the completed-reviewer total, is not eligible for continuation, and
+   makes the swarm incomplete: stop before merging and report the failure and its cause instead of a finding set. Before
+   merging, continue productive reviewers through a bounded search. Run eligible continuations concurrently when the
+   host supports it; one reviewer's extra pass must not serialize the rest of the panel.
    - A pass is one agent turn: the initial spawn is pass 1, and each later message to that same stable handle starts one
      additional pass. The deliberate second sweep required by step 7 happens inside pass 1; it does not become pass 2
      unless the coordinator resumes the reviewer after receiving its first result.
@@ -168,13 +172,18 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
 9. Merge and deduplicate findings using these rules. Granularity is an output invariant of this step, not a style
    preference: every independently editable location a reviewer surfaced must still be visible as its own finding
    afterwards. Deduplication exists to remove same-location overlap between reviewers, and for nothing else.
+   - Record provenance on every retained finding as it arrives: the originating reviewer and its pass number (1–3, as
+     defined in step 8). Provenance survives merge and restatement; for a merged finding, keep the earliest pass among
+     its inputs. The run log needs this, and it is not recoverable later from the finding text.
    - Priority order: correctness, security, spec compliance, test quality, AI slop, docs drift, non-idiomatic patterns,
      simplification opportunities.
    - If two reviewers flag the same code region, keep the finding from the higher-priority reviewer and note the
      overlap.
    - Lens siblings — the correctness lens reviewers among themselves, and likewise the security lens reviewers — share
      one category and priority. When two of them flag the same code region, keep one finding and note that multiple
-     lenses agreed: agreement is a confidence signal worth surfacing, not a duplicate to discard silently.
+     lenses agreed: agreement is a confidence signal worth surfacing, not a duplicate to discard silently. When the
+     merged inputs carry different confidence tags, the merged finding keeps the lower one; the confirm step in "Fixing
+     findings" is where a tag gets raised, not the merge.
    - Findings at different code locations are never duplicates, even when they share a category, rationale, or
      recommended fix. Sharing a reason to change is the wrong equivalence relation: each location needs its own edit and
      may get its own accept/reject decision. Merging findings is allowed only when they describe one contiguous code
@@ -240,9 +249,14 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
       qualifiers inside them. A finding the restater describes as optional, documentation-only, or internal cleanup is
       not a PR blocker; listing it under `PR Readiness: not ready` without a separate reason for why it blocks this
       change makes the report internally inconsistent.
-13. If `nofix` was specified, stop here — do not make any changes.
-14. Otherwise, fix the findings. Follow the rules in "Fixing findings" below.
-15. If no actionable findings remain, state that explicitly before asking for PR creation.
+13. If `nofix` was specified, sort the findings into buckets exactly as the default mode would — including the
+    confirm-against-code step — but apply nothing; write the run log with the would-have-been buckets and stop. Do not
+    modify the reviewed checkout.
+14. Otherwise, sort and fix the findings. Follow the rules in "Fixing findings" below: confirm each claim against the
+    code, fix only eligible findings, keep every fix minimal, and surface the rest.
+15. If no actionable findings remain, state that explicitly before asking for PR creation. Surfaced findings are
+    unresolved by definition: while any wait on the user, the report says `PR Readiness: not ready` and lists them as
+    the blockers.
 
 ## Feedback identifiers
 
@@ -276,30 +290,129 @@ equivalent ways to refer to the same finding.
 
 ## Fixing findings
 
-Unless `nofix` was specified, the default is to fix every finding. Do not silently cherry-pick. Do not skip a finding
-because it feels low-value, cosmetic, or "nice to have" — if a reviewer surfaced it and the fix is clearly an
-improvement without major trade-offs, apply it.
+Every retained finding gets sorted into exactly one of the buckets below and reported by its feedback identifier;
+`nofix` skips the applying, not the sorting (see "Run log" for why). Do not silently cherry-pick, and do not let a
+finding vanish: "I decided not to bother" is not a bucket. The point of the buckets is to fix the things that should be
+fixed unattended, leave a clear decision for the things that should not, and make both outcomes visible.
 
-For each finding, place it into exactly one of these buckets:
+Two questions are decided here, and they are easy to conflate. The first is _whether_ a finding gets fixed without
+asking: for definite correctness, security, and spec findings that turns on confirming the claim against the code; for
+everything else it also turns on the shape of the fix. The second is _how_ an accepted fix is shaped, which is the same
+everywhere: the smallest complete edit. Most over-reach comes from muddling the two — a correct finding is not a license
+to apply the reviewer's preferred refactor, and a large proposed change is not a reason to leave a real bug in place.
 
-1. **Fix.** The finding is clearly correct and the change is clearly an improvement without major trade-offs. Apply the
-   fix. This is the default — most findings land here. Do not defer a fix because it is small, or because it touches
-   something outside the immediate diff but is clearly related to the change under review. "Trivial" is a reason to fix,
-   not a reason to skip.
-2. **Surface for user decision.** The finding is ambiguous: it is not clear whether the proposed change would actually
-   be correct, whether it reflects a real improvement, or whether it involves a trade-off the user should weigh (e.g.
-   behavior change, API change, performance vs. readability, scope creep into unrelated code). In this case, do not fix
-   silently and do not drop the finding. Surface it to the user with a concrete question and your current reading, then
-   wait.
-3. **Reject with reason.** The finding is wrong, based on a misreading of the code, or already addressed elsewhere.
-   State briefly why you are rejecting it.
+### Confirm before fixing
 
-Do not invent a fourth bucket of "valid but not worth fixing". If you find yourself reaching for that framing, the
-finding belongs in bucket 1. If you genuinely believe a valid finding should not be fixed in this PR, that is a
-trade-off call — put it in bucket 2 and let the user decide.
+Before placing any finding in the fix bucket, re-read the referenced code and restate the defect from what the code
+actually does, not from the reviewer's write-up. Reviewers are pushed to keep producing findings, so a fluent finding
+with a confident tag can still rest on a misread. If the premise does not hold up when checked, that is bucket 3, and
+rejecting on that basis is a normal outcome, not a cherry-pick. Findings carrying a `Restater note:` get extra suspicion
+here; findings from a later reviewer pass may deserve it too, though there is no run data yet saying they are worse.
 
-After fixing, report per-finding what you did: fixed, surfaced (with the question), or rejected (with the reason). Refer
-to each finding by its feedback identifier.
+The confirm step is also where a tag can move. If a **possible** finding's open premises all resolve during confirmation
+— the caller really does pass untrusted input, the contract really is what the reviewer assumed — retag it **definite**,
+state the reason in the per-finding report, and treat it under the definite rules below. If any premise stays open, the
+tag stays **possible**. Never raise a tag on the strength of the reviewer's prose alone.
+
+### Minimal fix
+
+Every bucket-1 fix is the smallest change that completely closes the confirmed defect: delete the redundant code, fix
+the expression, correct the comment, add the missing check. If the reviewer's `Suggested change:` is larger than that —
+introduces an abstraction, restructures surrounding code, generalizes beyond the case at hand — apply the small fix and
+mention the larger proposal in the per-finding report so the user can pursue it deliberately. "Technically wrong, so
+here are two new types and a helper module" is the failure mode this rule exists to prevent.
+
+Smallest means smallest _complete_ fix. A new local helper is fine when the correct fix needs one (the same missing
+check at three call sites, a cleanup that has to run on every exit path); the rule forbids structure beyond what the
+confirmed defect requires, not structure as such. Never substitute a narrower workaround that leaves the defect
+reachable merely to avoid a structural change — if the only complete fix is structural, the finding is still fixed when
+it is definite correctness, security, or spec, and surfaced otherwise.
+
+### Buckets
+
+1. **Fix.** Eligibility depends on the finding's category and (post-confirmation) tag:
+   - Correctness and security findings tagged **definite** and confirmed against the code: fix, with no size cap. A real
+     bug that needs forty lines gets forty lines, shaped by the minimal-fix rule. Exceptions that push such a finding to
+     bucket 2: the fix would change externally visible behavior beyond the defect itself, change a public API or an
+     on-disk/wire format, or the fix is really a design decision with several defensible answers (which lock, which
+     retry policy, which error to surface). An unattended agent guessing at those is worse than a clear report.
+   - Spec-compliance findings tagged **definite**: fix under the same terms, but only when the existing spec
+     unambiguously governs the behavior and the implementation is clearly the defective side. A divergence where the
+     spec may be the thing to change — new behavior the spec does not cover, or a reviewer saying the spec looks stale —
+     is bucket 2. Confirming a divergence proves it exists, not which side should move, and rewriting `SPEC.md`
+     unattended would bless behavior nobody decided on. This guard is about the document, not the reviewer: a finding
+     whose fix edits `SPEC.md` is bucket 2 whatever category filed it. In one eval run a "the format has no spec"
+     finding arrived as _correctness_, and the coordinator wrote forty lines of spec under the no-size-cap rule —
+     precisely the unattended spec authoring this bullet exists to prevent.
+   - Every other finding — simplification, idiomaticity, AI slop, docs drift, test quality, and anything still tagged
+     **possible** after confirmation — is eligible only when the fix is local and non-structural. Local means confined
+     to a symbol or contiguous hunk the reviewed change already touches, plus mechanically required references, or a
+     documentation edit (README, comment, docstring). Non-structural means: a deletion, a rename of a local binding, a
+     comment or docstring edit, a one-expression logic fix, a change to an existing test's assertions, or new test
+     cases. It must not introduce a new non-test function, type, module, file, or config knob; rename an externally
+     referenced identifier; change a signature; or exceed twenty added-plus-deleted lines, estimated before applying. If
+     the fix runs over while being applied, revert it and surface the finding instead. Slop and docs cleanup almost
+     always passes because it is subtractive; "add an abstraction to handle the edge case" does not, however valid the
+     observation.
+   - Test additions are the deliberate exception to the size and new-named-thing limits. Coverage gaps are among the
+     most valuable things the swarm finds and new test code cannot break shipped behavior, so add as many test cases as
+     a confirmed gap needs, along with whatever fixtures, mocks, or helpers they take, in existing test files or new
+     ones that follow the surrounding convention. The minimal-fix rule still applies — build the support the tests need,
+     not a test framework — and changes to non-test code made to enable testing (new seams, injected dependencies) fall
+     under the normal eligibility rules, not this exception. A test that fails when run against the current code is a
+     correctness finding in disguise: keep the test, and treat the underlying defect under the correctness rules.
+   - Within eligibility, small and cosmetic are reasons to fix, not reasons to skip. Do not defer an eligible fix
+     because it feels low-value.
+2. **Surface for user decision.** The finding is valid or plausible but not eligible for bucket 1: it is still
+   **possible** and the fix is not local, the fix would be structural, the spec side is in question, it involves a
+   trade-off the user should weigh (behavior change, API change, performance vs. readability, scope creep into unrelated
+   code), or the coordinator could not decide whether the proposed change is actually correct. Do not fix silently and
+   do not drop the finding. Report it with a concrete question and your current reading, including what the fix would
+   take. In unattended use this is the whole point of the bucket: the finding waits in the report instead of being
+   guessed at.
+3. **Reject with reason.** The finding is wrong, rests on a misreading of the code, or is already addressed elsewhere.
+   State briefly why. A premise that fails the confirm step lands here.
+
+There is no fourth bucket of "valid but not worth fixing". A valid finding that does not fit bucket 1 is a bucket-2
+decision for the user, with the reason it was not auto-fixed stated plainly.
+
+After fixing, report per finding what you did: fixed (noting any retag and any larger reviewer proposal that was not
+applied), surfaced (with the question), or rejected (with the reason). Refer to each finding by its feedback identifier.
+
+### Run log
+
+Write one markdown file per run to `~/.local/state/pre-pr-review-swarm/runs/<UTC timestamp>-<repo basename>.md`,
+creating the directory if missing. The log exists so the eligibility rules can be tuned from what actually happened
+instead of from memory: the pattern worth catching is "findings that look like X keep getting fixed and should not have
+been" (or the reverse), and spotting that needs the finding text, the decision, and the resulting diff side by side. A
+row of counters cannot show it; a directory of self-contained run files can be grepped, skimmed, or handed to an agent
+to look for patterns across runs.
+
+Each file contains, in this order:
+
+1. A header: timestamp, repository root, the commit id and scope label from step 2, the skill arguments, and the
+   coordinator model if known.
+2. The complete findings report exactly as presented to the user in step 12 — every finding with its identifier,
+   confidence tag, anchors, and restated body — plus the accounting lines. Copy, do not summarize; the whole point is
+   that the finding is readable later without the session.
+3. One block per finding, under a `### <identifier>` heading, with: reviewer category and origin (`reviewer pN` from the
+   provenance recorded in step 9); confidence tag as filed and, if the confirm step changed it, the retag and why; the
+   bucket (`fixed`, `surfaced`, or `rejected`; in `nofix` mode `would fix`, `would surface`, or `would reject`) and the
+   one-or-two-sentence reason it landed there — which eligibility rule applied, what the surfaced question is, or why
+   the premise failed; any larger reviewer proposal that was deliberately not applied; and, for fixed findings, the
+   unified diff of that fix (`git diff` of the touched hunks, attributed to the finding as best the coordinator can;
+   overlap between fixes is noted rather than untangled).
+
+Write the file in `nofix` mode too, with the would-have-been buckets and no diffs. Which mode a run uses is the user's
+call and says nothing about the code under review; a log that only said "nofix" for every finding in those runs would
+discard exactly the decision the log exists to capture. This is why `nofix` still runs the sort, including the confirm
+step: a bucket assigned without checking the code is a guess, and logging guesses would teach the wrong lesson. The cost
+is real — a `nofix` run spends coordinator time re-reading code after the report is out — and is accepted deliberately.
+Present the report first and do the sorting afterwards, so the user is never waiting on the classification to read the
+findings. The log lives outside the reviewed checkout; if the user asked for a fully read-only run or prohibited file
+writes, skip it and say so. A failure to write the log is reported but never blocks the fixes. Runs get their own files,
+so concurrent swarms never contend for one; include seconds in the timestamp and the basename so simultaneous runs on
+different repositories do not collide.
 
 ## Reviewers
 
