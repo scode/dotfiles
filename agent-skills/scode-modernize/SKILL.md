@@ -324,18 +324,40 @@ structured fields, spans for contextual diagnostics, and `async`-aware instrumen
 
 **Verify:** `rg 'use log' src/` and `rg '\blog\b' Cargo.toml` return no matches. `cargo check` succeeds.
 
-### 8. Add `dprint` formatting (projects with JSON, TOML, or Markdown files)
+### 8. Add `dprint` formatting with checksum-pinned plugins (projects with JSON, TOML, or Markdown files)
 
 **Detect:** The project has any `.json`, `.toml`, or `.md` files. Check whether `dprint.json` already exists at the
-repository root, but do not treat an existing config as "already done".
+repository root, but do not treat an existing config as "already done". In an existing config, inspect every entry in
+`plugins`: a remote plugin — an `https://` URL or an `npm:` specifier — that does not end in `@<64 hex characters>` is a
+finding, however precisely its filename or specifier names a version. `https://plugins.dprint.dev/json-0.23.0.wasm` is
+unpinned; `https://plugins.dprint.dev/json-0.23.0.wasm@3e1f…443c` and `npm:@dprint/json@0.23.0@1bf6…1bc3` are pinned.
+
+**Skip if:** `dprint.json` exists, every remote plugin entry carries a checksum, the core plugins for the file types
+present are all configured, and CI runs `dprint check`.
 
 **Why:** `dprint` enforces consistent formatting for JSON, TOML, and Markdown files. Without it, formatting drift
 accumulates across contributors and tools. It is fast, pluggable, and easy to add to CI.
 
+The checksum matters because a version in a URL pins a name, not bytes. Nothing stops a later download from the same URL
+returning different content — a replaced release asset, a compromised host, a cache problem — and without a checksum the
+formatter CI trusts can change with no diff to review. These are Wasm plugins, so the sandbox limits what a bad one can
+do to the host, but it still reads every file it formats and decides what comes back. With a checksum, `dprint` refuses
+a download whose bytes do not match (exit code 12, "The checksum did not match the expected checksum"). That
+verification happens at download time only: a plugin already in the local cache is not re-hashed, so the pin is what
+protects fresh environments — CI above all — rather than a developer's warm cache.
+
 **Replace with:**
 
-- If `dprint.json` does not exist yet, create it at the repository root with the desired formatter settings, but do not
-  hand-write versioned plugin URLs:
+- Check the installed `dprint` first. `dprint add --checksum` exists from dprint 0.55.0 onwards; older binaries accept
+  `dprint add` but reject `--checksum` as an unknown argument, and have no other way to pin. Feature-detect rather than
+  trusting the version string: `dprint add --help | grep -q -- --checksum`. If the flag is missing, do not fall back to
+  unpinned URLs: either upgrade `dprint` (the install script at `https://dprint.dev/install.sh` puts a current binary
+  wherever `DPRINT_INSTALL` points, so this needs no system change) or pin the entries by hand as described below, which
+  works on any version because the checksum is just part of the plugin string.
+
+- If `dprint.json` does not exist yet, create it at the repository root with the desired formatter settings and an empty
+  plugin list, then let `dprint` fill the list with pinned, current plugins. Do not hand-write plugin entries from this
+  skill; they would be stale.
 
 ```json
 {
@@ -355,22 +377,27 @@ accumulates across contributors and tools. It is fast, pluggable, and easy to ad
 }
 ```
 
-- Populate the plugin list by asking `dprint` for the current latest plugin URLs at execution time instead of copying
-  pinned URLs from this skill:
-
 ```sh
-dprint config add json
-dprint config add markdown
-dprint config add toml
-dprint config update
+dprint add --checksum json markdown toml
 ```
 
-- If `dprint.json` already exists, keep the project's existing dprint settings, add any missing core plugins with
-  `dprint config add ...`, and still run `dprint config update` so plugin URLs upgrade when newer versions are
-  available.
+- If `dprint.json` already exists, keep the project's formatter settings and plugin order. Add any missing core plugin
+  with `dprint add --checksum <name>`. For each existing remote entry without a checksum, pin it in place at its current
+  version — do not upgrade it as a side effect of pinning; an upgrade is a separate decision for the user:
+  - For an `https://…wasm` entry, the checksum is the SHA-256 of the file: `curl -fsSL <url> | sha256sum`, then edit the
+    entry to `<url>@<sha256>`.
+  - For an `npm:` entry, the checksum is not the hash of the Wasm file, so compute it with `dprint` itself: in a scratch
+    directory, `dprint add --checksum npm:@dprint/json@0.23.0` (the same version the project has) writes the pinned form
+    to a throwaway config; copy the checksum into the project's entry.
+  - Edit in place rather than running `dprint add --checksum <url>` against the project config: when the unpinned entry
+    is already present, `add` appends a pinned duplicate instead of replacing it, which changes plugin order and leaves
+    the unpinned entry behind.
 
-- `dprint config add` / `dprint config update` should leave `dprint.json` with whatever plugin versions are latest at
-  the time the skill is used. Do not replace those generated URLs with older hard-coded examples.
+- Offer `dprint config update` as a separate, user-approved step, not as part of pinning. It upgrades every plugin to
+  the latest version and, for entries that already carry a checksum, writes the new version's checksum (a pinned
+  `https://` URL comes back as a pinned `npm:` specifier on current versions). It does not add checksums to entries that
+  lack them: an unpinned URL is upgraded to an unpinned specifier. So pin first, then update if the user wants the
+  upgrade, and re-check the pins afterwards either way.
 
 - If the project has a `.github/workflows/ci.yml` (or similar CI workflow), add a `dprint` job:
 
@@ -385,9 +412,11 @@ dprint:
 
 - Run `dprint fmt` to fix any existing formatting issues.
 
-**Verify:** `dprint check` passes. If `dprint.json` already existed, confirm `dprint config update` was still run and
-the plugin URLs were refreshed when newer versions were available. If CI was updated, confirm the `dprint` job exists in
-the workflow file.
+**Verify:** Every remote plugin entry in `dprint.json` ends in `@<64 hex characters>`; for example
+`grep -E '"(https?://|npm:)[^"]*"' dprint.json | grep -v -E '@[0-9a-f]{64}"'` prints nothing. Then
+`dprint clear-cache && dprint check` passes — clearing the cache is what makes `check` actually download and verify
+against the pins instead of reusing already-cached plugins. If `dprint config update` was run, confirm afterwards that
+no entry lost its checksum. If CI was updated, confirm the `dprint` job exists in the workflow file.
 
 ### 9. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
