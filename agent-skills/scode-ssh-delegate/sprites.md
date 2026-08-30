@@ -83,8 +83,8 @@ use of this skill. Do not assume the preinstalled tools are current, and do not 
 sprite, and only what that work needs. Every command in the bootstrap runs through the sprite's exec prefix and must
 finish inside that single exec (see the lifecycle rules below).
 
-Bootstrap consists of the base apt packages from the "Base packages (both kinds)" section of `using-workers.md`,
-followed by:
+Bootstrap consists of the base apt packages from the "Base packages (all kinds)" section of `using-workers.md`, followed
+by:
 
 - `claude update`, then verify with `claude --version`. This upgrades the preinstalled copy in `~/.local/bin` in place;
   it was observed to take the image's 2.1.233 to the then-current 2.1.251.

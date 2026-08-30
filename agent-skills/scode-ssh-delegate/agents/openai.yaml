@@ -1,4 +1,4 @@
 interface:
   display_name: "scode SSH Delegate"
-  short_description: "Declare Ubuntu SSH workers and Fly.io sprites"
+  short_description: "Declare Ubuntu SSH workers, Fly.io sprites, and Tensorlake sandboxes"
   default_prompt: "Use $scode-ssh-delegate foo, bar sprites:2 to register these SSH workers and a sprite budget."
