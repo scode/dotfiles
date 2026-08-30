@@ -64,4 +64,6 @@ Both forms can be combined with each other and with SSH hosts in one invocation.
 - Open interactive sessions on sprites, since those keep a sprite billed after the agent has moved on.
 - Clone from, fetch from, or push to private repository remotes from a worker.
 
-The full rules the agent follows are in [SKILL.md](SKILL.md).
+The full rules the agent follows are in [SKILL.md](SKILL.md), which is what an agent loads up front; the sprite rules in
+[sprites.md](sprites.md) and the use-time rules in [using-workers.md](using-workers.md) are read only when a session
+actually registers a sprite or hands work to a worker.
