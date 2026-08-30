@@ -16,3 +16,6 @@ fix the skill or change this file in the same change, never leave them apart.
   sessions interfere. This requirement is about the skill's state only. It does not ask the skill to make the work being
   done through it safe to run concurrently: whether two sessions can edit the same working tree at once is a property of
   that work and of the user's setup, not something the skill is responsible for detecting or preventing.
+- The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
+  both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
+  text need not accommodate one.
