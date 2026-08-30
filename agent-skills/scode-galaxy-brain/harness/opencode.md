@@ -47,8 +47,9 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   its first event, so silence early in a run is provider latency until proven otherwise.
 - Tool commands run in their own session (their own `sess` and `pgid`), so SIGTERM to `opencode run` was observed to end
   the run and orphan its shell child, and a process-group kill would miss the child the same way. Kill by walking
-  descendants first — `for c in $(ps -o pid= --ppid "$pid"); do <recurse on c>; done; kill "$pid"` — which was observed
-  to take everything down. `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
+  descendants first — `for c in $(pgrep -P "$pid"); do <recurse on c>; done; kill "$pid"` — which was observed to take
+  everything down (observed with `ps -o pid= --ppid`, a GNU-only spelling; `pgrep -P` is the same query on both Linux
+  and macOS). `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
 - Resuming (checkpoints, per `harness/shell-out.md`): with `--format json` the events on stdout carry a `sessionID`
   field; record it from the first event. Resume with the same env block and flags plus `--session <id>`:
 
