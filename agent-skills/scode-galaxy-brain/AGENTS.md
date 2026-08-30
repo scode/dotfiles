@@ -1,5 +1,14 @@
 # Instructions for agents changing this skill
 
+## SPEC.md
+
+The skill must conform to `SPEC.md` next to this file. Read it before changing any file in this directory. If the change
+you are making, or the text you find, disagrees with `SPEC.md`, treat that as a bug: fix the skill, or update `SPEC.md`
+explicitly in the same change with the reason. Never leave the two apart, and never satisfy a spec requirement by
+narrowing what the requirement says.
+
+## Evaluating changes
+
 After changing SKILL.md, eval the change with a fresh-context sub agent before presenting the work as done. Skill text
 is consumed by agents that have none of your conversation context, so your own reading of the new wording proves nothing
 about how it lands cold — misrouting has repeatedly been caught only by asking a clean agent.
