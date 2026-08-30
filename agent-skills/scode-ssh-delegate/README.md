@@ -1,0 +1,67 @@
+# scode-ssh-delegate
+
+An agent skill that registers remote machines as workers so that some other workflow in the same session (such as
+scode-galaxy-brain) can run work on them instead of on the local machine. Invoking it only declares capacity; it does
+not by itself delegate anything.
+
+NOTE: This is not a general remote-execution tool. It supports exactly two kinds of worker, and both are treated as
+disposable: the agent may install tools, copy source, and run agents on them with permission checks disabled. Do not
+point it at machines where that is not acceptable.
+
+## SSH hosts
+
+Give it one or more SSH targets:
+
+```text
+$scode-ssh-delegate foo
+$scode-ssh-delegate foo, bar, alice@baz
+```
+
+The agent connects to each one right away, records its OS, CPU count, and memory, and keeps the ones that pass: Ubuntu
+26.04 LTS with at least 4 GiB of RAM. Anything else is rejected with the reason. Hosts on your tailnet are reached with
+`tailscale ssh` when they run Tailscale SSH and plain `ssh` otherwise; host-key checking is never weakened, so a host
+you have never connected to before over plain `ssh` needs one manual connection first.
+
+Nothing is installed at registration. When a workflow later picks a host, the agent installs what that task needs (base
+build tools, then Claude Code or Codex if an agent is going to run there) and, with an announcement, copies over the one
+agent credential the task needs. It never forwards your SSH agent, never copies other home-directory state, and treats
+the host as having no access to private repositories: source is pushed from the local checkout, results are pulled back
+as a small explicit set of files.
+
+## Sprites
+
+[Fly.io sprites](https://fly.io/sprites/) are on-demand Ubuntu sandboxes driven by the `sprite` CLI. They cost compute
+only while a command is running on them and pause on their own about 30 seconds after the last one finishes, so they
+suit short bursts of parallel work. The `sprite` CLI has to be installed and logged in (`sprite org list` shows an org).
+
+There are two ways to offer them, and they behave differently:
+
+```text
+$scode-ssh-delegate sprites foo1 foo2      # or: use the sprites foo1 foo2
+$scode-ssh-delegate sprites:3              # or: it's okay to use up to 3 sprites
+```
+
+Named sprites are borrowed. They must already exist; the agent runs work on them and leaves them alone otherwise: no
+destroy, no checkpoint or restore, and any pushed credential or work directory is removed afterwards.
+
+A budget is a count, not a list. Nothing is created when you grant it. When a workflow needs a worker, the agent creates
+a sprite named `ssh-delegate-<directory>-N`, uses it, and destroys it as soon as that work is done; at most N exist at
+once, and all of them are gone by the time the session finishes. A budget never touches sprites the session did not
+create. If sprites with that prefix already exist from an earlier session, the agent tells you about them as possible
+orphans and neither reuses nor destroys them.
+
+Sprites come with `claude`, `codex`, and common language toolchains preinstalled, but the versions lag. The agent
+updates whichever ones the task needs before using them. Everything about credentials, source transfer, and results is
+the same as for SSH hosts.
+
+Both forms can be combined with each other and with SSH hosts in one invocation.
+
+## What the agent will not do
+
+- Delegate on its own. Some other workflow or instruction has to decide to use the workers.
+- Keep anything running on a sprite between commands. A sprite pauses when nothing is attached, and pausing kills every
+  process, so long-lived servers and background jobs do not work there; the agent is told not to try.
+- Open interactive sessions on sprites, since those keep a sprite billed after the agent has moved on.
+- Clone from, fetch from, or push to private repository remotes from a worker.
+
+The full rules the agent follows are in [SKILL.md](SKILL.md).
