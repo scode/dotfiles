@@ -87,9 +87,11 @@ that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
 goal, any provider preference, rc-file assumptions, which sidecar files were loaded, delegations still in flight, and
-the next routing decision. Do this even when no delegate is currently running — between delegations is exactly when a
-summary is most likely to drop the skill. This is a backstop, not the mechanism: stickiness applies whether or not a
-handoff was ever written.
+the next routing decision. For each delegate stopped at a checkpoint, record which checkpoint it is at, the session or
+thread id needed to resume it, and the tree its `.galaxy-brain/` directory is in — a stopped delegate that the summary
+forgets is one that gets relaunched from scratch. Do this even when no delegate is currently running — between
+delegations is exactly when a summary is most likely to drop the skill. This is a backstop, not the mechanism:
+stickiness applies whether or not a handoff was ever written.
 
 ## Routing model
 
@@ -294,6 +296,15 @@ kill semantics) that a launch improvised from `--help` would miss.
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
 
+Every writer path must support resuming the same delegate in the same session, because writers stop twice for the
+checkpoints in `delegating.md` and are resumed with your answers. Natively that is a follow-up message to the same sub
+agent (`SendMessage` in Claude Code, or your harness's equivalent); shelled out, each harness file carries the verified
+resume command, keyed on a session or thread id you must record at launch. A path that cannot resume is not a writer
+path. Native resume is verified for Claude Code and for Codex (0.151.0, a gpt-5.6-sol orchestrator resuming a native
+gpt-5.6-terra sub agent through both checkpoints, 2026-08-30). If some other harness's native sub agents cannot take a
+follow-up message, route writers through that family's shell-out harness file instead — the one case where a session
+shells out to its own family — and say so when announcing the delegation.
+
 Name every sub agent (label, description, or whatever your mechanism displays) so the name includes the task plus the
 model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
 or default model, which misleads anyone watching progress.
@@ -308,14 +319,20 @@ These are the constraints that decide whether a plan may fan out at all; the mec
 - Writers that share a working tree run one at a time, no exceptions. "They edit different files" is not a safe basis
   for parallelism: file-disjoint writers still see each other's half-finished edits when they run checks, still collide
   on lock files, generated code, and build state, and delegates drift out of their predicted scope. The failure mode is
-  an interleaved diff nobody can attribute or cleanly revert.
+  an interleaved diff nobody can attribute or cleanly revert. A writer stopped at a checkpoint (see `delegating.md`)
+  counts as running: its process has exited but its half-done work is in the tree and it will be resumed into it.
+- Isolation mechanisms that delete a tree that looks clean when the run exits (muse's `-w create`, worktree modes on
+  native sub agents that auto-clean unchanged trees) are not safe for writers under the checkpoint protocol: at the
+  first stop the delegate has written only `.galaxy-brain/`, and whether that counts as "changed" is the mechanism's
+  call, not yours. For isolated writers create the tree yourself — a `git worktree`, a jj or Sapling workspace, a clone
+  — and point the delegate at it.
 - Writers may run concurrently when each one is isolated so that no delegate can observe or clobber another's
-  in-progress work. Use whatever mechanism your harness offers at your discretion — native worktree isolation on a sub
-  agent, a manually created `git worktree` that a shelled-out delegate is pointed at, a separate clone, or anything
-  equivalent. The bar is that the tasks cannot conflict through any mutable state they touch, not a plan for writers to
-  stay out of each other's way. A separate tree covers the files, but shared out-of-tree resources — build caches
-  pointed outside the tree, test databases, ports, daemons — conflict straight through it; isolate those too or
-  serialize.
+  in-progress work. Use a tree you created and own the lifecycle of — a `git worktree`, a jj or Sapling workspace, a
+  separate clone, or anything equivalent — that the delegate is pointed at; not a native worktree mode that cleans up an
+  unchanged tree on its own (the previous bullet says why). The bar is that the tasks cannot conflict through any
+  mutable state they touch, not a plan for writers to stay out of each other's way. A separate tree covers the files,
+  but shared out-of-tree resources — build caches pointed outside the tree, test databases, ports, daemons — conflict
+  straight through it; isolate those too or serialize.
 - Isolation moves the merge to you instead of eliminating it: every accepted result is extracted, gated, and applied to
   the main tree by you, serially, with checks re-run after each apply, and conflicts between accepted results are yours
   to resolve. Price that in when deciding whether the speed-up is worth it.
@@ -330,11 +347,22 @@ These are the constraints that decide whether a plan may fan out at all; the mec
 You are the quality gate for everything a delegate produces. Never accept a delegate's self-report as evidence the work
 is good.
 
-For code output:
+For code output, the gate starts while the delegate is still running. Every writer stops twice under the checkpoint
+protocol in `delegating.md`, and each stop is a gate step:
 
-1. Inspect the actual diff (`git diff`) yourself, not just the report.
-2. Re-run the relevant checks yourself.
-3. Then make a judgment call:
+1. At `AWAITING GUIDANCE`: read `.galaxy-brain/ASSUMPTIONS.md`, write `ANSWERS.md` (one line per item, `OK` or a
+   replacement), resume the same delegate.
+2. At `AWAITING REVIEW`: read `.galaxy-brain/DECISIONS.md`, write `REVIEW.md` the same way, resume again.
+3. When it finishes: inspect the actual change set yourself, not just the report — status plus diff in whatever VCS is
+   in use (under git, `git status` and `git diff`; a plain diff misses new files, renames, and mode changes, and a new
+   file is where a delegate's surprises tend to live).
+4. Re-run the relevant checks yourself.
+5. Read `DECISIONS.md` in full (entries added while applying your review are unreviewed) and `REPORT.md`'s Deviations
+   section, which must point at `ASSUMPTIONS.md` and `DECISIONS.md` and say what you changed at each checkpoint. A
+   delegate that produced `REPORT.md` without stopping is a gate failure to catch by content — there is no sentinel in
+   its final message — and its work is unreviewed until you have read the two files after the fact; `delegating.md` says
+   how to classify what came back.
+6. Then make a judgment call:
    - Small defects (naming, comments, minor logic): fix them yourself — a fixup round-trip costs more than doing it.
    - Substantive but well-specified defects: send one precise fixup round to the profile's escalation model.
    - If the escalation also fails, or the output shows that the profile itself was wrong, stop iterating. Do it yourself

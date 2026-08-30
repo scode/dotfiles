@@ -18,8 +18,18 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   fallback.
 - Without `--json`, stdout carries only the final message, so redirecting stdout to a result file captures exactly what
   you need to judge. Muse writes its own status lines (`muse: workspace root: ...`) to stderr, so keep the two streams
-  separate as in the template. With `--json`, stdout is a JSONL event stream instead: the final message is the `text`
-  field of the `run.terminal.completed` event, with `run.output.delta` events streaming before it.
+  separate as in the template. With `--json`, stdout is a JSONL event stream instead. On 0.2.1 the final message was the
+  `text` field of the `run.terminal.completed` event; on 1.0.1 events carry a `payload_type` and the final text is at
+  `run.terminal.completed.payload.text`, with `run.output.delta` events streaming before it. Usage is not on stdout in
+  either version: it lives in `~/.local/share/muse/sessions/YYYY/MM/DD/<session-id>/session.jsonl` under
+  `.payload.event.usage`, and in a resumed session it is cumulative across turns, not per turn.
+- Resuming (checkpoints, per `harness/shell-out.md`): always pass `--session-id "$(uuidgen)"` at launch and record it.
+  Resuming is re-running the launch command — same model, effort, `--workspace`, a fresh `--max-model-steps`, fresh
+  result and log files — with the same `--session-id` and a `--prompt-file` holding the resume prompt; the same id
+  continues the session. Verified on muse 1.0.1 without `-w`. Do not use `-w create` for a checkpoint writer at all: it
+  removes the worktree when the run exits clean, a delegate at its first stop has written only `.galaxy-brain/`, and
+  whether muse counts that as dirty, and what a second `-w create` with the same id does, are both unverified. Create
+  the worktree yourself and pass it as `--workspace` (see Concurrency in SKILL.md).
 - `--prompt-file` reads the prompt from a file, which removes the quoting problem that makes other harnesses take the
   prompt as `"$(cat <file>)"`. Still build the prompt in its own earlier command and keep the explicit `< /dev/null` per
   `harness/shell-out.md`. `muse exec` was observed to complete with a never-closing stdin, so the redirect here is
@@ -38,19 +48,24 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   `--disable-shell`), but do not use them: a review or scan that looks read-only often still needs to write a scratch
   file to feed a tool, and a policy denial mid-task breaks the run instead of protecting anything. Read-only is a
   prompt-level instruction here.
-- Runs in the current working directory by default; `--workspace <PATH>` is the analogue of codex's `-C`. For concurrent
-  writers, `-w create` gives a native isolated tree. Pass `--session-id <uuid>` (a fresh `uuidgen`) so the tree is
-  predictable: it is created at `.muse/worktrees/<repo-name>-<uuid>` on branch `muse/session-<uuid>`, muse adds
-  `/.muse/worktrees/` to `.git/info/exclude`, and the worktree is retained after the run only when dirty — a run that
-  changed nothing removes it. `-w` requires session logging, so do not combine it with `--no-session-log`. Integration
-  and cleanup are yours, per Concurrency: extract the change set, apply and gate it in the main tree, then
+- Runs in the current working directory by default; `--workspace <PATH>` is the analogue of codex's `-C`, and for
+  concurrent writers it is how you point the delegate at a worktree you created. Muse also has `-w create`, a native
+  isolated tree at `.muse/worktrees/<repo-name>-<uuid>` on branch `muse/session-<uuid>` (muse adds `/.muse/worktrees/`
+  to `.git/info/exclude`; `-w` requires session logging, so it cannot combine with `--no-session-log`). Do not use it
+  for writers: the tree is retained after the run only when dirty, a checkpoint writer's first turn leaves a tree that
+  git considers clean, and whether muse's dirtiness check agrees with git's is unverified — assume it does and that the
+  tree is gone before the resume. It remains usable for a read-only delegate that needs a scratch tree. Integration and
+  cleanup are yours either way, per Concurrency: extract the change set, apply and gate it in the main tree, then
   `git worktree remove --force` the tree and delete the branch.
 - Killing a run is safe in both directions. `muse` is a wrapper around a `muse-bin-<version>` process; record that
   process's pid, since a backgrounded launch can hand you the wrapper's. The delegate's shell commands run in their own
   session, so a process-group kill would miss them, but both SIGTERM and SIGKILL to `muse-bin` were observed to take
   down every child (its helper process, the shell, and whatever the shell was running). SIGTERM additionally flushes the
   session log. A worktree run that is killed keeps its dirty worktree either way, so partial work is inspectable and the
-  usual pre-relaunch cleanup applies.
+  usual pre-relaunch cleanup applies. Since resume is keyed on that session log, use SIGTERM when you intend to resume
+  the run afterwards; whether a SIGKILLed session resumes at all is unverified. A resumed turn that shows no sign of its
+  earlier context — it re-reads the task from scratch, asks what `.galaxy-brain/` is — is a fresh session, not a resume:
+  kill it, clean the tree, and relaunch.
 - Foreign-harness caveats carry over: `--yolo` disables approval, the sandbox, and workspace trust checks, so use it
   only where you would accept the same for the orchestrating session, and the timeout and monitoring rules in
   `harness/shell-out.md` apply unchanged. `muse exec` is silent on stdout until the final message unless launched with

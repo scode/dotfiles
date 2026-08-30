@@ -59,3 +59,57 @@ forward-progress signal before it exits, and "no news yet" is not evidence of pr
   once rather than escalating models over it. Make sure the kill takes down the delegate's children too, and before
   relaunching a writer in a shared tree, remove its attributable partial changes (or discard its isolated tree) so the
   retry starts from a known baseline.
+- Kill by pid, walking descendants first (see the harness files for which process to target). Never `pkill -f codex` or
+  the like: the pattern matches unrelated sessions of the same harness and the shell that launched the run.
+
+## Resuming a stopped delegate
+
+Writers stop twice under the checkpoint protocol in `delegating.md` and are resumed in the same session with your
+answers. Resume works on every harness (verified 2026-08-30 with a planted codeword that each harness answered on the
+resumed turn), and a resumed turn is mostly cache hits, so it is cheap. The rules common to all of them:
+
+- Record the harness's session or thread id at launch; each harness file says where it comes from (a `--session-id` you
+  generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
+  away the delegate's context. Include the id in your monitoring record and in any handoff note.
+- The stopped turn exits 0, like every completed turn. Detect the stop by the sentinel on the last line of the final
+  message (`AWAITING GUIDANCE` or `AWAITING REVIEW`), and confirm the file it promises exists under `.galaxy-brain/`.
+  Each harness file says where the final message is on a resumed turn; it is not always the same place as on the launch.
+- Write your `ANSWERS.md` or `REVIEW.md` into the delegate's `.galaxy-brain/` first, then launch the resume. The resume
+  prompt is the short one from `delegating.md`; build it in a file like any other prompt, pass it the same way, and keep
+  the explicit `< /dev/null`. All of the launch-hygiene rules above apply to a resume unchanged, including running it in
+  the background and monitoring it — an implementation turn after `ANSWERS.md` is the long one. Pass the same model,
+  effort, working-directory, and permission flags as the launch: none of the harnesses is verified to restore them from
+  the session, and a resume that lands in the wrong directory edits the wrong tree with bypass flags on.
+- One extra reply per checkpoint at most, per `delegating.md`; after that the delegation is abandoned, its changes
+  removed, and the work rerouted or done by you.
+- Distinguish two ways a run can end without a sentinel or a report. A run that never got going or stuck (the hang
+  signatures above, a launch error) is an execution-path failure: kill it, clean the tree per the monitoring rules, fix
+  the path, relaunch. A run that was making progress and was stopped by an environmental cause you have since verified
+  and fixed — disk full, OOM, a kill you issued because a shell-tool wait expired — is a crash: resume it, once, rather
+  than relaunch. The checkpoint files it already wrote let it re-orient, and same-session resume recovered two eval runs
+  killed mid-implementation by a full disk. If the resumed turn dies the same way, stop resuming; treat the result as
+  inconclusive, fix the environment, and relaunch from a cleaned tree. A hard-deadline kill is neither: the run is over
+  budget and its result is inconclusive, as the monitoring rules say. The test for "crash" is the cause, not the shape
+  of the message: a disk-full turn usually ends as a polite report that an edit failed with `No space left on device`,
+  exit 0, which reads like a decline. A delegate that declined or asked a question for its own reasons is not a crash,
+  and for it the prompt below is a false statement that buys another declined turn; that case is the ordinary gate
+  failure, escalated per SKILL.md. When resuming after a crash, tell the delegate what happened, to check the tree, and
+  which stop it is heading for — the third sentence below changes with the phase the run was in:
+
+  ```
+  Your previous turn was interrupted by <what happened, e.g. a disk-full error: writes failed with "No space left on
+  device", including one of your file edits>. The cause has been fixed. Inspect the working tree (status and diff in
+  this repository's version control, e.g. `git status` and `git diff`) to see what actually landed, redo any edit that
+  was lost, then continue the protocol from where you were:
+  <launch turn: finish `.galaxy-brain/ASSUMPTIONS.md` and stop with `AWAITING GUIDANCE` without implementing anything>
+  <after ANSWERS.md: finish the implementation, run the project's checks, keep `.galaxy-brain/DECISIONS.md` current,
+  and stop with `AWAITING REVIEW` before writing `REPORT.md`>
+  <after REVIEW.md: finish applying the review changes, re-run the checks, and write `.galaxy-brain/REPORT.md`>.
+  ```
+
+  A resumed turn that shows no sign of its earlier context — it re-reads the task from scratch, asks what
+  `.galaxy-brain/` is — is a fresh session, not a resume; kill it, clean the tree, and relaunch.
+
+- Disk is the cause to check first when a run dies for no visible reason. Each isolated worktree of a Rust project costs
+  on the order of 1.5 GB of build output, tests leave temp dirs behind, and a fan-out of writers can fill a disk
+  mid-turn. Tear down gated trees promptly.
