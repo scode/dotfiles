@@ -27,7 +27,7 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   Resuming is re-running the launch command — same model, effort, `--workspace`, a fresh `--max-model-steps`, fresh
   result and log files — with the same `--session-id` and a `--prompt-file` holding the resume prompt; the same id
   continues the session. Verified on muse 1.0.1 without `-w`. Do not use `-w create` for a checkpoint writer at all: it
-  removes the worktree when the run exits clean, a delegate at its first stop has written only `.galaxy-brain/`, and
+  removes the worktree when the run exits clean, a delegate at its first stop has written only its run directory, and
   whether muse counts that as dirty, and what a second `-w create` with the same id does, are both unverified. Create
   the worktree yourself and pass it as `--workspace` (see Concurrency in SKILL.md).
 - `--prompt-file` reads the prompt from a file, which removes the quoting problem that makes other harnesses take the
@@ -64,8 +64,8 @@ as an observation to re-check when the CLI changes, not as a stable contract.
   session log. A worktree run that is killed keeps its dirty worktree either way, so partial work is inspectable and the
   usual pre-relaunch cleanup applies. Since resume is keyed on that session log, use SIGTERM when you intend to resume
   the run afterwards; whether a SIGKILLed session resumes at all is unverified. A resumed turn that shows no sign of its
-  earlier context — it re-reads the task from scratch, asks what `.galaxy-brain/` is — is a fresh session, not a resume:
-  kill it, clean the tree, and relaunch.
+  earlier context — it re-reads the task from scratch, asks what its run directory is — is a fresh session, not a
+  resume: kill it, clean the tree, and relaunch.
 - Foreign-harness caveats carry over: `--yolo` disables approval, the sandbox, and workspace trust checks, so use it
   only where you would accept the same for the orchestrating session, and the timeout and monitoring rules in
   `harness/shell-out.md` apply unchanged. `muse exec` is silent on stdout until the final message unless launched with

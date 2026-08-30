@@ -8,8 +8,11 @@ whatever you are doing and record the feedback before resuming. The record exist
 it to an agent working in the skill's source repository and ask for improvements — write it with that reader in mind.
 
 Append (never overwrite) a markdown entry to `$XDG_STATE_HOME/scode-galaxy-brain/feedback.md`, defaulting to
-`~/.local/state/scode-galaxy-brain/feedback.md` when `XDG_STATE_HOME` is unset. Create the directory if needed. After
-writing, tell the user explicitly which file you appended to.
+`~/.local/state/scode-galaxy-brain/feedback.md` when `XDG_STATE_HOME` is unset. Create the directory if needed. Compose
+the whole entry first and append it in one write (one `>>` redirect of a finished file or heredoc, not several) so that
+another session appending at the same moment cannot interleave with it — this file is the one piece of skill state that
+is shared by design, and `SPEC.md` requires that sharing never corrupt anything. After writing, tell the user explicitly
+which file you appended to.
 
 Each entry should be self-contained — the future reader has no access to this session:
 
