@@ -78,6 +78,21 @@ has none of this conversation's context. Include, at minimum:
 
   The review prompt must name the skill, the repo root, and the commit range or bookmark to review; the reviewer has no
   other context.
+- **Resource watchdog.** Immediately after activating galaxy-brain and before the first delegation, the executing agent
+  must start a sub agent (or the harness's background-monitor equivalent, whichever delivers notifications back to the
+  orchestrating session without being polled) whose only job is to watch memory and disk for the rest of the run and
+  alert the orchestrator when either is heading for exhaustion. This is mandatory, not a suggestion: unattended runs fan
+  out delegates and worktrees, a Rust worktree costs on the order of 1.5 GB of build output, tests leave temp
+  directories behind, and a full disk or an OOM kill has ended real runs mid-implementation with no signal to the
+  orchestrator beyond a dead delegate. Spell out in the goal file what the watchdog checks and how often — free space on
+  the filesystems holding the repository, any worktrees, the scratch directory, and `/tmp`, plus available memory and
+  swap, using whatever the platform provides (`df`, `free` or `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on macOS),
+  sampled every minute or so — and the thresholds at which it alerts (a sensible default: under 10% or under 5 GB free
+  on any watched filesystem, or under 10% available memory, whichever comes first, with a second alert when the number
+  keeps falling). An alert is an instruction to act, not to note: the orchestrator stops launching new delegates,
+  removes gated worktrees and build caches it owns, waits for or kills the delegate most likely responsible, and only
+  resumes when the watchdog reports headroom. The goal file must also say that a watchdog that dies is restarted, and
+  that its running state is part of every handoff note so a resumed session restarts it too.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.
