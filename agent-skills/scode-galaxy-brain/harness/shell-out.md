@@ -6,6 +6,11 @@ Read this file in full before the first shell-out of a session, then the file fo
 
 These rules were each learned from a real incident and apply to every shelled-out harness, whatever its flags:
 
+- Every file you create for a delegate — prompt files, result and `-o` files, event logs, stderr logs, resume prompts —
+  goes in scratch space private to this session (a fresh `mktemp -d`, or your harness's per-session scratch directory)
+  and carries the delegation's run id in its name. Never a fixed name under `/tmp`: other orchestrators may be running
+  this skill on the same machine at the same time, and `SPEC.md` requires that nothing the skill writes can collide with
+  or be mistaken for theirs.
 - Build the prompt in its own earlier command — write it to a scratch file — and pass it to the launch as a file
   argument or `"$(cat <file>)"`. Keep heredocs out of the command that launches the delegate: at least one agent harness
   omits its own stdin redirect from the wrapper exactly when the command text contains a heredoc, handing the child a
@@ -72,14 +77,15 @@ resumed turn), and a resumed turn is mostly cache hits, so it is cheap. The rule
   generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
   away the delegate's context. Include the id in your monitoring record and in any handoff note.
 - The stopped turn exits 0, like every completed turn. Detect the stop by the sentinel on the last line of the final
-  message (`AWAITING GUIDANCE` or `AWAITING REVIEW`), and confirm the file it promises exists under `.galaxy-brain/`.
-  Each harness file says where the final message is on a resumed turn; it is not always the same place as on the launch.
-- Write your `ANSWERS.md` or `REVIEW.md` into the delegate's `.galaxy-brain/` first, then launch the resume. The resume
-  prompt is the short one from `delegating.md`; build it in a file like any other prompt, pass it the same way, and keep
-  the explicit `< /dev/null`. All of the launch-hygiene rules above apply to a resume unchanged, including running it in
-  the background and monitoring it — an implementation turn after `ANSWERS.md` is the long one. Pass the same model,
-  effort, working-directory, and permission flags as the launch: none of the harnesses is verified to restore them from
-  the session, and a resume that lands in the wrong directory edits the wrong tree with bypass flags on.
+  message (`AWAITING GUIDANCE` or `AWAITING REVIEW`), and confirm the file it promises exists in the delegation's run
+  directory. Each harness file says where the final message is on a resumed turn; it is not always the same place as on
+  the launch.
+- Write your `ANSWERS.md` or `REVIEW.md` into the run directory first, then launch the resume. The resume prompt is the
+  short one from `delegating.md`; build it in a file like any other prompt, pass it the same way, and keep the explicit
+  `< /dev/null`. All of the launch-hygiene rules above apply to a resume unchanged, including running it in the
+  background and monitoring it — an implementation turn after `ANSWERS.md` is the long one. Pass the same model, effort,
+  working-directory, and permission flags as the launch: none of the harnesses is verified to restore them from the
+  session, and a resume that lands in the wrong directory edits the wrong tree with bypass flags on.
 - One extra reply per checkpoint at most, per `delegating.md`; after that the delegation is abandoned, its changes
   removed, and the work rerouted or done by you.
 - Distinguish two ways a run can end without a sentinel or a report. A run that never got going or stuck (the hang
@@ -101,14 +107,16 @@ resumed turn), and a resumed turn is mostly cache hits, so it is cheap. The rule
   device", including one of your file edits>. The cause has been fixed. Inspect the working tree (status and diff in
   this repository's version control, e.g. `git status` and `git diff`) to see what actually landed, redo any edit that
   was lost, then continue the protocol from where you were:
-  <launch turn: finish `.galaxy-brain/ASSUMPTIONS.md` and stop with `AWAITING GUIDANCE` without implementing anything>
-  <after ANSWERS.md: finish the implementation, run the project's checks, keep `.galaxy-brain/DECISIONS.md` current,
-  and stop with `AWAITING REVIEW` before writing `REPORT.md`>
-  <after REVIEW.md: finish applying the review changes, re-run the checks, and write `.galaxy-brain/REPORT.md`>.
+  <launch turn: finish `ASSUMPTIONS.md` in your run directory and stop with `AWAITING GUIDANCE` without implementing
+  anything>
+  <after ANSWERS.md: finish the implementation, run the project's checks, keep `DECISIONS.md` in your run directory
+  current, and stop with `AWAITING REVIEW` before writing `REPORT.md`>
+  <after REVIEW.md: finish applying the review changes, re-run the checks, and write `REPORT.md` in your run
+  directory>.
   ```
 
-  A resumed turn that shows no sign of its earlier context — it re-reads the task from scratch, asks what
-  `.galaxy-brain/` is — is a fresh session, not a resume; kill it, clean the tree, and relaunch.
+  A resumed turn that shows no sign of its earlier context — it re-reads the task from scratch, asks what its run
+  directory is — is a fresh session, not a resume; kill it, clean the tree, and relaunch.
 
 - Disk is the cause to check first when a run dies for no visible reason. Each isolated worktree of a Rust project costs
   on the order of 1.5 GB of build output, tests leave temp dirs behind, and a fan-out of writers can fill a disk

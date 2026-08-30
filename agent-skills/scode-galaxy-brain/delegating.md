@@ -48,27 +48,46 @@ line to skim, a missed decision costs a review round. Details are in `lore/2026-
 
 ### Files
 
-All checkpoint files live in `.galaxy-brain/` at the root of the tree the delegate works in (the repo root, or the
-isolated tree). You create it, fresh, immediately before every writer launch — first attempts, escalations, fixup
-rounds, and reroutes alike — and you make it invisible to whatever version control the tree is under, in a way that
-touches no tracked file and no repository metadata. The bar is mechanical: the directory must not show up in status,
-must not be swept into a commit by an add-everything command, and must not land in a working-copy snapshot on systems
-that snapshot automatically (there, "untracked" does not exist, and an unhidden directory is in the working-copy commit
-the first time you run any command). Under git, jj, or Sapling, a `.galaxy-brain/.gitignore` containing a single `*`
-does all of that, works in linked worktrees, clones, and non-colocated workspaces alike, and is the recommended form;
-other systems have their own per-directory ignore. What not to do: edit the project's tracked ignore file (a change that
-leaks into the diff), or edit repository-local metadata such as `.git/info/exclude` (path differs between main tree and
-linked worktree, absent in some layouts). One consequence to know about: a tree whose only change is `.galaxy-brain/`
-then looks clean, which is why SKILL.md's Concurrency section bans isolation mechanisms that delete a clean tree on exit
-for writers.
+Every delegation gets a _run id_ and a _run directory_. The run id is a fresh unique string you generate when you decide
+to launch — `uuidgen`, or a UTC timestamp plus random suffix if that is what you have — and it names everything this
+delegation owns: the run directory, the scratch files and logs you keep for it, any tree you create for it, and the
+handle you record in handoff notes. The run directory is `.galaxy-brain/<run-id>/` at the root of the tree the delegate
+works in (the repo root, or the isolated tree), and all checkpoint files live in it. This is what makes several
+orchestrators able to use the skill at the same time without touching each other, which `SPEC.md` requires: every path
+the skill uses for a delegation carries a run id only you know. Record every run id you generate — in your notes as you
+go, and in any handoff — the moment you generate it, not only once a delegate has stopped: a run directory whose id you
+have lost is one you can no longer tell from another session's, and the rules below then forbid you from cleaning it up.
 
-When the delegation is gated, move the whole directory to your scratch space rather than deleting it. It is the record
+`.galaxy-brain/` itself is shared, and the rules for it follow from that. Create it if it is missing, and if its
+`.gitignore` is missing write one containing a single `*` — atomically, by writing a temp file named with your run id
+next to it and renaming it into place, so another session that checks a moment later never sees an empty file. Never
+delete `.galaxy-brain/` or its `.gitignore`, and never touch a run directory whose id is not yours. Another
+orchestrator's run directory is theirs for as long as it exists — you cannot tell an active delegation from an abandoned
+one from the outside, so assume active. That is as far as the skill's responsibility goes: it keeps its own state out of
+other sessions' way, and does not try to make the user's work safe to run concurrently. A run directory you did not
+create in a tree you are about to write to is worth mentioning to the user, since it suggests another session's writer
+may be live there, but it is information for them, not a reason for you to refuse.
+
+The `.gitignore` is what hides the whole directory from whatever version control the tree is under, in a way that
+touches no tracked file and no repository metadata. The bar is mechanical: nothing under `.galaxy-brain/` may show up in
+status, be swept into a commit by an add-everything command, or land in a working-copy snapshot on systems that snapshot
+automatically (there, "untracked" does not exist, and an unhidden directory is in the working-copy commit the first time
+you run any command). Under git, jj, or Sapling the per-directory `*` ignore does all of that and works in linked
+worktrees, clones, and non-colocated workspaces alike; other systems have their own per-directory ignore. What not to
+do: edit the project's tracked ignore file (a change that leaks into the diff), or edit repository-local metadata such
+as `.git/info/exclude` (path differs between main tree and linked worktree, absent in some layouts). One consequence to
+know about: a tree whose only change is `.galaxy-brain/` then looks clean, which is why SKILL.md's Concurrency section
+bans isolation mechanisms that delete a clean tree on exit for writers.
+
+Create the run directory immediately before the launch — first attempts, escalations, fixup rounds, and reroutes each
+get a fresh id and directory — and when the delegation is gated, move it to your private scratch space (a directory only
+this session uses, e.g. a fresh `mktemp -d`, never a fixed name under `/tmp`) rather than deleting it. It is the record
 of what was asked and what you settled — `REPORT.md`'s Deviations point into it, a fixup round to the escalation model
-may need to read the primary's `DECISIONS.md`, and your own `ANSWERS.md`/`REVIEW.md` are the decisions you made. Then
-the next writer launch in that tree starts from a fresh directory as above. A stale directory is not a cosmetic problem:
-the addendum tells the delegate to append to `DECISIONS.md`, so a leftover log gets a second task's entries with
-colliding numbers, a leftover `ANSWERS.md` reads as answers to the new task, and a leftover `REPORT.md` makes a crashed
-run classify as a finished one below.
+may need to read the primary's `DECISIONS.md`, and your own `ANSWERS.md`/`REVIEW.md` are the decisions you made. A
+directory per run also removes a class of failure that a single shared directory had: the addendum tells the delegate to
+append to `DECISIONS.md`, and a leftover log from a previous task got the new task's entries with colliding numbers, a
+leftover `ANSWERS.md` read as answers to the new task, and a leftover `REPORT.md` made a crashed run classify as a
+finished one below.
 
 Record the launch time and each resume time, for native and shelled-out writers alike; the classification below depends
 on knowing whether a file was written during the turn that just ended. For shelled-out runs this is already part of the
@@ -79,10 +98,12 @@ Tell the delegate, in the addendum, that it must not edit ignore files, formatte
 may reconcile them by excluding the directory in `dprint.json` or the project's ignore file; that edit is a diff leak,
 and the gate should expect and strip it if it appears anyway.
 
-Before every writer launch, then: `.galaxy-brain/` fresh and hidden; attribution baseline taken (status and diff in
-whatever VCS is in use — the directory is invisible to both); session or thread id arranged per the harness file; launch
-time noted; addendum appended to the spec. Missing any one of these produces a failure that looks like the delegate's
-fault and is not.
+Before every writer launch, then: run id generated and recorded; `.galaxy-brain/` present with its `.gitignore`; your
+run directory created empty; any run directory you do not own noted for the user (not removed, not a blocker);
+attribution baseline taken (status and diff in whatever VCS is in use — `.galaxy-brain/` is invisible to both); session
+or thread id arranged per the harness file; launch time noted; addendum appended to the spec with the run directory's
+absolute path substituted in. Missing any one of these produces a failure that looks like the delegate's fault and is
+not.
 
 | file             | written by   | when                                                                   |
 | ---------------- | ------------ | ---------------------------------------------------------------------- |
@@ -97,7 +118,7 @@ not recognize when they are unsure — and a third stop type would need its own 
 Anything the delegate would have asked belongs in `DECISIONS.md` for the second checkpoint.
 
 A delegate stopped at a checkpoint still owns its tree. Its process has exited and the tree looks idle, but its
-uncommitted implementation and its `.galaxy-brain/` are in there, and it will be resumed into that exact state. For a
+uncommitted implementation and its run directory are in there, and it will be resumed into that exact state. For a
 shared tree this means the one-writer-at-a-time rule in SKILL.md counts a stopped delegate as running: nothing else
 writes to that tree until the delegate has finished and been gated or has been abandoned and its changes removed.
 
@@ -182,9 +203,9 @@ cost a few cents.
 Each checkpoint is one round: one stop, one reply, one resume. A delegate that stops a second time at the same
 checkpoint — a revised `ASSUMPTIONS.md` after `ANSWERS.md`, a fresh `AWAITING REVIEW` after `REVIEW.md` — gets one more
 reply, and that is the cap. A third stop at the same checkpoint means the task is beyond it: abandon the delegation,
-remove its attributable changes from the tree as SKILL.md's escalation rules describe, delete `.galaxy-brain/`, and
-either finish the work yourself or reroute with a fresh spec. Do not paste the accumulated answers into the new spec as
-a substitute for fixing what was unclear in it.
+remove its attributable changes from the tree as SKILL.md's escalation rules describe, move its run directory to
+scratch, and either finish the work yourself or reroute with a fresh spec under a new run id. Do not paste the
+accumulated answers into the new spec as a substitute for fixing what was unclear in it.
 
 After the final resume, the gate reads `DECISIONS.md` in full, not only `REPORT.md`'s Deviations: the delegate keeps
 appending while it applies your review changes, so entries after the last one you reviewed are unreviewed decisions.
@@ -197,34 +218,40 @@ means a follow-up message to the same agent (`SendMessage` in Claude Code). For 
 file gives the verified resume command, and `harness/shell-out.md` gives the rules common to all of them. Whatever the
 path, it must support same-session resume; if a mechanism cannot, do not use it for writers. If the handle is gone — a
 native sub agent id that no longer resolves after compaction, a session the harness cannot find — the delegation is
-over: remove its attributable changes, delete `.galaxy-brain/`, and relaunch with a fresh spec that folds in the answers
-you already gave. Do not try to reconstruct a stopped delegate from its files.
+over: remove its attributable changes, move its run directory to scratch, and relaunch under a new run id with a fresh
+spec that folds in the answers you already gave. Do not try to reconstruct a stopped delegate from its files.
 
-The resume prompts are short. After `ANSWERS.md`:
+The resume prompts are short; substitute the run directory's absolute path for `<run-dir>`, as in the addendum. After
+`ANSWERS.md`:
 
 ```
-The orchestrator has reviewed `.galaxy-brain/ASSUMPTIONS.md` and written `.galaxy-brain/ANSWERS.md`, listing each
+The orchestrator has reviewed `<run-dir>/ASSUMPTIONS.md` and written `<run-dir>/ANSWERS.md`, listing each
 assumption number with either `OK` or a replacement decision, possibly followed by numbered `Also:` items for
 assumptions you did not list — treat those as decisions already made. Apply the replacements and the `Also:` items and
-continue the task under the original instructions: implement, keep `.galaxy-brain/DECISIONS.md` current as you go,
-run the project's checks, and stop with `AWAITING REVIEW` as the instructions describe before writing `REPORT.md`.
+continue the task under the original instructions: implement, keep `<run-dir>/DECISIONS.md` current as you go, run
+the project's checks, and stop with `AWAITING REVIEW` as the instructions describe before writing `REPORT.md`.
 ```
 
 After `REVIEW.md`:
 
 ```
-The orchestrator has reviewed `.galaxy-brain/DECISIONS.md` and written `.galaxy-brain/REVIEW.md`, listing each
-decision number with either `OK` or a change to make. Apply the changes, re-run the project's checks, and write
-`.galaxy-brain/REPORT.md` as the task describes; its Deviations section should point at `ASSUMPTIONS.md` and
+The orchestrator has reviewed `<run-dir>/DECISIONS.md` and written `<run-dir>/REVIEW.md`, listing each decision
+number with either `OK` or a change to make. Apply the changes, re-run the project's checks, and write
+`<run-dir>/REPORT.md` as the task describes; its Deviations section should point at `ASSUMPTIONS.md` and
 `DECISIONS.md` and note what the orchestrator changed at each checkpoint. Then finish with a short summary pointing
 at `REPORT.md`.
 ```
 
 ### The addendum
 
-Append this to every writer's task spec, after the acceptance criteria and checks. Adapt "the project's checks" and "the
-project's binding docs" to the concrete names the spec already uses (e.g. "the four checks", "`CLAUDE.md` and
-`SPEC.md`"); keep the mechanics as written.
+Append this to every writer's task spec, after the acceptance criteria and checks. Substitute the run directory's
+_absolute_ path (e.g. `/home/me/src/proj/.galaxy-brain/3f9c1a2e-…`) for `<run-dir>` in the paragraph that begins "Your
+run directory is" — it is the only place the path appears, and the rest of the text refers to "the run directory".
+Absolute, because a delegate's working directory is not reliably the tree root: a native sub agent inherits the
+orchestrator's cwd, which for an isolated tree is the wrong tree entirely, and a relative path there sends the
+checkpoint files somewhere you will never look. The same substitution applies to the resume prompts above and the crash
+prompt in `harness/shell-out.md`. Adapt "the project's checks" and "the project's binding docs" to the concrete names
+the spec already uses (e.g. "the four checks", "`CLAUDE.md` and `SPEC.md`"); keep the mechanics as written.
 
 ```
 # Assumptions checkpoint, decision log, and review checkpoint
@@ -234,12 +261,14 @@ as complete still leave decisions to you. The orchestrator reviews those decisio
 code, and after you have written it but before you finish. Both are cheap for the orchestrator; a wrong decision
 found in a finished diff is not.
 
-All files named below live in `.galaxy-brain/` at the root of the working tree. Create the directory if it is
-missing. Never add anything in it to version control. If the project's checks flag files under `.galaxy-brain/`,
-ignore those findings; do not edit ignore files, formatter or linter configuration, or anything else to make them go
-away.
+Your run directory is `<run-dir>` (an absolute path; it sits under `.galaxy-brain/` at the root of the working tree
+you are to edit); every file named below lives there, and "the run directory" below means that path. It already
+exists. Do not create, read, or modify anything else under
+`.galaxy-brain/` — other directories there belong to other work. Never add anything under `.galaxy-brain/` to version
+control. If the project's checks flag files under `.galaxy-brain/`, ignore those findings; do not edit ignore files,
+formatter or linter configuration, or anything else to make them go away.
 
-**Step 1 — before writing any code**, write `.galaxy-brain/ASSUMPTIONS.md`: a numbered list of every interpretation
+**Step 1 — before writing any code**, write `ASSUMPTIONS.md` in the run directory: a numbered list of every interpretation
 you are making that the task and the project's binding docs do not state outright — how an ambiguous phrase is read,
 what happens in a case the task does not mention, which existing code path you will reuse or bypass, what is read,
 hashed, or written, what an exit code or output means in an edge case, what the user sees and does not see. For each:
@@ -247,9 +276,10 @@ the reading you will implement, the alternative you rejected, and one sentence o
 code structure. Then end your final message with the line `AWAITING GUIDANCE` and stop. Do not implement anything
 yet.
 
-**Step 2** — you will be resumed with `.galaxy-brain/ANSWERS.md` listing each assumption number with either `OK` or a
-replacement decision, possibly followed by numbered `Also:` items for assumptions you did not list; those are decisions
-already made and bind you the same way. Apply the replacements and the `Also:` items, then implement. **While implementing, keep `.galaxy-brain/DECISIONS.md`**:
+**Step 2** — you will be resumed with `ANSWERS.md` in the run directory listing each assumption number with either
+`OK` or a replacement decision, possibly followed by numbered `Also:` items for assumptions you did not list; those are
+decisions already made and bind you the same way. Apply the replacements and the `Also:` items, then implement.
+**While implementing, keep `DECISIONS.md` in the run directory**:
 every time you make a choice that `ASSUMPTIONS.md` and `ANSWERS.md` did not already settle — a case you only
 discovered in the code, a behavior you had to pick for an edge the task never mentioned, a place where the existing
 code forced a tradeoff, anything that changes what a user sees or what the program reads, writes, or reports — append
@@ -259,9 +289,9 @@ diff. Naming and local code structure still do not qualify. Do not stop to ask q
 call, log it, and the orchestrator will review it at the next step.
 
 **Step 3 — when the implementation is complete and the project's checks pass**, do not write `REPORT.md` yet. End
-your final message with the line `AWAITING REVIEW` and stop. You will be resumed with `.galaxy-brain/REVIEW.md`
-listing each `DECISIONS.md` entry number with either `OK` or a change to make. Apply the changes, re-run the checks,
-and write `.galaxy-brain/REPORT.md` as the task describes; its Deviations section should point at `ASSUMPTIONS.md`
+your final message with the line `AWAITING REVIEW` and stop. You will be resumed with `REVIEW.md` in the run
+directory listing each `DECISIONS.md` entry number with either `OK` or a change to make. Apply the changes, re-run the
+checks, and write `REPORT.md` in the run directory as the task describes; its Deviations section should point at `ASSUMPTIONS.md`
 and `DECISIONS.md` and note what the orchestrator changed at each checkpoint. If `DECISIONS.md` is empty at step 3,
 say so and still stop for review.
 ```

@@ -87,11 +87,12 @@ that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
 goal, any provider preference, rc-file assumptions, which sidecar files were loaded, delegations still in flight, and
-the next routing decision. For each delegate stopped at a checkpoint, record which checkpoint it is at, the session or
-thread id needed to resume it, and the tree its `.galaxy-brain/` directory is in — a stopped delegate that the summary
-forgets is one that gets relaunched from scratch. Do this even when no delegate is currently running — between
-delegations is exactly when a summary is most likely to drop the skill. This is a backstop, not the mechanism:
-stickiness applies whether or not a handoff was ever written.
+the next routing decision. Record every run id you have generated and not yet moved to scratch, with the tree each run
+directory is in; for each delegate stopped at a checkpoint, also record which checkpoint it is at and the session or
+thread id needed to resume it — a stopped delegate that the summary forgets is one that gets relaunched from scratch,
+and a run id the summary forgets is a directory you can no longer prove is yours. Do this even when no delegate is
+currently running — between delegations is exactly when a summary is most likely to drop the skill. This is a backstop,
+not the mechanism: stickiness applies whether or not a handoff was ever written.
 
 ## Routing model
 
@@ -321,11 +322,19 @@ These are the constraints that decide whether a plan may fan out at all; the mec
   on lock files, generated code, and build state, and delegates drift out of their predicted scope. The failure mode is
   an interleaved diff nobody can attribute or cleanly revert. A writer stopped at a checkpoint (see `delegating.md`)
   counts as running: its process has exited but its half-done work is in the tree and it will be resumed into it.
+- Other sessions may be running this skill at the same time, on the same machine and against the same repository.
+  `SPEC.md` requires that the skill's own state never be the reason two of them interfere: everything the skill puts on
+  disk — run directories, scratch files, logs, trees you create — is named by a run id only you hold, and you never
+  remove or reinterpret anything named by an id you did not generate. That is the whole of the guarantee. Whether two
+  sessions can safely edit the same working tree at once is a property of the work and the user's setup, not something
+  this skill detects or prevents; a run directory you did not create is worth a mention to the user, not a gate.
 - Isolation mechanisms that delete a tree that looks clean when the run exits (muse's `-w create`, worktree modes on
   native sub agents that auto-clean unchanged trees) are not safe for writers under the checkpoint protocol: at the
-  first stop the delegate has written only `.galaxy-brain/`, and whether that counts as "changed" is the mechanism's
-  call, not yours. For isolated writers create the tree yourself — a `git worktree`, a jj or Sapling workspace, a clone
-  — and point the delegate at it.
+  first stop the delegate has written only its run directory under `.galaxy-brain/`, and whether that counts as
+  "changed" is the mechanism's call, not yours. For isolated writers create the tree yourself — a `git worktree`, a jj
+  or Sapling workspace, a clone — at a path that includes the run id, with any branch, bookmark, or workspace name you
+  choose for it carrying the run id too (a fixed name like `gb/fix-foo` collides with another session's, or worse,
+  checks out its half-done work), and point the delegate at it.
 - Writers may run concurrently when each one is isolated so that no delegate can observe or clobber another's
   in-progress work. Use a tree you created and own the lifecycle of — a `git worktree`, a jj or Sapling workspace, a
   separate clone, or anything equivalent — that the delegate is pointed at; not a native worktree mode that cleans up an
@@ -350,9 +359,9 @@ is good.
 For code output, the gate starts while the delegate is still running. Every writer stops twice under the checkpoint
 protocol in `delegating.md`, and each stop is a gate step:
 
-1. At `AWAITING GUIDANCE`: read `.galaxy-brain/ASSUMPTIONS.md`, write `ANSWERS.md` (one line per item, `OK` or a
-   replacement), resume the same delegate.
-2. At `AWAITING REVIEW`: read `.galaxy-brain/DECISIONS.md`, write `REVIEW.md` the same way, resume again.
+1. At `AWAITING GUIDANCE`: read `ASSUMPTIONS.md` in the delegation's run directory (`.galaxy-brain/<run-id>/`), write
+   `ANSWERS.md` there (one line per item, `OK` or a replacement), resume the same delegate.
+2. At `AWAITING REVIEW`: read `DECISIONS.md` in the run directory, write `REVIEW.md` the same way, resume again.
 3. When it finishes: inspect the actual change set yourself, not just the report — status plus diff in whatever VCS is
    in use (under git, `git status` and `git diff`; a plain diff misses new files, renames, and mode changes, and a new
    file is where a delegate's surprises tend to live).
