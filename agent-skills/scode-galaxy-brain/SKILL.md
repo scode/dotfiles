@@ -148,19 +148,21 @@ available, except that workhorse writers — tree-editing delegates under the me
 profile — default to luna from any family (see Native-path bias). Move to the escalation model after a substantive
 failure or when the task proves more demanding than its initial classification.
 
-| profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                                          | GLM route                              |
-| ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2-contributor low → muse-spark-1.2-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
-| routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-luna medium → gpt-5.6-terra medium | sonnet-5 medium → sonnet-5 high | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                                                | none                                   |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
+| profile                   | use when                                                                                                                                                                       | GPT route                                  | Claude route                    | Muse route                                                          | GLM route                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                         | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2-contributor low → muse-spark-1.2-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
+| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                             | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                           | gpt-5.6-luna medium → gpt-5.6-terra medium | sonnet-5 medium → sonnet-5 high | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives your decomposition — design settled by you first, delegated for volume of input more than for judgment | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 high → opus-5 high     | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                     | orchestrator (visual output: opus-5 high)  | orchestrator                    | none                                                                | none                                   |
+| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns                                                                                                       | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                       | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
 
 A `none` route means the family has no suitable model for that profile. When a provider preference points at such a
 route, that is the "no suitable model" reason to diverge: fall back to the orchestrator's own family's route for the
-profile and announce the divergence as usual.
+profile and announce the divergence as usual. An `orchestrator` route is different: it means the work is not delegated
+at all, and no provider preference redirects it — a preference steers delegations, and there is none. The one carve-out
+is the visual case in the GPT cell, which a prefer-gpt preference does not override.
 
 These assignments are defaults, not claims that every task in a profile is equivalent. Test quality is critical because
 weak tests are how correctness defects survive review. Reviews route above similarly sized implementation work because
@@ -169,12 +171,37 @@ keeping their semantics separate lets later calibration change one without confl
 cross-family SOTA perspective may be worth its overhead for high-risk critical review. Orchestration is not a delegation
 profile; planning, decomposition, quality gating, and VCS ownership remain with the current SOTA session.
 
-Visual design is an exception to the GPT design-and-synthesis route. Real-world feedback on GPT-5.6 consistently rates
-sol below the Claude models on visual design taste even while its coding reputation holds up. When a
-design-and-synthesis task's output is primarily visual — UI, frontend styling, slides, anything judged by how it looks —
-use the Claude route even from a GPT-family orchestrator, and treat this as a sufficient reason to diverge from a
-prefer-gpt preference. Announce the divergence as usual. Non-visual design work such as API design, architecture, and
-copy stays on the normal routes.
+Design is the orchestrator's own work. Deciding an API shape, an architecture call, or a tradeoff is exactly what the
+expensive model's capability is for; handing the decision to a weaker model buys a worse answer than you would have
+produced and then charges you to review it. Do the deciding yourself and delegate what is left, which is mechanics.
+Gathering the inputs to a decision is mechanics: a read-only "survey this subsystem and lay out the options with their
+tradeoffs" delegation is fine and often the right way to protect your own context — the delegate proposes, you decide.
+The `orchestrator` entries in the table cover the decision, not the survey. Two edge cases: if this session is not
+itself running a `sota`-marked model, treat design the way critical review is treated — delegate the decision up to the
+strongest available model rather than keeping it by default — and when another skill's process spawns a design-shaped
+subagent, that spawn is process, not routing (see Composing with other skills): run it, and route it at this session's
+own model unless that skill demands otherwise. The one case where design output itself is delegated is visual:
+real-world feedback on GPT-5.6 consistently rates sol below the Claude models on visual design taste even while its
+coding reputation holds up, so a GPT orchestrator producing UI, frontend styling, slides, or anything judged by how it
+looks hands that to opus-5 high — the table's GPT cell says so — treating it as a sufficient reason to diverge from a
+prefer-gpt preference and announcing the divergence as usual. A Claude orchestrator does its own visual design.
+
+Within implementation work, the mid tier — terra and sol as delegates rather than sol-high-as-reviewer — earns its cost
+in two situations. Context economy: work that has to be reasoned across more input than you can afford to spend your own
+context on (a change threaded through dozens of files, a diagnosis that means reading a large subsystem) goes to terra,
+because luna cannot hold it and you should not have to; that is the center of the complex implementation profile, and
+why its route starts at terra rather than sol. And the escalation rung: when a workhorse fails substantively, terra is
+the cheap next step before sol and before you take the work over. Difficult debugging and ambiguity that survives
+decomposition also live in the complex implementation profile — its route carries sol for exactly the case where the
+delegate's own judgment turns out to matter mid-task. What the eval behind these routes
+(https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248) actually showed is narrower than "the mid tier is
+useless": in 36 runs every model passed every hidden test, so the tasks separated prices, not failure rates, and the
+expensive models' visible advantages were soft — documentation quality, benchmark discipline — which a reviewed
+assumptions list and a gate that reads the diff cover. The honest conclusion is that nothing there justified paying
+mid-tier prices for well-specified work, not that no task ever will. If you find yourself reaching for sol or opus to
+implement something well-specified, the usual reason is that the design is not settled yet, and the fix is to settle it;
+the routine authored and mechanical review rows are unchanged by this reasoning — taste-dependent prose and review were
+not what the eval measured.
 
 Luna is the workhorse on purpose, not as a compromise. Across six treeward features and a planted bug, every model from
 luna medium up to sonnet passed every hidden test on the first attempt; the gate rejected three results for hidden
@@ -410,7 +437,20 @@ protocol in `delegating.md`, and each stop is a gate step:
    delegate that produced `REPORT.md` without stopping is a gate failure to catch by content — there is no sentinel in
    its final message — and its work is unreviewed until you have read the two files after the fact; `delegating.md` says
    how to classify what came back.
-6. Then make a judgment call:
+6. Go back to what the user actually asked for — their own words where you still have them, the retained record of the
+   request plus their later clarifications and decisions after a compaction — and check that the work delivers it. Later
+   explicit user direction wins over the first phrasing; the point is to catch intent that was silently dropped, not to
+   resurrect a superseded reading. Your spec is one interpretation, and it can narrow the request without anyone
+   noticing: the acceptance checks are derived from the spec, so a spec that quietly dropped the point produces a diff
+   that passes them all. This is not hypothetical; in an eval, a request to make a slow command fast was gated to a
+   correct change never shown to make it fast, and a request to clean up leftover directories was gated to a correct
+   hardening of an adjacent edge case. Judge the right unit: a delegation that is one step of a decomposed goal only
+   owes its step, and the whole-request question is asked of the integrated result. And answer with evidence — point at
+   the line, the test, or the measurement that delivers each thing the user asked for — not with the diff looking
+   plausible. When something is missing, find the layer before acting: a spec that dropped it (fix the spec, then
+   redelegate or do it), a delegate that missed a correct spec (the ordinary fixup/escalation path), a later unit that
+   owns it (say so), or a blocker only the user can resolve (report it).
+7. Then make a judgment call:
    - Small defects (naming, comments, minor logic): fix them yourself — a fixup round-trip costs more than doing it.
    - Substantive but well-specified defects: send one precise fixup round to the profile's escalation model.
    - If the escalation also fails, or the output shows that the profile itself was wrong, stop iterating. Do it yourself

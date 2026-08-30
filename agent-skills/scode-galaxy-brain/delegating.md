@@ -10,6 +10,20 @@ The delegate has none of your conversation context. Every delegation prompt must
 - The goal and any constraints that bound it.
 - Exact file paths or directories in scope.
 - Acceptance criteria: what done looks like, concretely.
+- For a performance request — one whose success is a measurable improvement in runtime behavior or resource use:
+  latency, throughput, CPU or memory, I/O, artifact size, workload-dependent cost — a baseline measurement comes first,
+  before the spec is finished and before the delegate writes its assumptions. (Source code or an API being "smaller", or
+  a price being lower, is not this kind of request.) Time it, profile it, count the syscalls, whatever fits, provided
+  running the workload is safe, authorized, and feasible here; when it is not, or when the user already supplied
+  numbers, say so in the spec and agree with the user on a proxy or on proceeding without a measured claim — never run a
+  risky workload just because measurement comes first, and never invent numbers. Put the baseline, the workload, and the
+  evidence about the bottleneck in the spec, and say whether the bottleneck is demonstrated or a hypothesis; do not ask
+  the implementation delegate to pick the optimization — that is design, which is yours, though a read-only delegate may
+  gather the profile. This exists because designing a speedup before knowing what is slow produced, in one eval, a
+  persistent cache approved at the assumptions checkpoint and torn out later, and an accepted "optimization" never shown
+  to change anything, while the one run that profiled first fixed the real bottleneck in one attempt. Acceptance needs a
+  before/after comparison of the user-relevant metric on the same workload under comparable conditions, with enough runs
+  to beat noise; a test that only proves the fast path executes is not acceptance evidence.
 - Which checks to run (tests, linters, formatters) before reporting back.
 - For read-only tasks: state explicitly that it must not edit any files.
 - Always: no commits, no branches, no pushes, no PRs.
