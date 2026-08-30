@@ -49,6 +49,16 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   the run and orphan its shell child, and a process-group kill would miss the child the same way. Kill by walking
   descendants first — `for c in $(ps -o pid= --ppid "$pid"); do <recurse on c>; done; kill "$pid"` — which was observed
   to take everything down. `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
+- Resuming (checkpoints, per `harness/shell-out.md`): with `--format json` the events on stdout carry a `sessionID`
+  field; record it from the first event. Resume with the same env block and flags plus `--session <id>`:
+
+  ```sh
+  OPENCODE_CONFIG_CONTENT='...' opencode run -m zai/glm-5.3-flash --variant <v> --auto --format json --dir <dir> \
+    --session <id> "$(cat <resume-prompt-file>)" < /dev/null > <result-file> 2> <log-file>
+  ```
+
+  Verified on opencode 1.18.20. The `OPENCODE_CONFIG_CONTENT` block is per launch, so it goes on the resume too or the
+  variant silently stops applying.
 - Runs in the current working directory by default; `--dir <path>` is the analogue of codex's `-C` and was observed to
   put the delegate's relative writes under that path. There is no native worktree mode; for concurrent writers create
   the tree yourself and point `--dir` at it. Three simultaneous runs in one directory completed cleanly.
