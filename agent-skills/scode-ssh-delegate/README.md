@@ -4,7 +4,7 @@ An agent skill that registers remote machines as workers so that some other work
 scode-galaxy-brain) can run work on them instead of on the local machine. Invoking it only declares capacity; it does
 not by itself delegate anything.
 
-NOTE: This is not a general remote-execution tool. It supports exactly two kinds of worker, and both are treated as
+NOTE: This is not a general remote-execution tool. It supports exactly three kinds of worker, and all are treated as
 disposable: the agent may install tools, copy source, and run agents on them with permission checks disabled. Do not
 point it at machines where that is not acceptable.
 
@@ -56,14 +56,35 @@ the same as for SSH hosts.
 
 Both forms can be combined with each other and with SSH hosts in one invocation.
 
+## Tensorlake sandboxes
+
+[Tensorlake sandboxes](https://docs.tensorlake.ai/sandboxes/quickstart) are microVMs driven by the `tl` CLI. They bill
+compute per second while running and suspend on their own after an idle timeout, so they suit the same bursty work as
+sprites; what they add is a chosen CPU/memory shape per sandbox and filesystem snapshots that can be cloned. The `tl`
+CLI has to be installed and authenticated (`tl whoami` shows an organization).
+
+The two invocation forms mirror the sprite ones and behave the same way:
+
+```text
+$scode-ssh-delegate sbx foo1 foo2      # or: use the tensorlake sandboxes foo1 foo2
+$scode-ssh-delegate sbx:3              # or: it's okay to use up to 3 tensorlake sandboxes
+```
+
+Named sandboxes are borrowed; a budget is a count of sandboxes the agent creates (4 vCPUs, 8 GiB, 60 second idle
+timeout), uses, and terminates, with the same orphan reporting as sprites. Unlike sprites, the stock image is Ubuntu
+24.04 with no agent CLIs preinstalled, so the agent installs them fresh; for a burst of several similar workers it may
+bootstrap one sandbox, checkpoint it, and clone the rest from the snapshot, deleting the snapshot when the burst is
+done. Snapshots outlive their sandbox and bill storage monthly, so cleanup includes sweeping them.
+
 ## What the agent will not do
 
 - Delegate on its own. Some other workflow or instruction has to decide to use the workers.
-- Keep anything running on a sprite between commands. A sprite pauses when nothing is attached, and pausing kills every
-  process, so long-lived servers and background jobs do not work there; the agent is told not to try.
-- Open interactive sessions on sprites, since those keep a sprite billed after the agent has moved on.
+- Keep anything running on a sprite or sandbox between commands. Both pause or suspend when nothing is attached, which
+  stops or freezes every process, so long-lived servers and background jobs do not work there; the agent is told not to
+  try.
+- Open interactive sessions on sprites or sandboxes, since those keep the instance billed after the agent has moved on.
 - Clone from, fetch from, or push to private repository remotes from a worker.
 
 The full rules the agent follows are in [SKILL.md](SKILL.md), which is what an agent loads up front; the sprite rules in
-[sprites.md](sprites.md) and the use-time rules in [using-workers.md](using-workers.md) are read only when a session
-actually registers a sprite or hands work to a worker.
+[sprites.md](sprites.md), the tensorlake rules in [tensorlake.md](tensorlake.md), and the use-time rules in
+[using-workers.md](using-workers.md) are read only when a session actually registers such a worker or hands work to one.
