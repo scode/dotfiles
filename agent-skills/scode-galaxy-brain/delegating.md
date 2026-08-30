@@ -198,7 +198,10 @@ when the log is empty.
 Expect `ASSUMPTIONS.md` to run 8–20 items and cost the delegate a minute or four; expect `DECISIONS.md` on a ~300-line
 feature to run anywhere from 0 to about a dozen entries depending on the model, and expect most of them to be fine. The
 value of the second checkpoint is that the entries exist to be read; the eval never needed to change one, and the resume
-cost a few cents.
+cost a few cents. An empty log is not evidence that nothing was decided. On the same feature, luna logged zero entries
+where muse logged eleven — the decisions were made either way, and the quiet model simply did not experience them as
+choices. Read an empty log as "the decisions are in the diff, unlabeled," and give that diff the same attention at the
+gate you would give one that came with a long log.
 
 Each checkpoint is one round: one stop, one reply, one resume. A delegate that stops a second time at the same
 checkpoint — a revised `ASSUMPTIONS.md` after `ANSWERS.md`, a fresh `AWAITING REVIEW` after `REVIEW.md` — gets one more

@@ -144,14 +144,15 @@ ones Z.ai accepts for this model.
 ### Work profiles
 
 Classify the task before choosing a model. Use the primary for the orchestrator's family when it is suitable and
-available. Move to the escalation model after a substantive failure or when the task proves more demanding than its
-initial classification.
+available, except that workhorse writers — tree-editing delegates under the mechanical or clear-spec implementation
+profile — default to luna from any family (see Native-path bias). Move to the escalation model after a substantive
+failure or when the task proves more demanding than its initial classification.
 
 | profile                   | use when                                                                 | GPT route                                  | Claude route                    | Muse route                                                          | GLM route                              |
 | ------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
 | mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn   | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.2-contributor low → muse-spark-1.2-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
 | routine authored          | Producing or editing small prose/code where baseline taste matters       | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 medium → sonnet-5 high | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                     | gpt-5.6-luna medium → gpt-5.6-terra medium | sonnet-5 medium → sonnet-5 high | muse-spark-1.2-contributor medium → muse-spark-1.2-contributor high | glm-5.3-flash high → glm-5.3-flash max |
 | complex implementation    | Cross-cutting behavior, difficult debugging, or meaningful ambiguity     | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs           | gpt-5.6-sol medium → gpt-5.6-sol high      | opus-5 high → fable-5 high      | none                                                                | none                                   |
 | mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.2-contributor high → muse-spark-1.2-contributor xhigh  | glm-5.3-flash max                      |
@@ -175,13 +176,29 @@ use the Claude route even from a GPT-family orchestrator, and treat this as a su
 prefer-gpt preference. Announce the divergence as usual. Non-visual design work such as API design, architecture, and
 copy stays on the normal routes.
 
-Long context is an exception to the GPT mechanical route. gpt-5.6-luna's long-context retrieval is far below the rest of
-the family (reported around 41% on MRCR versus roughly 90% for terra and sol), so a mechanical task whose input is
-genuinely large — whole-repo scans, big log files, long-document analysis — starts at gpt-5.6-terra medium instead of
-luna, escalating to gpt-5.6-sol medium. This is about input size the model must actually reason across, not task
-difficulty; small-input mechanical churn stays on luna. A luna delegate that loses track of earlier context mid-task is
-this weakness surfacing, not a generic substantive failure — reroute to terra rather than counting it against the
-profile.
+Luna is the workhorse on purpose, not as a compromise. Across six treeward features and a planted bug, every model from
+luna medium up to sonnet passed every hidden test on the first attempt; the gate rejected three results for hidden
+work-done regressions, none of them luna's, making luna medium the cheapest clean record — $0.64 for the six features
+against $5.57 for terra and $21.73 for sonnet (https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248).
+Luna has two demonstrated weaknesses. Judgment on open questions is the first, and the checkpoint protocol in
+`delegating.md` moves that judgment to the orchestrator before any code exists: in the guidance eval, the checkpoint arm
+went 8 for 8 across the four cheap models — luna medium and high among them — on a feature the same models had gotten
+right once in eight runs without it. It does not move mid-implementation judgment anywhere, which is why the gate still
+reads the diff in full. The second weakness is long context, covered by the exception below. What the workhorse needs is
+a clear spec and a reviewed assumptions list, and those are the orchestrator's to supply. Expect luna's `DECISIONS.md`
+to be short or empty — it does not experience decisions as decisions — and read that as `delegating.md` says, not as a
+sign the work was simple. If terra also fails after a luna failure, gpt-5.6-sol medium is the remaining rung before you
+take the work over; the two-step routes list the common path, not the whole ladder.
+
+Long context is an exception to the luna routes, from every orchestrator. gpt-5.6-luna's long-context retrieval is far
+below the rest of the family (reported around 41% on MRCR versus roughly 90% for terra and sol), so a mechanical or
+clear-spec task whose input is genuinely large — whole-repo scans, big log files, long-document analysis, a change that
+has to be reasoned across many files at once — starts at gpt-5.6-terra medium instead of luna, escalating to gpt-5.6-sol
+medium; a Claude session shelling out to luna under the workhorse default shells out to terra for these instead, rather
+than reverting to its native route. This is about input size the model must actually reason across, not task difficulty;
+small-input work stays on luna, and when you cannot tell in advance, luna first is the right bet — a reroute after a
+lost-context failure costs one cheap run. A luna delegate that loses track of earlier context mid-task is this weakness
+surfacing, not a generic substantive failure — reroute to terra rather than counting it against the profile.
 
 ### Native-path bias
 
@@ -205,6 +222,28 @@ the other route, a native attempt failed, the user requested that provider, or a
 is part of the goal. Expected total cost includes likely tokens, latency, review burden, and escalation risk — not
 nominal token price alone. For critical work, reliability and useful independence take priority over the size-based
 bias.
+
+The bias does not apply to workhorse writers. For delegates that edit the tree under the mechanical or clear-spec
+implementation profile, the default from any orchestrator is gpt-5.6-luna medium, reached however your harness reaches a
+gpt model per Delegation mechanics — `codex exec` from a Claude session, the native sub agent mechanism from a Codex
+session — unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from
+a non-Codex session), or the rc file rules the model out. Read-only mechanical work (searches, scans, log reading) is
+not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
+launch and monitoring overhead per delegate — the eval measured implementation writers, not read-only churn. The
+cross-family cost the bias exists to weigh is small and characterized for writers: the launch, resume, and monitoring
+mechanics in `harness/codex.md` are exercised end to end (two items there remain explicitly unverified), and the price
+gap to the same-family writer alternative is about 30× for no measured difference in first-attempt correctness (see Work
+profiles). A "short" writer task crosses families under this rule; a "tiny" one is still done by the orchestrator.
+Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the same-family column; the
+same-family routes are what you use when the gpt path is unavailable or a preference directs you there. Two things this
+default deliberately trades, worth saying to the user when they matter: shelling out runs the delegate with the
+harness's permission bypass flags where a native sub agent inherits the session's permission system — where that is
+unacceptable, stay native — and it moves spend from whatever subscription covers the orchestrator's own family onto
+metered API billing; a user whose economics make that worse says `prefer-claude` or writes the rc file, and the
+announcement of the first cross-family delegation is the natural place to remind them. This is the one place the skill
+treats a specific model as the default across harnesses, and it rests on one eval in one small repository; if a
+follow-up on a larger, messier codebase finds luna's literalism surviving the checkpoint, this paragraph is what to
+revisit.
 
 ### Delegation and escalation rules
 
