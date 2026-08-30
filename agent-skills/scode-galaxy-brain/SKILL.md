@@ -437,7 +437,20 @@ protocol in `delegating.md`, and each stop is a gate step:
    delegate that produced `REPORT.md` without stopping is a gate failure to catch by content — there is no sentinel in
    its final message — and its work is unreviewed until you have read the two files after the fact; `delegating.md` says
    how to classify what came back.
-6. Then make a judgment call:
+6. Go back to what the user actually asked for — their own words where you still have them, the retained record of the
+   request plus their later clarifications and decisions after a compaction — and check that the work delivers it. Later
+   explicit user direction wins over the first phrasing; the point is to catch intent that was silently dropped, not to
+   resurrect a superseded reading. Your spec is one interpretation, and it can narrow the request without anyone
+   noticing: the acceptance checks are derived from the spec, so a spec that quietly dropped the point produces a diff
+   that passes them all. This is not hypothetical; in an eval, a request to make a slow command fast was gated to a
+   correct change never shown to make it fast, and a request to clean up leftover directories was gated to a correct
+   hardening of an adjacent edge case. Judge the right unit: a delegation that is one step of a decomposed goal only
+   owes its step, and the whole-request question is asked of the integrated result. And answer with evidence — point at
+   the line, the test, or the measurement that delivers each thing the user asked for — not with the diff looking
+   plausible. When something is missing, find the layer before acting: a spec that dropped it (fix the spec, then
+   redelegate or do it), a delegate that missed a correct spec (the ordinary fixup/escalation path), a later unit that
+   owns it (say so), or a blocker only the user can resolve (report it).
+7. Then make a judgment call:
    - Small defects (naming, comments, minor logic): fix them yourself — a fixup round-trip costs more than doing it.
    - Substantive but well-specified defects: send one precise fixup round to the profile's escalation model.
    - If the escalation also fails, or the output shows that the profile itself was wrong, stop iterating. Do it yourself
