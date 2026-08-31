@@ -52,16 +52,22 @@ means "not visible", not "not engaged". "Recording verdicts" says what follows f
 ## The flow
 
 1. Read the run log. List the finding identifiers and titles back briefly so the user can refer to them.
-2. Bring findings over as the user names them ("bring over F3, F7, SEC-PATH"). Copy each one verbatim from the run log —
-   header and body — into the working document, or hand the text to the user when the document is theirs to edit. Do not
-   shorten, tighten, or reorder at this step; the restated body is the thing the user chose, and edits come later at
-   their direction.
+2. Bring a finding over when the user explicitly asks for it ("bring over F3, F7, SEC-PATH") or accepts it, even if they
+   never use the words "bring over." Copy each one verbatim from the run log — header and body — into the working
+   document, or hand the text to the user when the document is theirs to edit. Do not shorten, tighten, or reorder at
+   this step; the restated body is the thing the user chose, and edits come later at their direction.
 3. Iterate as directed: re-verify a claim against the code, rephrase for the audience, merge two findings into one item,
    reframe, drop. Do what is asked; each of these is the user forming a verdict, and the verdict is theirs.
-4. When the user says the triage is complete (`finalize triage`, or plainly that they are done), resolve anything still
+4. The user may stop the item-by-item discussion and give a blanket instruction for the untouched findings, such as "fix
+   everything else I didn't mention if you agree with it." Queue that as follow-up work for after triage is finalized;
+   it does not start the fixes immediately. It also does not select those findings for the working document. Never bring
+   over a finding covered only by a blanket instruction: it belongs in the document only if the user accepted it
+   individually or explicitly asked to bring it over.
+5. When the user says the triage is complete (`finalize triage`, or plainly that they are done), resolve anything still
    uncertain in one batch of questions, write the triage record, and print a one-line summary. What happens to the
    accepted findings afterwards — a review posted by another tool, code changed by hand, a note to someone — is not this
-   skill's job; if the user wants the final text handed somewhere, hand it over without assuming which of those it is.
+   skill's job; if the user queued follow-up work, return to it only after the record is finalized. If the user wants
+   the final text handed somewhere, hand it over without assuming which of those it is.
 
 Writing the record at finalize is the norm. If the session looks like it may end early — a long triage, a user who says
 they will continue later — write an in-progress record with what is known so far (see "The record") and complete it on
@@ -93,7 +99,9 @@ The line between rejected and skipped is engagement, not tone. A one-word "no" a
 silence is a skip. A finding brought into the working document and then dropped after some discussion is rejected,
 because the user looked. A finding brought over in a batch and never mentioned again is provisionally skipped — being
 placed in the document by name is not by itself evidence the user read it — and goes into the finalize batch of
-questions rather than being guessed at.
+questions rather than being guessed at. A blanket instruction for untouched findings does not establish a verdict on any
+of them either; unless the user later engages with an individual finding, it remains skipped when the agent could see
+the triage.
 
 When the conversation is ambiguous, prefer the state that claims less: skipped over rejected, rejected over accepted. A
 wrong `accepted` fabricates a success; a wrong `rejected` fabricates a judgment; a wrong `skipped` only loses one data
