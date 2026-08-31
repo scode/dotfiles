@@ -453,52 +453,33 @@ Rules:
 **Verify:** The target file contains a conventional commit section. Read it back and confirm the types list and rules
 are present.
 
-### 10. Add a PR base guard for stacked workflows (GitHub Actions projects)
+### 10. Remove the `require-main-base` PR guard (GitHub Actions projects)
 
-**Detect:** The project uses GitHub Actions and allows stacked PRs, but has no required check that rejects PRs whose
-base branch is anything other than the repository's main integration branch.
+**Detect:** A workflow under `.github/workflows/` has a `require-main-base` job, or an equivalent job whose only purpose
+is to fail pull requests when `github.base_ref` is not the repository's main integration branch. Also inspect GitHub
+branch protection and repository rulesets for a required status check tied to that job.
 
-**Skip if:** There is already a GitHub Actions workflow or equivalent required status check that fails PRs when
-`github.base_ref` is not the expected integration branch.
+**Skip if:** No workflow enforces this restriction and no matching required status check remains in GitHub settings.
 
-**Why:** GitHub does not understand stacked PR ancestry. If a child PR is merged through the web UI, GitHub merges it
-into its parent branch, and a later squash merge of the parent hides the child commit as a separate history entry. A
-required base-branch check makes that mistake obvious before the merge button is usable.
+**Why:** A stacked PR is intentionally based on the PR below it until the stack lands. Requiring every PR to target the
+integration branch makes those valid child PRs stay red, then adds retargeting and event-ordering work before their CI
+state becomes useful. The guard is not worth that routine noise and hassle.
 
 **Replace with:**
 
-- Add a dedicated workflow such as `.github/workflows/pr-base.yml`.
-- Trigger it on all pull requests, not only pull requests targeting `main`. A `pull_request.branches: [main]` filter is
-  wrong for this guard because it prevents the workflow from running on the stacked PRs it is supposed to reject.
-- Fail when `github.base_ref` is not exactly `main`:
+- Remove the base-guard job from the workflow. If it was the workflow's only job, delete the workflow file; otherwise
+  preserve the unrelated triggers, permissions, and jobs.
+- Match by behavior as well as by the `require-main-base` name. Remove a differently named job only when its sole
+  purpose is the same base-branch restriction. Do not remove unrelated PR policy or validation jobs.
+- Remove the guard's status check from branch protection and repository rulesets before the workflow stops producing it.
+  A deleted workflow with a still-required check can leave pull requests permanently blocked.
+- Change only the matching required-check entry. Preserve every other branch-protection and ruleset setting.
+- If GitHub settings cannot be inspected or changed with the available access, remove the workflow job and report the
+  exact required-check cleanup as unfinished rather than claiming the modernization is complete.
 
-```yaml
-name: PR Base
-
-on:
-  pull_request:
-
-jobs:
-  require-main-base:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require main as PR base
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [ "$BASE_REF" != "main" ]; then
-            echo "PR base must be main, got '$BASE_REF'." >&2
-            exit 1
-          fi
-```
-
-- If the repository's integration branch is not named `main`, replace `main` with the exact branch name. Do not use a
-  prefix match such as `pr/*`; the point is to allow only the integration branch and reject everything else.
-- After adding the workflow, make its `require-main-base` check required in GitHub branch protection or repository
-  rulesets. The workflow alone reports the problem, but it does not block merges until GitHub requires it.
-
-**Verify:** Open or inspect a PR whose base is not `main` and confirm the `require-main-base` job fails. Confirm the
-same check is configured as required for merges to `main`; otherwise the workflow is advisory only.
+**Verify:** No workflow job rejects pull requests solely because their base is another branch in the stack. GitHub
+branch protection and repository rulesets no longer require the removed status check, and all unrelated jobs and
+protection settings remain intact.
 
 ### 11. Fix `changelog: include` parser ordering in `cliff.toml` (git-cliff projects)
 
