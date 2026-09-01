@@ -2,10 +2,11 @@
 
 > [!WARNING]
 > **This skill bakes in assumptions that do not generalize.** In particular, it directly prescribes running delegate
-> harnesses with all permission checks disabled — `codex --yolo`, `muse exec --yolo`, `opencode run --auto`, and
-> `claude --dangerously-skip-permissions` — so that delegates can work unattended. Do not use it in any environment
-> where that is not acceptable: shared machines, checkouts with secrets or production credentials in reach, or anywhere
-> you would not already grant the orchestrating session the same unrestricted access.
+> harnesses with all permission checks disabled — `codex --yolo`, `muse exec --yolo`,
+> `opencode run --agent build --auto`, and `claude --dangerously-skip-permissions` — so that delegates can work
+> unattended. Do not use it in any environment where that is not acceptable: shared machines, checkouts with secrets or
+> production credentials in reach, or anywhere you would not already grant the orchestrating session the same
+> unrestricted access.
 
 An agent skill for a session running a frontier model. Invoke it with `Use scode-galaxy-brain to <goal>`. The current
 session keeps planning, judgment, quality gating, and all commits and PRs, and delegates suitable pieces of the work to

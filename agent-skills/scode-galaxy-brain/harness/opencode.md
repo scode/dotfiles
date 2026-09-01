@@ -4,7 +4,7 @@ Read this file in full before the first `opencode run` launch of a session, afte
 
 ```sh
 OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":{"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}' \
-  opencode run -m zai/glm-5.3-flash --variant high --auto --format json --dir <dir> \
+  opencode run -m zai/glm-5.3-flash --variant high --agent build --auto --format json --dir <dir> \
   "$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
 ```
 
@@ -24,22 +24,22 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   indefinitely with no output. Keep the explicit `< /dev/null` and the prompt-in-a-file rule from
   `harness/shell-out.md`; here they are the known hang fix, not just a precaution. Always pass `-m`; with no model and
   no configured default the run hangs instead of erroring.
-- `--auto` is the `--yolo` analogue and belongs in every launch. Without it a permission that resolves to `ask` does not
-  hang the headless run — the tool call is rejected and the turn ends with `reason: "tool-calls"` and exit 0 — but the
-  delegate then reports failure instead of doing the work. The default `build` agent already allows everything except
-  `doom_loop` and writes outside the project directory, which is what `--auto` approves.
-- A read-only delegate is made by removing tools, not by denying permissions. A global `permission.edit: deny` in the
-  config content was observed to do nothing against the default agent's own allow-all rule, and with edit and bash both
-  "denied" the model spawned a subagent through `task` that wrote the file. What holds is a custom agent with the
-  writing tools absent — add
-  `"agent":{"ro":{"mode":"primary","tools":{"write":false,"edit":false,"patch":false,"bash":false,"task":false}}}` to
-  the config content and pass `--agent ro`. The model then sees only glob, grep, read, and webfetch, and under an
-  adversarial "create this file by any means" prompt correctly reported that it could not. `task` must be in that list
-  or the escape hatch stays open. Keep the prompt-level "do not edit" instruction too.
+- `--agent build --auto` is the closest OpenCode equivalent to `--yolo` and belongs in every launch. The explicit agent
+  keeps the launch independent of the user's configured default, while `--auto` approves permissions that would
+  otherwise resolve to `ask`. OpenCode must receive its full tool set: `task`, `bash`, `write`, `edit`, and `patch` stay
+  available even when the assignment is review-only.
+- Never create or select a restricted OpenCode agent, pass `--agent ro`, or deny or remove tools in
+  `OPENCODE_CONFIG_CONTENT`. Read-only scope is a prompt and parent-gate contract, not a reason to cripple the harness.
+  OpenCode needs its normal tools for scratch work and for native delegation; the orchestrating session remains
+  responsible for rejecting unauthorized repository changes.
+- A coordinator-shaped GLM assignment is one fully equipped `opencode run`. Let that coordinator use `task` for its own
+  fan-out instead of launching one outer OpenCode process per child. Disabling `task` previously turned a review swarm
+  into a long series of memory-heavy CLI processes constrained by the outer orchestrator's concurrency. Do not restore
+  that failure mode in the name of containment, model routing, or read-only review.
 - A zero exit status is necessary but not sufficient, as for every harness. API and model errors (unknown model,
   rejected `reasoning_effort`, auth) exit 1 with an `error` event on stdout; a completed turn exits 0 even when a tool
-  call was rejected or the delegate stopped to ask a question. The `question` tool is denied for the default agent, so a
-  delegate that wants input ends its turn with the question as plain text — a gate failure to catch by content.
+  call was rejected or the delegate stopped to ask a question. Treat a request for input or a report that the work could
+  not proceed as a gate failure regardless of the process status.
 - With `--format json`, stdout is a JSONL event stream: `step_start`, `tool_use`, `tool`, `text`, `step_finish`. The
   final answer is the `part.text` of the last `text` event; each `step_finish` carries token counts (including
   `reasoning`) and `cost`, which is the cheapest way to see what a run actually spent. Without `--format json` stdout is
@@ -54,8 +54,8 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   field; record it from the first event. Resume with the same env block and flags plus `--session <id>`:
 
   ```sh
-  OPENCODE_CONFIG_CONTENT='...' opencode run -m zai/glm-5.3-flash --variant <v> --auto --format json --dir <dir> \
-    --session <id> "$(cat <resume-prompt-file>)" < /dev/null > <result-file> 2> <log-file>
+  OPENCODE_CONFIG_CONTENT='...' opencode run -m zai/glm-5.3-flash --variant <v> --agent build --auto --format json \
+    --dir <dir> --session <id> "$(cat <resume-prompt-file>)" < /dev/null > <result-file> 2> <log-file>
   ```
 
   Verified on opencode 1.18.20. The `OPENCODE_CONFIG_CONTENT` block is per launch, so it goes on the resume too or the
@@ -63,6 +63,7 @@ read from documentation; treat it as an observation to re-check when the CLI cha
 - Runs in the current working directory by default; `--dir <path>` is the analogue of codex's `-C` and was observed to
   put the delegate's relative writes under that path. There is no native worktree mode; for concurrent writers create
   the tree yourself and point `--dir` at it. Three simultaneous runs in one directory completed cleanly.
-- Foreign-harness caveats carry over: `--auto` approves everything not explicitly denied, so use it only where you would
-  accept the same for the orchestrating session, and the timeout and monitoring rules in `harness/shell-out.md` apply
-  unchanged. With `--format json` the event stream is the liveness signal, subject to the slow-first-event caveat above.
+- Foreign-harness monitoring rules still apply, but they must never be implemented by adding permission denials or
+  removing tools. `--agent build --auto` deliberately gives the delegate unrestricted access equivalent to the
+  orchestrating session. With `--format json` the event stream is the liveness signal, subject to the slow-first-event
+  caveat above.
