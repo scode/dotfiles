@@ -60,14 +60,23 @@ Keep the roles separate: do not merge this skill's orchestrator role with anothe
 attribute one skill's constraints to the other. If another skill forbids or requires something, that rule comes from
 that skill; reason about it (and explain it to the user) on that skill's terms.
 
-Routing authority covers nested delegation too. When another active skill's process calls for spawning subagents —
-reviewers, workers, whatever it names them — each spawn is still a galaxy-brain delegation: pick the model from the
-appropriate work profile, set model and effort explicitly where the spawn mechanism supports it, and announce the choice
-as usual. The trap is following the other skill's spawn instructions verbatim and letting its subagents silently inherit
-this session's expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims
-only the choices the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a
-spawn, that demand is process, not a routing default — honor it like any other rule that skill owns, and attribute the
-choice to that skill when you announce it.
+Routing authority covers every delegation seam the current session owns. When another active skill asks this session to
+spawn reviewers or workers, each spawn is still a galaxy-brain delegation: pick the model from the appropriate work
+profile, set model and effort explicitly where the spawn mechanism supports it, and announce the choice as usual. The
+trap is following the other skill's spawn instructions verbatim and letting its subagents silently inherit this
+session's expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims only
+the choices the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a spawn,
+that demand is process, not a routing default — honor it like any other rule that skill owns, and attribute the choice
+to that skill when you announce it.
+
+A delegated unit that is itself a coordinator is one delegation seam, not one seam per subagent it creates internally.
+When its harness has a native delegation tool, launch the coordinator with the harness's full tool set and let it run
+its own fan-out. Do not flatten that fan-out into separate foreign-harness processes merely to retain model routing or a
+prompt-level read-only boundary at the outer session. For OpenCode specifically, `task` stays enabled and a
+coordinator-shaped GLM delegation remains one fully equipped `opencode run`; its `task` calls are internal execution,
+not new Galaxy Brain shell-outs. The outer route still chooses and announces the coordinator's model and effort. A
+process skill that requires exact models for its internal roles must be included in the coordinator's task; otherwise
+its native agent configuration owns those internal choices.
 
 ## Staying active for the whole session
 
@@ -351,14 +360,14 @@ running in, then:
 - **Codex session → claude model**: shell out to `claude -p` per `harness/claude.md`.
 - **Any session → muse model**: shell out to `muse exec` per `harness/muse.md`. Muse Code is only ever a delegate here,
   never the orchestrator, so there is no native muse path.
-- **Any session → glm model**: shell out to `opencode run` per `harness/opencode.md`. OpenCode is likewise only ever a
-  delegate here.
+- **Any session → glm model**: shell out to `opencode run` per `harness/opencode.md`, always with the unrestricted
+  default build agent and `task` available. OpenCode is likewise only ever a delegate here.
 
 Before the first delegation of any kind, read `delegating.md`: it holds the task-spec checklist, the baseline you must
 record before a writer runs, and how isolated writers get integrated. Before the first shell-out, read
 `harness/shell-out.md` and then the file for the harness you are about to launch; the harness files carry the launch
-templates and the observed behaviors (stdin hangs, exit-code semantics, how effort and read-only actually get enforced,
-kill semantics) that a launch improvised from `--help` would miss.
+templates and the observed behaviors (stdin hangs, exit-code semantics, how effort and unrestricted tool access actually
+resolve, kill semantics) that a launch improvised from `--help` would miss.
 
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
