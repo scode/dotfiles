@@ -76,7 +76,10 @@ prompt-level read-only boundary at the outer session. For OpenCode specifically,
 coordinator-shaped GLM delegation remains one fully equipped `opencode run`; its `task` calls are internal execution,
 not new Galaxy Brain shell-outs. The outer route still chooses and announces the coordinator's model and effort. A
 process skill that requires exact models for its internal roles must be included in the coordinator's task; otherwise
-its native agent configuration owns those internal choices.
+its native agent configuration owns those internal choices. The coordinator task also carries the native-task manifest
+and monitoring contract from `harness/opencode.md`. OpenCode does not expose nested task launches in the outer JSON
+stream, so the outer session must not infer fan-out shape or progress from the number or timing of visible `task`
+events.
 
 ## Staying active for the whole session
 
