@@ -70,11 +70,14 @@ $scode-ssh-delegate sbx foo1 foo2      # or: use the tensorlake sandboxes foo1 f
 $scode-ssh-delegate sbx:3              # or: it's okay to use up to 3 tensorlake sandboxes
 ```
 
-Named sandboxes are borrowed; a budget is a count of sandboxes the agent creates (4 vCPUs, 8 GiB, 60 second idle
-timeout), uses, and terminates, with the same orphan reporting as sprites. Unlike sprites, the stock image is Ubuntu
-24.04 with no agent CLIs preinstalled, so the agent installs them fresh; for a burst of several similar workers it may
-bootstrap one sandbox, checkpoint it, and clone the rest from the snapshot, deleting the snapshot when the burst is
-done. Snapshots outlive their sandbox and bill storage monthly, so cleanup includes sweeping them.
+Named sandboxes are borrowed; a budget is a count of sandboxes the agent creates (4 vCPUs, 8 GiB of memory, and a
+workload-sized 10–100 GiB disk), uses, and terminates, with the same orphan reporting as sprites. The agent uses a
+smaller disk when it has a defensible estimate and defaults to the 100 GiB maximum when it does not; it never relies on
+Tensorlake's implicit 10 GiB default. Snapshot clones cannot shrink their source disk, so savings across a cloned burst
+start with a right-sized template. Unlike sprites, the stock image is Ubuntu 24.04 with no agent CLIs preinstalled, so
+the agent installs them fresh; for a burst of several similar workers it may bootstrap one sandbox, checkpoint it, and
+clone the rest from the snapshot, deleting the snapshot when the burst is done. Snapshots outlive their sandbox and bill
+storage monthly, so cleanup includes sweeping them.
 
 ## What the agent will not do
 

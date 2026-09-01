@@ -95,20 +95,33 @@ from the sprite one. Verify rather than assume; the platform is under Tensorlake
 When another workflow selects a worker under a budget, create it as:
 
 ```sh
-tl sbx create --timeout 60 -c 4 -m 8192 NAME
+# Use 102400 unless the workload has a defensible smaller requirement.
+disk_mb=102400
+case "$disk_mb" in '' | *[!0-9]*) exit 1 ;; esac
+test "$disk_mb" -ge 10240 && test "$disk_mb" -le 102400 || exit 1
+tl sbx create --timeout 60 -c 4 -m 8192 --disk_mb "$disk_mb" NAME
 ```
 
-The command prints the new sandbox's ID; record it alongside the name for every owned sandbox (and record every template
-snapshot ID the same way). That ledger is what makes the snapshot sweep in the lifecycle section safe:
-`tl sbx checkpoint ls` identifies a snapshot's source only by sandbox ID, and once a sandbox is terminated its
-name-to-ID mapping is gone from every listing.
+The command prints the new sandbox's ID; record it alongside the name and selected `disk_mb` for every owned sandbox
+(and record every template snapshot ID the same way). That ledger is what makes both clone sizing and the snapshot sweep
+in the lifecycle section safe: `tl sbx checkpoint ls` identifies a snapshot's source only by sandbox ID, and once a
+sandbox is terminated its name-to-ID mapping is gone from every listing.
 
-The shape is fixed at 4 vCPUs and 8 GiB for now; the orchestrating workflow does not choose per-task shapes. The 60
-second idle timeout is deliberate: long enough that local think-time between exec bursts does not thrash suspend/resume
-cycles, short enough that an abandoned sandbox stops billing compute within a minute. Because the sandbox is named,
-hitting the timeout suspends it rather than destroying it, and the next exec resumes it transparently — bootstrap state
-survives idle gaps. Do not create unnamed (ephemeral) sandboxes: those are destroyed at the idle timeout, taking any
-bootstrap with them.
+CPU and memory are fixed at 4 vCPUs and 8 GiB. Disk is the exception because provisioned storage costs money: when the
+orchestrating workflow has a defensible estimate, choose a size in MiB that fits the workload with reasonable headroom.
+Account for dependency installs, build output, temporary files, and result artifacts rather than only the source tree.
+Tensorlake's supported range is 10240–102400 MiB (10–100 GiB), so a known tiny workload still uses the 10 GiB platform
+minimum. When the disk requirement is unclear, use 102400 MiB (100 GiB).
+
+Always pass `--disk_mb` explicitly, including when cloning a snapshot. Omitting it silently accepts the 10 GiB platform
+default, which is not this skill's uncertainty default. Never select more than 102400 MiB. A plan-limit error is a hard
+failure: report it rather than silently changing the disk allocation.
+
+The 60 second idle timeout is deliberate: long enough that local think-time between exec bursts does not thrash
+suspend/resume cycles, short enough that an abandoned sandbox stops billing compute within a minute. Because the sandbox
+is named, hitting the timeout suspends it rather than destroying it, and the next exec resumes it transparently —
+bootstrap state survives idle gaps. Do not create unnamed (ephemeral) sandboxes: those are destroyed at the idle
+timeout, taking any bootstrap with them.
 
 ## Bootstrapping a sandbox
 
@@ -126,14 +139,24 @@ When a burst needs several similar workers, this is worth the extra bookkeeping:
 
 ```sh
 tl sbx checkpoint NAME          # prints a snapshot ID; completes in seconds
-tl sbx create -s SNAP_ID --timeout 60 NAME-2
+
+# Use 102400 when this clone's requirement is unclear. A known requirement may use less, but never less than its source.
+template_disk_mb=RECORDED_SOURCE_DISK_MB
+clone_disk_mb=102400
+case "$template_disk_mb:$clone_disk_mb" in *[!0-9:]*) exit 1 ;; esac
+test "$template_disk_mb" -ge 10240 || exit 1
+test "$clone_disk_mb" -ge "$template_disk_mb" && test "$clone_disk_mb" -le 102400 || exit 1
+tl sbx create -s SNAP_ID --timeout 60 --disk_mb "$clone_disk_mb" NAME-2
 ```
 
-Clones inherit the template's shape (and can override it with `-c`/`-m`), come up in a couple of seconds with the
-bootstrapped filesystem intact, and count against the budget N exactly like sandboxes created from scratch. The snapshot
-itself is owned state: delete it with `tl sbx checkpoint rm SNAP_ID` as soon as the burst is done. This is a judgment
-call for the orchestrating workflow — for one or two workers the plain bootstrap is simpler; for many, the snapshot
-amortizes the 1-2 minute bootstrap into seconds per clone. Never checkpoint a borrowed sandbox.
+Clones inherit the template's CPU and memory shape (and can override it with `-c`/`-m`), come up in a couple of seconds
+with the bootstrapped filesystem intact, and count against the budget N exactly like sandboxes created from scratch.
+Apply the same workload estimate or 100 GiB uncertainty default to clones, with one extra constraint: Tensorlake
+snapshot restores are growth-only, so a clone cannot use less disk than its source. To keep a cloned burst small, size
+the template for that workload before checkpointing it; an already-large template cannot produce cheaper small clones.
+The snapshot itself is owned state: delete it with `tl sbx checkpoint rm SNAP_ID` as soon as the burst is done. This is
+a judgment call for the orchestrating workflow — for one or two workers the plain bootstrap is simpler; for many, the
+snapshot amortizes the 1-2 minute bootstrap into seconds per clone. Never checkpoint a borrowed sandbox.
 
 ### Credentials on a sandbox
 
