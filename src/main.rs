@@ -244,12 +244,12 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     )
     .depends_on(&claude_commands_dir)
     .build();
+    // The tasks-to-prs command was retired; its review step pointed at an
+    // agent that no longer exists, and the goal-file workflow replaced it.
+    // Clean up installs that still carry the symlink.
     g.add(
-        "claude-cmd-tasks-to-prs",
-        PayloadSymlink::new(
-            "payload/dot_claude/commands/tasks-to-prs.md",
-            "~/.claude/commands/tasks-to-prs.md",
-        ),
+        "delete-claude-cmd-tasks-to-prs",
+        DeleteSymlink::new("~/.claude/commands/tasks-to-prs.md"),
     )
     .depends_on(&claude_commands_dir)
     .build();
