@@ -70,14 +70,9 @@ has none of this conversation's context. Include, at minimum:
   stack should have been shaped differently. Restructure the stack instead of stacking a correction on top.
 - **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` routing layer to delegate a review to
   gpt-5.6-sol running the `pre-pr-review-swarm` skill against that PR's changes, and address what it finds before moving
-  on. From a Claude session the delegation seam is `codex exec`, e.g.:
-
-  ```
-  codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "<self-contained review prompt>"
-  ```
-
-  The review prompt must name the skill, the repo root, and the commit range or bookmark to review; the reviewer has no
-  other context.
+  on. Do not write a launch command into the goal file; the galaxy-brain harness files own the launch mechanics, and a
+  copy pasted into a goal file drifts away from the guards they carry. The review prompt must name the skill, the repo
+  root, and the commit range or bookmark to review; the reviewer has no other context.
 - **Resource watchdog.** Immediately after activating galaxy-brain and before the first delegation, the executing agent
   must start a sub agent (or the harness's background-monitor equivalent, whichever delivers notifications back to the
   orchestrating session without being polled) whose only job is to watch memory and disk for the rest of the run and
