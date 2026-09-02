@@ -1,6 +1,6 @@
 ---
 name: jjstack
-description: Use Jujutsu for a solo-developer stacked GitHub workflow where each reviewable change is its own commit, bookmark, and pull request; create and update the stack with jj, and use gh only for PR creation and PR base updates.
+description: Use Jujutsu for a solo-developer stacked GitHub workflow where each reviewable change is its own commit, bookmark, and pull request; create and update the stack with jj, and use gh only for PR creation (always as a draft), publishing, and PR base updates.
 ---
 
 # jjstack
@@ -33,6 +33,13 @@ That mapping is the whole trick:
 
 If you let those drift apart, the stack gets annoying fast.
 
+One more default rides on that mapping: a PR is a draft from creation until the user says to publish it, or until
+landing it needs a CI verdict. Repos increasingly gate CI on draft status, so that ready means "run CI", and a stack is
+rewritten and re-pushed many times before anyone wants a verdict. One stack observed on 2026-09-02 produced 73 CI runs
+of about ten jobs each, mostly for commits nobody looked at. Draft status is the switch that stops that; this skill sets
+it and only the user, or a landing that is about to merge the PR, flips it. See "Draft and ready" under Default rules
+for the full rule.
+
 ## Expected user commands
 
 This skill should treat a few natural-language requests as specific workflow intents.
@@ -48,23 +55,35 @@ commands outside the sandbox by default. In practice `jj` often needs to lock Gi
 the task is clearly "use `jj` to manage history and `gh` to manage the PR". Start outside the sandbox unless the
 environment already guarantees those operations work inside it.
 
-- "make a PR" or "create a PR" Create a new stacked PR for the current reviewable change. In practice that usually means
-  making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR whose base is
-  the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR. If the current bookmark
-  already has a PR but the working copy contains new intended reviewable work on top of it, default to "make the next
-  PR" rather than pushing back. In this workflow that is a very common meaning of "make a PR": turn the new top-of-stack
-  work into its own commit, bookmark it, and open a new PR based on the existing one.
+- "make a PR" or "create a PR" Create a new stacked PR, as a draft, for the current reviewable change. In practice that
+  usually means making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR
+  whose base is the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR. If the
+  current bookmark already has a PR but the working copy contains new intended reviewable work on top of it, default to
+  "make the next PR" rather than pushing back. In this workflow that is a very common meaning of "make a PR": turn the
+  new top-of-stack work into its own commit, bookmark it, and open a new PR based on the existing one.
 - "update the PR" Update the existing PR for the current bookmark. Do not create a new bookmark or a new PR unless the
   user explicitly asks for that. Rewrite or extend the current change, push the same bookmark again, and keep the same
   PR number.
 - "rewrite the PR cleanly" Treat this as "update the PR by rewriting commits instead of adding a follow-up fixup
   commit".
 - "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, push
-  it, and create a new PR whose base is the bookmark below it.
+  it, and create a new PR, as a draft, whose base is the bookmark below it.
 - "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with
   `jj new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the inserted
-  bookmark, create the new PR, retarget the immediate downstream GitHub PR, then push every rewritten descendant
-  bookmark.
+  bookmark, create the new PR as a draft, retarget the immediate downstream GitHub PR, then push every rewritten
+  descendant bookmark.
+- "publish the PRs" or "mark the PRs ready" Run `gh pr ready <n>` for each named or implied PR, bottom-up, and report
+  which PRs were marked ready. A named subset ("publish 329 and up") means exactly those PRs and no others; an
+  unqualified request means the current stack. A request to publish is not a request to merge, and it does not change
+  how later PRs get created: the next "make a PR" is still a draft.
+- "run CI on the stack", "run CI on PR N", "kick off CI", or "make sure CI passes" Trigger one run per named or implied
+  PR without changing any PR's draft state: `gh workflow run <workflow> --ref <bookmark>` on a repo whose workflow
+  allows `workflow_dispatch`, and report the run URLs. This is a one-off. Marking the PR ready would also start a run,
+  but it changes future behavior too: every later rebase and push of a ready PR starts CI again, which is the cost the
+  draft default exists to avoid. A request for CI is not a request to publish. If no workflow can be dispatched, say so
+  and ask; do not mark the PR ready to get the run.
+- "unpublish", "back to draft", or "convert to draft" Run `gh pr ready --undo <n>`. Rarely needed, and only ever on
+  request; the skill never converts a ready PR back to a draft on its own.
 - "restack the stack" Use `jj` to rewrite or rebase the local stack. If bookmark ancestry changes in a way GitHub cares
   about, update the affected PR bases afterwards with `gh pr edit --base ...`.
 - "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
@@ -207,12 +226,26 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   working-copy changes as a request to create the next stacked PR by default. Do not force the user to say "make the
   next PR" unless there is genuine ambiguity about whether the working-copy changes are intended for a new review unit.
 - Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
-  every local bookmark published. If the bookmark name contains `/` or you need exact matching instead of pattern
-  matching, use `jj git push --bookmark 'exact:<name>'`.
+  every local bookmark pushed. If the bookmark name contains `/` or you need exact matching instead of pattern matching,
+  use `jj git push --bookmark 'exact:<name>'`.
 - Do not pass `--allow-new` to `jj git push`. It was deprecated in jj 0.36 and removed in 0.42; on current jj it fails
   immediately with `unexpected argument '--allow-new'`. Explicitly naming the bookmark with `--bookmark`/`exact:` is
   sufficient to push a new bookmark on jj 0.36 and later. Only if `jj --version` reports 0.24–0.35 does a brand-new
   untracked bookmark need `--allow-new` (or `jj bookmark track` on 0.35).
+- Draft and ready. Every `gh pr create` this skill issues passes `--draft`: a new stack, the next PR on top, a PR
+  inserted into the middle. There is no "small PR" exception and no per-repo detection; the rule is unconditional so
+  that repos whose CI gates on draft status get the saving without the agent having to notice. A PR leaves draft only
+  for two reasons: the user asked ("publish the PRs" under Expected user commands), or a landing flow is about to merge
+  it and needs it ready (see "Landing stacked PRs safely" and "Fast path merge", which each mark one PR ready at the
+  last responsible moment and leave the PRs above it as drafts). Never mark a PR ready on your own initiative: not
+  because CI would be useful, not because a review round finished, not because you are about to hand off. "Publish" in
+  this file means this flip and nothing else; pushing a bookmark is not publishing, and running CI is not publishing
+  either. Only "publish" or "mark ready" means `gh pr ready`. Any request for CI, from the user or from your own wish
+  for a verdict, is a one-off: run the workflow without changing the PR's state, because a ready PR keeps starting runs
+  on every later rebase and push. On a repo whose workflow supports `workflow_dispatch`, that looks like
+  `gh workflow run ci.yml --ref <bookmark>`; the workflow filename is the repo's, not necessarily `ci.yml`, so read
+  `.github/workflows/` to find the right one. If no workflow can be dispatched, say so and ask rather than publishing
+  the PR to get a run.
 - Never splice arbitrary PR text directly into a shell command. If a PR title or body came from the user, the model, a
   commit message, or `gh pr view --json ...`, materialize it first and pass it to `gh` through a quoted variable for the
   title and `--body-file` for the body. Do not improvise escaping for backticks, `$()`, quotes, or multi-line markdown.
@@ -278,7 +311,8 @@ Use this fast path when all of these are true:
 In that case, do not burn tool calls on `jj log`, `jj bookmark list`, `jj git push --dry-run`, `gh pr view`, or
 post-create PR inspection unless a command fails or the user specifically asked for that detail. Use the command output
 you already have: `jj commit` tells you where `@-` landed, `jj bookmark set` tells you what it moved, `jj git push`
-reports the pushed refs, and `gh pr create` prints the PR URL.
+reports the pushed refs, and `gh pr create` prints the PR URL. The PR it prints is a draft, and it stays one until the
+user publishes it or a landing marks it ready; do not follow the create with a `gh pr ready`.
 
 One check is exempt from that skip-the-reads advice: the pre-merge `baseRefName` verification required by the Default
 rules. Never skip it before `gh pr merge`, no matter how well you think you know the stack. It can be batched into the
@@ -302,7 +336,7 @@ first_bookmark=pr/first
 second_bookmark=pr/second
 test -n "$first_bookmark" || exit 1
 test -n "$second_bookmark" || exit 1
-printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
+printf 'pushing %s\n' "$first_bookmark" "$second_bookmark"
 
 jj bookmark set "$first_bookmark" -r @-- || exit 1
 jj bookmark set "$second_bookmark" -r @- || exit 1
@@ -313,8 +347,8 @@ Then create the PRs in order, using the safe title/body-file pattern below. The 
 bookmark:
 
 ```bash
-gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
-gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --draft --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
 ```
 
 If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`,
@@ -356,7 +390,7 @@ It may contain `code`, "$vars", $(subshells), single quotes, double quotes, and 
 EOF
 
 title=$(tr -d '\n' <"$title_file")
-gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file"
 
 rm -f "$title_file" "$body_file"
 ```
@@ -404,14 +438,14 @@ At that point the stack usually looks like:
 - `@-` = top reviewable commit
 - `@--` = the commit below it
 
-Create stable bookmarks on the reviewable commits, not on the empty working copy, then publish only those bookmarks:
+Create stable bookmarks on the reviewable commits, not on the empty working copy, then push only those bookmarks:
 
 ```bash
 first_bookmark=pr/first
 second_bookmark=pr/second
 test -n "$first_bookmark" || exit 1
 test -n "$second_bookmark" || exit 1
-printf 'publishing %s\n' "$first_bookmark" "$second_bookmark"
+printf 'pushing %s\n' "$first_bookmark" "$second_bookmark"
 jj bookmark set "$first_bookmark" -r @-- || exit 1
 jj bookmark set "$second_bookmark" -r @- || exit 1
 jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark" || exit 1
@@ -422,11 +456,12 @@ Create PRs in order:
 Prepare the correct `title` and `body_file` for each PR using the safe pattern above, then run:
 
 ```bash
-gh pr create -R owner/repo --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
-gh pr create -R owner/repo --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
+gh pr create -R owner/repo --draft --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
 ```
 
-The base branch of PR N should be the bookmark for PR N-1.
+The base branch of PR N should be the bookmark for PR N-1. Both PRs are drafts; leave them that way until the user asks
+to publish.
 
 ## Updating the top PR
 
@@ -514,7 +549,7 @@ Assuming `title` and `body_file` were prepared with the safe pattern above:
 
 ```bash
 jj git push --bookmark 'exact:pr/inserted'
-gh pr create -R owner/repo --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
+gh pr create -R owner/repo --draft --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
 gh pr edit -R owner/repo <downstream-pr-number> --base pr/inserted
 jj git push --bookmark 'exact:pr/downstream'
 ```
@@ -642,9 +677,40 @@ when another actor may have edited PR bases, when the local notes are incomplete
 Same-session mapping lets you skip rediscovering which PR number belongs to which bookmark. It does not replace checking
 the state, base, and head of the specific PR you are about to merge.
 
-Merge the parent with the full guard. The guard is the same whether or not downstream PRs exist; the downstream answer
-only decides whether branch deletion is allowed later. `--match-head-commit` protects the head SHA only — it does not
-protect the base, which is what the `test` lines are for:
+Mark the parent ready, then wait for its checks. PRs are drafts by default (see "Draft and ready" under Default rules),
+and on repos that gate CI on draft status the verdict the merge is about to depend on cannot exist while the PR is a
+draft. So the landing flips exactly one PR at a time, immediately before waiting on that PR's checks, and leaves every
+PR above it as a draft: the restack after this merge may rewrite them, and a draft rewrite is free where a ready rewrite
+starts a CI run nobody will read. `gh pr ready` is idempotent on an already-ready PR (it warns and exits zero), so the
+step is safe when the user published earlier. Guard before flipping: un-drafting is a visible change to the PR, and a
+wrong `$parent_pr` (a mid-stack PR on an inherited stack, a closed PR) must fail here rather than after the flip:
+
+```bash
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
+test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
+read -r state base head <<EOF
+$(gh pr view "$parent_pr" -R "$repo" --json state,baseRefName,headRefName \
+  --jq '[.state, .baseRefName, .headRefName] | @tsv')
+EOF
+test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
+test "$base" = "$default_branch" \
+  || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+test "$head" = "$parent_bookmark" \
+  || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
+gh pr ready "$parent_pr" -R "$repo" || exit 1
+gh pr view "$parent_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
+```
+
+Then wait for checks per the "no checks means pending" guidance below. One caveat on that wait: a `pull_request`
+workflow only fires on the ready event if the repo lists `ready_for_review` under `types:` (GitHub's default set is
+opened, synchronize, and reopened). A repo that skips jobs on drafts but never added that type starts nothing when the
+PR is marked ready, and since the push landed while it was a draft, no run exists at all. If no checks attach within the
+usual grace period, read `.github/workflows/` for `ready_for_review`; when it is missing, trigger a run explicitly with
+`gh workflow run <workflow> --ref <bookmark>` where the workflow allows `workflow_dispatch`, or re-push the bookmark to
+fire `synchronize`, and note the gap to the user. Only once the checks are green, merge the parent with the full guard.
+The guard is the same whether or not downstream PRs exist; the downstream answer only decides whether branch deletion is
+allowed later. `--match-head-commit` protects the head SHA only — it does not protect the base, which is what the `test`
+lines are for:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
@@ -684,20 +750,23 @@ sequence is:
 jj rebase -s "$child_bookmark" -d main || exit 1
 gh pr edit "$child_pr" -R "$repo" --base main || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
+gh pr ready "$child_pr" -R "$repo" || exit 1
 gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
 
-Retarget before pushing the rewritten bookmark. The push starts workflows for the new head, and a base-dependent
-required check such as `require-main-base` must evaluate that head against its final base. Pushing first can attach a
-failing run created from the old base to the new head. Rerunning that job does not fix it because GitHub reuses the
-original event payload.
+The `gh pr ready` comes after the push on purpose: the push of the rewritten head lands while the PR is still a draft,
+so a draft-gated CI does not start a run for it, and the ready event immediately afterwards starts the one run whose
+verdict the next merge will wait on (subject to the `ready_for_review` trigger caveat above). Retarget before pushing
+the rewritten bookmark. The push starts workflows for the new head, and a base-dependent required check such as
+`require-main-base` must evaluate that head against its final base. Pushing first can attach a failing run created from
+the old base to the new head. Rerunning that job does not fix it because GitHub reuses the original event payload.
 
 If the wrong-order race has already happened, do not rerun the failed job. Set the correct base, inspect the workflow's
 event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles
 `pull_request: edited`, a reversible PR body edit can create that evaluation; preserve and restore the exact body with
 the file-based safe-text procedure above. Do not assume every pull-request workflow handles body edits.
 
-After creating a PR, pushing a bookmark, or editing a PR base, use
+After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use
 `gh pr view --json
 state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability
 waits. GitHub can briefly report no checks for a just-pushed or just-retargeted PR before Actions has attached the new
@@ -707,8 +776,9 @@ as success. Use workflow logs only when checks fail or get stuck.
 For a larger stack, repeat the same rebase, `gh pr edit --base ...`, and push process from bottom to top. The new base
 is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Retarget
 the lowest remaining PR before pushing any rewritten descendant bookmarks; descendants keep their immediate parent bases
-unless that parent changed. If this is not a known stack you just created, re-read GitHub state between steps instead of
-assuming a prior local graph observation still describes the PRs.
+unless that parent changed. Mark only the lowest remaining PR ready after that push; the descendants above it stay
+drafts until their own turn comes. If this is not a known stack you just created, re-read GitHub state between steps
+instead of assuming a prior local graph observation still describes the PRs.
 
 ### Clean up landed stack branches
 
@@ -797,7 +867,8 @@ path for GitHub's view getting stale or confused, not a replacement for resolvin
 
 For the common two-PR landing case, keep the same safety constraints but avoid extra reads. If you already know the
 parent/child mapping because you just created the stack, you can skip rediscovering the stack, but still verify the
-specific PR you are about to merge:
+specific PR you are about to merge. The snippet assumes the parent was already marked ready and its checks waited on,
+per the paragraph above; that wait is the reason the first merge cannot be batched with the ready step:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
@@ -822,6 +893,7 @@ jj bookmark set main -r main@origin || exit 1
 jj rebase -s "$child_bookmark" -d main || exit 1
 gh pr edit "$child_pr" -R "$repo" --base "$default_branch" || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
+gh pr ready "$child_pr" -R "$repo" || exit 1
 
 read -r state base head head_sha <<EOF
 $(gh pr view "$child_pr" -R "$repo" \
@@ -845,7 +917,7 @@ base and head. If `gh pr edit` fails, if the metadata check returns nothing, or 
 closed, fall back to the full inspection flow above.
 
 The child guard in that snippet checks PR shape only. On repos where checks are expected to run, do not merge the child
-in the same breath as the base edit: split the batch after `gh pr edit`, wait for checks per the "no checks means
+in the same breath as the base edit: split the batch after `gh pr ready`, wait for checks per the "no checks means
 pending" guidance above, and only then run the verify-and-merge block. The same split applies on merge-queue repos: the
 `MERGED` check after the parent merge will fail while the PR sits in the queue — that is the guard working, not an
 error. Wait for the queue to land it, then resume from the fetch.
@@ -854,9 +926,10 @@ For a known stack with more than two PRs, use the same loop in stack order. Afte
 local stack onto the landed base while preserving the relative order of the still-open PRs. Edit the next bottom PR's
 GitHub base to the newly landed branch before pushing every bookmark the rebase moved — GitHub tracks branch heads, so
 an unpushed descendant keeps showing a stale diff against its rewritten parent, while a pushed bottom bookmark can start
-a base-dependent check against stale PR metadata. Descendants should keep their bases on their immediate parent
-bookmarks unless that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the
-mapping is already in hand, but do verify the state, base, and head of the specific PR before merging it.
+a base-dependent check against stale PR metadata. After the push, mark that next bottom PR ready and wait for its
+checks; the PRs above it stay drafts. Descendants should keep their bases on their immediate parent bookmarks unless
+that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the mapping is already in
+hand, but do verify the state, base, and head of the specific PR before merging it.
 
 ## Fast path merge
 
@@ -868,8 +941,15 @@ the stack", and a user who said "fast path" an hour ago has not said it now. Whe
 The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, without touching the
 local stack between merges: no `jj rebase`, no bookmark pushes, no base-retarget-then-wait-for-CI round trips. The
 entire landing is GitHub-side, and the only per-PR mutations are `gh pr edit --base <default>` (for every PR but the
-bottom one, and only after its parent is already `MERGED`) followed immediately by `gh pr merge --squash`. Measured on a
-three-PR stack this takes about 30 seconds end to end, versus minutes per PR for the CI-gated flow.
+bottom one, and only after its parent is already `MERGED`), then `gh pr ready`, then immediately `gh pr merge --squash`.
+Measured on a three-PR stack this takes about 30 seconds end to end, versus minutes per PR for the CI-gated flow.
+
+The `gh pr ready` in that sequence is a mechanical prerequisite of the merge, not a request for CI. The fast path skips
+the CI cycle by definition, so it never marks a PR ready in order to get a verdict; but GitHub refuses to merge a draft
+PR, so each PR is un-drafted immediately before its own merge and nowhere else. The run that the ready event starts is
+moot once the PR merges seconds later (a concurrency group with cancellation, where the repo has one, cancels it). Do
+not mark the whole stack ready up front: a PR that hits the conflict fallback below gets rebased and pushed, and that
+push should land on a draft.
 
 Skipping the restack is an attempted optimization, not a proof that the next merge will be clean. After the parent
 squash-merges, the child's head still contains the parent's original commit. Retargeting the child makes GitHub compare
@@ -1033,6 +1113,11 @@ EOF
     test "$head" = "$bm" || { echo "PR #$pr head is '$head', expected '$bm'" >&2; rm -f "$body_file"; exit 1; }
     test "$head_sha" = "$plan_sha" \
       || { echo "PR #$pr head moved from $plan_sha to '$head_sha' since planning" >&2; rm -f "$body_file"; exit 1; }
+    # Un-draft only now, after mergeability and the guard above both passed: GitHub will not merge a
+    # draft, and a PR that took the CONFLICTING exit or failed a guard stays a draft for the normal-flow
+    # rebase and push. This is not a CI request; the merge on the next line makes any run it starts
+    # moot. Idempotent on retry.
+    gh pr ready "$pr" -R "$repo" || { rm -f "$body_file"; exit 1; }
     merge_err=$(gh pr merge "$pr" -R "$repo" --squash --match-head-commit "$head_sha" \
       --subject "$title (#$pr)" --body-file "$body_file" 2>&1) && { merged=yes; break; }
     case $merge_err in
@@ -1090,11 +1175,13 @@ Transfer the pending suffix into "Landing stacked PRs safely" as follows:
 4. Rebuild the expected-head field for every pending ledger entry from the local bookmark and GitHub `headRefOid`.
    Require those SHAs to match, and verify that the already merged prefix is still `MERGED` while every pending PR keeps
    the intended head and base chain.
-5. Merge the failed PR with the normal flow's state/base/head guard, exact-head pin, required-check wait, and post-merge
-   `MERGED` check. Record the guarded head as its immutable landed head.
+5. Mark the failed PR ready (it is normally still a draft, because the fast loop un-drafts only after mergeability is
+   confirmed and this PR never got that far; if the user published earlier, `gh pr ready` is a no-op), then merge it
+   with the normal flow's state/base/head guard, exact-head pin, required-check wait, and post-merge `MERGED` check.
+   Record the guarded head as its immutable landed head.
 6. After that merge, stay in normal mode: fetch the new default branch, rebase the entire remaining suffix, retarget the
-   next lowest PR before pushing all moved bookmarks, refresh every pending expected SHA, wait for its checks, and merge
-   it with the normal guard. Repeat this full cycle after every later squash merge.
+   next lowest PR before pushing all moved bookmarks, mark that PR ready, refresh every pending expected SHA, wait for
+   its checks, and merge it with the normal guard. Repeat this full cycle after every later squash merge.
 
 Continue from the failed PR, not from the bottom of the original plan. The original expected SHAs remain evidence for
 the already merged prefix only. They are stale for every rebased descendant and must never be fed back into
