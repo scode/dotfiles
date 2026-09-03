@@ -31,12 +31,13 @@ How to run an eval:
 1. Spawn a sub agent with no prior context (a general-purpose Agent tool task works).
 2. Tell it only where the relevant skill definitions live — this SKILL.md, plus any other skill involved in the scenario
    — and give it a realistic user question whose answer the change should affect. For routing changes, "if I asked you
-   to use scode-galaxy-brain to do X, which model would you use?" works well. Do not point it at the sidecar files
-   (`delegating.md`, `feedback.md`) or at `scode-model-routing` or `scode-harness-shellout` directly: SKILL.md is
-   supposed to send it there when and only when the scenario calls for them, and whether it went is part of what the
-   eval checks. For a change that touches a sidecar or a launch, ask for the exact launch command it would run, which it
-   can only produce by having loaded the shell-out skill and read its harness file; for a routing change, the routing
-   skill's own `AGENTS.md` carries the fixed question list, asked through this skill.
+   to use scode-galaxy-brain to do X, which model would you use?" works well. Do not point it at `feedback.md` or at
+   `scode-model-routing`, `scode-agent-delegation`, or `scode-harness-shellout` directly: SKILL.md is supposed to send
+   it there when and only when the scenario calls for them, and whether it went is part of what the eval checks. For a
+   change that touches a launch, ask for the exact launch command it would run, which it can only produce by having
+   loaded the delegation skill, then the shell-out skill and its harness file; for a routing or delegation change, that
+   skill's own `AGENTS.md` carries the fixed question list, asked through this skill. The verdict-to-action table is
+   this skill's own to eval: for each verdict, ask what the session does next and check it against the table.
 3. Judge whether the answer reflects the intended behavior, not merely whether it quotes the new text. If it doesn't,
    revise the wording and re-run until it does.
 

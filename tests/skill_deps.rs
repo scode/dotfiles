@@ -1,7 +1,8 @@
 //! Enforces the cross-skill dependency contract for the layered agent skills.
 //!
 //! Some skills under `agent-skills/` depend on other skills (galaxy-brain on
-//! the shell-out and routing skills, for example). There is no harness-level
+//! the routing and delegation skills, and delegation on the shell-out skill).
+//! There is no harness-level
 //! way to declare that, so the contract is carried in text: a layered skill's
 //! `SPEC.md` opens with a `Dependencies:` line, and its `SKILL.md` carries one
 //! marked stanza per dependency telling an agent how to load it by name
@@ -52,6 +53,7 @@ elsewhere, or from a similar skill.";
 /// together would silently opt a skill out of the test. Add a skill here in
 /// the PR that gives it a `Dependencies:` line.
 const LAYERED_SKILLS: &[&str] = &[
+    "scode-agent-delegation",
     "scode-galaxy-brain",
     "scode-harness-shellout",
     "scode-model-routing",

@@ -1,6 +1,6 @@
 # scode-galaxy-brain specification
 
-Dependencies: scode-harness-shellout, scode-model-routing
+Dependencies: scode-model-routing, scode-agent-delegation
 
 NOTE: This file is binding on the skill's text. It is deliberately sparse: it records only requirements that have been
 stated as such, not a description of everything the skill does. Absence of an entry means the behavior is not yet
@@ -12,7 +12,8 @@ fix the skill or change this file in the same change, never leave them apart.
 - The skill's dependency set is the `Dependencies:` line above, and the dependency graph between skills is one-way: this
   skill may refer to a skill it depends on, and a skill it depends on never refers back to it. A dependency's text that
   points a reader here is a bug in the dependency; this skill's text that reaches into a dependency by any path other
-  than the one below is a bug here.
+  than the one below is a bug here. The shell-out skill is not a dependency of this skill: it is loaded by the
+  delegation skill, and this skill's text names it only to say so.
 - A dependency is reached by loading it by name through the harness's own skill mechanism, and the dependency's base
   directory is whatever that mechanism reports; everything inside the dependency is read relative to that directory.
   This skill never assumes where a dependency is installed relative to itself, never uses `../<name>/`, and never
@@ -33,15 +34,23 @@ fix the skill or change this file in the same change, never leave them apart.
   the request inputs that skill's `SKILL.md` lists, acted on through the answer shape it defines. This skill's text
   never names a model as a routing default, never carries an inventory or profile table, and never reads the model
   routing config file itself.
+- Every delegation goes through `scode-agent-delegation`, which generates the run id, owns the run directory, launches,
+  runs the checkpoint protocol, and returns one verdict from its vocabulary. This skill's text carries no copy of the
+  task-spec checklist, the checkpoint protocol, the gate's judging steps, or the addendum, and it acts on every verdict
+  in that vocabulary through its action table; a verdict with no row is a bug here.
 - Multiple concurrent uses of scode-galaxy-brain by different orchestrators must not conflict through any state the
   skill itself maintains. Two or more orchestrating sessions may be running the skill at the same time — on the same
   machine, against the same repository, possibly in the same working tree — and every on-disk artifact the skill
   introduces for its own purposes (checkpoint files, scratch copies, prompt files, result and log files, trees it
   creates for isolated delegates) must be private to the orchestrator that created it. No orchestrator may remove,
   overwrite, or reinterpret another orchestrator's artifacts, and the skill's own state must never be the reason two
-  sessions interfere. This requirement is about the skill's state only. It does not ask the skill to make the work being
-  done through it safe to run concurrently: whether two sessions can edit the same working tree at once is a property of
-  that work and of the user's setup, not something the skill is responsible for detecting or preventing.
+  sessions interfere. The run id the delegation skill generates is what names every artifact at every layer: this skill
+  names the isolated trees it creates by it, and handoff notes record each run directory's absolute path. This
+  requirement is about the skill's state only. It does not ask the skill to make the work being done through it safe to
+  run concurrently: whether two sessions can edit the same working tree at once is a property of that work and of the
+  user's setup, not something the skill is responsible for detecting or preventing.
+- Invoking the skill activates it for the rest of the session, per "Staying active for the whole session" in `SKILL.md`;
+  the two dependencies, by contrast, activate nothing when loaded.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.

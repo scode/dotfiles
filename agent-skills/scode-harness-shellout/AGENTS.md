@@ -14,7 +14,7 @@ audit below enforces the text.
 ## Reference audit
 
 Before presenting a change as done, search every file in this directory for the words `galaxy-brain`, `routing`,
-`inventory`, `profile`, `delegating.md`, and `gate`. Each hit is either a local use this skill owns (its own `harness/`
+`inventory`, `profile`, `checkpoint`, and `gate`. Each hit is either a local use this skill owns (its own `harness/`
 directory, its own `SKILL.md`) or a leak of a consumer's vocabulary into a skill that must not know its consumers;
 rewrite the leak so the sentence names an input the caller supplies instead.
 
