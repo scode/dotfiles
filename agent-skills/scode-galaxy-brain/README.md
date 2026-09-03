@@ -42,6 +42,9 @@ the protocol are in [delegating.md](delegating.md).
 ## Layout
 
 The routing rules live in [SKILL.md](SKILL.md), which is what an agent loads up front. The procedure files next to it —
-`delegating.md`, `harness/*.md`, `rc-file.md`, `feedback.md` — are read on demand when a session actually delegates,
-shells out to a particular harness, finds an rc file, or gets feedback, so that a session which never does those things
-never pays for that text. The reasoning behind the rules is archived under [lore/](lore/) and is not maintained.
+`delegating.md`, `rc-file.md`, `feedback.md` — are read on demand when a session actually delegates, finds an rc file,
+or gets feedback, so that a session which never does those things never pays for that text. Launching a delegate in a
+foreign harness (`codex exec`, `claude -p`, `muse exec`, `opencode run`) is the job of a separate skill,
+`scode-harness-shellout`, which SKILL.md loads by name the first time a session shells out; that skill owns the launch
+commands and the observed-behavior notes for each harness, and is inert until something loads it. The reasoning behind
+the rules is archived under [lore/](lore/) and is not maintained.

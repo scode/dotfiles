@@ -104,6 +104,7 @@ const SHARED_AGENT_SKILLS: &[&str] = &[
     "scode-commit-msg-reviewer",
     "scode-dist-rust-setup",
     "scode-galaxy-brain",
+    "scode-harness-shellout",
     "scode-modernize",
     "scode-ssh-delegate",
     "scode-todo",
@@ -470,6 +471,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-harness-shellout",
+        PayloadSymlink::new(
+            "agent-skills/scode-harness-shellout",
+            "~/.claude/skills/scode-harness-shellout",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-ssh-delegate",
         PayloadSymlink::new(
             "agent-skills/scode-ssh-delegate",
@@ -685,6 +695,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "agent-skills/scode-galaxy-brain",
             "~/.codex/skills/scode-galaxy-brain",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-harness-shellout",
+        PayloadSymlink::new(
+            "agent-skills/scode-harness-shellout",
+            "~/.codex/skills/scode-harness-shellout",
         ),
     )
     .depends_on(&codex_skills_dir)

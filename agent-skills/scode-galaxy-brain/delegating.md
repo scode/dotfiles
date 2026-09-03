@@ -105,7 +105,8 @@ finished one below.
 
 Record the launch time and each resume time, for native and shelled-out writers alike; the classification below depends
 on knowing whether a file was written during the turn that just ended. For shelled-out runs this is already part of the
-monitoring record in `harness/shell-out.md`; for native sub agents nothing else makes you write it down.
+monitoring record `scode-harness-shellout` (loaded as SKILL.md describes) prescribes; for native sub agents nothing else
+makes you write it down.
 
 Tell the delegate, in the addendum, that it must not edit ignore files, formatter excludes, or any other config to make
 `.galaxy-brain/` go away. A cheap delegate told both "the checks must pass" and "ignore findings under `.galaxy-brain/`"
@@ -181,14 +182,19 @@ anything else; the bullets are in precedence order, and the first that matches w
   not read it at the gate. (On the launch turn the same combination is the skipped stop above.)
 - No sentinel and no `REPORT.md`: read the message. If the delegate chose to stop — a decline, a question, a report of a
   tool or permission failure it decided not to work around, status instead of work — that is the ordinary gate failure
-  every harness file warns about: escalate per SKILL.md, do not resume. It is a crash only when an environmental cause
-  cut the turn short and you have verified and fixed that cause: disk full, OOM, a kill you issued because a shell-tool
-  wait expired on a run that was making progress (a hard-deadline kill is not a crash; the run is over budget and its
-  result inconclusive, per `harness/shell-out.md`). Note that a disk-full turn can look like a decline (the delegate's
-  edit fails with `No space left on device` and it reports the failure and exits 0) — the test is whether the cause was
-  the environment and is now fixed, not how the message reads. A crash is resumed once per `harness/shell-out.md`. The
-  distinction matters because the crash prompt tells the delegate its turn was interrupted and the cause fixed; sent to
-  a delegate that declined, that is a lie that buys another declined turn under bypass flags.
+  every harness exits 0 on: escalate per SKILL.md, do not resume. A run that never got going or stuck (a hang signature
+  named in the harness file, a launch error) is an execution-path failure, not a model failure and not a crash: kill it,
+  remove its attributable changes, fix the path, and relaunch once rather than escalating models over it. It is a crash
+  only when an environmental cause cut short a run that was making progress and you have verified and fixed that cause:
+  disk full, OOM, a kill you issued because a shell-tool wait expired (a hard-deadline kill is not a crash; the run is
+  over budget and its result inconclusive). Note that a disk-full turn can look like a decline (the delegate's edit
+  fails with `No space left on device` and it reports the failure and exits 0) — the test is whether the cause was the
+  environment and is now fixed, not how the message reads. A crash is resumed once, with the crash prompt under
+  Resuming; the checkpoint files it already wrote let it re-orient, and same-session resume recovered two eval runs
+  killed mid-implementation by a full disk. If the resumed turn dies the same way, stop resuming: treat the result as
+  inconclusive, fix the environment, and relaunch from a cleaned tree. The distinction matters because the crash prompt
+  tells the delegate its turn was interrupted and the cause fixed; sent to a delegate that declined, that is a lie that
+  buys another declined turn under bypass flags.
 
 ### Reviewing a checkpoint
 
@@ -231,12 +237,18 @@ appending while it applies your review changes, so entries after the last one yo
 
 Resume the same delegate in the same session; never relaunch from scratch with the answers pasted in, since the
 delegate's context (what it read, what it planned) is what makes the resumed turn cheap. For a native sub agent that
-means a follow-up message to the same agent (`SendMessage` in Claude Code). For a shelled-out delegate, each harness
-file gives the verified resume command, and `harness/shell-out.md` gives the rules common to all of them. Whatever the
-path, it must support same-session resume; if a mechanism cannot, do not use it for writers. If the handle is gone — a
-native sub agent id that no longer resolves after compaction, a session the harness cannot find — the delegation is
-over: remove its attributable changes, move its run directory to scratch, and relaunch under a new run id with a fresh
-spec that folds in the answers you already gave. Do not try to reconstruct a stopped delegate from its files.
+means a follow-up message to the same agent (`SendMessage` in Claude Code). For a shelled-out delegate,
+`scode-harness-shellout` (loaded as SKILL.md describes) gives the rules common to every harness — the session or thread
+id recorded at launch, the same model, effort, directory, and permission flags on the resume — and its file for the
+mechanism gives the verified resume command and says where the final message lands on a resumed turn. Whatever the path,
+it must support same-session resume; if a mechanism cannot, do not use it for writers. Write your `ANSWERS.md` or
+`REVIEW.md` into the run directory first, then launch the resume; the resume prompt is one of the short ones below,
+built in a file and passed like any other prompt. If the handle is gone — a native sub agent id that no longer resolves
+after compaction, a session the harness cannot find — the delegation is over: remove its attributable changes, move its
+run directory to scratch, and relaunch under a new run id with a fresh spec that folds in the answers you already gave.
+Do not try to reconstruct a stopped delegate from its files. A resumed turn that shows no sign of its earlier context —
+it re-reads the task from scratch, asks what its run directory is — is a fresh session, not a resume: kill it, remove
+its attributable changes, and treat the delegation as over in the same way.
 
 The resume prompts are short; substitute the run directory's absolute path for `<run-dir>`, as in the addendum. After
 `ANSWERS.md`:
@@ -259,6 +271,23 @@ number with either `OK` or a change to make. Apply the changes, re-run the proje
 at `REPORT.md`.
 ```
 
+After a crash (an environmental cause, verified and fixed, per the classification above), tell the delegate what
+happened, to check the tree, and which stop it is heading for — the third sentence changes with the phase the run was
+in:
+
+```
+Your previous turn was interrupted by <what happened, e.g. a disk-full error: writes failed with "No space left on
+device", including one of your file edits>. The cause has been fixed. Inspect the working tree (status and diff in
+this repository's version control, e.g. `git status` and `git diff`) to see what actually landed, redo any edit that
+was lost, then continue the protocol from where you were:
+<launch turn: finish `ASSUMPTIONS.md` in your run directory and stop with `AWAITING GUIDANCE` without implementing
+anything>
+<after ANSWERS.md: finish the implementation, run the project's checks, keep `DECISIONS.md` in your run directory
+current, and stop with `AWAITING REVIEW` before writing `REPORT.md`>
+<after REVIEW.md: finish applying the review changes, re-run the checks, and write `REPORT.md` in your run
+directory>.
+```
+
 ### The addendum
 
 Append this to every writer's task spec, after the acceptance criteria and checks. Substitute the run directory's
@@ -266,9 +295,9 @@ _absolute_ path (e.g. `/home/me/src/proj/.galaxy-brain/3f9c1a2e-…`) for `<run-
 run directory is" — it is the only place the path appears, and the rest of the text refers to "the run directory".
 Absolute, because a delegate's working directory is not reliably the tree root: a native sub agent inherits the
 orchestrator's cwd, which for an isolated tree is the wrong tree entirely, and a relative path there sends the
-checkpoint files somewhere you will never look. The same substitution applies to the resume prompts above and the crash
-prompt in `harness/shell-out.md`. Adapt "the project's checks" and "the project's binding docs" to the concrete names
-the spec already uses (e.g. "the four checks", "`CLAUDE.md` and `SPEC.md`"); keep the mechanics as written.
+checkpoint files somewhere you will never look. The same substitution applies to the resume prompts and the crash prompt
+above. Adapt "the project's checks" and "the project's binding docs" to the concrete names the spec already uses (e.g.
+"the four checks", "`CLAUDE.md` and `SPEC.md`"); keep the mechanics as written.
 
 ```
 # Assumptions checkpoint, decision log, and review checkpoint

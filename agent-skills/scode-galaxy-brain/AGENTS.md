@@ -7,6 +7,19 @@ you are making, or the text you find, disagrees with `SPEC.md`, treat that as a 
 explicitly in the same change with the reason. Never leave the two apart, and never satisfy a spec requirement by
 narrowing what the requirement says.
 
+`SPEC.md` opens with a `Dependencies:` line that `tests/skill_deps.rs` at the repository root parses, and `SKILL.md`
+carries one marked stanza per dependency (between `<!-- dependency: <name> -->` and `<!-- /dependency -->`) whose
+wording the same test checks against its canonical template. Change the stanza only by changing the template in the
+test, and then in every skill that carries one.
+
+## The Codex path in the stanza
+
+The stanza reads a dependency on Codex from `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`, because Codex has no
+mid-turn skill loader and that is the root the Codex 0.152 binary uses (the bundled `skill-installer` skill and
+`codex-rs/skills` both say so). Codex's public docs already describe a `.agents/skills` root. When Codex changes its
+skills root, or the installer starts writing somewhere else for Codex, re-verify the stanza's path with a live
+`codex exec` run in an isolated `CODEX_HOME` and update the template in `tests/skill_deps.rs` and every stanza together.
+
 ## Evaluating changes
 
 After changing SKILL.md, eval the change with a fresh-context sub agent before presenting the work as done. Skill text
@@ -19,11 +32,17 @@ How to run an eval:
 2. Tell it only where the relevant skill definitions live — this SKILL.md, plus any other skill involved in the scenario
    — and give it a realistic user question whose answer the change should affect. For routing changes, "if I asked you
    to use scode-galaxy-brain to do X, which model would you use?" works well. Do not point it at the sidecar files
-   (`delegating.md`, `harness/*.md`, `rc-file.md`, `feedback.md`) directly: SKILL.md is supposed to send it there when
-   and only when the scenario calls for them, and whether it went is part of what the eval checks. For a change that
-   touches a sidecar, ask for the exact launch command it would run, which it can only produce by having read the file.
+   (`delegating.md`, `rc-file.md`, `feedback.md`) or at `scode-harness-shellout` directly: SKILL.md is supposed to send
+   it there when and only when the scenario calls for them, and whether it went is part of what the eval checks. For a
+   change that touches a sidecar or a launch, ask for the exact launch command it would run, which it can only produce
+   by having loaded the shell-out skill and read its harness file.
 3. Judge whether the answer reflects the intended behavior, not merely whether it quotes the new text. If it doesn't,
    revise the wording and re-run until it does.
+
+Every change to a stanza or to what `SKILL.md` says about a dependency also runs the dependency checks: a temporary
+consumer whose stanza names a dependency that exists nowhere, one whose name is wrong, and one whose needed sidecar is
+missing, each of which must stop and name the skill and the path or tool; and a positive load whose base directory is
+the installed one.
 
 When a scenario depends on `~/.scode-galaxy-brainrc.md`, check that the file does not already exist before creating a
 temporary one, and delete it when the eval is done — it belongs to the user.

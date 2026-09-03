@@ -31,24 +31,39 @@ the user's VCS workflow preferences and skills, and those do not transfer to a s
 ## What to read, and when
 
 This file is the routing policy: everything needed to decide whether to delegate, what to delegate, and to which model.
-The procedure for carrying a decision out lives in files next to this one, and each is read only at the moment it
-becomes relevant — a session that never shells out never reads a harness file. "Next to this one" means the same
-directory this SKILL.md was loaded from, whatever path that is in the current harness.
+The procedure for carrying a decision out lives in files next to this one and in one other skill, and each is read only
+at the moment it becomes relevant — a session that never shells out never loads the shell-out skill. "Next to this one"
+means the same directory this SKILL.md was loaded from, whatever path that is in the current harness.
 
-| read                   | in full, the first time in a session that you...                                          |
-| ---------------------- | ----------------------------------------------------------------------------------------- |
-| `delegating.md`        | decide to delegate anything at all, native or shelled out                                 |
-| `harness/shell-out.md` | decide to shell out to any external harness                                               |
-| `harness/codex.md`     | route to a gpt model from a non-Codex session (`codex exec`)                              |
-| `harness/claude.md`    | route to a claude model from a non-Claude session (`claude -p`)                           |
-| `harness/muse.md`      | route to a muse model (`muse exec`)                                                       |
-| `harness/opencode.md`  | route to a glm model (`opencode run`)                                                     |
-| `rc-file.md`           | find that `~/.scode-galaxy-brainrc.md` exists, or are asked to seed it                    |
-| `feedback.md`          | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
+| read            | in full, the first time in a session that you...                                          |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| `delegating.md` | decide to delegate anything at all, native or shelled out                                 |
+| `rc-file.md`    | find that `~/.scode-galaxy-brainrc.md` exists, or are asked to seed it                    |
+| `feedback.md`   | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
 
-The harness files are the only place launch commands live. That is deliberate: a launch built from memory of a previous
-session, or improvised from a harness's `--help`, skips the observed-behavior notes that exist because each one cost
-someone a hung or silently wrong run. Read the file, then launch.
+The first time in a session that you decide to shell out to any external harness (`codex exec`, `claude -p`,
+`muse exec`, `opencode run`), load the skill `scode-harness-shellout` as follows, read its `SKILL.md` in full, and then
+read its file for the mechanism you are about to launch. That skill is the only place launch commands live, and that is
+deliberate: a launch built from memory of a previous session, or improvised from a harness's `--help`, skips the
+observed-behavior notes that exist because each one cost someone a hung or silently wrong run. Read the file, then
+launch.
+
+<!-- dependency: scode-harness-shellout -->
+
+> Load the skill `scode-harness-shellout` through your harness's skill mechanism: the Skill tool on Claude Code, the
+> `skill` tool on OpenCode, the `read_skill` tool on Muse Code. On Codex, which has no such tool, read
+> `${CODEX_HOME:-$HOME/.codex}/skills/scode-harness-shellout/SKILL.md`; if it is absent or unreadable, report that exact
+> path and do not search elsewhere. On any other harness, use its skill loader only if the result reports the skill's
+> base directory; otherwise stop and say this skill has not been verified on that harness. The base directory is the
+> directory containing the loaded `SKILL.md`. Confirm the name the loader reports is `scode-harness-shellout`; if the
+> loader shows no name, read only the frontmatter (the first lines up to the closing `---`) of `<base>/SKILL.md`. Read
+> its sidecars relative to the base directory. Stop and tell the user that `scode-harness-shellout` is not installed or
+> could not be loaded, naming the path or tool, if the loader reports the skill as unknown or denied, the file is absent
+> or unreadable on Codex (the skills root for Codex 0.152), the result says it was truncated, the name does not match,
+> or a sidecar this step needs is not readable under the base directory. Do not continue from memory, from a copy, from
+> a search for the file elsewhere, or from a similar skill.
+
+<!-- /dependency -->
 
 ## Composing with other skills
 
@@ -77,9 +92,9 @@ coordinator-shaped GLM delegation remains one fully equipped `opencode run`; its
 not new Galaxy Brain shell-outs. The outer route still chooses and announces the coordinator's model and effort. A
 process skill that requires exact models for its internal roles must be included in the coordinator's task; otherwise
 its native agent configuration owns those internal choices. The coordinator task also carries the native-task manifest
-and monitoring contract from `harness/opencode.md`. OpenCode does not expose nested task launches in the outer JSON
-stream, so the outer session must not infer fan-out shape or progress from the number or timing of visible `task`
-events.
+and monitoring contract from `scode-harness-shellout`'s `harness/opencode.md`. OpenCode does not expose nested task
+launches in the outer JSON stream, so the outer session must not infer fan-out shape or progress from the number or
+timing of visible `task` events.
 
 ## Staying active for the whole session
 
@@ -91,11 +106,11 @@ Context compaction, session resume, a tool restart, or a summary that fails to m
 treat retained context that has gone quiet about galaxy-brain as a summarization artifact, not a decision anyone made.
 
 After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md, every
-sidecar file you had loaded (at minimum `delegating.md` if any delegation happened, plus the harness files for any
-harness in use), and `~/.scode-galaxy-brainrc.md` (if it exists) before doing further substantive work — the routing
-rules and the launch details do not survive summarization reliably. If the retained context is ambiguous but mentions
-outstanding delegated work, model or effort routing, or galaxy-brain at all, assume the skill is still active and say
-that you are assuming it.
+sidecar file you had loaded (at minimum `delegating.md` if any delegation happened), `scode-harness-shellout` and its
+file for any harness in use (loaded again as What to read describes), and `~/.scode-galaxy-brainrc.md` (if it exists)
+before doing further substantive work — the routing rules and the launch details do not survive summarization reliably.
+If the retained context is ambiguous but mentions outstanding delegated work, model or effort routing, or galaxy-brain
+at all, assume the skill is still active and say that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
 goal, any provider preference, rc-file assumptions, which sidecar files were loaded, delegations still in flight, and
@@ -269,20 +284,19 @@ session — unless a provider preference says otherwise, the path to a gpt model
 a non-Codex session), or the rc file rules the model out. Read-only mechanical work (searches, scans, log reading) is
 not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
 launch and monitoring overhead per delegate — the eval measured implementation writers, not read-only churn. The
-cross-family cost the bias exists to weigh is small and characterized for writers: the launch, resume, and monitoring
-mechanics in `harness/codex.md` are exercised end to end (two items there remain explicitly unverified), and the price
-gap to the same-family writer alternative is about 30× for no measured difference in first-attempt correctness (see Work
-profiles). A "short" writer task crosses families under this rule; a "tiny" one is still done by the orchestrator.
-Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the same-family column; the
-same-family routes are what you use when the gpt path is unavailable or a preference directs you there. Two things this
-default deliberately trades, worth saying to the user when they matter: shelling out runs the delegate with the
-harness's permission bypass flags where a native sub agent inherits the session's permission system — where that is
-unacceptable, stay native — and it moves spend from whatever subscription covers the orchestrator's own family onto
-metered API billing; a user whose economics make that worse says `prefer-claude` or writes the rc file, and the
-announcement of the first cross-family delegation is the natural place to remind them. This is the one place the skill
-treats a specific model as the default across harnesses, and it rests on one eval in one small repository; if a
-follow-up on a larger, messier codebase finds luna's literalism surviving the checkpoint, this paragraph is what to
-revisit.
+cross-family cost the bias exists to weigh is small and characterized for writers: the shell-out path to codex (launch,
+resume, and monitoring) is exercised end to end (two items there remain explicitly unverified), and the price gap to the
+same-family writer alternative is about 30× for no measured difference in first-attempt correctness (see Work profiles).
+A "short" writer task crosses families under this rule; a "tiny" one is still done by the orchestrator. Escalation after
+a luna failure follows the GPT route (terra medium, then sol medium), not the same-family column; the same-family routes
+are what you use when the gpt path is unavailable or a preference directs you there. Two things this default
+deliberately trades, worth saying to the user when they matter: shelling out runs the delegate with the harness's
+permission bypass flags where a native sub agent inherits the session's permission system — where that is unacceptable,
+stay native — and it moves spend from whatever subscription covers the orchestrator's own family onto metered API
+billing; a user whose economics make that worse says `prefer-claude` or writes the rc file, and the announcement of the
+first cross-family delegation is the natural place to remind them. This is the one place the skill treats a specific
+model as the default across harnesses, and it rests on one eval in one small repository; if a follow-up on a larger,
+messier codebase finds luna's literalism surviving the checkpoint, this paragraph is what to revisit.
 
 ### Delegation and escalation rules
 
@@ -358,31 +372,33 @@ running in, then:
 
 - **Claude session → claude model**: use your native sub agent mechanism (e.g. the Agent/Task tool) with the model
   parameter set to the target model.
-- **Claude session → gpt model**: shell out to `codex exec` per `harness/codex.md`.
+- **Claude session → gpt model**: shell out to `codex exec`.
 - **Codex session → gpt model**: use your native sub agent mechanism, specifying the target model.
-- **Codex session → claude model**: shell out to `claude -p` per `harness/claude.md`.
-- **Any session → muse model**: shell out to `muse exec` per `harness/muse.md`. Muse Code is only ever a delegate here,
-  never the orchestrator, so there is no native muse path.
-- **Any session → glm model**: shell out to `opencode run` per `harness/opencode.md`, always with the unrestricted
-  default build agent and `task` available. OpenCode is likewise only ever a delegate here.
+- **Codex session → claude model**: shell out to `claude -p`.
+- **Any session → muse model**: shell out to `muse exec`. Muse Code is only ever a delegate here, never the
+  orchestrator, so there is no native muse path.
+- **Any session → glm model**: shell out to `opencode run`, always with the unrestricted default build agent and `task`
+  available. OpenCode is likewise only ever a delegate here.
 
 Before the first delegation of any kind, read `delegating.md`: it holds the task-spec checklist, the baseline you must
-record before a writer runs, and how isolated writers get integrated. Before the first shell-out, read
-`harness/shell-out.md` and then the file for the harness you are about to launch; the harness files carry the launch
-templates and the observed behaviors (stdin hangs, exit-code semantics, how effort and unrestricted tool access actually
-resolve, kill semantics) that a launch improvised from `--help` would miss.
+record before a writer runs, and how isolated writers get integrated. Before the first shell-out, load
+`scode-harness-shellout` as What to read describes, read its `SKILL.md`, and then read its file for the mechanism you
+are about to launch (`harness/codex.md`, `harness/claude.md`, `harness/muse.md`, or `harness/opencode.md` under that
+skill's base directory); those files carry the launch templates and the observed behaviors (stdin hangs, exit-code
+semantics, how effort and unrestricted tool access actually resolve, kill semantics) that a launch improvised from
+`--help` would miss.
 
 When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
 otherwise sub agents inherit the session's effort and that is acceptable.
 
 Every writer path must support resuming the same delegate in the same session, because writers stop twice for the
 checkpoints in `delegating.md` and are resumed with your answers. Natively that is a follow-up message to the same sub
-agent (`SendMessage` in Claude Code, or your harness's equivalent); shelled out, each harness file carries the verified
-resume command, keyed on a session or thread id you must record at launch. A path that cannot resume is not a writer
-path. Native resume is verified for Claude Code and for Codex (0.151.0, a gpt-5.6-sol orchestrator resuming a native
-gpt-5.6-terra sub agent through both checkpoints, 2026-08-30). If some other harness's native sub agents cannot take a
-follow-up message, route writers through that family's shell-out harness file instead — the one case where a session
-shells out to its own family — and say so when announcing the delegation.
+agent (`SendMessage` in Claude Code, or your harness's equivalent); shelled out, `scode-harness-shellout`'s file for the
+mechanism carries the verified resume command, keyed on a session or thread id you must record at launch. A path that
+cannot resume is not a writer path. Native resume is verified for Claude Code and for Codex (0.151.0, a gpt-5.6-sol
+orchestrator resuming a native gpt-5.6-terra sub agent through both checkpoints, 2026-08-30). If some other harness's
+native sub agents cannot take a follow-up message, route writers through that family's shell-out mechanism instead — the
+one case where a session shells out to its own family — and say so when announcing the delegation.
 
 Name every sub agent (label, description, or whatever your mechanism displays) so the name includes the task plus the
 model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
