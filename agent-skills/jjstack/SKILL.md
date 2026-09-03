@@ -412,6 +412,46 @@ The important parts are:
 
 Do not ad-lib shell escaping here. Use the file-and-variable pattern every time.
 
+## Passing commit messages to jj safely
+
+The same problem exists on the `jj` side, with an extra trap: `jj commit`, `jj squash`, and `jj describe` take `-m`, but
+none of them takes `-F` or `--file`, and only `jj describe` has `--stdin`. An agent that reaches for the Git habit
+`jj commit -F msg.txt` gets `unexpected argument '-F' found` (observed on jj 0.44). The inline `-m "Add first change"`
+examples elsewhere in this file are fine for one-line placeholders; a real multi-paragraph message with backticks,
+quotes, or `$` goes through a file.
+
+Write the message with a single-quoted heredoc, then hand it to `-m` through command substitution. This works
+identically for all three commands, so there is one pattern to remember:
+
+```bash
+msg_file=$(mktemp)
+cat >"$msg_file" <<'EOF'
+feat: add first change
+
+This explains why the change exists. It may contain `code`, "$vars",
+$(subshells), single quotes, double quotes, and blank lines.
+EOF
+
+jj commit README.md -m "$(cat "$msg_file")" || exit 1
+rm -f "$msg_file"
+```
+
+`$(cat ...)` strips trailing newlines and nothing else, and the double quotes keep the rest intact. Use the same shape
+for `jj squash -m "$(cat "$msg_file")"` when rewriting a PR's commit and `jj describe -m "$(cat "$msg_file")"` when
+describing the working copy. `jj describe --stdin <"$msg_file"` is an equivalent for that one command; do not assume the
+other two accept it.
+
+The PR title and body usually come from the same text. Derive them from the message file rather than retyping: the first
+line is the title, and everything after the blank line is the body:
+
+```bash
+title=$(head -n 1 "$msg_file")
+body_file=$(mktemp)
+tail -n +3 "$msg_file" >"$body_file"
+```
+
+Then continue with the `gh pr create` pattern above.
+
 ## Starting a new stack
 
 Start from the tracked default branch via `trunk()` unless you already know you need a different base:
