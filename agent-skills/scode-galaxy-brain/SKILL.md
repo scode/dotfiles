@@ -30,16 +30,37 @@ the user's VCS workflow preferences and skills, and those do not transfer to a s
 
 ## What to read, and when
 
-This file is the routing policy: everything needed to decide whether to delegate, what to delegate, and to which model.
-The procedure for carrying a decision out lives in files next to this one and in one other skill, and each is read only
-at the moment it becomes relevant — a session that never shells out never loads the shell-out skill. "Next to this one"
-means the same directory this SKILL.md was loaded from, whatever path that is in the current harness.
+This file is the workflow: how to decide whether to delegate, what to delegate, how to stay in charge, and what to do
+with what comes back. Two other skills carry the parts other skills also need — which model a unit of work should run
+on, and how to launch a delegate in a foreign harness — and this file loads each by name at the moment it becomes
+relevant. The procedure files next to this one are read the same way. "Next to this one" means the same directory this
+SKILL.md was loaded from, whatever path that is in the current harness.
 
 | read            | in full, the first time in a session that you...                                          |
 | --------------- | ----------------------------------------------------------------------------------------- |
 | `delegating.md` | decide to delegate anything at all, native or shelled out                                 |
-| `rc-file.md`    | find that `~/.scode-galaxy-brainrc.md` exists, or are asked to seed it                    |
 | `feedback.md`   | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
+
+The first time in a session that you need to choose a model, effort, or launch mechanism for a unit of work, load the
+skill `scode-model-routing` as follows and read its `SKILL.md` in full. Every such choice afterwards is a request to it
+(see Routing below); this file never picks a model on its own.
+
+<!-- dependency: scode-model-routing -->
+
+> Load the skill `scode-model-routing` through your harness's skill mechanism: the Skill tool on Claude Code, the
+> `skill` tool on OpenCode, the `read_skill` tool on Muse Code. On Codex, which has no such tool, read
+> `${CODEX_HOME:-$HOME/.codex}/skills/scode-model-routing/SKILL.md`; if it is absent or unreadable, report that exact
+> path and do not search elsewhere. On any other harness, use its skill loader only if the result reports the skill's
+> base directory; otherwise stop and say this skill has not been verified on that harness. The base directory is the
+> directory containing the loaded `SKILL.md`. Confirm the name the loader reports is `scode-model-routing`; if the
+> loader shows no name, read only the frontmatter (the first lines up to the closing `---`) of `<base>/SKILL.md`. Read
+> its sidecars relative to the base directory. Stop and tell the user that `scode-model-routing` is not installed or
+> could not be loaded, naming the path or tool, if the loader reports the skill as unknown or denied, the file is absent
+> or unreadable on Codex (the skills root for Codex 0.152), the result says it was truncated, the name does not match,
+> or a sidecar this step needs is not readable under the base directory. Do not continue from memory, from a copy, from
+> a search for the file elsewhere, or from a similar skill.
+
+<!-- /dependency -->
 
 The first time in a session that you decide to shell out to any external harness (`codex exec`, `claude -p`,
 `muse exec`, `opencode run`), load the skill `scode-harness-shellout` as follows, read its `SKILL.md` in full, and then
@@ -67,22 +88,22 @@ launch.
 
 ## Composing with other skills
 
-Galaxy-brain is a routing layer, not a workflow. When another skill or instruction defines its own process — roles,
-steps, what counts as a valid run — that skill stays authoritative for the process. Galaxy-brain only decides which
-model and effort executes each unit of work, how the delegation seam works, and how delegated output gets gated.
+Galaxy-brain is an orchestration layer, not a workflow. When another skill or instruction defines its own process —
+roles, steps, what counts as a valid run — that skill stays authoritative for the process. Galaxy-brain only decides
+which model and effort executes each unit of work (by asking routing), how the delegation seam works, and how delegated
+output gets gated.
 
 Keep the roles separate: do not merge this skill's orchestrator role with another skill's coordinator role, and do not
 attribute one skill's constraints to the other. If another skill forbids or requires something, that rule comes from
 that skill; reason about it (and explain it to the user) on that skill's terms.
 
 Routing authority covers every delegation seam the current session owns. When another active skill asks this session to
-spawn reviewers or workers, each spawn is still a galaxy-brain delegation: pick the model from the appropriate work
-profile, set model and effort explicitly where the spawn mechanism supports it, and announce the choice as usual. The
-trap is following the other skill's spawn instructions verbatim and letting its subagents silently inherit this
-session's expensive model. Inheriting is fine only as a deliberate routing decision, stated as such. This claims only
-the choices the other skill leaves open: if it explicitly demands a specific model, agent type, or effort for a spawn,
-that demand is process, not a routing default — honor it like any other rule that skill owns, and attribute the choice
-to that skill when you announce it.
+spawn reviewers or workers, each spawn is still routed by galaxy-brain: ask routing for the model and effort as a
+process-defined spawn, carrying any model, agent type, or effort that skill explicitly demands, set model and effort
+explicitly where the spawn mechanism supports it, and announce the choice as usual. The trap is following the other
+skill's spawn instructions verbatim and letting its subagents silently inherit this session's expensive model.
+Inheriting is fine only as a deliberate routing decision, stated as such — which is what routing's `inherit` answer is.
+When the other skill demanded the choice, the announcement attributes it to that skill.
 
 A delegated unit that is itself a coordinator is one delegation seam, not one seam per subagent it creates internally.
 When its harness has a native delegation tool, launch the coordinator with the harness's full tool set and let it run
@@ -106,233 +127,88 @@ Context compaction, session resume, a tool restart, or a summary that fails to m
 treat retained context that has gone quiet about galaxy-brain as a summarization artifact, not a decision anyone made.
 
 After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md, every
-sidecar file you had loaded (at minimum `delegating.md` if any delegation happened), `scode-harness-shellout` and its
-file for any harness in use (loaded again as What to read describes), and `~/.scode-galaxy-brainrc.md` (if it exists)
-before doing further substantive work — the routing rules and the launch details do not survive summarization reliably.
-If the retained context is ambiguous but mentions outstanding delegated work, model or effort routing, or galaxy-brain
-at all, assume the skill is still active and say that you are assuming it.
+sidecar file you had loaded (at minimum `delegating.md` if any delegation happened), `scode-model-routing` if any
+routing decision was made, and `scode-harness-shellout` and its file for any harness in use — each dependency loaded
+again as What to read describes — before doing further substantive work; the routing rules and the launch details do not
+survive summarization reliably. If the retained context is ambiguous but mentions outstanding delegated work, model or
+effort routing, or galaxy-brain at all, assume the skill is still active and say that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
-goal, any provider preference, rc-file assumptions, which sidecar files were loaded, delegations still in flight, and
-the next routing decision. Record every run id you have generated and not yet moved to scratch, with the tree each run
-directory is in; for each delegate stopped at a checkpoint, also record which checkpoint it is at and the session or
-thread id needed to resume it — a stopped delegate that the summary forgets is one that gets relaunched from scratch,
-and a run id the summary forgets is a directory you can no longer prove is yours. Do this even when no delegate is
-currently running — between delegations is exactly when a summary is most likely to drop the skill. This is a backstop,
-not the mechanism: stickiness applies whether or not a handoff was ever written.
+goal, any provider preference, what the model routing config file ruled in or out, which sidecar files and dependency
+skills were loaded, delegations still in flight, and the next routing decision. Record every run id you have generated
+and not yet moved to scratch, with the tree each run directory is in; for each delegate stopped at a checkpoint, also
+record which checkpoint it is at and the session or thread id needed to resume it — a stopped delegate that the summary
+forgets is one that gets relaunched from scratch, and a run id the summary forgets is a directory you can no longer
+prove is yours. Do this even when no delegate is currently running — between delegations is exactly when a summary is
+most likely to drop the skill. This is a backstop, not the mechanism: stickiness applies whether or not a handoff was
+ever written.
 
-## Routing model
+## Routing
 
-Do not rank models with universal cost or intelligence scores. Effective cost depends on the task: a nominally cheap
-model can spend more tokens, take longer, require more review, and trigger an escalation when work exceeds its reliable
-range. Route by work profile instead, then use the gate and escalation policy to control total cost through an accepted
-result.
+Every choice of model, reasoning effort, and launch mechanism is a request to `scode-model-routing`, loaded as What to
+read describes. Its `SKILL.md` defines the work profiles, the request, the answer, and the rules that turn one into the
+other; nothing in this file ranks models. What this file adds is which facts galaxy-brain puts in a request and what it
+does with the answer.
 
-Each model name includes its configured reasoning effort. The family determines which delegation path from the mechanics
-section applies. `sota` marks models trusted with critical review and the orchestrator role. Availability and user
-overrides may remove or replace these defaults; see Local availability.
+Name the profile yourself, per routing's "How to name a profile", and supply what routing asks for: this harness and its
+model; whether the unit edits a tree; its expected size and whether its input is large; whether the output is visual;
+the spawn origin (your own decomposition, or a role another skill's process defines — see Composing); any explicit
+demand from the user or that process; whether an independent cross-family perspective is part of the goal; the provider
+preference from the invocation (below); whether foreign-harness permission bypass and metered billing are acceptable,
+which they are unless the user has said otherwise; whether the native mechanism can resume a writer (it can on Claude
+Code and Codex); and the current route and its outcome (`none` on a first attempt; after a failure, the model that
+failed and one of `substantive failure`, `substantive failure (lost context)` for a delegate that lost track of earlier
+context mid-task, `misclassified` when the output showed the task was more demanding than its profile, or
+`execution-path failure` for a hang or launch failure, marking the mechanism unavailable when the path cannot be fixed;
+and, under a provider preference, whether the preferred family has already produced poor output this session, which
+routing cannot remember for you). Routing reads the model routing config file and checks which CLIs and credentials
+exist itself.
 
-| model                             | family | sota |
-| --------------------------------- | ------ | ---- |
-| gpt-5.6-luna medium               | gpt    |      |
-| gpt-5.6-terra medium              | gpt    |      |
-| gpt-5.6-sol low                   | gpt    |      |
-| gpt-5.6-sol medium                | gpt    |      |
-| gpt-5.6-sol high                  | gpt    | yes  |
-| haiku-4.5 high                    | claude |      |
-| sonnet-5 low                      | claude |      |
-| sonnet-5 medium                   | claude |      |
-| sonnet-5 high                     | claude |      |
-| opus-5 high                       | claude |      |
-| fable-5 high                      | claude | yes  |
-| muse-spark-1.3-contributor low    | muse   |      |
-| muse-spark-1.3-contributor medium | muse   |      |
-| muse-spark-1.3-contributor high   | muse   |      |
-| muse-spark-1.3-contributor xhigh  | muse   |      |
-| glm-5.3-flash low                 | glm    |      |
-| glm-5.3-flash high                | glm    |      |
-| glm-5.3-flash max                 | glm    |      |
+Act on the answer as follows. `orchestrator`: the unit is not delegated; do it yourself. `inherit`: spawn at this
+session's own model on the caller's mechanism. `no suitable route`: nothing reachable fits; do it yourself or tell the
+user. A model with mechanism `native`: your sub agent mechanism (the Agent/Task tool in Claude Code, or your harness's
+equivalent) with the model and, where the mechanism has an effort parameter, the effort set. A model with any other
+mechanism: a shell-out, per `scode-harness-shellout`. An agent type the user or another skill's process demanded is not
+in the answer; apply it at the spawn exactly as demanded. The `route exhausted` and `endpoint trusted` facts feed the
+escalation rules below, and the reason and the divergence flags feed the announcement.
 
-The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
-on your own initiative. It enters a route only through an explicit `prefer-muse` preference, a user request naming it,
-or a deliberate cross-family decision announced as such. Its profile placements below are provisional: they rest on
-vendor-reported benchmarks rather than calibrated use, and until real use calibrates them neither its benchmark tier nor
-its token price counts as a reason to cross families on your own. It carries no `sota` mark, so it is never the sole
-critical-review gate, and no muse route ends at a trusted endpoint (see Delegation and escalation rules).
+The invocation may include the keyword `prefer-gpt`, `prefer-claude`, `prefer-muse`, or `prefer-glm`. This expresses a
+preference unrelated to model performance — typically the user has a large subscription with one provider and a small
+one with the others, and wants spend steered accordingly. Pass it to routing as the provider preference; the default,
+absent a keyword, is none. Routing honors it unless there is a very clear, strong reason to diverge, and says so in its
+answer when it does; when you announce such a delegation, say so and why. A cross-family route's reason also names what
+it trades (the delegate runs under the foreign harness's permission bypass flags, and spend moves from the session's
+subscription onto metered API billing); the announcement of the first cross-family delegation of the session is the
+natural place to remind the user of that, and a user whose economics make it worse says `prefer-<family>` or writes the
+config file.
 
-The glm family is Z.ai's GLM-5.3-Flash (the model that ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode)
-driven through the OpenCode harness, `opencode run`. Everything said about muse above applies to it unchanged: opt-in
-only, via `prefer-glm`, a request naming it, or an announced cross-family decision; provisional placements; no `sota`
-mark; no route ending at a trusted endpoint. Its evidence base is one clean clear-spec smoke run plus vendor benchmarks,
-and its per-token price is roughly an order of magnitude below the other families — which is exactly the number that
-must not tempt an unprompted cross-family route until real use has calibrated it. The three effort levels are the only
-ones Z.ai accepts for this model.
-
-### Work profiles
-
-Classify the task before choosing a model. Use the primary for the orchestrator's family when it is suitable and
-available, except that workhorse writers — tree-editing delegates under the mechanical or clear-spec implementation
-profile — default to luna from any family (see Native-path bias). Move to the escalation model after a substantive
-failure or when the task proves more demanding than its initial classification.
-
-| profile                   | use when                                                                                                                                                                       | GPT route                                  | Claude route                    | Muse route                                                          | GLM route                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                         | gpt-5.6-luna medium → gpt-5.6-terra medium | haiku-4.5 high → sonnet-5 low   | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
-| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                             | gpt-5.6-sol low → gpt-5.6-sol medium       | sonnet-5 low → sonnet-5 medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                           | gpt-5.6-luna medium → gpt-5.6-terra medium | sonnet-5 medium → sonnet-5 high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives your decomposition — design settled by you first, delegated for volume of input more than for judgment | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                     | orchestrator (visual output: opus-5 high)  | orchestrator                    | none                                                                | none                                   |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns                                                                                                       | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                       | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
-
-A `none` route means the family has no suitable model for that profile. When a provider preference points at such a
-route, that is the "no suitable model" reason to diverge: fall back to the orchestrator's own family's route for the
-profile and announce the divergence as usual. An `orchestrator` route is different: it means the work is not delegated
-at all, and no provider preference redirects it — a preference steers delegations, and there is none. The one carve-out
-is the visual case in the GPT cell, which a prefer-gpt preference does not override.
-
-These assignments are defaults, not claims that every task in a profile is equivalent. Test quality is critical because
-weak tests are how correctness defects survive review. Reviews route above similarly sized implementation work because
-the reviewer is the gate: a missed finding may have no later backstop. Some profiles intentionally share routes today;
-keeping their semantics separate lets later calibration change one without conflating different failure costs. A second
-cross-family SOTA perspective may be worth its overhead for high-risk critical review. Orchestration is not a delegation
-profile; planning, decomposition, quality gating, and VCS ownership remain with the current SOTA session.
-
-Design is the orchestrator's own work. Deciding an API shape, an architecture call, or a tradeoff is exactly what the
-expensive model's capability is for; handing the decision to a weaker model buys a worse answer than you would have
-produced and then charges you to review it. Do the deciding yourself and delegate what is left, which is mechanics.
-Gathering the inputs to a decision is mechanics: a read-only "survey this subsystem and lay out the options with their
-tradeoffs" delegation is fine and often the right way to protect your own context — the delegate proposes, you decide.
-The `orchestrator` entries in the table cover the decision, not the survey. Two edge cases: if this session is not
-itself running a `sota`-marked model, treat design the way critical review is treated — delegate the decision up to the
-strongest available model rather than keeping it by default — and when another skill's process spawns a design-shaped
-subagent, that spawn is process, not routing (see Composing with other skills): run it, and route it at this session's
-own model unless that skill demands otherwise. The one case where design output itself is delegated is visual:
-real-world feedback on GPT-5.6 consistently rates sol below the Claude models on visual design taste even while its
-coding reputation holds up, so a GPT orchestrator producing UI, frontend styling, slides, or anything judged by how it
-looks hands that to opus-5 high — the table's GPT cell says so — treating it as a sufficient reason to diverge from a
-prefer-gpt preference and announcing the divergence as usual. A Claude orchestrator does its own visual design.
-
-Within implementation work, the mid tier — terra and sol as delegates rather than sol-high-as-reviewer — earns its cost
-in two situations. Context economy: work that has to be reasoned across more input than you can afford to spend your own
-context on (a change threaded through dozens of files, a diagnosis that means reading a large subsystem) goes to terra,
-because luna cannot hold it and you should not have to; that is the center of the complex implementation profile, and
-why its route starts at terra rather than sol. And the escalation rung: when a workhorse fails substantively, terra is
-the cheap next step before sol and before you take the work over. Difficult debugging and ambiguity that survives
-decomposition also live in the complex implementation profile — its route carries sol for exactly the case where the
-delegate's own judgment turns out to matter mid-task. What the eval behind these routes
-(https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248) actually showed is narrower than "the mid tier is
-useless": in 36 runs every model passed every hidden test, so the tasks separated prices, not failure rates, and the
-expensive models' visible advantages were soft — documentation quality, benchmark discipline — which a reviewed
-assumptions list and a gate that reads the diff cover. The honest conclusion is that nothing there justified paying
-mid-tier prices for well-specified work, not that no task ever will. If you find yourself reaching for sol or opus to
-implement something well-specified, the usual reason is that the design is not settled yet, and the fix is to settle it;
-the routine authored and mechanical review rows are unchanged by this reasoning — taste-dependent prose and review were
-not what the eval measured.
-
-Luna is the workhorse on purpose, not as a compromise. Across six treeward features and a planted bug, every model from
-luna medium up to sonnet passed every hidden test on the first attempt; the gate rejected three results for hidden
-work-done regressions, none of them luna's, making luna medium the cheapest clean record — $0.64 for the six features
-against $5.57 for terra and $21.73 for sonnet (https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248).
-Luna has two demonstrated weaknesses. Judgment on open questions is the first, and the checkpoint protocol in
-`delegating.md` moves that judgment to the orchestrator before any code exists: in the guidance eval, the checkpoint arm
-went 8 for 8 across the four cheap models — luna medium and high among them — on a feature the same models had gotten
-right once in eight runs without it. It does not move mid-implementation judgment anywhere, which is why the gate still
-reads the diff in full. The second weakness is long context, covered by the exception below. What the workhorse needs is
-a clear spec and a reviewed assumptions list, and those are the orchestrator's to supply. Expect luna's `DECISIONS.md`
-to be short or empty — it does not experience decisions as decisions — and read that as `delegating.md` says, not as a
-sign the work was simple. If terra also fails after a luna failure, gpt-5.6-sol medium is the remaining rung before you
-take the work over; the two-step routes list the common path, not the whole ladder.
-
-Long context is an exception to the luna routes, from every orchestrator. gpt-5.6-luna's long-context retrieval is far
-below the rest of the family (reported around 41% on MRCR versus roughly 90% for terra and sol), so a mechanical or
-clear-spec task whose input is genuinely large — whole-repo scans, big log files, long-document analysis, a change that
-has to be reasoned across many files at once — starts at gpt-5.6-terra medium instead of luna, escalating to gpt-5.6-sol
-medium; a Claude session shelling out to luna under the workhorse default shells out to terra for these instead, rather
-than reverting to its native route. This is about input size the model must actually reason across, not task difficulty;
-small-input work stays on luna, and when you cannot tell in advance, luna first is the right bet — a reroute after a
-lost-context failure costs one cheap run. A luna delegate that loses track of earlier context mid-task is this weakness
-surfacing, not a generic substantive failure — reroute to terra rather than counting it against the profile.
-
-### Native-path bias
-
-When models are roughly equally suitable, prefer the model in the orchestrator's family. Same-family delegates normally
-stay inside the current harness; crossing families adds process startup, context transfer, authentication, permission,
-output-handling, and failure overhead. The native delegation path is the real reason for the preference. If a harness
-can invoke another family natively, prefer the native path rather than following family names mechanically.
-
-Apply the bias according to expected task size. These are judgment anchors, not hard thresholds:
-
-| expected size | practical meaning                                                     | native-path bias                                                                   |
-| ------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| tiny          | Setup and review may cost as much as doing the task directly.         | Very strong. Usually do it directly or delegate natively.                          |
-| short         | One bounded operation with little context or expected iteration.      | Strong. Cross harnesses only for a meaningful capability or total-cost advantage.  |
-| medium        | A substantive task where model work dominates fixed startup overhead. | Moderate. Consider likely retries and review burden alongside startup overhead.    |
-| large         | Extended work where cross-harness startup is a minor part of the run. | Weak. Choose the route most likely to finish cleanly at lower expected total cost. |
-
-Do not select an unsuitable model merely to stay native. Cross families when the native family has no suitable model,
-the other family is materially better for the task, a medium or large task has materially lower expected total cost on
-the other route, a native attempt failed, the user requested that provider, or an independent cross-family perspective
-is part of the goal. Expected total cost includes likely tokens, latency, review burden, and escalation risk — not
-nominal token price alone. For critical work, reliability and useful independence take priority over the size-based
-bias.
-
-The bias does not apply to workhorse writers. For delegates that edit the tree under the mechanical or clear-spec
-implementation profile, the default from any orchestrator is gpt-5.6-luna medium, reached however your harness reaches a
-gpt model per Delegation mechanics — `codex exec` from a Claude session, the native sub agent mechanism from a Codex
-session — unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from
-a non-Codex session), or the rc file rules the model out. Read-only mechanical work (searches, scans, log reading) is
-not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
-launch and monitoring overhead per delegate — the eval measured implementation writers, not read-only churn. The
-cross-family cost the bias exists to weigh is small and characterized for writers: the shell-out path to codex (launch,
-resume, and monitoring) is exercised end to end (two items there remain explicitly unverified), and the price gap to the
-same-family writer alternative is about 30× for no measured difference in first-attempt correctness (see Work profiles).
-A "short" writer task crosses families under this rule; a "tiny" one is still done by the orchestrator. Escalation after
-a luna failure follows the GPT route (terra medium, then sol medium), not the same-family column; the same-family routes
-are what you use when the gpt path is unavailable or a preference directs you there. Two things this default
-deliberately trades, worth saying to the user when they matter: shelling out runs the delegate with the harness's
-permission bypass flags where a native sub agent inherits the session's permission system — where that is unacceptable,
-stay native — and it moves spend from whatever subscription covers the orchestrator's own family onto metered API
-billing; a user whose economics make that worse says `prefer-claude` or writes the rc file, and the announcement of the
-first cross-family delegation is the natural place to remind them. This is the one place the skill treats a specific
-model as the default across harnesses, and it rests on one eval in one small repository; if a follow-up on a larger,
-messier codebase finds luna's literalism surviving the checkpoint, this paragraph is what to revisit.
+The model routing config file, `~/.scode-model-routing.md`, is where the user declares which models exist in their
+environment; routing reads it on every request and it belongs to the user. If routing stops because the file it
+replaced, `~/.scode-galaxy-brainrc.md`, is still in place, relay that to the user rather than working around it.
 
 ### Delegation and escalation rules
 
 - First ask whether delegation is worthwhile. If specifying and reviewing the task costs more than doing it, do it
   yourself. This is especially common for tiny tasks. "Reviewing" means the gate below — reading the diff and re-running
   the checks yourself — so price that in, not a glance at the delegate's report.
-- Set the profile by ambiguity, verification strength, required taste, and the cost of a wrong or missed result — not by
-  apparent line count alone.
 - Give a primary model one well-specified attempt. Fix trivial defects locally. After one substantive failure, escalate
-  instead of repeatedly spending tokens on the same underpowered model.
-- A GPT or Claude route with no listed escalation is already at the family's trusted endpoint. If it fails
-  substantively, handle the work in the orchestrator or make a deliberate cross-family attempt; do not retry it
-  mechanically. Families without a `sota` model (muse and glm) are the exception: none of their routes ends at a trusted
-  endpoint, so a substantive failure at the last listed model in such a route gets the same treatment — orchestrator or
-  deliberate cross-family attempt — even though the model that failed is not trusted.
+  instead of repeatedly spending tokens on the same underpowered model: request the route again with the outcome, and
+  routing answers with the next rung.
+- An answer with `route exhausted: yes` is the last rung its family offers. If that route fails substantively, handle
+  the work in the orchestrator or make a deliberate cross-family attempt; do not retry it mechanically. This holds
+  whether or not `endpoint trusted` was yes: families without a `sota` model (muse and glm) never end at a trusted
+  endpoint, and a substantive failure at their last rung gets the same treatment even though the model that failed is
+  not trusted.
 - When the primary's output is broadly wrong rather than fixable, preserve pre-existing user work, remove only the
   delegate's changes, and give the escalation model a fresh implementation task. Include concrete acceptance failures as
   evidence, but do not ask it to repair a structurally bad patch.
-- Escalate immediately if the output shows that the task was misclassified. You have standing permission to reroute or
-  do the work yourself without asking.
-- Prefer cheaper, faster workhorses when validation is deterministic and inexpensive. Start stronger when incorrect
-  output is difficult to detect or the delegate itself is the final review gate.
+- Escalate immediately if the output shows that the task was misclassified: request the route again with the outcome
+  `misclassified`, or name a stronger profile and start over. You have standing permission to reroute or do the work
+  yourself without asking.
 - Every time you delegate, tell the user which model and effort you picked, the work profile, and why any native or
-  cross-family choice makes sense for the task's expected size. One announcement may cover a homogeneous fan-out batch
-  that shares the same profile, model, effort, and rationale.
-
-## Provider preference
-
-The invocation may include the keyword `prefer-gpt`, `prefer-claude`, `prefer-muse`, or `prefer-glm`. This expresses a
-preference unrelated to model performance — typically the user has a large subscription with one provider and a small
-one with the others, and wants spend steered accordingly. The default, absent a keyword, is no preference.
-
-When a preference is given, route every delegation to the preferred family unless there is a very clear, strong reason
-to diverge — for example repeated poor output, no suitable model for the selected profile, or a goal that explicitly
-needs an independent cross-family perspective. An explicit provider preference overrides the default native-path bias.
-When you diverge, say so and why.
+  cross-family choice makes sense for the task's expected size — routing's one-line reason and its divergence flags are
+  written to be quoted. One announcement may cover a homogeneous fan-out batch that shares the same profile, model,
+  effort, and rationale.
 
 ## Concurrency preference
 
@@ -348,57 +224,25 @@ say why.
 The preference buys speed, never quality: every rule in Concurrency and The gate applies unchanged, and escalation or
 review steps are never skipped to keep a fan-out moving.
 
-## Local availability
-
-The inventory and profiles describe models that exist; they do not know which ones the user can access in this
-environment. Before your first delegation, check for `~/.scode-galaxy-brainrc.md`. If it exists, read `rc-file.md` next
-to this file and then honor the rc file: it contains natural language adjustments from the user, most commonly
-availability restrictions like "fable-5 is not available, do not use" or "only claude models work here", and may replace
-the inventory or the profile table outright. Treat its contents as authoritative. Remove unavailable models from every
-profile and use the next suitable option rather than preserving a preferred slot mechanically. Apart from the seeding
-request described in `rc-file.md`, do not create or edit the rc file yourself; it belongs to the user.
-
-If the file does not exist, all inventory models are assumed available, with one practical exception: a shelled-out
-family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is unavailable
-regardless of the rc file, and so is the glm family when `opencode providers list` shows no credential for the provider
-the model id names — `opencode run` with a model it cannot reach fails immediately, but with no model at all it hangs,
-so check rather than probe. Treat either as a missing family when honoring a provider preference — say so and fall back
-— rather than as a launch failure to retry.
-
-## Delegation mechanics
-
-Stay native within your own harness; shell out only when crossing vendors. First figure out which harness you are
-running in, then:
-
-- **Claude session → claude model**: use your native sub agent mechanism (e.g. the Agent/Task tool) with the model
-  parameter set to the target model.
-- **Claude session → gpt model**: shell out to `codex exec`.
-- **Codex session → gpt model**: use your native sub agent mechanism, specifying the target model.
-- **Codex session → claude model**: shell out to `claude -p`.
-- **Any session → muse model**: shell out to `muse exec`. Muse Code is only ever a delegate here, never the
-  orchestrator, so there is no native muse path.
-- **Any session → glm model**: shell out to `opencode run`, always with the unrestricted default build agent and `task`
-  available. OpenCode is likewise only ever a delegate here.
+## Carrying out a delegation
 
 Before the first delegation of any kind, read `delegating.md`: it holds the task-spec checklist, the baseline you must
 record before a writer runs, and how isolated writers get integrated. Before the first shell-out, load
-`scode-harness-shellout` as What to read describes, read its `SKILL.md`, and then read its file for the mechanism you
-are about to launch (`harness/codex.md`, `harness/claude.md`, `harness/muse.md`, or `harness/opencode.md` under that
+`scode-harness-shellout` as What to read describes, read its `SKILL.md`, and then read its file for the mechanism
+routing answered (`harness/codex.md`, `harness/claude.md`, `harness/muse.md`, or `harness/opencode.md` under that
 skill's base directory); those files carry the launch templates and the observed behaviors (stdin hangs, exit-code
 semantics, how effort and unrestricted tool access actually resolve, kill semantics) that a launch improvised from
 `--help` would miss.
-
-When delegating natively, also set the target reasoning effort if your sub agent mechanism has an effort parameter;
-otherwise sub agents inherit the session's effort and that is acceptable.
 
 Every writer path must support resuming the same delegate in the same session, because writers stop twice for the
 checkpoints in `delegating.md` and are resumed with your answers. Natively that is a follow-up message to the same sub
 agent (`SendMessage` in Claude Code, or your harness's equivalent); shelled out, `scode-harness-shellout`'s file for the
 mechanism carries the verified resume command, keyed on a session or thread id you must record at launch. A path that
 cannot resume is not a writer path. Native resume is verified for Claude Code and for Codex (0.151.0, a gpt-5.6-sol
-orchestrator resuming a native gpt-5.6-terra sub agent through both checkpoints, 2026-08-30). If some other harness's
-native sub agents cannot take a follow-up message, route writers through that family's shell-out mechanism instead — the
-one case where a session shells out to its own family — and say so when announcing the delegation.
+orchestrator resuming a native gpt-5.6-terra sub agent through both checkpoints, 2026-08-30). On a harness whose native
+sub agents cannot take a follow-up message, tell routing so in the request and it answers a writer with that family's
+shell-out mechanism instead — the one case where a session shells out to its own family; say so when announcing the
+delegation.
 
 Name every sub agent (label, description, or whatever your mechanism displays) so the name includes the task plus the
 model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
@@ -480,7 +324,8 @@ protocol in `delegating.md`, and each stop is a gate step:
    owns it (say so), or a blocker only the user can resolve (report it).
 7. Then make a judgment call:
    - Small defects (naming, comments, minor logic): fix them yourself — a fixup round-trip costs more than doing it.
-   - Substantive but well-specified defects: send one precise fixup round to the profile's escalation model.
+   - Substantive but well-specified defects: request the route again with the outcome `substantive failure`, and send
+     one precise fixup round to the model routing answers.
    - If the escalation also fails, or the output shows that the profile itself was wrong, stop iterating. Do it yourself
      or move to a stronger profile without asking the user.
 

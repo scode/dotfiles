@@ -1,6 +1,6 @@
 # scode-galaxy-brain specification
 
-Dependencies: scode-harness-shellout
+Dependencies: scode-harness-shellout, scode-model-routing
 
 NOTE: This file is binding on the skill's text. It is deliberately sparse: it records only requirements that have been
 stated as such, not a description of everything the skill does. Absence of an entry means the behavior is not yet
@@ -29,6 +29,10 @@ fix the skill or change this file in the same change, never leave them apart.
 - A same-named project-local skill can shadow the installed dependency on every harness whose loader honors
   project-local skills (all but Codex's file-read path). That is accepted: the name check proves identity, not revision,
   and project-local overrides are how these skills get developed.
+- Every choice of model, effort, and launch mechanism is a request to `scode-model-routing` naming a work profile with
+  the request inputs that skill's `SKILL.md` lists, acted on through the answer shape it defines. This skill's text
+  never names a model as a routing default, never carries an inventory or profile table, and never reads the model
+  routing config file itself.
 - Multiple concurrent uses of scode-galaxy-brain by different orchestrators must not conflict through any state the
   skill itself maintains. Two or more orchestrating sessions may be running the skill at the same time — on the same
   machine, against the same repository, possibly in the same working tree — and every on-disk artifact the skill

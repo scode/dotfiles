@@ -14,8 +14,8 @@ cheaper models — Claude, GPT via Codex, Meta's Muse, or Z.ai's GLM via OpenCod
 rather than by nominal price, checking the actual output, and escalating when the first route was not enough.
 
 Add `prefer-gpt`, `prefer-claude`, `prefer-muse`, or `prefer-glm` to steer spend to one provider, and
-`~/.scode-galaxy-brainrc.md` to declare which models exist in your environment. Say `galaxy brain feedback: ...` to
-record a report about how the skill performed.
+`~/.scode-model-routing.md` (the model routing config file, read by `scode-model-routing`) to declare which models exist
+in your environment. Say `galaxy brain feedback: ...` to record a report about how the skill performed.
 
 ## Checkpoints for delegates that write code
 
@@ -41,10 +41,11 @@ the protocol are in [delegating.md](delegating.md).
 
 ## Layout
 
-The routing rules live in [SKILL.md](SKILL.md), which is what an agent loads up front. The procedure files next to it —
-`delegating.md`, `rc-file.md`, `feedback.md` — are read on demand when a session actually delegates, finds an rc file,
-or gets feedback, so that a session which never does those things never pays for that text. Launching a delegate in a
-foreign harness (`codex exec`, `claude -p`, `muse exec`, `opencode run`) is the job of a separate skill,
-`scode-harness-shellout`, which SKILL.md loads by name the first time a session shells out; that skill owns the launch
-commands and the observed-behavior notes for each harness, and is inert until something loads it. The reasoning behind
-the rules is archived under [lore/](lore/) and is not maintained.
+The workflow lives in [SKILL.md](SKILL.md), which is what an agent loads up front. The procedure files next to it —
+`delegating.md`, `feedback.md` — are read on demand when a session actually delegates or gets feedback, so that a
+session which never does those things never pays for that text. Two parts other skills also need are separate skills
+that SKILL.md loads by name at the moment they become relevant, and that are inert until something loads them:
+`scode-model-routing` answers which model, effort, and launch mechanism a unit of work should run on (the inventory, the
+work-profile table, provider preference, and the model routing config file live there), and `scode-harness-shellout`
+owns the launch commands and the observed-behavior notes for `codex exec`, `claude -p`, `muse exec`, and `opencode run`.
+The reasoning behind the rules is archived under [lore/](lore/) and is not maintained.
