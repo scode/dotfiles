@@ -1,0 +1,8 @@
+# Display metadata for Codex only. Deliberately no `policy: allow_implicit_invocation: false`
+# block: Muse Code reads this file too and maps that policy to "user-invocable-only", under which
+# its read_skill tool refuses to load the skill for the model (verified on Muse Code 1.0.2), and
+# coordinator delegates on Muse load this skill by name when it is named in their task.
+interface:
+  display_name: "Galaxy Brain"
+  short_description: "Delegate suitable work to cost-effective models while staying in charge"
+  default_prompt: "Use $scode-galaxy-brain to achieve the goal I describe, delegating suitable parts of the work."

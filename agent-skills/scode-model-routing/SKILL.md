@@ -142,18 +142,16 @@ Availability and user overrides may remove or replace these defaults; see Local 
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `muse` preference, a user request naming it, or a
-deliberate cross-family decision the caller announces as such. Its profile placements below are provisional: they rest
-on vendor-reported benchmarks rather than calibrated use, and until real use calibrates them neither its benchmark tier
-nor its token price counts as a reason to cross families on your own. It carries no `sota` mark, so it is never the sole
-critical-review gate, and no muse route ends at a trusted endpoint (see Escalation facts).
+deliberate cross-family decision the caller announces as such. Its profile placements below are provisional, and until
+real use calibrates them neither its benchmark tier nor its token price counts as a reason to cross families on your own
+(`inventory.md`, under "Evidence behind the rules in SKILL.md", says what the placements rest on). It carries no `sota`
+mark, so it is never the sole critical-review gate, and no muse route ends at a trusted endpoint (see Escalation facts).
 
-The glm family is Z.ai's GLM-5.3-Flash (the model that ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode)
-driven through the OpenCode harness, `opencode run`. Everything said about muse above applies to it unchanged: opt-in
-only, via a `glm` preference, a request naming it, or an announced cross-family decision; provisional placements; no
-`sota` mark; no route ending at a trusted endpoint. Its evidence base is one clean clear-spec smoke run plus vendor
-benchmarks, and its per-token price is roughly an order of magnitude below the other families — which is exactly the
-number that must not tempt an unprompted cross-family route until real use has calibrated it. The three effort levels
-are the only ones Z.ai accepts for this model.
+The glm family is Z.ai's GLM-5.3-Flash driven through the OpenCode harness, `opencode run`. Everything said about muse
+above applies to it unchanged: opt-in only, via a `glm` preference, a request naming it, or an announced cross-family
+decision; provisional placements; no `sota` mark; no route ending at a trusted endpoint. Its price is not a reason for
+an unprompted cross-family route until real use has calibrated it. The three effort levels are the only ones Z.ai
+accepts for this model.
 
 ## Work profiles
 
@@ -186,11 +184,10 @@ with their tradeoffs" delegation routes like any other read-only unit. Two edge 
 running a `sota`-marked model, treat design the way critical review is treated — route the decision up to the strongest
 available model rather than keeping it by default — and when another skill's process spawns a design-shaped subagent,
 that spawn is process, not routing: it is `inherit`, at the session's own model, unless that process demands otherwise.
-The one case where design output itself is delegated is visual: real-world feedback on GPT-5.6 consistently rates sol
-below the Claude models on visual design taste even while its coding reputation holds up, so a GPT session producing UI,
-frontend styling, slides, or anything judged by how it looks hands that to opus-5 high — the table's GPT cell says so —
-and that is a sufficient reason to diverge from a `gpt` preference, announced as a divergence. A Claude session does its
-own visual design.
+The one case where design output itself is delegated is visual: a GPT session producing UI, frontend styling, slides, or
+anything judged by how it looks hands that to opus-5 high — the table's GPT cell says so, and `inventory.md` says why
+under "Evidence behind the rules in SKILL.md" — and that is a sufficient reason to diverge from a `gpt` preference,
+announced as a divergence. A Claude session does its own visual design.
 
 Long context is an exception to the luna routes, from every orchestrator. gpt-5.6-luna's long-context retrieval is far
 below the rest of the family (reported around 41% on MRCR versus roughly 90% for terra and sol), so a mechanical or
@@ -227,21 +224,17 @@ gpt model per Launch mechanism — `codex exec` from a Claude session, the nativ
 — unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from a
 non-Codex session), or the config file rules the model out. Read-only mechanical work (searches, scans, log reading) is
 not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
-launch and monitoring overhead per delegate — the eval measured implementation writers, not read-only churn. The
-cross-family cost the bias exists to weigh is small and characterized for writers: the shell-out path to codex (launch,
-resume, and monitoring) is exercised end to end (two items there remain explicitly unverified), and the price gap to the
-same-family writer alternative is about 30× for no measured difference in first-attempt correctness (see
-`inventory.md`). A "short" writer task crosses families under this rule; a "tiny" one is still `orchestrator`.
-Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the same-family column; the
-same-family routes are what a session uses when the gpt path is unavailable or a preference directs it there. Two things
-this default deliberately trades, which the answer's reason names on every cross-family route (when the user needs
-reminding is the caller's call, since routing keeps no session history): shelling out runs the delegate with the
-harness's permission bypass flags where a native sub agent inherits the session's permission system — where that is
-unacceptable (input 11), the answer stays native — and it moves spend from whatever subscription covers the
-orchestrator's own family onto metered API billing; a user whose economics make that worse says `prefer-claude` or
-writes the config file. This is the one place routing treats a specific model as the default across harnesses, and it
-rests on one eval in one small repository; if a follow-up on a larger, messier codebase finds luna's literalism
-surviving the caller's checkpoint protocol, this paragraph is what to revisit.
+launch and monitoring overhead per delegate. A "short" writer task crosses families under this rule; a "tiny" one is
+still `orchestrator`. Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the
+same-family column; the same-family routes are what a session uses when the gpt path is unavailable or a preference
+directs it there. Two things this default deliberately trades, which the answer's reason names on every cross-family
+route (when the user needs reminding is the caller's call, since routing keeps no session history): shelling out runs
+the delegate with the harness's permission bypass flags where a native sub agent inherits the session's permission
+system — where that is unacceptable (input 11), the answer stays native — and it moves spend from whatever subscription
+covers the orchestrator's own family onto metered API billing; a user whose economics make that worse says
+`prefer-claude` or writes the config file. This is the one place routing treats a specific model as the default across
+harnesses; what it rests on, and what would justify revisiting it, is in `inventory.md` under "Evidence behind the rules
+in SKILL.md".
 
 ## Escalation facts
 
