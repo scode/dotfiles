@@ -44,11 +44,12 @@ $scode-ssh-delegate sprites:3              # or: it's okay to use up to 3 sprite
 Named sprites are borrowed. They must already exist; the agent runs work on them and leaves them alone otherwise: no
 destroy, no checkpoint or restore, and any pushed credential or work directory is removed afterwards.
 
-A budget is a count, not a list. Nothing is created when you grant it. When a workflow needs a worker, the agent creates
-a sprite named `ssh-delegate-<directory>-N`, uses it, and destroys it as soon as that work is done; at most N exist at
-once, and all of them are gone by the time the session finishes. A budget never touches sprites the session did not
-create. If sprites with that prefix already exist from an earlier session, the agent tells you about them as possible
-orphans and neither reuses nor destroys them.
+A budget is a concurrency cap, not a list and not a consumable. Nothing is created when you grant it. When a workflow
+needs a worker, the agent creates a sprite named `ssh-delegate-<directory>-N`, uses it, and destroys it as soon as that
+work is done. At most N exist at once; destroying one frees its slot, so the agent may go through many more than N over
+the session, and all of them are gone by the time the session finishes. A budget never touches sprites the session did
+not create. If sprites with that prefix already exist from an earlier session, the agent tells you about them as
+possible orphans and neither reuses nor destroys them.
 
 Sprites come with `claude`, `codex`, and common language toolchains preinstalled, but the versions lag. The agent
 updates whichever ones the task needs before using them. Everything about credentials, source transfer, and results is
@@ -70,14 +71,14 @@ $scode-ssh-delegate sbx foo1 foo2      # or: use the tensorlake sandboxes foo1 f
 $scode-ssh-delegate sbx:3              # or: it's okay to use up to 3 tensorlake sandboxes
 ```
 
-Named sandboxes are borrowed; a budget is a count of sandboxes the agent creates (4 vCPUs, 8 GiB of memory, and a
-workload-sized 10–100 GiB disk), uses, and terminates, with the same orphan reporting as sprites. The agent uses a
-smaller disk when it has a defensible estimate and defaults to the 100 GiB maximum when it does not; it never relies on
-Tensorlake's implicit 10 GiB default. Snapshot clones cannot shrink their source disk, so savings across a cloned burst
-start with a right-sized template. Unlike sprites, the stock image is Ubuntu 24.04 with no agent CLIs preinstalled, so
-the agent installs them fresh; for a burst of several similar workers it may bootstrap one sandbox, checkpoint it, and
-clone the rest from the snapshot, deleting the snapshot when the burst is done. Snapshots outlive their sandbox and bill
-storage monthly, so cleanup includes sweeping them.
+Named sandboxes are borrowed; a budget is the same concurrency cap as for sprites, applied to sandboxes the agent
+creates (4 vCPUs, 8 GiB of memory, and a workload-sized 10–100 GiB disk), uses, and terminates, with the same orphan
+reporting. The agent uses a smaller disk when it has a defensible estimate and defaults to the 100 GiB maximum when it
+does not; it never relies on Tensorlake's implicit 10 GiB default. Snapshot clones cannot shrink their source disk, so
+savings across a cloned burst start with a right-sized template. Unlike sprites, the stock image is Ubuntu 24.04 with no
+agent CLIs preinstalled, so the agent installs them fresh; for a burst of several similar workers it may bootstrap one
+sandbox, checkpoint it, and clone the rest from the snapshot, deleting the snapshot when the burst is done. Snapshots
+outlive their sandbox and bill storage monthly, so cleanup includes sweeping them.
 
 ## What the agent will not do
 

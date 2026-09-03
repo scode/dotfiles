@@ -20,8 +20,10 @@ with existing sprites:
   `using-workers.md` has every task use.
 - **A sprite budget** — `$scode-ssh-delegate sprites:3`, or natural language such as "it's okay to use up to 3 sprites"
   or "use up to N sprites". This registers a number, not workers. Nothing is created at invocation time. When another
-  workflow later needs a worker, this session creates a sprite, uses it, and destroys it; at most N such sprites exist
-  at once. A budget never touches sprites this session did not create, so existing sprites are neither reused nor
+  workflow later needs a worker, this session creates a sprite, uses it, and destroys it. N is a cap on how many owned
+  sprites are alive at the same time, not a total the session spends down: destroying a sprite frees its slot, and a
+  session may create and destroy far more than N sprites over its lifetime as long as no more than N exist at any
+  moment. A budget never touches sprites this session did not create, so existing sprites are neither reused nor
   destroyed under a budget, even if their names look related.
 
 Both forms can coexist with SSH hosts, and with each other, in one invocation.

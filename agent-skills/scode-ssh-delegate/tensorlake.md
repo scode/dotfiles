@@ -22,7 +22,9 @@ Sandboxes are recognised by two invocation forms, deliberately different in what
   and the bootstrap installs the selected work required.
 - **A sandbox budget** — `$scode-ssh-delegate sbx:3`, or natural language such as "it's okay to use up to 3 tensorlake
   sandboxes". This registers a number, not workers. Nothing is created at invocation time. When another workflow later
-  needs a worker, this session creates a sandbox, uses it, and terminates it; at most N such sandboxes exist at once. A
+  needs a worker, this session creates a sandbox, uses it, and terminates it. N is a cap on how many owned sandboxes are
+  alive at the same time, not a total the session spends down: terminating a sandbox frees its slot, and a session may
+  create and terminate far more than N sandboxes over its lifetime as long as no more than N exist at any moment. A
   budget never touches sandboxes this session did not create, so existing sandboxes are neither reused nor terminated
   under a budget, even if their names look related.
 

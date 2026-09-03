@@ -123,6 +123,8 @@ targets; reprobing a target refreshes its inventory, and a failed reprobe remove
 
 Registration and everything else about sprites is in `sprites.md`, and about tensorlake sandboxes in `tensorlake.md`;
 this is only so that an SSH-only reader knows what the forms mean. Named sprites and sandboxes are borrowed: the session
-runs work on them and never destroys them. A budget (`sprites:N` or `sbx:N`) is a count of instances this session may
-create, use, and destroy, and it never touches instances the session did not create. Nothing is installed, transferred,
-or run on any worker at registration.
+runs work on them and never destroys them. A budget (`sprites:N` or `sbx:N`) is a concurrency cap, not a consumable
+count: at most N owned instances may exist at the same time, destroying one frees its slot, and there is no limit on how
+many the session creates over its lifetime. `sbx:6` after six create-and-destroy cycles is not "used up"; it still
+allows six more alive at once. A budget never touches instances the session did not create. Nothing is installed,
+transferred, or run on any worker at registration.
