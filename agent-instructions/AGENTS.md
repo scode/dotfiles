@@ -101,6 +101,16 @@ caused a real unguarded `gh pr merge`. Give each command its own failure path in
 `|| exit 1` (an explicit `exit` does propagate out of the wrapper). Standalone script files executed via their own
 shebang get a fresh shell and are unaffected.
 
+# Watching a background process: never `pgrep -f` for liveness
+
+If you are Claude Code: when a monitor or watchdog loop checks whether a detached job is still running, do not use
+`pgrep -f <name>` or `ps | grep <name>`. The watcher's own shell carries the pattern in its command line, so the check
+matches the watcher itself and reports "still running" forever after the job dies. This turned a 4-minute failure into a
+43-minute silent stall while landing a PR stack. Have the job write a pidfile (`echo $$ > job.pid`) and test it with
+`kill -0 "$(cat job.pid)"`, or run the job itself with the Bash tool's `run_in_background` and rely on its completion
+notification instead of a separate watcher. Whatever the mechanism, prove it once before trusting it: kill a throwaway
+job and confirm the watcher fires.
+
 # Commit messages and PR titles/descriptions
 
 Always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR descriptions, or commit
