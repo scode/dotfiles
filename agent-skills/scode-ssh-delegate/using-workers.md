@@ -65,6 +65,9 @@ worker during registration. A user-specified commit, revision, or working-copy s
 refs locally and treat the local checkout as the source of truth; the remote worker must not contact a private
 repository remote to clone, fetch, pull, or push.
 
+The orchestrating workflow decides how a worker is launched; galaxy-brain's launch rules come from
+`scode-harness-shellout` and have been verified locally only. The two proven remote entrypoints are the ones below.
+
 If the orchestrating workflow chooses unrestricted execution, the proven entrypoints are `codex exec --yolo` and
 `claude -p --dangerously-skip-permissions`. These modes give the agent full access to the remote Unix account. They are
 worker capabilities, not a request from this skill to run either agent. Use a disposable remote directory, and remember
