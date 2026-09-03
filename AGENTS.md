@@ -33,7 +33,13 @@ The general rule: never assume a clean slate. If a path was previously installed
 ## Agent Skills
 
 Shared agent skills live in `agent-skills/`. When the user asks to view, modify, or discuss a skill, look there — not in
-`~/.claude/skills/`, `~/.codex/skills/`, or the old `payload/dot_claude/skills/` path.
+`~/.claude/skills/`, `~/.codex/skills/`, `~/.config/muse/skills/`, `~/.config/opencode/skills/`, or the old
+`payload/dot_claude/skills/` path.
+
+Every skill is installed for all four harnesses (Claude Code, Codex, Muse Code, OpenCode). When adding, renaming, or
+removing a skill, update the explicit Claude and Codex entries in `src/main.rs` _and_ the `SHARED_AGENT_SKILLS` list
+that drives the Muse and OpenCode entries; the integration test that compares the four installed sets will otherwise
+fail.
 
 ## Agent Instructions
 

@@ -82,6 +82,109 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
     }
 }
 
+/// Every repo-owned skill under `agent-skills/` that is installed into a
+/// harness's skills root.
+///
+/// This is the one list to extend when a skill is added, renamed, or removed.
+/// Claude and Codex still spell their entries out one by one in
+/// `add_claude_features` and `add_codex_features`, because those sections
+/// interleave migration cleanups for paths earlier installer versions wrote;
+/// the Muse and OpenCode sections below derive theirs from this list. A test
+/// in `tests/cli_integration.rs` checks that all four harnesses end up with
+/// the same set, so a skill added to one place and not the other fails CI
+/// rather than silently installing for some harnesses only.
+const SHARED_AGENT_SKILLS: &[&str] = &[
+    "agent-resumeable",
+    "jjstack",
+    "pre-pr-review-swarm",
+    "repo-swarm",
+    "sapling",
+    "scode-build-goal",
+    "scode-chores",
+    "scode-commit-msg-reviewer",
+    "scode-dist-rust-setup",
+    "scode-galaxy-brain",
+    "scode-modernize",
+    "scode-ssh-delegate",
+    "scode-todo",
+    "slstack",
+    "stax",
+    "swarm-triage",
+];
+
+/// Skills that live in a separate checkout rather than in this repo, installed
+/// as raw symlinks only when that checkout exists. Same shape for every
+/// harness; the tuple is (skill name, source path).
+const EXTERNAL_AGENT_SKILLS: &[(&str, &str)] = &[
+    ("scode-graphite", "~/git/scode-graphite-skill"),
+    ("scode-voice", "~/git/voice"),
+];
+
+/// Installs the shared skill set into one harness's skills root.
+///
+/// `parent` is the harness's own config directory; nothing is created unless
+/// it already exists, matching how the Claude and Codex sections treat
+/// `~/.claude` and `~/.codex`. Every symlink depends on the managed skills
+/// directory so uninstall can remove the directory after its contents.
+///
+/// The destination is the harness's *own* skills root, never another
+/// harness's. Muse and OpenCode both also scan `~/.claude/skills`, which is
+/// why they saw the installed skills before this existed; relying on that
+/// would make skill visibility depend on an unrelated product's home
+/// directory being present.
+fn add_shared_skill_features(g: &mut FeatureGraph, owner: &str, parent: &str, skills_dir: &str) {
+    let dir = g
+        .add(
+            format!("{owner}-skills-dir"),
+            ManagedDirectory::new(skills_dir.to_owned()),
+        )
+        .condition(PathExists::new(parent.to_owned()))
+        .build();
+    for skill in SHARED_AGENT_SKILLS {
+        g.add(
+            format!("{owner}-skill-{skill}"),
+            PayloadSymlink::new(
+                format!("agent-skills/{skill}"),
+                format!("{skills_dir}/{skill}"),
+            ),
+        )
+        .depends_on(&dir)
+        .build();
+    }
+    for (skill, source) in EXTERNAL_AGENT_SKILLS {
+        g.add(
+            format!("{owner}-skill-{skill}"),
+            RawSymlink::new(source.to_owned(), format!("{skills_dir}/{skill}")),
+        )
+        .depends_on(&dir)
+        .condition(PathExists::new(source.to_owned()))
+        .build();
+    }
+}
+
+/// Muse Code reads user-scope skills from `$CONFIG_DIR/skills`, which is
+/// `~/.config/muse/skills` (verified with `muse skills install --scope user`
+/// on Muse Code 1.0.2, and a plain symlinked directory there is listed with
+/// `scope: user`). Muse also scans `~/.claude/skills` and `~/.codex/skills`;
+/// when a name exists in several roots it keeps one and reports the others as
+/// shadowed, so the duplicates are harmless.
+fn add_muse_features(g: &mut FeatureGraph) {
+    add_shared_skill_features(g, "muse", "~/.config/muse", "~/.config/muse/skills");
+}
+
+/// OpenCode reads global skills from `~/.config/opencode/skills` (its
+/// documented native root) and also from `~/.claude/skills` and
+/// `~/.agents/skills`. With the same name in two roots it picks one without
+/// error (observed on 1.18.20), so the overlap with the Claude link is fine.
+fn add_opencode_features(g: &mut FeatureGraph) {
+    add_shared_skill_features(
+        g,
+        "opencode",
+        "~/.config/opencode",
+        "~/.config/opencode/skills",
+    );
+}
+
 fn add_zed_features(g: &mut FeatureGraph) {
     g.add(
         "zed-keymap",
@@ -657,6 +760,8 @@ fn features() -> FeatureGraph {
     let claude_statusline = add_bin_features(&mut g);
     add_claude_features(&mut g, &claude_statusline);
     add_codex_features(&mut g);
+    add_muse_features(&mut g);
+    add_opencode_features(&mut g);
     add_shell_features(&mut g);
     g
 }
