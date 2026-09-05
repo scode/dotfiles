@@ -51,7 +51,11 @@ elsewhere, or from a similar skill.";
 /// `Dependencies:` line; without this list, deleting the line and the stanza
 /// together would silently opt a skill out of the test. Add a skill here in
 /// the PR that gives it a `Dependencies:` line.
-const LAYERED_SKILLS: &[&str] = &["scode-galaxy-brain", "scode-harness-shellout"];
+const LAYERED_SKILLS: &[&str] = &[
+    "scode-galaxy-brain",
+    "scode-harness-shellout",
+    "scode-model-routing",
+];
 
 const OPEN_MARKER: &str = "<!-- dependency:";
 const CLOSE_MARKER: &str = "<!-- /dependency -->";

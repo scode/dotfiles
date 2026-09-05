@@ -68,7 +68,7 @@ has none of this conversation's context. Include, at minimum:
 - **PR discipline.** Split the work into a linear stack of reviewable PRs using the `jjstack` skill. Err on the side of
   bite-sized PRs, but do not create churn — code added in one PR and deleted in a later PR of the same stack means the
   stack should have been shaped differently. Restructure the stack instead of stacking a correction on top.
-- **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` routing layer to delegate a review to
+- **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` skill to delegate a review to
   gpt-5.6-sol running the `pre-pr-review-swarm` skill against that PR's changes, and address what it finds before moving
   on. Do not write a launch command into the goal file; the `scode-harness-shellout` skill's harness files own the
   launch mechanics, and a copy pasted into a goal file drifts away from the guards they carry. The review prompt must
