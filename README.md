@@ -14,10 +14,11 @@ cargo run -p dotfiles -- uninstall
 ```
 
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
-Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. The optional
-`scode-graphite` skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill
-is installed only when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support`
-exists.
+Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. Agent skills are also
+installed for Muse Code and OpenCode, into `~/.config/muse/skills` and `~/.config/opencode/skills`, each only when the
+harness's config directory (`~/.config/muse`, `~/.config/opencode`) already exists. The optional `scode-graphite` skill
+is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only when
+`~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
 
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.

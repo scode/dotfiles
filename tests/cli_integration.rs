@@ -3,8 +3,12 @@ use tempfile::TempDir;
 
 fn setup_fake_home() -> TempDir {
     let home = setup_fake_home_without_graphite_source();
-    // Optional RawSymlink sources are present in the normal fake home.
+    // Optional RawSymlink sources are present in the normal fake home, so the
+    // conditional external skills install and the cross-harness comparison
+    // below covers them; a source missing here would make a one-sided
+    // registration of that skill invisible to the test.
     std::fs::create_dir_all(home.path().join("git/scode-graphite-skill")).unwrap();
+    std::fs::create_dir_all(home.path().join("git/voice")).unwrap();
     home
 }
 
@@ -13,12 +17,46 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
     std::fs::create_dir_all(home.path().join(".config/zed")).unwrap();
     std::fs::create_dir_all(home.path().join(".claude")).unwrap();
     std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+    std::fs::create_dir_all(home.path().join(".config/muse")).unwrap();
+    std::fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
     )
     .unwrap();
     home
+}
+
+/// The skills roots of every harness the installer targets, relative to the
+/// fake home. Tests that assert "the same skills everywhere" iterate this so
+/// a fifth harness only has to be added here.
+const SKILLS_ROOTS: &[&str] = &[
+    ".claude/skills",
+    ".codex/skills",
+    ".config/muse/skills",
+    ".config/opencode/skills",
+];
+
+/// The entries directly under a skills root as (name, resolved target),
+/// sorted by name. Resolving the target is what makes a cross-harness
+/// comparison meaningful: two roots can list the same names while one of
+/// them points a name at the wrong source directory, and the relative link
+/// text differs per root depth, so only the canonical path is comparable.
+/// A dangling link fails to resolve and panics here, which is the right
+/// outcome for a test that asks whether every harness has usable skills.
+fn skills_root_entries(home: &TempDir, root: &str) -> Vec<(String, std::path::PathBuf)> {
+    let mut entries: Vec<(String, std::path::PathBuf)> = std::fs::read_dir(home.path().join(root))
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let target = std::fs::canonicalize(entry.path())
+                .unwrap_or_else(|e| panic!("{root}/{name} does not resolve: {e}"));
+            (name, target)
+        })
+        .collect();
+    entries.sort();
+    entries
 }
 
 fn read_json(home: &TempDir, relative_path: &str) -> serde_json::Value {
@@ -181,7 +219,7 @@ fn test_install_creates_symlinks() {
         target
     );
 
-    // Verify codex gets the same skill symlinks as claude.
+    // Verify every harness gets the same repo-owned skill symlinks.
     for skill in [
         "pre-pr-review-swarm",
         "scode-dist-rust-setup",
@@ -194,15 +232,58 @@ fn test_install_creates_symlinks() {
         "jjstack",
         "sapling",
     ] {
-        assert_skill_symlink_points_to_repo_source(
-            &fake_home,
-            &format!(".claude/skills/{skill}"),
-            &format!("agent-skills/{skill}"),
-        );
-        assert_skill_symlink_points_to_repo_source(
-            &fake_home,
-            &format!(".codex/skills/{skill}"),
-            &format!("agent-skills/{skill}"),
+        for root in SKILLS_ROOTS {
+            assert_skill_symlink_points_to_repo_source(
+                &fake_home,
+                &format!("{root}/{skill}"),
+                &format!("agent-skills/{skill}"),
+            );
+        }
+    }
+}
+
+/// Every harness must end up with exactly the same set of skills, each name
+/// resolving to the same source directory.
+///
+/// Claude and Codex list their skill entries one by one in `src/main.rs`
+/// (their sections carry migration cleanups), while Muse and OpenCode derive
+/// theirs from a shared list. Nothing but this test ties the two spellings
+/// together, so a skill added to one and forgotten in the other would install
+/// for some harnesses only and nobody would notice until a dependency load
+/// failed on the harness that lacked it. Comparing resolved targets rather
+/// than names also catches an explicit entry whose destination name is right
+/// but whose source is a different skill.
+#[test]
+fn test_all_harnesses_install_the_same_skills() {
+    let fake_home = setup_fake_home();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let reference = skills_root_entries(&fake_home, SKILLS_ROOTS[0]);
+    let names: Vec<&str> = reference.iter().map(|(name, _)| name.as_str()).collect();
+    assert!(
+        names.contains(&"scode-galaxy-brain"),
+        "sanity: the reference root should contain a known repo skill, got {names:?}"
+    );
+    assert!(
+        names.contains(&"scode-voice"),
+        "sanity: the reference root should contain a known external skill, got {names:?}"
+    );
+    for root in &SKILLS_ROOTS[1..] {
+        assert_eq!(
+            skills_root_entries(&fake_home, root),
+            reference,
+            "{root} should hold exactly the same skills as {}",
+            SKILLS_ROOTS[0]
         );
     }
 }
@@ -460,6 +541,15 @@ fn test_conditional_features_skipped_when_parent_missing() {
             .exists(),
         ".codex agent should not exist when .codex doesn't exist"
     );
+    // Each harness's skills root is gated on that harness's own config
+    // directory, never on another harness's; with no config directories at
+    // all, no skills root may appear.
+    for root in SKILLS_ROOTS {
+        assert!(
+            !fake_home.path().join(root).exists(),
+            "{root} should not exist when its harness config directory doesn't exist"
+        );
+    }
 
     // Unconditional feature should still work
     let ghostty = fake_home
@@ -483,17 +573,15 @@ fn test_graphite_skill_is_skipped_when_source_missing() {
         "install failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    for (relative_path, label) in [
-        (".claude/skills/scode-graphite", "claude"),
-        (".codex/skills/scode-graphite", "codex"),
-    ] {
+    for root in SKILLS_ROOTS {
+        let relative_path = format!("{root}/scode-graphite");
         assert!(
             fake_home
                 .path()
-                .join(relative_path)
+                .join(&relative_path)
                 .symlink_metadata()
                 .is_err(),
-            "{label} graphite skill should be skipped when the source checkout is missing"
+            "{relative_path} should be skipped when the source checkout is missing"
         );
     }
 }
