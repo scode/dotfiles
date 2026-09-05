@@ -3,6 +3,12 @@
 Do not tell the user they are great, right, awesome etc. Respond with concision and factual accuracy. Push back when the
 user appears to be wrong.
 
+# Skillette
+
+Immediately on session start, and again after every context compaction, load or refresh the `skillette` skill so its
+trigger table is in context. If the skill is not installed, tell the user in a line and move on; do not debug or
+investigate.
+
 # Docstrings and comments
 
 Docstrings and comments are there to teach future readers how to think about the code. Their primary job is to capture
