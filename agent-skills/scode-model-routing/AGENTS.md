@@ -28,9 +28,9 @@ would. Judge the answer against the expected one, not against whether it quotes 
 a sidecar directly; whether `SKILL.md` sends it there is part of what the eval checks.
 
 Unless a question says otherwise, the situation is: a Claude Code session on fable-5 high (`sota`), no provider
-preference, no config file, all four CLIs on `PATH`, bypass and billing acceptable, own decomposition, first attempt.
-The list is run by the PR that creates this skill and re-run whenever the profile table, the precedence list, the
-request or answer shape, or the inventory changes.
+preference, no config file, all four CLIs on `PATH`, own decomposition, first attempt. The list is run by the PR that
+creates this skill and re-run whenever the profile table, the precedence list, the request or answer shape, or the
+inventory changes.
 
 | Situation                                                                                    | Expected answer                                                                       |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
@@ -54,7 +54,6 @@ request or answer shape, or the inventory changes.
 | clear-spec writer after one `substantive failure` on gpt-5.6-luna medium                     | gpt-5.6-terra medium via `codex exec` (not sonnet)                                    |
 | the same after `execution-path failure`                                                      | gpt-5.6-luna medium via `codex exec` again                                            |
 | the same after `substantive failure (lost context)`                                          | gpt-5.6-terra medium via `codex exec`, reason says no attempt consumed                |
-| clear-spec writer, bypass unacceptable                                                       | sonnet-5 medium native, reason says bypass                                            |
 
 When a scenario depends on the model routing config file, the isolated home is where it goes; never create or edit
 `~/.scode-model-routing.md` in the real home for an eval, it belongs to the user.
