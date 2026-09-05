@@ -98,18 +98,18 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    agent contexts rather than paying each to return an empty list. The trigger is purely mechanical: a file with any
    other extension anywhere in the change means the full panel runs. When in doubt, run the full panel.
 6. Run the selected reviewer charters concurrently when the environment supports it. Keep each reviewer focused on its
-   own charter so the review instructions stay separate. If the session has an active model-routing skill — one whose
-   job is to decide which model and reasoning effort each delegated task or subagent runs on — then which model and
-   effort each reviewer runs at is that skill's decision: route each spawn through it and pass explicit model/effort
-   overrides where the spawn mechanism supports them, rather than letting reviewers silently inherit the coordinator's
-   model. This applies equally to the reduced prose-only panel. Retain each reviewer's stable agent or thread handle
-   until finding collection is complete so productive reviewers can continue in the context they already paid to build.
-   Track the selected charters before spawning and create exactly one initial agent for each. A spawn that fails without
-   returning a thread handle may be retried; once a charter has a live handle, never spawn it again. Continuations go to
-   that handle instead of creating replacements or duplicate reviewers. If the environment cannot spawn the complete
-   reviewer panel and wait for its results, stop and report that the swarm could not be run. Do not treat a host
-   capacity limit as an unavailable reviewer, replace the swarm with a coordinator-only read-through, or report PR
-   readiness from a partial review.
+   own charter so the review instructions stay separate. If the session has an active orchestration skill that owns
+   model and effort routing, such as `scode-galaxy-brain` — one whose job is to decide which model and reasoning effort
+   each delegated task or subagent runs on — then which model and effort each reviewer runs at is that skill's decision:
+   route each spawn through it and pass explicit model/effort overrides where the spawn mechanism supports them, rather
+   than letting reviewers silently inherit the coordinator's model. This applies equally to the reduced prose-only
+   panel. Retain each reviewer's stable agent or thread handle until finding collection is complete so productive
+   reviewers can continue in the context they already paid to build. Track the selected charters before spawning and
+   create exactly one initial agent for each. A spawn that fails without returning a thread handle may be retried; once
+   a charter has a live handle, never spawn it again. Continuations go to that handle instead of creating replacements
+   or duplicate reviewers. If the environment cannot spawn the complete reviewer panel and wait for its results, stop
+   and report that the swarm could not be run. Do not treat a host capacity limit as an unavailable reviewer, replace
+   the swarm with a coordinator-only read-through, or report PR readiness from a partial review.
 7. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
    its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
    reviewers that files listed under `Omitted from scope:` were part of the change but were excluded as generated or
