@@ -9,7 +9,8 @@
   "toml": {
   },
   "excludes": [
-    "**/*-lock.json"
+    "**/*-lock.json",
+    "lore/**"
   ],
   "plugins": [
     "https://plugins.dprint.dev/json-0.22.0.wasm",

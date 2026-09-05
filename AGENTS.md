@@ -49,8 +49,8 @@ gets installed as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, edit `agent-in
 
 ## Lore
 
-`lore/*.md` notes, excluding local agent instructions, are historical artifacts. Do not eagerly read them during normal
-work; use them only when digging into past motivation, decisions, or context.
+The ./lore directory contains historical information about the project. Only use it for historical digging or when
+requested. Current project behavior does not use or depend on it, and routine maintenance does not touch it.
 
 ## SPEC.md
 
