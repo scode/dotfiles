@@ -38,3 +38,9 @@ fix the skill or change this file in the same change, never leave them apart.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.
+- Under GPT routing, idiomaticity, AI-slop, and docs/comment correctness reviews start at luna high. Data-flow and
+  edge-input correctness lenses use the same focused-review route when the panel retains strong general correctness
+  coverage. Its escalation and large-input route is sol high. Simplification remains mechanical review; standalone
+  correctness, the remaining correctness lenses, security, test quality, and SPEC compliance remain critical review.
+  This is a GPT profile default, subject to ordinary demand, availability, mechanism, and preference precedence; other
+  families retain their existing review routes. The review charter's discovery scope is unchanged.

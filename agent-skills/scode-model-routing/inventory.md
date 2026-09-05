@@ -12,6 +12,7 @@ overrides may remove or replace these defaults; see Local availability in `SKILL
 | model                             | family | sota |
 | --------------------------------- | ------ | ---- |
 | gpt-5.6-luna medium               | gpt    |      |
+| gpt-5.6-luna high                 | gpt    |      |
 | gpt-5.6-terra medium              | gpt    |      |
 | gpt-5.6-sol low                   | gpt    |      |
 | gpt-5.6-sol medium                | gpt    |      |

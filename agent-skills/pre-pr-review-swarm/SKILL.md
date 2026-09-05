@@ -101,15 +101,16 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    own charter so the review instructions stay separate. If the session has an active orchestration skill that owns
    model and effort routing, such as `scode-galaxy-brain` — one whose job is to decide which model and reasoning effort
    each delegated task or subagent runs on — then which model and effort each reviewer runs at is that skill's decision:
-   route each spawn through it and pass explicit model/effort overrides where the spawn mechanism supports them, rather
-   than letting reviewers silently inherit the coordinator's model. This applies equally to the reduced prose-only
-   panel. Retain each reviewer's stable agent or thread handle until finding collection is complete so productive
-   reviewers can continue in the context they already paid to build. Track the selected charters before spawning and
-   create exactly one initial agent for each. A spawn that fails without returning a thread handle may be retried; once
-   a charter has a live handle, never spawn it again. Continuations go to that handle instead of creating replacements
-   or duplicate reviewers. If the environment cannot spawn the complete reviewer panel and wait for its results, stop
-   and report that the swarm could not be run. Do not treat a host capacity limit as an unavailable reviewer, replace
-   the swarm with a coordinator-only read-through, or report PR readiness from a partial review.
+   route each spawn through it using the work profile in the reviewer table and pass explicit model/effort overrides
+   where the spawn mechanism supports them, rather than letting reviewers silently inherit the coordinator's model. This
+   applies equally to the reduced prose-only panel. Retain each reviewer's stable agent or thread handle until finding
+   collection is complete so productive reviewers can continue in the context they already paid to build. Track the
+   selected charters before spawning and create exactly one initial agent for each. A spawn that fails without returning
+   a thread handle may be retried; once a charter has a live handle, never spawn it again. Continuations go to that
+   handle instead of creating replacements or duplicate reviewers. If the environment cannot spawn the complete reviewer
+   panel and wait for its results, stop and report that the swarm could not be run. Do not treat a host capacity limit
+   as an unavailable reviewer, replace the swarm with a coordinator-only read-through, or report PR readiness from a
+   partial review.
 7. For each reviewer, pass the exact same scope file path and the selected scope label. Instruct the reviewer to read
    its charter, use the scope file as the review boundary, and use the checkout only as after-state context. Also tell
    reviewers that files listed under `Omitted from scope:` were part of the change but were excluded as generated or
@@ -418,22 +419,22 @@ named by the run name, so concurrent swarms never contend for one.
 
 ## Reviewers
 
-| Name                                                    | Charter file                               |
-| ------------------------------------------------------- | ------------------------------------------ |
-| docs-comments-reviewer                                  | `reviewers/docs-comments.md`               |
-| simplification-reviewer                                 | `reviewers/simplification.md`              |
-| idiomaticity-reviewer                                   | `reviewers/idiomaticity.md`                |
-| correctness-general-reviewer                            | `reviewers/correctness-general.md`         |
-| correctness-data-flow-reviewer                          | `reviewers/correctness-data-flow.md`       |
-| correctness-state-lifecycle-reviewer                    | `reviewers/correctness-state-lifecycle.md` |
-| correctness-systems-reviewer                            | `reviewers/correctness-systems.md`         |
-| correctness-edge-inputs-reviewer                        | `reviewers/correctness-edge-inputs.md`     |
-| security-general-reviewer                               | `reviewers/security-general.md`            |
-| security-input-trust-reviewer                           | `reviewers/security-input-trust.md`        |
-| security-secrets-env-reviewer                           | `reviewers/security-secrets-env.md`        |
-| test-quality-reviewer                                   | `reviewers/test-quality.md`                |
-| ai-slop-reviewer                                        | `reviewers/ai-slop.md`                     |
-| spec-compliance-reviewer _(only when `SPEC.md` exists)_ | `reviewers/spec-compliance.md`             |
+| Name                                                    | Charter file                               | Work profile      |
+| ------------------------------------------------------- | ------------------------------------------ | ----------------- |
+| docs-comments-reviewer                                  | `reviewers/docs-comments.md`               | focused review    |
+| simplification-reviewer                                 | `reviewers/simplification.md`              | mechanical review |
+| idiomaticity-reviewer                                   | `reviewers/idiomaticity.md`                | focused review    |
+| correctness-general-reviewer                            | `reviewers/correctness-general.md`         | critical review   |
+| correctness-data-flow-reviewer                          | `reviewers/correctness-data-flow.md`       | focused review    |
+| correctness-state-lifecycle-reviewer                    | `reviewers/correctness-state-lifecycle.md` | critical review   |
+| correctness-systems-reviewer                            | `reviewers/correctness-systems.md`         | critical review   |
+| correctness-edge-inputs-reviewer                        | `reviewers/correctness-edge-inputs.md`     | focused review    |
+| security-general-reviewer                               | `reviewers/security-general.md`            | critical review   |
+| security-input-trust-reviewer                           | `reviewers/security-input-trust.md`        | critical review   |
+| security-secrets-env-reviewer                           | `reviewers/security-secrets-env.md`        | critical review   |
+| test-quality-reviewer                                   | `reviewers/test-quality.md`                | critical review   |
+| ai-slop-reviewer                                        | `reviewers/ai-slop.md`                     | focused review    |
+| spec-compliance-reviewer _(only when `SPEC.md` exists)_ | `reviewers/spec-compliance.md`             | critical review   |
 
 ### Lens reviewers
 

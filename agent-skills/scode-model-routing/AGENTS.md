@@ -55,5 +55,18 @@ inventory changes.
 | the same after `execution-path failure`                                                      | gpt-5.6-luna medium via `codex exec` again                                                                               |
 | the same after `substantive failure (lost context)`                                          | gpt-5.6-terra medium via `codex exec`, reason says no attempt consumed                                                   |
 
+Focused-review scenarios:
+
+| Situation                                                                                                                                      | Expected answer                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Codex on sol high; each of idiomaticity, AI slop, and docs/comment correctness, input not large                                                | gpt-5.6-luna high native; focused review                           |
+| Codex on sol high; each of data-flow and edge-input correctness lenses, with strong general correctness coverage in the panel, input not large | gpt-5.6-luna high native; full charter retained                    |
+| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-5.6-sol high native; no terra rung                             |
+| the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-5.6-sol high native; route exhausted yes, endpoint trusted yes |
+| Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-5.6-sol high native; critical review                           |
+| Codex on sol high; simplification review                                                                                                       | gpt-5.6-sol medium native; mechanical review                       |
+| Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet-5 high native; focused review, Claude route                 |
+| Claude Code on fable high; data-flow correctness lens in a panel, process-defined native-only role                                             | fable-5 high native; non-GPT correctness keeps critical review     |
+
 When a scenario depends on the model routing config file, the isolated home is where it goes; never create or edit
 `~/.scode-model-routing.md` in the real home for an eval, it belongs to the user.
