@@ -7,8 +7,7 @@ description: >
   prefer-muse, or prefer-glm keyword and/or a request to work with concurrency.
   Also use when the user says "galaxy brain feedback: ..." to record feedback about how this skill performed. Once
   invoked, the skill stays active for the rest of the session — including across context compaction and resume — until
-  the user expressly stops it, unless the invocation itself limited the scope up front; if retained context says it was
-  active, re-read this skill before delegating.
+  the user expressly stops it, unless the invocation itself limited the scope up front.
 ---
 
 # Scode Galaxy Brain
@@ -119,13 +118,8 @@ the scope up front ("use scode-galaxy-brain for <this one thing>"). Finishing th
 Context compaction, session resume, a tool restart, or a summary that fails to mention the skill does not end it either;
 treat retained context that has gone quiet about galaxy-brain as a summarization artifact, not a decision anyone made.
 
-After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md,
-`scode-model-routing` if any routing decision was made, and `scode-agent-delegation` if any delegation happened — each
-loaded again as What to read describes, with every sidecar of theirs you had loaded re-read per their own read-when
-rules; if delegation had loaded the shell-out skill, it loads it again the same way, with every harness file used before
-the break — before doing further substantive work; the routing rules and the launch details do not survive summarization
-reliably. If the retained context is ambiguous but mentions outstanding delegated work, model or effort routing, or
-galaxy-brain at all, assume the skill is still active and say that you are assuming it.
+After compaction or resume, if the retained context is ambiguous but mentions outstanding delegated work, model or
+effort routing, or galaxy-brain at all, assume the skill is still active and say that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
 goal, any provider preference, what the model routing config file ruled in or out, which sidecar files and dependency
