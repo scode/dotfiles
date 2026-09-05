@@ -1,0 +1,3220 @@
+{
+  "archive_date": "2026-09-05",
+  "repository": "scode/dotfiles",
+  "evaluated_snapshot": "5227a036fcec4a6ea6e5259a666f7e10680667a4",
+  "last_skill_change": "fae1c42e3348de51d6a65e7bd731669e24152c5f",
+  "case_list_path": "evals/pre-pr-review-swarm/cases.toml",
+  "case_list_verified_byte_identical": true,
+  "matrix_review_count": 221,
+  "prior_review_count": 8,
+  "skill_files": [
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/ai-slop.md",
+      "source_sha256": "62eea4972c220e0c64153b63a01457219dbf32198b1f8df5a86539270cf8b262",
+      "git_blob": "5d7c4d31fd1cc51b54de473ae90509e3964fde9c"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/correctness-data-flow.md",
+      "source_sha256": "c236b2087a894b23a613ca08171041a6b843b854dc5a422b83291a12055b96fa",
+      "git_blob": "90ab1d257ecde92cdc84c78f2d61c3bf36c151e9"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/correctness-edge-inputs.md",
+      "source_sha256": "9a3f3ae2b744e14e89af285c8c9028e4f92cff83f73451c3f4de9e622e3065da",
+      "git_blob": "247d853db6b8a257ee58918cb7b6b821540cdf6b"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/correctness.md",
+      "source_sha256": "54fc557fbcc04a17c087085c66ef83071d474bac9e898f61ad10ce98fd6f1735",
+      "git_blob": "197081833c22830e2def87cdd4e2cefc3d29fc22"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/docs-comments.md",
+      "source_sha256": "1fd1583599c10573e0ea5f5aa846e6871370690ded3184a809550099568a6e20",
+      "git_blob": "65968f58b7f2090ccedd2f64c8afb061e0af7293"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/idiomaticity.md",
+      "source_sha256": "8dbebfab533a68ec9b67b950ac990f5247608377fcf0262c9df83c80910463ff",
+      "git_blob": "409307e3078f13a83a35358ed8c4f0ef2bfa9654"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/SKILL.md",
+      "source_sha256": "a4456c364d37458a904a7a88ce4827b28e4b843703143d9e4949b6ec5afb8de9",
+      "git_blob": "b8283a47e3a8350b96b582d93ff259c4ce7f6a39"
+    },
+    {
+      "path": "agent-skills/pre-pr-review-swarm/reviewers/simplification.md",
+      "source_sha256": "ab9776791bc7092fbed18ed348d7a11530be95749d58dbc3600ddb702db88b77",
+      "git_blob": "74851119164af722be0923a3ce436584ae1f1299"
+    }
+  ],
+  "models": [
+    {
+      "id": "gpt-5.6-luna",
+      "effort": "high",
+      "label": "Luna high"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "effort": "medium",
+      "label": "Terra medium"
+    },
+    {
+      "id": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "label": "Muse high"
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "effort": "high",
+      "label": "Sol high"
+    }
+  ],
+  "cases": [
+    {
+      "id": "treeward-swapped-fifo",
+      "repo": "scode/treeward",
+      "subject_ref": "code-review-eval-swapped-fifo",
+      "curation": "hand",
+      "subject": "cebefd2c833354352702a2e145526224cd68c648",
+      "base": "330d48e5e2010a6c3c01a94f8a2e1204b6b5c324",
+      "scope_sha256": "a09940fef138f7006db777988a1d8db0f239b25a330ddb34eb0c7ddfd2863470",
+      "diff_lines": 64,
+      "touched_paths": [
+        "SPEC.md",
+        "src/checksum.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "fix: avoid hanging when a checksummed file is swapped for a FIFO\n\n"
+    },
+    {
+      "id": "ferricode-openai-codex-remote-auth",
+      "repo": "scode/ferricode",
+      "subject_ref": "eval/pre-pr-review-swarm/pr-10-openai-codex-remote-auth",
+      "curation": "hand",
+      "subject": "5d794aa16f9a1a975cb94e4bb33e1c4fb94ec0ac",
+      "base": "0232e6b88753e40306206a64e412c01dbecd9d76",
+      "scope_sha256": "6655bfd6c080481cf10e7ae356aef133a770472265b724c24977321ab5ddd5c5",
+      "diff_lines": 781,
+      "touched_paths": [
+        "README.md",
+        "SPEC.md",
+        "crates/ferricode-openai-codex/Cargo.toml",
+        "crates/ferricode-openai-codex/src/lib.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "feat: support pasted codex auth callbacks\n\n"
+    },
+    {
+      "id": "dotfiles-scode-chores-initial",
+      "repo": "scode/dotfiles",
+      "subject_ref": "eval/pre-pr-review-swarm/scode-chores-initial",
+      "curation": "hand",
+      "subject": "6541d924a98a697853ae4ba15df094c837d1b13a",
+      "base": "8c7d5a346be141d430ecfa65fe42aa3e82c7e418",
+      "scope_sha256": "912ac547647d3b71dffe37b3548378001f75d296d204599b4757b466f4a38fce",
+      "diff_lines": 167,
+      "touched_paths": [
+        "agent-skills/scode-chores/SKILL.md",
+        "agent-skills/scode-chores/agents/openai.yaml",
+        "src/main.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "feat: add periodic chores skill\n\n"
+    },
+    {
+      "id": "saltybox-spec-skeleton-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/spec-skeleton-initial",
+      "curation": "hand",
+      "subject": "91db5c28acde6a2666bbfc0581c85a1ed6222d32",
+      "base": "e2921564ffece09507794f3140bed1e5993d2d32",
+      "scope_sha256": "2046739e9988a7caf29643acc4a3899673605d11857258657e7295024ecd3768",
+      "diff_lines": 94,
+      "touched_paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "SPEC.md"
+      ],
+      "omitted_paths": [],
+      "commit_message": "docs: add SPEC.md skeleton and make AGENTS.md canonical\n\n"
+    },
+    {
+      "id": "saltybox-move-v1-crypto-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/move-v1-crypto-initial",
+      "curation": "hand",
+      "subject": "0c339b95fc2be4010d3fab7471541d0d691f99d9",
+      "base": "91db5c28acde6a2666bbfc0581c85a1ed6222d32",
+      "scope_sha256": "7a04d8bafd4e885d0bcba9e26585ebd38ee62ecd144a1439121be1064445bb63",
+      "diff_lines": 598,
+      "touched_paths": [
+        "src/file_ops.rs",
+        "src/lib.rs",
+        "src/secretcrypt_v1.rs",
+        "tests/golden_vectors.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "refactor: move v1 crypto to secretcrypt_v1 module\n\n"
+    },
+    {
+      "id": "saltybox-format-dispatch-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/format-dispatch-initial",
+      "curation": "hand",
+      "subject": "a4afb8c9af97db2d4f0a3a815f0170839814d622",
+      "base": "0c339b95fc2be4010d3fab7471541d0d691f99d9",
+      "scope_sha256": "0972617d93f877661f16d6e43b4d24c17993567dc101113f5a9af5fb0f0d6d3f",
+      "diff_lines": 335,
+      "touched_paths": [
+        "src/file_ops.rs",
+        "src/format.rs",
+        "src/lib.rs",
+        "src/varmor.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "refactor: route CLI through format-engine dispatch\n\n"
+    },
+    {
+      "id": "saltybox-v2-engine-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/v2-engine-initial",
+      "curation": "hand",
+      "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+      "scope_sha256": "b40a0219351238622ae726780ea3e18fad52d1a6a3d883bdebae947b1793e716",
+      "diff_lines": 958,
+      "touched_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/error.rs",
+        "src/format_v2.rs",
+        "src/lib.rs",
+        "testdata/README",
+        "testdata/generate-golden-vectors-v2.py",
+        "testdata/golden-vectors-v2.json",
+        "tests/golden_vectors_v2.rs"
+      ],
+      "omitted_paths": [
+        "Cargo.lock",
+        "testdata/golden-vectors-v2.json"
+      ],
+      "commit_message": "chore: add saltybox2 format engine (unwired)\n\n"
+    },
+    {
+      "id": "saltybox-v2-decrypt-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/v2-decrypt-initial",
+      "curation": "hand",
+      "subject": "78beaf7487e99a8f809a6aa308713af81b8fbd23",
+      "base": "d40ef2f2c125996c00f45b2d525b2ad476bb3156",
+      "scope_sha256": "ec9ceef0284dc667c0cc7d7fe33955e73c87400b251ec662db98a02584412d08",
+      "diff_lines": 355,
+      "touched_paths": [
+        "SPEC.md",
+        "src/format.rs",
+        "tests/cli_integration.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "feat: accept saltybox2 format when decrypting\n\n"
+    },
+    {
+      "id": "saltybox-v2-write-gate-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/v2-write-gate-initial",
+      "curation": "hand",
+      "subject": "ef101f7fc5b03f845041eea685d17baa3019c881",
+      "base": "b2619366c05acabc455d9e677e7dff372790a4e5",
+      "scope_sha256": "445b9b4680659ece4caba9cdfa096c9a22469699a7dac3601ce5e481dc0ea59d",
+      "diff_lines": 891,
+      "touched_paths": [
+        "SPEC.md",
+        "src/bin/saltybox.rs",
+        "src/error.rs",
+        "src/file_ops.rs",
+        "src/format.rs",
+        "tests/cli_integration.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "feat: experimental saltybox2 write path behind SALTYBOX_EXPERIMENTAL_V2\n\n"
+    },
+    {
+      "id": "saltybox-v2-flip-initial",
+      "repo": "scode/saltybox",
+      "subject_ref": "eval/pre-pr-review-swarm/v2-flip-initial",
+      "curation": "hand",
+      "subject": "ac5de1f97e43881480641d32b32b44f38c1cc5de",
+      "base": "48deffded7561ed58ae6da292e620c202d64e411",
+      "scope_sha256": "e4ad12469b63a737e5e6a6eb048adf43f91997f4a7ccdcfa3eb969423318c9c5",
+      "diff_lines": 727,
+      "touched_paths": [
+        "Cargo.toml",
+        "README.md",
+        "SPEC.md",
+        "src/bin/saltybox.rs",
+        "src/error.rs",
+        "src/file_ops.rs",
+        "src/format.rs",
+        "src/lib.rs",
+        "tests/cli_integration.rs"
+      ],
+      "omitted_paths": [],
+      "commit_message": "feat!: write the saltybox2 format by default\n\n"
+    },
+    {
+      "id": "stark-parts-pr56-catalog-static-asset",
+      "repo": "scode/stark-parts",
+      "subject_ref": "eval/pre-pr-review-swarm/pr-56-catalog-static-asset-initial",
+      "curation": "hand",
+      "subject": "2e3e1eaca82736c8d6cf1f5ca4c3f4c919406a0b",
+      "base": "14b7f4fde28dc163a63c0f56ec04136f1ad521c0",
+      "scope_sha256": "cc63eb3e11e23cbb31e3b532b586c2ffdfc2da67c21840654fc1eb012c0f34a5",
+      "diff_lines": 351,
+      "touched_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "IMPL_SPEC.md",
+        "SPEC.md",
+        "crates/stark-parts-web/Cargo.toml",
+        "crates/stark-parts-web/src/lib.rs",
+        "crates/stark-parts-web/src/main.rs",
+        "index.html",
+        "tests/static-smoke.spec.mjs"
+      ],
+      "omitted_paths": [
+        "Cargo.lock"
+      ],
+      "commit_message": "feat: load catalog as a static asset\n\n"
+    },
+    {
+      "id": "stark-parts-pr57-catalog-only-ci",
+      "repo": "scode/stark-parts",
+      "subject_ref": "eval/pre-pr-review-swarm/pr-57-catalog-only-ci-initial",
+      "curation": "hand",
+      "subject": "81d37ce6d263b3c62815787170b04e304490d249",
+      "base": "2e3e1eaca82736c8d6cf1f5ca4c3f4c919406a0b",
+      "scope_sha256": "4bf38a72fc6cf49dcca44f8a1cbe6e358e7c8337fde07f41681b22a776ec2721",
+      "diff_lines": 114,
+      "touched_paths": [
+        ".github/workflows/ci.yml",
+        "IMPL_SPEC.md"
+      ],
+      "omitted_paths": [],
+      "commit_message": "ci: skip app jobs for catalog-only changes\n\n"
+    },
+    {
+      "id": "stark-parts-pr58-catalog-vercel-cache",
+      "repo": "scode/stark-parts",
+      "subject_ref": "eval/pre-pr-review-swarm/pr-58-catalog-vercel-cache-initial",
+      "curation": "hand",
+      "subject": "4937a788724b8c85f82f03ed93ac59f27ef51945",
+      "base": "81d37ce6d263b3c62815787170b04e304490d249",
+      "scope_sha256": "3ef82a38a5390babbe60be3702a906873735ac2ab0b0cfe63258177981980083",
+      "diff_lines": 141,
+      "touched_paths": [
+        ".github/workflows/ci.yml",
+        ".gitignore",
+        "IMPL_SPEC.md",
+        "package-lock.json",
+        "package.json",
+        "scripts/assemble-catalog.mjs",
+        "scripts/build-app.sh",
+        "turbo.json",
+        "vercel.json"
+      ],
+      "omitted_paths": [
+        "package-lock.json"
+      ],
+      "commit_message": "ci: reuse app builds for catalog updates\n\n"
+    }
+  ],
+  "integrity_at_eval_completion": [
+    {
+      "case_id": "treeward-swapped-fifo",
+      "head": "cebefd2c833354352702a2e145526224cd68c648",
+      "clean": true,
+      "scope_sha256": "a09940fef138f7006db777988a1d8db0f239b25a330ddb34eb0c7ddfd2863470"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "head": "5d794aa16f9a1a975cb94e4bb33e1c4fb94ec0ac",
+      "clean": true,
+      "scope_sha256": "6655bfd6c080481cf10e7ae356aef133a770472265b724c24977321ab5ddd5c5"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "head": "6541d924a98a697853ae4ba15df094c837d1b13a",
+      "clean": true,
+      "scope_sha256": "912ac547647d3b71dffe37b3548378001f75d296d204599b4757b466f4a38fce"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "head": "91db5c28acde6a2666bbfc0581c85a1ed6222d32",
+      "clean": true,
+      "scope_sha256": "2046739e9988a7caf29643acc4a3899673605d11857258657e7295024ecd3768"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "head": "0c339b95fc2be4010d3fab7471541d0d691f99d9",
+      "clean": true,
+      "scope_sha256": "7a04d8bafd4e885d0bcba9e26585ebd38ee62ecd144a1439121be1064445bb63"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "head": "a4afb8c9af97db2d4f0a3a815f0170839814d622",
+      "clean": true,
+      "scope_sha256": "0972617d93f877661f16d6e43b4d24c17993567dc101113f5a9af5fb0f0d6d3f"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "head": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "clean": true,
+      "scope_sha256": "b40a0219351238622ae726780ea3e18fad52d1a6a3d883bdebae947b1793e716"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "head": "78beaf7487e99a8f809a6aa308713af81b8fbd23",
+      "clean": true,
+      "scope_sha256": "ec9ceef0284dc667c0cc7d7fe33955e73c87400b251ec662db98a02584412d08"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "head": "ef101f7fc5b03f845041eea685d17baa3019c881",
+      "clean": true,
+      "scope_sha256": "445b9b4680659ece4caba9cdfa096c9a22469699a7dac3601ce5e481dc0ea59d"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "head": "ac5de1f97e43881480641d32b32b44f38c1cc5de",
+      "clean": true,
+      "scope_sha256": "e4ad12469b63a737e5e6a6eb048adf43f91997f4a7ccdcfa3eb969423318c9c5"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "head": "2e3e1eaca82736c8d6cf1f5ca4c3f4c919406a0b",
+      "clean": true,
+      "scope_sha256": "cc63eb3e11e23cbb31e3b532b586c2ffdfc2da67c21840654fc1eb012c0f34a5"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "head": "81d37ce6d263b3c62815787170b04e304490d249",
+      "clean": true,
+      "scope_sha256": "4bf38a72fc6cf49dcca44f8a1cbe6e358e7c8337fde07f41681b22a776ec2721"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "head": "4937a788724b8c85f82f03ed93ac59f27ef51945",
+      "clean": true,
+      "scope_sha256": "3ef82a38a5390babbe60be3702a906873735ac2ab0b0cfe63258177981980083"
+    }
+  ],
+  "model_counts": {
+    "gpt-5.6-luna": {
+      "reviews_completed": 65,
+      "reported_findings": 34,
+      "optional": 8,
+      "valid": 20,
+      "invalid": 5,
+      "valid_material_records": 6,
+      "out_of_scope": 1,
+      "distinct_valid_case_issues": 16,
+      "distinct_material_case_issues": 6,
+      "exclusive_valid_case_issues": 2
+    },
+    "gpt-5.6-terra": {
+      "reviews_completed": 65,
+      "reported_findings": 17,
+      "uncertain": 2,
+      "valid": 11,
+      "invalid": 4,
+      "valid_material_records": 3,
+      "optional": 1,
+      "distinct_valid_case_issues": 11,
+      "distinct_material_case_issues": 3,
+      "exclusive_valid_case_issues": 2
+    },
+    "muse-spark-1.3-contributor": {
+      "reviews_completed": 65,
+      "reported_findings": 18,
+      "invalid": 5,
+      "valid": 12,
+      "optional": 3,
+      "valid_material_records": 3,
+      "distinct_valid_case_issues": 11,
+      "distinct_material_case_issues": 3,
+      "exclusive_valid_case_issues": 1
+    },
+    "gpt-5.6-sol": {
+      "reviews_completed": 26,
+      "reported_findings": 17,
+      "valid": 13,
+      "valid_material_records": 9,
+      "out_of_scope": 1,
+      "uncertain": 1,
+      "invalid": 2,
+      "distinct_valid_case_issues": 10,
+      "distinct_material_case_issues": 7,
+      "exclusive_valid_case_issues": 1
+    }
+  },
+  "lens_counts": {
+    "idiomaticity": {
+      "gpt-5.6-luna": {
+        "reviews_completed": 13,
+        "invalid": 1,
+        "optional": 3,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      },
+      "gpt-5.6-terra": {
+        "reviews_completed": 13,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      },
+      "muse-spark-1.3-contributor": {
+        "reviews_completed": 13,
+        "invalid": 1,
+        "optional": 1,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      }
+    },
+    "ai-slop": {
+      "gpt-5.6-luna": {
+        "reviews_completed": 13,
+        "invalid": 2,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      },
+      "gpt-5.6-terra": {
+        "reviews_completed": 13,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      },
+      "muse-spark-1.3-contributor": {
+        "reviews_completed": 13,
+        "valid_issue_union": 0,
+        "valid_issues_recovered": 0,
+        "material_issue_union": 0,
+        "material_issues_recovered": 0
+      }
+    },
+    "docs-comments": {
+      "gpt-5.6-luna": {
+        "reviews_completed": 13,
+        "optional": 4,
+        "valid": 11,
+        "invalid": 1,
+        "out_of_scope": 1,
+        "valid_issue_union": 12,
+        "valid_issues_recovered": 11,
+        "material_issue_union": 1,
+        "material_issues_recovered": 1
+      },
+      "gpt-5.6-terra": {
+        "reviews_completed": 13,
+        "uncertain": 1,
+        "valid": 6,
+        "invalid": 1,
+        "optional": 1,
+        "valid_issue_union": 12,
+        "valid_issues_recovered": 6,
+        "material_issue_union": 1,
+        "material_issues_recovered": 1
+      },
+      "muse-spark-1.3-contributor": {
+        "reviews_completed": 13,
+        "valid": 5,
+        "invalid": 1,
+        "valid_issue_union": 12,
+        "valid_issues_recovered": 5,
+        "material_issue_union": 1,
+        "material_issues_recovered": 0
+      }
+    },
+    "correctness-data-flow": {
+      "gpt-5.6-luna": {
+        "reviews_completed": 13,
+        "valid": 3,
+        "invalid": 1,
+        "valid_issue_union": 8,
+        "valid_issues_recovered": 3,
+        "material_issue_union": 6,
+        "material_issues_recovered": 2
+      },
+      "gpt-5.6-terra": {
+        "reviews_completed": 13,
+        "valid": 2,
+        "invalid": 3,
+        "valid_issue_union": 8,
+        "valid_issues_recovered": 2,
+        "material_issue_union": 6,
+        "material_issues_recovered": 1
+      },
+      "muse-spark-1.3-contributor": {
+        "reviews_completed": 13,
+        "valid": 2,
+        "optional": 1,
+        "valid_issue_union": 8,
+        "valid_issues_recovered": 2,
+        "material_issue_union": 6,
+        "material_issues_recovered": 1
+      },
+      "gpt-5.6-sol": {
+        "reviews_completed": 13,
+        "valid": 5,
+        "out_of_scope": 1,
+        "valid_issue_union": 8,
+        "valid_issues_recovered": 5,
+        "material_issue_union": 6,
+        "material_issues_recovered": 4
+      }
+    },
+    "correctness-edge-inputs": {
+      "gpt-5.6-luna": {
+        "reviews_completed": 13,
+        "valid": 6,
+        "optional": 1,
+        "valid_issue_union": 13,
+        "valid_issues_recovered": 6,
+        "material_issue_union": 8,
+        "material_issues_recovered": 3
+      },
+      "gpt-5.6-terra": {
+        "reviews_completed": 13,
+        "valid": 3,
+        "uncertain": 1,
+        "valid_issue_union": 13,
+        "valid_issues_recovered": 3,
+        "material_issue_union": 8,
+        "material_issues_recovered": 1
+      },
+      "muse-spark-1.3-contributor": {
+        "reviews_completed": 13,
+        "valid": 5,
+        "optional": 1,
+        "invalid": 3,
+        "valid_issue_union": 13,
+        "valid_issues_recovered": 5,
+        "material_issue_union": 8,
+        "material_issues_recovered": 2
+      },
+      "gpt-5.6-sol": {
+        "reviews_completed": 13,
+        "valid": 8,
+        "uncertain": 1,
+        "invalid": 2,
+        "valid_issue_union": 13,
+        "valid_issues_recovered": 8,
+        "material_issue_union": 8,
+        "material_issues_recovered": 5
+      }
+    }
+  },
+  "limitations": [
+    "One sample per cell; five repositories, including seven related Saltybox cases.",
+    "The accepted issue union is observed coverage, not exhaustive ground truth.",
+    "Assessment is not blinded to model identity.",
+    "Muse uses a different harness; model and harness effects are not separated.",
+    "Earlier one-offs are preserved but excluded from these counts.",
+    "No monetary-cost claim is made without attributable usage and pricing.",
+    "Several subjects exceeded the idiomaticity/slop neighboring-file guidance.",
+    "The catalog-only CI assessor added primary action sources during subject execution; several GPT subjects read them asymmetrically. See that case's exposure table.",
+    "Some action dependencies use mutable version tags. Retrieved primary sources are preserved, but are not immutable historical pins.",
+    "Related Saltybox cases repeat resource and output-preservation issue families; distinct case issues are not independent bugs."
+  ],
+  "case_limitations": {
+    "treeward-swapped-fifo": [
+      "Assessment was not blinded to model identity.",
+      "All 17 cells completed; no failed cells or retries. Every raw artifact was read in full and substantive empty reviews were preserved.",
+      "No builds, tests, runtime device experiments, checkout mutations, or later-revision inspection were performed.",
+      "Device-open evidence verifies synchronous waiting and the new specification overclaim, not an indefinite hang. Device creation/access and a device-enabled filesystem are necessary for the example replacement path.",
+      "Windows runtime behavior was not exercised. Terra's Windows-only concern remains uncertain; Luna's combined documentation finding is credited only for its Unix-device premise.",
+      "The device-open behavior predates this change. The observed valid issue union contains one minor newly introduced documentation/contract defect, not a demonstrated material runtime regression.",
+      "Primary Linux source was checked at v6.8, and local Ubuntu Linux 6.8 headers confirmed synchronous resume semantics. Hardware-specific duration was not established.",
+      "The observed valid issue union is not exhaustive ground truth. Sol reviewed only the two correctness lenses, and Muse uses a different harness.",
+      "Launch timestamps were recorded promptly after handles returned, rather than measured inside each reviewer. No reliable cost or token-usage accounting was collected."
+    ],
+    "ferricode-openai-codex-remote-auth": [
+      "All 17 cells completed; there were no execution failures or corrected retries.",
+      "This assessment is not blinded to model identity.",
+      "All review and assessment work was static and read-only; no builds, tests, live OAuth requests, or executable reproductions were run.",
+      "The observed valid issue union is not exhaustive ground truth. Sol has only the two correctness lenses, unlike the other models' five cells.",
+      "Tokio lifecycle and select-fairness claims were checked against the exact locally cached 1.52.3 dependency pinned in Cargo.lock.",
+      "Rust stdin behavior was checked against the installed stable toolchain source; this case does not pin that standard-library version.",
+      "FC-03's material impact requires a long-lived or repeated public-API caller; the shipped CLI exits after a single authentication call.",
+      "FC-08 follows SPEC.md's general port-unavailable promise. README.md only mentions the narrower occupied-port example. No restricted-network OS setup was reproduced.",
+      "FC-07 is assessed only as a ten-second responsiveness defect; indefinite starvation is not established because select uses randomized branch order.",
+      "Blank/invalid paste aborting an active HTTP login (FC-04) is minor; automatic retry in paste-only mode (FC-05) is optional and is not promised by the SPEC.",
+      "Two Muse reports aggregate independently handled paths. Their original F1 findings are preserved verbatim in raw artifacts and split into F1/listener plus F1/paste-only, and F1/validation plus F1/read-error, in the assessment.",
+      "Final checkout verification: HEAD remains 5d794aa16f9a1a975cb94e4bb33e1c4fb94ec0ac, git status --porcelain is empty, unstaged/cached diffs are empty, and scope.diff retains SHA256 6655bfd6c080481cf10e7ae356aef133a770472265b724c24977321ab5ddd5c5.",
+      "No reliable model-level costs or token usage were collected; Muse session event timestamps are not used to estimate cross-model review duration."
+    ],
+    "dotfiles-scode-chores-initial": [
+      "Assessment is not blinded to model identity.",
+      "All 17 reviewers completed a single independent turn; no failed cells or retries.",
+      "Read-only static review; no builds, repository tests, maintenance commands, or upstream release queries were run.",
+      "The subject is agent-executed prose. An instruction contradiction is verifiable, but actual execution choices and failure frequency were not measured.",
+      "DC-07 remains uncertain because jjstack's clean new-stack default may prevent the proposed dirty-manifest recreation path.",
+      "DC-06 is assessed as optional because the text search discovers candidates while the procedure still requires actual action references.",
+      "Per-model counts are reported findings, including repeated recovery of the same issue across lenses, not independent defects or exhaustive recall.",
+      "Native elapsed times were recorded at bookkeeping time; no reliable comparable token usage or billed costs were collected.",
+      "Pinned checkout HEAD and scope hash were verified, and the checkout remained clean."
+    ],
+    "saltybox-spec-skeleton-initial": [
+      "This assessment is not blinded to model identity.",
+      "All 17 reviews completed; there were no failed cells or corrected retries. Each artifact was read in full and contained an actual review.",
+      "Static review only: no builds or tests were run. The diff changes documentation and a symlink; this case gives little evidence about runtime correctness recall.",
+      "The observed valid issue union is empty. Empty reviews do not prove absence of defects, and recall against an empty union is undefined.",
+      "The grammar judgment uses the assessor's English-language analysis; no external grammar source was consulted.",
+      "All three idiomaticity reports list four neighboring files, exceeding that charter's two-to-three-neighbor calibration limit. Results are retained with this protocol limitation.",
+      "Muse used a different harness from the GPT reviewers. Native reviewer contexts were fresh and independent; exact ledger models and efforts were used.",
+      "Start and completion timestamps are coordinator observations written shortly after launch/completion, not exact inference timings. No comparable model cost or token accounting is included.",
+      "The reviewed checkout remained clean at subject 91db5c28acde6a2666bbfc0581c85a1ed6222d32, and scope.diff retained SHA256 2046739e9988a7caf29643acc4a3899673605d11857258657e7295024ecd3768."
+    ],
+    "saltybox-move-v1-crypto-initial": [
+      "This assessment is not blinded to model identity.",
+      "No builds, tests, or runtime probes were run, as required by the experiment; conclusions rely on pinned source, exact blob equality, and reference tracing.",
+      "All 17 cells completed; there were no reviewer execution failures or retries. A bookkeeping-only python invocation failed because python was absent and was corrected to python3 before further bookkeeping.",
+      "The observed valid issue union is empty; this case measures restraint on a mechanical refactor and cannot establish comparative bug recall or exhaustive correctness.",
+      "Muse uses a different harness from the native GPT reviewers. No cost or token-usage comparison is asserted.",
+      "Luna idiomaticity listed broader context than the charter's 2-3 neighboring-file calibration cap, including the binary entrypoint; its empty review is retained, with the scope deviation noted.",
+      "Muse docs/comments states that it did not compare the base module line by line; the coordinator independently verified exact blob equality.",
+      "Empty-report wording and some final replies did not strictly mirror the required empty-list format or full saved artifact, but each saved artifact contains a substantive completed review, inspected files, and limitations."
+    ],
+    "saltybox-format-dispatch-initial": [
+      "Assessment is not blinded to model identity; the parent independently checked the decrypt-doc issue and the SPEC/staging dispute.",
+      "All 17 planned cells completed, with no execution failures or repeated substantive reviews.",
+      "Source review only: no builds or tests were run. Error-path examples and behavioral equivalence were checked statically against the pinned source and base.",
+      "The valid issue union is observed coverage, not exhaustive ground truth. No runtime defect was established by this case.",
+      "The SPEC coverage verdict resolves ambiguous general touches wording using the exact pinned zero-behavior-change stage acceptance; the general wording tension is preserved in CEI-1 rationale.",
+      "Luna idiomaticity listed more than the allowed 2-3 neighboring source files. Its result is retained, with this context-breadth deviation noted.",
+      "Muse docs includes an incorrect ancillary line range for taxonomy tests (250-305 rather than 173-233); the finding itself correctly anchors the decrypt documentation.",
+      "Muse used a different harness from native GPT reviewers. Native concurrency began at one and was raised by the parent to four; this was scheduling only.",
+      "Checkout remained clean at a4afb8c9af97db2d4f0a3a815f0170839814d622; scope.diff SHA-256 remained 0972617d93f877661f16d6e43b4d24c17993567dc101113f5a9af5fb0f0d6d3f."
+    ],
+    "saltybox-v2-engine-initial": [
+      "Assessment is not blinded to model identity. The coordinator read the run's prior-one-off discussion as required, but no subject reviewer received it.",
+      "All 17 cells completed with substantive artifacts; none failed or was retried. Luna idiomaticity's final message summarized rather than repeated its full artifact; the full raw report is retained.",
+      "No builds, tests, cryptographic vector generation, performance measurements, or OOM experiments were run. Findings are assessed from pinned source and locally installed matching dependency source.",
+      "SVE-003 is grading-sensitive: all five reports explicitly identify the same false resource-safety assurance and are valid/minor, including four edge-input reports whose numeric-cap and allocation-hardening remedies remain optional against the deliberately unwired, explicitly prescribed design. Grading the underlying resource policy as a material defect would upgrade one recovery for every model with no unique Sol contribution.",
+      "The coordinator initially graded SVE-003 edge reports optional/material by their preferred resource-policy remedies. The parent corrected them to valid/minor because they also identify the verified false assurance. This calibration change is recorded rather than hidden; raw reports are unchanged and no finding was split.",
+      "Argon2 parallel-feature absence and std-gated Error support were verified locally. Historical feature-removal timing, exact CPU duration, host-specific OOM behavior, and a minimum supported-machine resource budget remain unverified.",
+      "Some reviewer context breadth exceeds the suggested neighboring-file count, and Muse edge-input references include inaccurate line numbers. Exact corrected evidence is retained in findings.",
+      "Observed issue coverage is not exhaustive ground truth. No costs or model-usage totals were collected."
+    ],
+    "saltybox-v2-decrypt-initial": [
+      "This assessment is not blinded to model identity.",
+      "All 17 cells completed; no execution failures or retries occurred. Early bookkeeping command errors did not relaunch reviewers or affect reviewed source.",
+      "Findings were verified by source and pinned local dependency inspection. No builds, tests, destructive OOM probe, or directory-sync failure injection were run.",
+      "The observed valid issue union is not exhaustive ground truth. Single reviews per model/lens and different native/Muse harnesses limit generalization.",
+      "Actual KDF runtime, allocation-failure behavior, and memory-pressure impact depend on the machine and allocator. No universal safe resource budget is established here.",
+      "The README fix can be a short compatibility note. Full duplication of the v2 specification is optional and is not counted as a separate finding.",
+      "Some idiomaticity reports list more neighboring files than the charter's 2-3-file calibration limit (Luna and Terra); scope breadth was not perfectly uniform.",
+      "Luna edge reports reading a historical lore note in the pinned checkout; that contextual difference did not produce any findings.",
+      "Muse docs treats specification technical accuracy as outside its docstring/comment charter; the two specification mismatches were assessed under correctness.",
+      "Ledger timestamps are recording times close to launches/completions, not precise model latency measurements. Cost and token usage were not collected.",
+      "Assessment comparisons count separate reports while preserving canonical matching; repeated discoveries in Sol's two correctness lenses are not four distinct issues."
+    ],
+    "saltybox-v2-write-gate-initial": [
+      "Assessment is not blinded to model identity.",
+      "All 17 cells completed; no failed cells or retries.",
+      "Static source assessment only: no builds, tests, or injected I/O failures. Directory-sync failure is established from the explicit fallible post-persist path.",
+      "The observed valid issue union is not exhaustive ground truth.",
+      "Muse used a different harness from GPT; model and harness effects cannot be separated here.",
+      "Luna idiomaticity saved a complete artifact but returned only a summary instead of repeating it in its final message.",
+      "Ledger timestamps record coordinator launch/completion observations, not precise model execution durations."
+    ],
+    "saltybox-v2-flip-initial": [
+      "Assessment is not blinded to model identity.",
+      "All 17 cells completed; there are no failed cells or retries. Reviews and assessment used static inspection only, with no builds or tests.",
+      "The observed valid union contains one minor documentation issue and is not exhaustive ground truth about correctness.",
+      "The pre-4.0 statement was assessed using the pinned release tag and the subject's release process and plan. No later revisions or future releases were consulted; future adherence to the planned 4.0.0 release is unverified.",
+      "Luna DOC-001 quotes a real changed claim but has incorrect file and line anchors, and its broader criticism of CLI-qualified comments is unsupported. Its valid credit is limited to the corrected file_ops comment.",
+      "Muse uses a different harness from the native GPT reviewers; no attributable token or cost comparison was collected.",
+      "Timestamps in the ledger record orchestration observations, usually shortly after launch or completion; they are not exact model latency measurements."
+    ],
+    "stark-parts-pr56-catalog-static-asset": [
+      "Assessment is not blinded to model identity. The parent independently checked the Terra CEI-1 spec interpretation before finalization.",
+      "Read-only static inspection only: no builds, tests, browser reproduction, or production-cache checks were run.",
+      "Cargo.lock was omitted from the shared diff; available parser and deployment context was inspected only as needed.",
+      "Observed valid issue union is not exhaustive ground truth. Empty reviews were kept without retry.",
+      "Terra edge CEI-1 combines two independently editable concerns and is split into banner and controls records; its review finding_count remains one original finding.",
+      "The startup search-controls contract remains ambiguous: existing initial-load search/focus wording coexists with new loading/failure states.",
+      "Luna edge returned a completion pointer rather than repeating the report in its final response; its complete substantive empty review was saved to the assigned artifact and read.",
+      "No execution failures occurred. All five Muse processes exited zero and emitted run.terminal.completed events.",
+      "No costs or attributable token usage were collected."
+    ],
+    "stark-parts-pr57-catalog-only-ci": [
+      "All 17 planned subject reviews completed; no failed cells, retries, continuations, or substituted models. Empty reports are substantive completed reviews.",
+      "This assessment is not blinded to model identity. One case and one turn per cell cannot establish general model rankings; the observed valid issue union is not exhaustive ground truth.",
+      "No builds, tests, workflow executions, fixes, or VCS mutations were performed. The CI/test-dependency finding is verified by static source tracing; no runtime production search defect is claimed.",
+      "Branch-protection settings and actual GitHub Actions runs were not inspected. Claims here do not depend on treating skipped jobs as failed required checks.",
+      "Third-party sources were retrieved at the referenced mutable v3/v2.3 tags during this assessment, not from an immutable historical dependency lock. Raw copies are preserved under evidence/.",
+      "Protocol deviation: during active reviews the coordinator downloaded evidence/paths-filter-v3-filter.ts, evidence/paths-filter-v3-main.ts, evidence/dprint-check-v2.3-action.yml, then evidence/paths-filter-v3-git.ts under this case. They are raw upstream source, without reviewer findings or assessor commentary, but their late availability changed context asymmetrically.",
+      "Confirmed evidence reads: luna-high--docs-comments lists paths-filter-v3-{main,filter}.ts and dprint-check-v2.3-action.yml and its optional DOC-001 depends on the dprint source; terra-medium--correctness-data-flow lists and explicitly relies on the same three files for its empty result; luna-high--correctness-data-flow reports the same three supplied sources for its empty result.",
+      "Confirmed evidence reads: luna-high--correctness-edge-inputs reports all four sources for its empty result; terra-medium--correctness-edge-inputs reports supplied paths-filter sources without enumerating filenames, for its empty result; sol-high--correctness-data-flow lists all four and relies on them for action semantics, while its valid finding is established by pinned repository workflow/tests.",
+      "sol-high--correctness-edge-inputs reports reviewing the referenced paths-filter implementation but does not state whether it used the late-added local copies or independent external retrieval. It launched after all four files existed, so treat it as potentially affected. None of these subjects was rerun; original neutral prompts and raw outputs are retained.",
+      "Raw reports are preserved verbatim. Muse edge F1 contains a wrong bike-count example and understates catalog test breadth; assessment accepts the independently verified part-name/SKU dependency, without manufacturing an additional finding or accepting every proposed remedy.",
+      "Timing fields are coordinator-observed launch/completion recording times, not precise model reasoning durations. Token usage and billed costs were not collected."
+    ],
+    "stark-parts-pr58-catalog-vercel-cache": [
+      "This assessment is not blinded to model identity.",
+      "All 17 cells completed; there are no failed cells. Empty reviews are preserved as completed substantive reviews.",
+      "The observed valid issue union is empty, which does not establish exhaustive correctness or comparable recall.",
+      "No builds, tests, or deployments were run. Luna data-flow reports using a Turborepo dry-run graph inspection; the other reviews principally use static source/configuration inspection.",
+      "Actual Vercel Remote Cache provisioning, cache hits, cache misses, and deployment timing were not independently exercised by the assessor.",
+      "package-lock.json was omitted from the shared diff but available for dependency context; reviewers varied in whether they inspected it.",
+      "Sol data-flow consulted upstream current documentation rather than version-pinned dependency source, so that context is not proof of the precise historical dependency behavior.",
+      "Some line numbers in Muse data-flow explanatory text reflect concatenated command output rather than per-file line numbers. They are not finding anchors and were not used as assessor evidence.",
+      "Recorded timestamps reflect prompt bookkeeping and completion observation; they are not precise model execution durations or costs.",
+      "The final checkout is clean at 4937a788724b8c85f82f03ed93ac59f27ef51945; scope.diff SHA256 remains 3ef82a38a5390babbe60be3702a906873735ac2ab0b0cfe63258177981980083."
+    ]
+  },
+  "review_outputs": [
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "7aab0c40508d9372d584d5075040fa6c6fa9b0594a2062fa1913802597bafc86"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "65e08582ee4f6013d038634c6aa447b14a17160a0cfb5378919122e0be7edd0b"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "518c82cafd1b255506fcf1afa78502dc20d90bb128e40982f9d8c5946a53364e"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "fada24475fbf34a100a4a2ea3e3d04869e5b5d57d7295a5401ad0464b842f176"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "cfbf54d66e8113064ce4eb6733b8eecc047d76c6bff58e47607f186df4834cb9"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "c41be29a4330dcc1b3ef2662bf96dd406e155099d7f47b7e9cab233b01356ac6"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "ab32803a1855cd2c7916bbf8559b006c8e6eb4aa5e483a54a9c75de2d13de9ff"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "0b0c2a555111482d94b882aed32692ee1e0847947a02a4bb9350066aecfcc569"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a1eb5dbeef13346c07611417481ed4d80d283e4e719f2ff18809eea988f445be"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "782c22c82eb5d11d7720793f0e86de6f5eb8f71307d34c3f321d6c7aa95eabf5"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "fa750e8ac48c85ad3fc7b7c7b086d874aa29bd8c0e4ae09e780456f6ab472fc1"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "930f7012776815f38cbbaf2d08ac4ad256dd3a654aaff379728d0e59d176a3bc"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "570513933589f4b28e7222f949dc7b0049058fde418eb1a5dbe9e09db6a297b0"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "ef4ff1606d53eea9fe87abd1644e31f804547827a23e7bde07443dbe0aa1ed5b"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "faf414d579425b4e2ad9df2b306aff58de39caeed0158aaf55250ddf8d6f4187"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "52704d6456a98cd1f0ea6f328c1a086aad101852e2db852b45bd8fdde4193234"
+    },
+    {
+      "case_id": "treeward-swapped-fifo",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "c476c28530729ec20bf5062be7f7002db3a67084af87c375c8ae833f3a3da9d6"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "508e2ab09315f5016bddfbf7d5af7ca47b047f5f4d1173b0486b13989b3e3997"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3b79ab910732ebe0b18c9df1477955ff72727b385eca7c20bae83825286afb56"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f6d24341941dd1524f99c4451573ab32255d6bbc9d84e6bee001b98c8e4e126e"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "9fe274bd0caadfaca2c3ae0fa63c64c4e68a0eb0bc8b568bdda1c17b9d54923c"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "7bb09492076d4161062423a9704421496c5b8179360e63c30cdd350cc6e7a2b4"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "8143eeb499f3bd8fd5e0bef17ddd2fee11384f069571f9a7526139c8bcd4da2f"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "02645fccce399e22baf6d33ee3557f1bb7537d691d850398469c6752e8b5fa3a"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "72b9b1097b9a04170258649abf181ef0b811fba1221f2e87b9c4136f9565a192"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d8e211c908a8fbebfe767953e602211322e5e44a380909a56f79e2b77fbfa484"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "20748fbc69559c4c69f78a11cabd4aeeb9bb6dc786ab427bf72babe632d029a5"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "da5b45e4d634db8c85e2d31c7d99703e9cac5988d0137733f0b534449ac0aa96"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f3bc3ea3ddc8d4e080a1b7739b9343bd63585673b479f02df7d57d7246dc2f3b"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "808dee89c1d72a8599afd387b04cadf35dd362f0aa5d72ace7d845e296e4ee54"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 3,
+      "failure_reason": null,
+      "original_output_sha256": "10728642e52888108a63211011b686ab201d430241d76943dc1658cc40cf3b8e"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "6c53ccdcd361f90303ad2e4cedfccb8599134b68a6750c2c43e5c785171d6ea9"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "aeb8b757fb068b1ad98fca237e5ef3e8142679897310c2435413e4f5984be0c0"
+    },
+    {
+      "case_id": "ferricode-openai-codex-remote-auth",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "2703c804f98789d8bc3128c001a1cb62cc2c8814fd6b829c1cb33d8aa83c07ab"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ff2b2d1a613f6d0964201b28ca75e75b48ccf0d8cee394d7659a5680eec0997a"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "0a1fe7bbd783f25f5ced54cafb4e513e443f4e2c4ca4c0a63ecd2165ed86f9b8"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "80a0d9d5b23a4b15aee9c703fcf3299bf92998bd1a9153d5879b33545ae093dd"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "79b9a7a4cbc8e7a077972e5b029c0a50ad7b6edb9b9d8fd690d32e711c4e5122"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "448cfcb4f01c51925f84a8625880d4ec5f8050b4b5819e8bc6d14bd32dc07fe8"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "659c79f40ce360775ba0cb39902c62b129426ab90e80d7123dde9f7e674a7214"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f74cf2ebf923a423419e77c5bccc0933ccd913f7d5bce3994d7843286169f45b"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "835cb7f0aa7fc4df9e97ed55f185169c5eae8dcc1106e73dd67d355720d8ea13"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "59971c64a4f4dcfc7841a120f34e0315ba55b4b28c92331190b8feb114c6462c"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "545f5aa66aa96f18a0d2b75b7fb49ca69f55b762729da684ce3b4e006aaf8f9a"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "d60d7201edb31cb57964577892a46e8baba37218f975c2ea39a5d8a092381872"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a8b0de2939164a6cdac80df5c27ec393dedd46b53f1c6b131e74dc1e9d791762"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "bafddc33a74d164726e2ff49610fd7c422b43cb5e77ceeaabceb2bfd8ecec4cb"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "2ecb42b78c6d80173318b7b5dc129ebc9a0f76979b5d9c26faca1213a1f693c7"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "bef64f1cd19c3e36038907227cb644ec165013d2df622480f75a47faab0c3dff"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 3,
+      "failure_reason": null,
+      "original_output_sha256": "61d9af93b53ecf750b0e13672a2f66a0d6ed6b9cb90cf9dc3609e8c52661bd09"
+    },
+    {
+      "case_id": "dotfiles-scode-chores-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "90a4697c47bcb47e092422138b6ef52bff922b6d908526e6332407926e6fda33"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "6f40b93cfc278d864959288f94f038c80f8b1b9d608c7ceb24c0abf4c933b4bf"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a0abfaafe62835390507914e176b626359574fafb7943333bc23ebdcd38f7db3"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "988659daec6c86c050d7b02c91c0df5021906f312f7c3cb41c6afce54be5e70e"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b6db62d901a99cb84dc323ab431e7b9d54281816ec8c600513cb7fa5050f7a8e"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a1a7cb85e6c1068f50aff054610cf49b23d9ada6166d8b5eb57db529a41b9c8f"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "438de9e13ed76510aa32946abaedd7031ae065b240b9ff2f1a45d9d12030fbae"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "498baa38651e9b12f48d00d8b64e2daa48e45009407a51a4b1e1e9e6e7c47c4a"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "106dc7680d28cf2fedb2b47b38c5243d75288bbbc54ae1f16002471c9f30b838"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "8b764607039a1e79d687d987c2b634a082215dd3dcf9118ac376108ab19ad7eb"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3f70ac0d5589468ad955e20d9feb98e36ed9b12eefe342bff6e8c3286a9d5dab"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "63235c640d29a5c685fd7a98f17c93710cb0622727a8b90ca8ec51c766e9334e"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "10b793aeed8269a203bdcbc240a0266766761f223ffb0ab1581f134278a2b892"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "f1b01c78d7d52081b16d215bc30dfd369f330e742f0477842ab5ca5939824388"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "35cd44db93dc4fae78f46eb0ed15ab9af3a86899128ff41800eee2ebadc60728"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ecde92b0cf6a21243e11c0ce1915eb10dc0ce20e2d8ed0ce191f5ee14d778536"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "f493d42ae98873620ef01c469779c2324a677e057f784e2fbf0eb5268883eacb"
+    },
+    {
+      "case_id": "saltybox-spec-skeleton-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b11621d0939149b8ee4855b21ea0b7e95d9a91d7f588b9de604b7db8d5cdc872"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ee4c1dd313a060db316b8bf7a654dc79b589fa324dbf83d45cb7404938713c91"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "eef714ebcbcaa86eb18da8d7fe8473aea7bb8e0513b4b98356b15b55d24abcd6"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a58f67c45489c9afdc362ca0b10bba868ef95664b6d7246122eb8844476b60db"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "eec98e15028025ef1af936896bc3f0217dbfb042fb46d64029c204f7c0660542"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d18e3d314456b9a9d10f9983403891f57dd22628c40e298bcead5f9e2d82a44d"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "7fe3bedceda70badf962180a3cf1d0f52dcf592126260b1408cb8a55b0e29ac7"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b82b8b13d05f80c3f8a0ce30fb998203d2ac92db21e463b056d0bb420c8b7f46"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "aebabba560c9d4189d83bbace2d864d92c3920f60d108b05ba3a3f16f67a99ed"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d149971886f29d4f90be7c71d8c302fb9fd7bf05adaf1cd635b54f93623168a8"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "81a8ca00d716f6d030207d409b11c5a735f59ed177ed3444b6f459fa8ed7c53f"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "ba6801675da6c20802b0f7e3d18189cbbf1aa292334750a156f2f4dd3d1dd8ec"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "597572840ebb6bd0cb0ba960e01417cc2faa51cadd7f5cff3d2338bfcebca756"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "34521b78e2ebd8034b142c39d78972a07d733257df12aadec18e51f6f2a04c99"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "15cf957dbcea7d411273720cda93c43d4188b1c95f40edf75301c69ebf3e0481"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "488b567324571a24af64bebd61f6ecef41660c075805fbd38d419d18fda3516f"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "38d13128facd4b3a04d843699bb57246c4c8f1c7a8cf1518c98ccb6913e378c5"
+    },
+    {
+      "case_id": "saltybox-move-v1-crypto-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "98e6527ef1989d91af5b3eb48194aca3db933313aec4df4e19d8423cf74b834d"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "113201239e43ecb2c9861c1a28b59442c3468957ca33e95473d6357f1356c7af"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "2cd297dc9b3c7229c4f2ab26ace55fbb933518ad73590148e35777a9d580bc7c"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "1a1d7e60e415249fdeea1a7373f25d1c01dd170457cb148fb7b1e22ace9ea8f3"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "0967d256d0be6ae97c9271c36d7e0e69c58bcd3d09b9612cfaeb6de6803decf3"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "5727e4dfe9a19b2623583bc54d2a09f57794d1e1fc0122d217af3ebf9e6ada7b"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a13244a498c2615abe00e7636eafa1ed783c1f70e288c07e93e2aa3ae603889b"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f3b7126392e0f5471850e7112cfe3e37957756d054631c7a4adfede58f7ef04d"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "083ea1d28ba2da5c456b3c366ed3ff2668265c0a438835a5004e7c48c3552b5e"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "5f02bc136a12c0fa777efb15714f3b7e84854fc8e79787f28825f0401da96072"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "f7cea7c90a1ce38c3b11b67a49a008935bc70cf519e270614b36c46acc26db18"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "2d0967ad627e6762fc43bcf3f17fcaba75fb54a968dffebbaf09c07cb313fd48"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "06a02f6005fd4fed6fc01c97fb611f1c0caad4fc2eb579957e58b1048e1af3fb"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "76373b8f32fc770bdb8c4f7692d97e8b47238ab008c145362ab82f08cb2d0053"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "8cf025f8807506c0e5e5ba4d7e07d146547eafa2db0695dd5a7c4b5e3cd8bb11"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "c420c3ccfbf9e7e6f1f40c94c05e359e22adac5cb07ac5ad9ac229f48ae84f7d"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "cec279e1bade526c343c8aac9d6d2b149c0f9facdacbe7c17fca745340286a81"
+    },
+    {
+      "case_id": "saltybox-format-dispatch-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "8dceb65c0b42f52a63a9df6687e4f90aed8779cafc638cdfb1ec0948b88070fc"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "3e717a60d346e49fad41039b82f2ab8500ada52bc13529d886f265499fd2953a"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "033f648aec176232757ec7fec429a1901954de1a4d97402fdbf5374e7e85b861"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "9d588e9ecf6c89b11593b2aea2b543865aaad3642d29e644692edd338ac7b223"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "e6b7511de16b393b709223e5dab5a11bd64b29fbe6e21695eb67c06d5725644d"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a5b111a26d8bda1bbf89179d9d004d777ccfcfefd7801e25b888d19c4471d7ea"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "80b0232ccdc810cfb505ee047077b9ed929a5b78495ff394c33ed10fa9905ad0"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "9a5179b8a962e586c02469fb97cf6180ac4ec5fa8e5859801364948d4fe6416b"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "99b757089a3f94aeb716db825b890aa5198f3441508eb7b47678e357828d691f"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f5befd5c6586e341cb03a6088b321624212451988b1af0600f7fc986444d3224"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "080f43cd243ec6acd28370cb5b773329ddc56fe5c56b5dd41c59f035f2d18ce3"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3f81b7f7764b1e63892a4185eab97f6c2bbe1ffd9cea3956f03804792dd41f59"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "83f701048def7b5bbde0a4a1d93ba58c1698e4942dbe2983cda2ddd5ba0a3597"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "202243fe1cb7ae00f8589759034b26f4100c4aa69c1ee5c1564a5b24c0192ea2"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "02ff59e50583b1812b070da4afe6036ecd364d43eb36cb01ed6c2cbf3a918517"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f46bb88d74074fe7951f1195ab12d62a8f92b7a1b9b31d912a6cd9358969d0e8"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "7c35d4e1ffcac9088f7cc5ad140503463b4527b837cab1a223580699aa72ce92"
+    },
+    {
+      "case_id": "saltybox-v2-engine-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "0d6dcb73f7862442b7bcbb0a6630f02bbd4e475e059666e95f1fe9f48e774398"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "999ae2ef4f9d91cbc019e1f6a6ee4e02327138e93b79ea9ba85dd3abfb4954d2"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "bbe6eac4b4bc47672b8818b623953054f09896865fc72705a54635387b5d69c7"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ef33f40321a3fc933c5b12d696395c75aa25d4d8cc1fcd962518f73547b78106"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "5c02b312f1b6bc807782da937bd8a7cb82ddda34879619f7a53fb81cd660b85b"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "087e59c7e8e192675d12f97632de1df42eed5a6cdcd45e55392c469c626b06cf"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "bd30f77797edd2b6db765b2d4287a018e79b921edf3b30b60c7aed9331ded277"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "47d948d8e3da0dd5f85f3586168e36f1f6162222c2bc9f20af6c79c7361cfa62"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "06636afa034f89cc7cbdcc1384d59df75464f9fbe22df3eea2abf895a614779d"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "8fdf45ae2dbaf12d4709a4e78116b1c1a0de46401b1720696fbc3c4d542eac68"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "c9c28f971efb77d22ea187cf0c6c15231c741ba4cbe22446399393b0177a16e1"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "62dde9bd699876dd943fedb2a66d21e6664312f9be62d0e2c77699a9ba070b4a"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "9d57baa5ca74e9b93466964073a549acb377e1717d6bf7686b5f32bafd939d10"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "05aafc3009ccd8aa723fe276b335359ee0caa3e6cbb47a9de80c6d501aeefa4e"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "dadd8d01ec990244cef89a62195d011e90c7b25feb3c8685dc19e8c17820a9a8"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "099c39e2173fea3b13a5ee9ce4200a0488149b896e0dcf53a1a3f86bac045415"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a38c054885f064e22aa75938cb36137fa5811128d20316bd7e188df25dd2b819"
+    },
+    {
+      "case_id": "saltybox-v2-decrypt-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "75ea037c3608f68f0a2447bbbc3b4ccdb9b88fd512f511c03ee2f31c7df62251"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "b64809798fe6e70a327abc2214d6ff94d48283bd2b160d28d4f91ee84f336398"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "767b32017c1c98112028746deca010a4bdcbf6a749b555e8daff64883f8e5b3e"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "52bdb86d8550ef9fef3220433d682f0b7bb16d1dd1e9219972a038f2e07cdc86"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "9d3e04fe2e482ae37be4ed9ddb3892aa2778fee889626130e1a36425434ad561"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b13d033566ef9d36f726f84fadae95f9e0aac9dc4cecdcaf2363301b330bc13c"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "95d5de93dfdc9df822bd253b7160095524061ae3b47a78287e2e8a4b3a73ac40"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 4,
+      "failure_reason": null,
+      "original_output_sha256": "96effde098a3e422df2b7316c196c41bb1788e3c6bee7c3b2fd0a5818bced2dd"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "c96b33b98aa8d70a54920e16ff509d5ed37fad3b1d0712c0752c36709a7d2e93"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b16ef901925abaa07de581720abe8c3a0cb6bda2e18cd7b0edac1958896e4fef"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "28608fe77877783d8d1e8d12c697a2e959150b9bba4d3b920e52b9c1ccb20108"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a26aadd81883bedfeb5668e5661b5e0393506f1b2ab1fffe0256cb81c6aa892b"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a55c394f97289c06ae4b0a4e358878b1d383143f265e1d5dc1738fce6bbb692c"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "1d4a509e3a10ba5a50246fdf6e77c847a396ed90027552f7eae6e9a2a1cd3ee4"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "44da201cdc28b2e40bbc06dd412c29583de06270329643cd96c7d07ae86aa730"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "61250bb808f4c42e64b1a6135f6750a31784d8bd2ce9bd44229b8da67c280c28"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "71ea95085aa34bd6d5b0d1715ebb9fe31a799755a49df6bc322b7f72ca3db546"
+    },
+    {
+      "case_id": "saltybox-v2-write-gate-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4483608e5d91cb3dd93dbcd5d4435e088552e9761ed2c250feb1cbd165c6bcdf"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "1cc64bdf4d0d3bb5da1fb7f8eacdf6ec2c2b8aeb7cb8f1cd850b5eb47db1b925"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "fab31a38a7eb78e111a51fce3eb0df8274c1ec833af73eaf93f52249cfe28690"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "301d52c4710656a013eeddfdddc19c9f78dcc6931872421342fa30ba4caf1a7e"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b40235b05b5422cf6d48e81f82eaa059835668b7e1a2d816e4bdec05868e524a"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "44df21536b030443eea5af2f8cd887d5f737f111fbfc53fcd9a335b195656482"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "307dd21310c34ba76c651a9da6c4708f34e779c186557f7ab67865e82408c8dc"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "3fd4a7de9b504f6dc1dcfe6bd062753fa7922b5b071e3568dd3f144deaf280bc"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "d187cebfa65a2731fcd948b1499bc019ed1c6c82fc109e6392e6dd3d82562fb7"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "5e3d534ff495a6459f536a10007a84b7223a681707fcc21c64c01373c3936031"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "0855878d76faf7dc987bbb90f9d359c1c69c22deb7031dfa1ac6c6b65329aede"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "e1d0617571ff59c310099d06f491758d6dbf27f15e5f840da0325e86906c73ef"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "c07e596d2763507175f2f6e8986e789cac6056efa69321340cd665d1e2cc8389"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d488b4b808b69c3d9763e2191da4a3f7c319a48408eca02fc1982ad514d7b760"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4f44df8420f5af2850ee66d05c5112599c47e16bc1e9db24cb4c5a568f0a60db"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d4771eb5cdfa176e38858e0c6e54c804b2ad357f9040e19caaa8fcc97eff1e6d"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "af839bd98d4872a294ed5f892c22272438467240d44468e7b86897b62e49d967"
+    },
+    {
+      "case_id": "saltybox-v2-flip-initial",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "1884ba6b21825ddad45c0e06ebcd0d9c0b39ee184bdf90b2a5ab7309dbbee095"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "cf96c04e79c178bb0c72cc0836881cc38dcf6fd33a0b3fe136ad8cdc46a64990"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "7bbab5b3664624f735b3d28bccf60c952d57faa473e81727e93f7341bc0c5bea"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ec8024a201c0bf7403cb0b296683624222e065f57c415acaff72449165c6e667"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "631c2522e63e5a5565d949c3ae03996def8fcfd92e75a9b388f74702093a8fab"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "9246e28d6020c09bc908756af852711bf2a9c474289fd942295a7439c6dbda3f"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3e2627d84733f6e62c9dd5eedc3fd9852a01bdb894af12191aa6f21c02b8ce91"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "c48487932430b8df55e579390695b9bfa15718c0e1a8a1cfb131b3263c5c8ff7"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "138186307128c6f68ee749b0492ca1fc4a494c7023989cac3c9dc5713ded28e7"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "860e3c54285fdd540137e9c4417d4f30e2c41fd3269551cec4613a7b01995eb2"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "f2bfc1ed28df327091b6e6caa1feeeb5714ffc0e55384e05df928b3ed5962dec"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "565110ebfe961663902b0a7865c6b98085d3eac069274b8f65e4b3d7efc2d2c1"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "f046b9395789e60570cee0d12db0837d9eb12bc4b9ff1fe8eb239c2acc9c1f4a"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d27d4a1fe4f96361d42fffc0db9f51f06ac7040decd6b04cce080116c0941c3b"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d2dedb47f434bc6c42195265ebf162896c401179419aeb07d54246fcc413a8c8"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "5d97b67fb93921ec7b21a8519ebb0cdecc47f2f2d25316f810dc5bd1d1dede1b"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "c8568a785e7db69d44fd7c6d34fceda46de09d80bda47232f34dac2fc28545a1"
+    },
+    {
+      "case_id": "stark-parts-pr56-catalog-static-asset",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "c4bfec903998f0114e2bfba3ce05a6f5af9e1ccb80c4e8f864ba2442cdfd96b2"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "e84fc30e378880d0fa8d66bd74d7a7dfd4e49bc1d4822e0f639e4764b64419cb"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "62be9c1763c5710483f11f0c13354c36642b47f423d8ab42d6d86cfcdacf9039"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "68c0a72e9226ccb1d9e268b0f2312fa4f625a34086a1ca6aa2d6e850e6ed3fba"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4deba1f543653499b723fd982cb7a6d20ce7eb2cf40b8592a62acecf6e656e95"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3d7d376e31ed31ee81e9fa0d98c5e24fd40b6942c899ef5c597bedada85a50b3"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b65a58d1e7f4e6a9ecb98357d774f86304781d9b1b4eea118b6e290b561a937b"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "b36dff8882d79e55ffa164fbc388370a70841b3dd470bc1b6b700224ec8bf3a3"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "9dfef4135d1395f5466b11190aed717f827797096fd56350842adba5bc3f2730"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "346faae59f30e103acb158263c687bfc2e9e2ce5c92ac675e2f949ee21c511c8"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "a810efc4a1f4d3ab76731d367e02abd0db9554e4732f6897e7074ceb6b40e0af"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3492001c42163518bb488cfa534bd28c65ddcb43582b2b548cf1d06993c88aa5"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "88c01524077ea91d6847996a74c50cbd9f63b24e2dcd78afdc83cf8d33e68f7a"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "c49204b5438aef8a0e5a32d8274b01b07625ed0da60597150b05fd874f75f812"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "60d9218ff9833df915e5e1716f0f885e32334304fcd1bb39bc7e4df277a61141"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "e5ffccedeb3a13f5fceb78ff60cfc6c53ec630db42d8bf2db0455c073fdfb806"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 2,
+      "failure_reason": null,
+      "original_output_sha256": "fdb69148d10b2173a51ae970f20b525231ae1a3e6882c19fede41d1e18225c94"
+    },
+    {
+      "case_id": "stark-parts-pr57-catalog-only-ci",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "060a1d6fecf7186dba62e21d05b56d6f12c17dec49a3c6731e4cef01a057dae3"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "luna-high--idiomaticity",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "28e19f3d7e1f9e37781c82d10eeb73b60afd3b87f99970ec9eb0d41072c275d5"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "terra-medium--idiomaticity",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "cef33b8be983db8a7e078015a161d406750e4fa25fbc4deb6e80ae824fb1a931"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "muse-high--idiomaticity",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "idiomaticity",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "fe281fb05217d543b77a51dc4b9b04fef65f7524242512eac2a9db9cb91b5214"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "luna-high--ai-slop",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "ce6eb20758c3be8058e34334750443dd74f4c8f2985398c5f6a7b821d88dd895"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "terra-medium--ai-slop",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "25deb161b26efe488e0d5e37a0ba3f4598ba67c866f1eccd0d0492948e3aa4fd"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "muse-high--ai-slop",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "ai-slop",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b11cc2b5e72a3c640f16b235e487a5b0e6a36c2f800e6ed32264ac6dd410f2dc"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "luna-high--docs-comments",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "bfa74735f0caf002a178bd35159b82afec874b2b1502ecb638ebf01ff32ceb60"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "terra-medium--docs-comments",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 1,
+      "failure_reason": null,
+      "original_output_sha256": "84a12499978b94a3f3cdc8eaeee5a2f9bcc88a7f7f18a2cf475c18c575435d33"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "muse-high--docs-comments",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "docs-comments",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4cb292294625a5353aeaf1b5c1cc8b9393f8075b70cb83c55ea729ab06f7d353"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "luna-high--correctness-data-flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "b67fc559a60346f5406764507a9f82a1b0603f709d6223efc443242037c674ed"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "terra-medium--correctness-data-flow",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "1448c82422175b18100948196fdd589c8b2c9a2eff2869d6d586c0f7c19d6b26"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "muse-high--correctness-data-flow",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "36770f1f9103902265c8454ea20a18cd0d27bb7b3af0d40554ca2474d79981c7"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "sol-high--correctness-data-flow",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-data-flow",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4650ebbaa7443b54731db0c4c4f38958a4a1948ac51ea93459770a1f8ee95b52"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "luna-high--correctness-edge-inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "75854c3763ced435332fba1c8431db9c9750a8befcbc33d8dcc02338661afbbc"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "terra-medium--correctness-edge-inputs",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "3629429b31a14b3758bf93d81d041f4f6bc7321a60a8885042d382b39d1eb1aa"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "muse-high--correctness-edge-inputs",
+      "model": "muse-spark-1.3-contributor",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "4ac2cea3e7d1ad36898e356b29681bf5ffcb56acf8865add30123d1757e882de"
+    },
+    {
+      "case_id": "stark-parts-pr58-catalog-vercel-cache",
+      "cell_id": "sol-high--correctness-edge-inputs",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "lens": "correctness-edge-inputs",
+      "status": "completed",
+      "finding_count": 0,
+      "failure_reason": null,
+      "original_output_sha256": "d9474e7c1e541c203b2a7cdbbf28267c84f3a14faed005c33e5e7c7cfa0532a4"
+    }
+  ],
+  "source_aggregate_sha256": "d5fef7cc21a3b7e55c0348648bb2e73916dcb834bd0d4be804266f1bf7b66247",
+  "archive_scope": "Results summary only: raw outputs, prompts, scoped diffs, charters, process logs, and checkouts are not included."
+}
