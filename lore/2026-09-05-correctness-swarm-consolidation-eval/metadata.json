@@ -1,0 +1,260 @@
+{
+  "prepared_at_utc": "2026-09-05T04:37:48.146181+00:00",
+  "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+  "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+  "tag": "eval/pre-pr-review-swarm/v2-engine-initial",
+  "skill_snapshot_commit": "95dec985ba998a956dabc10e770bb25acb184856",
+  "last_skill_change": "95dec985ba998a956dabc10e770bb25acb184856",
+  "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+  "prior_diff_sha256": "b40a0219351238622ae726780ea3e18fad52d1a6a3d883bdebae947b1793e716",
+  "scope_label": "current commit 62d866d (9 touched files, 958 diff lines; correctness only)",
+  "omitted_paths": [
+    "Cargo.lock",
+    "testdata/golden-vectors-v2.json"
+  ],
+  "frozen_files": {
+    "SKILL.md": {
+      "sha256": "f60f5f5f4077fd9b5ab191567d717a446ffc1246ac769f621cc5be4d2fee6611",
+      "generated": false
+    },
+    "restater.md": {
+      "sha256": "601b8020df2c70cf0079e8d9bf9014c51f0e4fd9e6ad90679252e5062d1a4e6d",
+      "generated": false
+    },
+    "reviewers/correctness.md": {
+      "sha256": "54fc557fbcc04a17c087085c66ef83071d474bac9e898f61ad10ce98fd6f1735",
+      "generated": false
+    },
+    "reviewers/correctness-general.md": {
+      "sha256": "c0a0b45ac60e6990c17bb8553330206f0af92f6aecbdfc3abcd8025891653571",
+      "generated": false
+    },
+    "reviewers/correctness-data-flow.md": {
+      "sha256": "c236b2087a894b23a613ca08171041a6b843b854dc5a422b83291a12055b96fa",
+      "generated": false
+    },
+    "reviewers/correctness-state-lifecycle.md": {
+      "sha256": "9c21263e38a0c84d0b4be7b6bf5999ffa3fc9017f3da887b6a32717947a2fbe0",
+      "generated": false
+    },
+    "reviewers/correctness-systems.md": {
+      "sha256": "b15c54d1fde7d737f96949501461fe4035e3149cbd4189010c700258093f115e",
+      "generated": false
+    },
+    "reviewers/correctness-edge-inputs.md": {
+      "sha256": "9a3f3ae2b744e14e89af285c8c9028e4f92cff83f73451c3f4de9e622e3065da",
+      "generated": false
+    },
+    "reviewers/correctness-combined.md": {
+      "sha256": "e233105b784ce3e528718267fc4c5514aa8d062551fcc3beb7cc7daef289bf90",
+      "generated": true
+    }
+  },
+  "arms": [
+    "baseline",
+    "combined-sol-high",
+    "combined-astra-low",
+    "combined-astra-high"
+  ],
+  "coordinator_model": "gpt-5.6-sol",
+  "coordinator_effort": "high",
+  "restater_model": "gpt-5.6-sol",
+  "restater_effort": "high",
+  "harness": "native Codex collaboration",
+  "git_version": "git version 2.43.0",
+  "codex_version": "codex-cli 0.153.3",
+  "configs": {
+    "baseline": {
+      "arm": "baseline",
+      "arm_dir": "EVAL_ROOT/baseline",
+      "checkout": "EVAL_ROOT/baseline/repo",
+      "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+      "scope_label": "current commit 62d866d (9 touched files, 958 diff lines; correctness only)",
+      "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+      "skill_commit": "95dec985ba998a956dabc10e770bb25acb184856",
+      "coordinator": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "restater": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "panel": [
+        {
+          "name": "correctness-general",
+          "charter": "reviewers/correctness-general.md",
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        {
+          "name": "correctness-data-flow",
+          "charter": "reviewers/correctness-data-flow.md",
+          "model": "gpt-5.6-luna",
+          "effort": "high"
+        },
+        {
+          "name": "correctness-state-lifecycle",
+          "charter": "reviewers/correctness-state-lifecycle.md",
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        {
+          "name": "correctness-systems",
+          "charter": "reviewers/correctness-systems.md",
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        },
+        {
+          "name": "correctness-edge-inputs",
+          "charter": "reviewers/correctness-edge-inputs.md",
+          "model": "gpt-5.6-luna",
+          "effort": "high"
+        }
+      ]
+    },
+    "combined-sol-high": {
+      "arm": "combined-sol-high",
+      "arm_dir": "EVAL_ROOT/combined-sol-high",
+      "checkout": "EVAL_ROOT/combined-sol-high/repo",
+      "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+      "scope_label": "current commit 62d866d (9 touched files, 958 diff lines; correctness only)",
+      "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+      "skill_commit": "95dec985ba998a956dabc10e770bb25acb184856",
+      "coordinator": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "restater": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "panel": [
+        {
+          "name": "correctness-combined",
+          "charter": "reviewers/correctness-combined.md",
+          "model": "gpt-5.6-sol",
+          "effort": "high"
+        }
+      ]
+    },
+    "combined-astra-low": {
+      "arm": "combined-astra-low",
+      "arm_dir": "EVAL_ROOT/combined-astra-low",
+      "checkout": "EVAL_ROOT/combined-astra-low/repo",
+      "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+      "scope_label": "current commit 62d866d (9 touched files, 958 diff lines; correctness only)",
+      "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+      "skill_commit": "95dec985ba998a956dabc10e770bb25acb184856",
+      "coordinator": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "restater": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "panel": [
+        {
+          "name": "correctness-combined",
+          "charter": "reviewers/correctness-combined.md",
+          "model": "gpt-6-astra",
+          "effort": "low"
+        }
+      ]
+    },
+    "combined-astra-high": {
+      "arm": "combined-astra-high",
+      "arm_dir": "EVAL_ROOT/combined-astra-high",
+      "checkout": "EVAL_ROOT/combined-astra-high/repo",
+      "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+      "base": "3b1d3131902f724dd3827444ad67c7f8871ee2df",
+      "scope_label": "current commit 62d866d (9 touched files, 958 diff lines; correctness only)",
+      "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+      "skill_commit": "95dec985ba998a956dabc10e770bb25acb184856",
+      "coordinator": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "restater": {
+        "model": "gpt-5.6-sol",
+        "effort": "high"
+      },
+      "panel": [
+        {
+          "name": "correctness-combined",
+          "charter": "reviewers/correctness-combined.md",
+          "model": "gpt-6-astra",
+          "effort": "high"
+        }
+      ]
+    }
+  },
+  "dependency_evidence": {
+    "package": {
+      "name": "argon2",
+      "version": "0.5.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "checksum": "3c3610892ee6e0cbce8ae2700349fcf8f98adb0dbfbee85aec3c9179d29cc072",
+      "dependencies": [
+        "base64ct",
+        "blake2",
+        "cpufeatures 0.2.17",
+        "password-hash"
+      ]
+    },
+    "source_files": {
+      "Cargo.toml": {
+        "path": "argon2-0.5.3/Cargo.toml",
+        "sha256": "a5425d64a793e1a2e5a5c102364f26b3a601b6e6f753edd0c3872318ab832bc2"
+      },
+      "src/lib.rs": {
+        "path": "argon2-0.5.3/src/lib.rs",
+        "sha256": "c1ed703c605d55d4b82f807a891bb3eb9d79e061bf129ac5637ab41325817a9a"
+      },
+      "src/block.rs": {
+        "path": "argon2-0.5.3/src/block.rs",
+        "sha256": "08b0c81b9d273f08047a27175520513eab08015a1b7ea887272a533237bae8f7"
+      },
+      "src/params.rs": {
+        "path": "argon2-0.5.3/src/params.rs",
+        "sha256": "54e4c29dd876be643aa0d0d6466133346cd4ffeae75fe3f316a5196b39cf4fb5"
+      },
+      "src/error.rs": {
+        "path": "argon2-0.5.3/src/error.rs",
+        "sha256": "be431ea75ef7161ad919737c3d129e2d2fdc26c16100d7edd2af5154f8603b73"
+      }
+    },
+    "source_checks": {
+      "workspace": "src/lib.rs:229-232 allocates ordinary Vec; src/block.rs has no Drop",
+      "key_reconstruction": "src/lib.rs:481-505 combines final lane blocks and hashes blockhash_bytes",
+      "internal_cleanup": "src/lib.rs:322-323 and 501-505 are gated by zeroize",
+      "features": "Cargo.toml defaults exclude zeroize and std; zeroize is optional dependency",
+      "typed_source": "src/error.rs StdError implementation requires std"
+    }
+  },
+  "original_sealed_reports": {
+    "sealed_at": "2026-09-05T05:08:42.501717+00:00",
+    "files": {
+      "baseline/REPORT.md": "2441a413b4a8f87b18e447a16f34604050f17588be9c3faee2d0d7d33d3424f9",
+      "baseline/BUCKETS.md": "483ea7a492f26d7dc04f7a21c44953174cbf82c9d8b21b246ed19109a760571d",
+      "baseline/RUN-LOG.md": "df16b5b4e4491641fc7a4388b841f7801d2000036bfd580155ae05cb704078e6",
+      "baseline/accounting.json": "2741582658b861671eb20e93f1bd0a5f99b492859d240d36a4edefb1f2f44311",
+      "combined-sol-high/REPORT.md": "c2225c40cf5a770ad9857377c96edaf552f6989f3cceab661a5b5116f5a6abac",
+      "combined-sol-high/BUCKETS.md": "2a72b6d2af4c50e6df3d24df8702f45546ccb060d595c110dcbb8652299de25a",
+      "combined-sol-high/RUN-LOG.md": "76c959f7078e7cc665c7efb2361bf652f102cecc95ebb31bd821321db0621d28",
+      "combined-sol-high/accounting.json": "b19486555a06d651fa1d73f212c2139f396607794599cdc0ed9141f1839d5a7d",
+      "combined-astra-low/REPORT.md": "9e05ba8e0456720fddbb8d57033ebb896c7af84c839c95ceab525ab8cd2db0db",
+      "combined-astra-low/BUCKETS.md": "d4fbb76cd411681e50085dfbbdd91d13ebf19f52388299126449d5f2ef605698",
+      "combined-astra-low/RUN-LOG.md": "ed43e8e0a3cfe9e5e08e52b9320ed9687615377ba3f6960d3ae7f45277311d72",
+      "combined-astra-low/accounting.json": "dbc7198d545fb697fb5ee5051397a8482ff48d74e6c09f50fe6c7fecc08226e9",
+      "combined-astra-high/REPORT.md": "1c1827e3a867f49f49763af3b94c87532a5f35f1a5f00cf5da216017fb5ee451",
+      "combined-astra-high/BUCKETS.md": "5b4af86db8f6eaab73f6e11adfbc6c1ef68ba9e7c836fdc8f914bca8f6cb0360",
+      "combined-astra-high/RUN-LOG.md": "92e765204b94280baad39dd12d96e25cf6ddbf1213dde86abac9323e7f886ba3",
+      "combined-astra-high/accounting.json": "2b710fdf9b17706796fa9f70ce4165b15d5d48bc74a13691909aeed0314bab3b"
+    }
+  }
+}

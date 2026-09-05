@@ -1,0 +1,1235 @@
+{
+  "snapshot_wall_utc": "2026-09-05T05:10:56.255699+00:00",
+  "arms": {
+    "baseline": {
+      "coordinator_recorded_status": "see execution.json",
+      "total_including_preflight": {
+        "input_tokens": 16101622,
+        "cached_input_tokens": 15365248,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 139431,
+        "reasoning_output_tokens": 64911,
+        "total_tokens": 16241053,
+        "uncached_input_tokens": 736374
+      },
+      "total_excluding_preflight": {
+        "input_tokens": 15837158,
+        "cached_input_tokens": 15168000,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 136818,
+        "reasoning_output_tokens": 63837,
+        "total_tokens": 15973976,
+        "uncached_input_tokens": 669158
+      },
+      "by_role_including_preflight": {
+        "reviewer": {
+          "input_tokens": 7953231,
+          "cached_input_tokens": 7479296,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 81032,
+          "reasoning_output_tokens": 50121,
+          "total_tokens": 8034263,
+          "uncached_input_tokens": 473935
+        },
+        "all": {
+          "input_tokens": 16101622,
+          "cached_input_tokens": 15365248,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 139431,
+          "reasoning_output_tokens": 64911,
+          "total_tokens": 16241053,
+          "uncached_input_tokens": 736374
+        },
+        "coordinator": {
+          "input_tokens": 7103587,
+          "cached_input_tokens": 6942848,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 43746,
+          "reasoning_output_tokens": 11247,
+          "total_tokens": 7147333,
+          "uncached_input_tokens": 160739
+        },
+        "restater": {
+          "input_tokens": 1044804,
+          "cached_input_tokens": 943104,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 14653,
+          "reasoning_output_tokens": 3543,
+          "total_tokens": 1059457,
+          "uncached_input_tokens": 101700
+        }
+      },
+      "preflight": {
+        "input_tokens": 264464,
+        "cached_input_tokens": 197248,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2613,
+        "reasoning_output_tokens": 1074,
+        "total_tokens": 267077,
+        "uncached_input_tokens": 67216
+      },
+      "elapsed_seconds_excluding_preflight": 1616.541,
+      "thread_count": 8,
+      "reviewer_threads": 5,
+      "reviewer_completed_passes": 12,
+      "restater_threads": 2,
+      "outer_tool_calls": 189,
+      "exec_command_invocations": 266,
+      "reviewer_source_path_mention_count": 157,
+      "reviewer_distinct_source_paths_mentioned": 19,
+      "source_paths_mentioned_by_multiple_reviewers": {
+        "Cargo.lock": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle"
+        ],
+        "Cargo.toml": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow"
+        ],
+        "README.md": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow"
+        ],
+        "SPEC.md": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow"
+        ],
+        "dist-workspace.toml": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle"
+        ],
+        "lore/2026-07-01-saltybox2.md": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle"
+        ],
+        "src/bin/saltybox.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "src/error.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow"
+        ],
+        "src/file_ops.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "src/format.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow"
+        ],
+        "src/format_v2.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "src/lib.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "src/passphrase.rs": [
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle"
+        ],
+        "src/secretcrypt_v1.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle"
+        ],
+        "testdata/generate-golden-vectors-v2.py": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "testdata/golden-vectors-v2.json": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ],
+        "tests/golden_vectors_v2.rs": [
+          "agent:e2e_baseline/baseline_correctness_general",
+          "agent:e2e_baseline/baseline_correctness_systems",
+          "agent:e2e_baseline/baseline_correctness_state_lifecycle",
+          "agent:e2e_baseline/baseline_correctness_data_flow",
+          "agent:e2e_baseline/baseline_correctness_edge_inputs"
+        ]
+      },
+      "threads": {
+        "agent:e2e_baseline/baseline_correctness_general": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 3,
+          "outer_tool_calls": 17,
+          "exec_command_invocations": 34,
+          "extracted_command_literals": 34,
+          "apparent_read_commands": 28,
+          "scope_read_commands": 1,
+          "source_path_mentions_in_read_commands": {
+            "SPEC.md": 3,
+            "src/bin/saltybox.rs": 1,
+            "src/file_ops.rs": 2,
+            "src/format.rs": 3,
+            "src/error.rs": 2,
+            "src/lib.rs": 3,
+            "src/secretcrypt_v1.rs": 1,
+            "src/varmor.rs": 1,
+            "Cargo.lock": 3,
+            "testdata/golden-vectors-v2.json": 1,
+            "lore/2026-07-01-saltybox2.md": 3,
+            "src/format_v2.rs": 2,
+            "Cargo.toml": 2,
+            "testdata/generate-golden-vectors-v2.py": 1,
+            "tests/golden_vectors_v2.rs": 1,
+            "CONTRIBUTING.md": 1,
+            "README.md": 2,
+            "dist-workspace.toml": 1
+          }
+        },
+        "agent:e2e_baseline": {
+          "role": "coordinator",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 87,
+          "exec_command_invocations": 51,
+          "extracted_command_literals": 51,
+          "apparent_read_commands": 38,
+          "scope_read_commands": 4,
+          "source_path_mentions_in_read_commands": {
+            "src/format.rs": 1,
+            "src/lib.rs": 3,
+            "src/format_v2.rs": 1,
+            "Cargo.lock": 2,
+            "Cargo.toml": 3,
+            "src/bin/saltybox.rs": 1,
+            "src/error.rs": 2,
+            "src/file_ops.rs": 1,
+            "lore/2026-07-01-saltybox2.md": 3
+          }
+        },
+        "agent:e2e_baseline/baseline_correctness_systems": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 3,
+          "outer_tool_calls": 19,
+          "exec_command_invocations": 45,
+          "extracted_command_literals": 45,
+          "apparent_read_commands": 42,
+          "scope_read_commands": 4,
+          "source_path_mentions_in_read_commands": {
+            "README.md": 4,
+            "SPEC.md": 4,
+            "src/format.rs": 2,
+            "src/bin/saltybox.rs": 1,
+            "src/error.rs": 2,
+            "src/file_ops.rs": 1,
+            "Cargo.toml": 6,
+            "src/format_v2.rs": 3,
+            "src/lib.rs": 9,
+            "testdata/generate-golden-vectors-v2.py": 1,
+            "tests/golden_vectors_v2.rs": 2,
+            "Cargo.lock": 2,
+            "testdata/golden-vectors-v2.json": 2,
+            "lore/2026-07-01-saltybox2.md": 3,
+            "src/secretcrypt_v1.rs": 2,
+            "dist-workspace.toml": 1,
+            "src/passphrase.rs": 1
+          }
+        },
+        "agent:e2e_baseline/baseline_restater_attempt_2": {
+          "role": "restater",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 1,
+          "outer_tool_calls": 9,
+          "exec_command_invocations": 13,
+          "extracted_command_literals": 11,
+          "apparent_read_commands": 11,
+          "scope_read_commands": 1,
+          "source_path_mentions_in_read_commands": {
+            "Cargo.toml": 1,
+            "src/error.rs": 2,
+            "src/lib.rs": 2,
+            "src/file_ops.rs": 1
+          }
+        },
+        "agent:e2e_baseline/baseline_correctness_state_lifecycle": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 18,
+          "exec_command_invocations": 57,
+          "extracted_command_literals": 57,
+          "apparent_read_commands": 55,
+          "scope_read_commands": 4,
+          "source_path_mentions_in_read_commands": {
+            "SPEC.md": 2,
+            "src/format.rs": 2,
+            "src/file_ops.rs": 1,
+            "src/bin/saltybox.rs": 1,
+            "src/error.rs": 3,
+            "src/lib.rs": 7,
+            "Cargo.lock": 6,
+            "testdata/golden-vectors-v2.json": 3,
+            "src/format_v2.rs": 3,
+            "lore/2026-07-01-saltybox2.md": 3,
+            "Cargo.toml": 6,
+            "src/secretcrypt_v1.rs": 2,
+            "README.md": 3,
+            "dist-workspace.toml": 1,
+            "testdata/generate-golden-vectors-v2.py": 1,
+            "tests/golden_vectors_v2.rs": 1,
+            "src/passphrase.rs": 1
+          }
+        },
+        "agent:e2e_baseline/baseline_correctness_data_flow": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-luna",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 16,
+          "exec_command_invocations": 35,
+          "extracted_command_literals": 35,
+          "apparent_read_commands": 29,
+          "scope_read_commands": 4,
+          "source_path_mentions_in_read_commands": {
+            "src/format_v2.rs": 4,
+            "src/error.rs": 2,
+            "src/lib.rs": 8,
+            "testdata/generate-golden-vectors-v2.py": 1,
+            "tests/golden_vectors_v2.rs": 2,
+            "SPEC.md": 3,
+            "src/format.rs": 1,
+            "README.md": 2,
+            "Cargo.toml": 1
+          }
+        },
+        "agent:e2e_baseline/baseline_restater_attempt_1": {
+          "role": "restater",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 1,
+          "outer_tool_calls": 7,
+          "exec_command_invocations": 18,
+          "extracted_command_literals": 18,
+          "apparent_read_commands": 17,
+          "scope_read_commands": 2,
+          "source_path_mentions_in_read_commands": {
+            "src/format.rs": 2,
+            "src/format_v2.rs": 4,
+            "src/lib.rs": 4,
+            "Cargo.toml": 2,
+            "src/error.rs": 2,
+            "tests/golden_vectors_v2.rs": 2,
+            "Cargo.lock": 2,
+            "src/bin/saltybox.rs": 2,
+            "src/file_ops.rs": 2
+          }
+        },
+        "agent:e2e_baseline/baseline_correctness_edge_inputs": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-luna",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 16,
+          "exec_command_invocations": 13,
+          "extracted_command_literals": 11,
+          "apparent_read_commands": 11,
+          "scope_read_commands": 3,
+          "source_path_mentions_in_read_commands": {
+            "src/format_v2.rs": 1,
+            "testdata/generate-golden-vectors-v2.py": 1,
+            "tests/golden_vectors_v2.rs": 1,
+            "src/lib.rs": 2,
+            "src/bin/saltybox.rs": 1,
+            "src/file_ops.rs": 1,
+            "testdata/golden-vectors-v2.json": 1
+          }
+        }
+      }
+    },
+    "combined-astra-low": {
+      "coordinator_recorded_status": "completed",
+      "total_including_preflight": {
+        "input_tokens": 1240507,
+        "cached_input_tokens": 1150080,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11350,
+        "reasoning_output_tokens": 3231,
+        "total_tokens": 1251857,
+        "uncached_input_tokens": 90427
+      },
+      "total_excluding_preflight": {
+        "input_tokens": 981891,
+        "cached_input_tokens": 916608,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8575,
+        "reasoning_output_tokens": 1986,
+        "total_tokens": 990466,
+        "uncached_input_tokens": 65283
+      },
+      "by_role_including_preflight": {
+        "coordinator": {
+          "input_tokens": 880444,
+          "cached_input_tokens": 844544,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 9953,
+          "reasoning_output_tokens": 2898,
+          "total_tokens": 890397,
+          "uncached_input_tokens": 35900
+        },
+        "all": {
+          "input_tokens": 1240507,
+          "cached_input_tokens": 1150080,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 11350,
+          "reasoning_output_tokens": 3231,
+          "total_tokens": 1251857,
+          "uncached_input_tokens": 90427
+        },
+        "reviewer": {
+          "input_tokens": 360063,
+          "cached_input_tokens": 305536,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1397,
+          "reasoning_output_tokens": 333,
+          "total_tokens": 361460,
+          "uncached_input_tokens": 54527
+        }
+      },
+      "preflight": {
+        "input_tokens": 258616,
+        "cached_input_tokens": 233472,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 2775,
+        "reasoning_output_tokens": 1245,
+        "total_tokens": 261391,
+        "uncached_input_tokens": 25144
+      },
+      "elapsed_seconds_excluding_preflight": 251.265,
+      "thread_count": 2,
+      "reviewer_threads": 1,
+      "reviewer_completed_passes": 1,
+      "restater_threads": 0,
+      "outer_tool_calls": 21,
+      "exec_command_invocations": 28,
+      "reviewer_source_path_mention_count": 20,
+      "reviewer_distinct_source_paths_mentioned": 11,
+      "source_paths_mentioned_by_multiple_reviewers": {},
+      "threads": {
+        "agent:e2e_combined_astra_low": {
+          "role": "coordinator",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 15,
+          "exec_command_invocations": 19,
+          "extracted_command_literals": 9,
+          "apparent_read_commands": 4,
+          "scope_read_commands": 0,
+          "source_path_mentions_in_read_commands": {}
+        },
+        "agent:e2e_combined_astra_low/correctness_combined": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-6-astra",
+              "low"
+            ]
+          ],
+          "completed_turns": 1,
+          "outer_tool_calls": 6,
+          "exec_command_invocations": 9,
+          "extracted_command_literals": 9,
+          "apparent_read_commands": 9,
+          "scope_read_commands": 2,
+          "source_path_mentions_in_read_commands": {
+            "src/format_v2.rs": 3,
+            "Cargo.toml": 1,
+            "SPEC.md": 3,
+            "src/format.rs": 2,
+            "src/secretcrypt_v1.rs": 1,
+            "Cargo.lock": 2,
+            "README.md": 3,
+            "testdata/golden-vectors-v2.json": 1,
+            "AGENTS.md": 2,
+            "src/error.rs": 1,
+            "src/file_ops.rs": 1
+          }
+        }
+      }
+    },
+    "combined-sol-high": {
+      "coordinator_recorded_status": "completed",
+      "total_including_preflight": {
+        "input_tokens": 7602806,
+        "cached_input_tokens": 7309952,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 62819,
+        "reasoning_output_tokens": 18912,
+        "total_tokens": 7665625,
+        "uncached_input_tokens": 292854
+      },
+      "total_excluding_preflight": {
+        "input_tokens": 7220598,
+        "cached_input_tokens": 6989696,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 59450,
+        "reasoning_output_tokens": 17797,
+        "total_tokens": 7280048,
+        "uncached_input_tokens": 230902
+      },
+      "by_role_including_preflight": {
+        "reviewer": {
+          "input_tokens": 2875729,
+          "cached_input_tokens": 2747136,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 30002,
+          "reasoning_output_tokens": 10608,
+          "total_tokens": 2905731,
+          "uncached_input_tokens": 128593
+        },
+        "all": {
+          "input_tokens": 7602806,
+          "cached_input_tokens": 7309952,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 62819,
+          "reasoning_output_tokens": 18912,
+          "total_tokens": 7665625,
+          "uncached_input_tokens": 292854
+        },
+        "coordinator": {
+          "input_tokens": 4271597,
+          "cached_input_tokens": 4146048,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 26950,
+          "reasoning_output_tokens": 7295,
+          "total_tokens": 4298547,
+          "uncached_input_tokens": 125549
+        },
+        "restater": {
+          "input_tokens": 455480,
+          "cached_input_tokens": 416768,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5867,
+          "reasoning_output_tokens": 1009,
+          "total_tokens": 461347,
+          "uncached_input_tokens": 38712
+        }
+      },
+      "preflight": {
+        "input_tokens": 382208,
+        "cached_input_tokens": 320256,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3369,
+        "reasoning_output_tokens": 1115,
+        "total_tokens": 385577,
+        "uncached_input_tokens": 61952
+      },
+      "elapsed_seconds_excluding_preflight": 1302.024,
+      "thread_count": 3,
+      "reviewer_threads": 1,
+      "reviewer_completed_passes": 2,
+      "restater_threads": 1,
+      "outer_tool_calls": 83,
+      "exec_command_invocations": 115,
+      "reviewer_source_path_mention_count": 48,
+      "reviewer_distinct_source_paths_mentioned": 20,
+      "source_paths_mentioned_by_multiple_reviewers": {},
+      "threads": {
+        "agent:e2e_combined_sol/correctness_combined": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 24,
+          "exec_command_invocations": 39,
+          "extracted_command_literals": 39,
+          "apparent_read_commands": 35,
+          "scope_read_commands": 3,
+          "source_path_mentions_in_read_commands": {
+            "AGENTS.md": 3,
+            "SPEC.md": 4,
+            "src/format_v2.rs": 4,
+            "src/bin/saltybox.rs": 1,
+            "src/format.rs": 2,
+            "src/lib.rs": 5,
+            "src/file_ops.rs": 1,
+            "src/error.rs": 3,
+            "testdata/generate-golden-vectors-v2.py": 3,
+            "tests/golden_vectors_v2.rs": 3,
+            "Cargo.lock": 2,
+            "Cargo.toml": 6,
+            "testdata/golden-vectors-v2.json": 2,
+            "README.md": 2,
+            "lore/2026-07-01-saltybox2.md": 2,
+            "src/secretcrypt_v1.rs": 1,
+            "tests/golden_vectors.rs": 1,
+            "lore/AGENTS.md": 1,
+            "dist-workspace.toml": 1,
+            "testdata/README": 1
+          }
+        },
+        "agent:e2e_combined_sol": {
+          "role": "coordinator",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 51,
+          "exec_command_invocations": 48,
+          "extracted_command_literals": 34,
+          "apparent_read_commands": 21,
+          "scope_read_commands": 1,
+          "source_path_mentions_in_read_commands": {
+            "src/format_v2.rs": 2,
+            "Cargo.toml": 2,
+            "Cargo.lock": 2,
+            "src/format.rs": 2,
+            "src/lib.rs": 4
+          }
+        },
+        "agent:e2e_combined_sol/restater_attempt1": {
+          "role": "restater",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 1,
+          "outer_tool_calls": 8,
+          "exec_command_invocations": 28,
+          "extracted_command_literals": 28,
+          "apparent_read_commands": 24,
+          "scope_read_commands": 3,
+          "source_path_mentions_in_read_commands": {
+            "src/format_v2.rs": 4,
+            "Cargo.lock": 1,
+            "src/format.rs": 2,
+            "src/lib.rs": 3,
+            "README.md": 2,
+            "SPEC.md": 1,
+            "Cargo.toml": 2,
+            "CONTRIBUTING.md": 1,
+            "testdata/README": 1,
+            "tests/golden_vectors_v2.rs": 1,
+            "src/error.rs": 1
+          }
+        }
+      }
+    },
+    "combined-astra-high": {
+      "coordinator_recorded_status": "see execution.json",
+      "total_including_preflight": {
+        "input_tokens": 5498544,
+        "cached_input_tokens": 5255552,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 34736,
+        "reasoning_output_tokens": 8462,
+        "total_tokens": 5533280,
+        "uncached_input_tokens": 242992
+      },
+      "total_excluding_preflight": {
+        "input_tokens": 4738301,
+        "cached_input_tokens": 4539648,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 31589,
+        "reasoning_output_tokens": 7460,
+        "total_tokens": 4769890,
+        "uncached_input_tokens": 198653
+      },
+      "by_role_including_preflight": {
+        "restater": {
+          "input_tokens": 359617,
+          "cached_input_tokens": 322432,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5087,
+          "reasoning_output_tokens": 1194,
+          "total_tokens": 364704,
+          "uncached_input_tokens": 37185
+        },
+        "all": {
+          "input_tokens": 5498544,
+          "cached_input_tokens": 5255552,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 34736,
+          "reasoning_output_tokens": 8462,
+          "total_tokens": 5533280,
+          "uncached_input_tokens": 242992
+        },
+        "reviewer": {
+          "input_tokens": 1218516,
+          "cached_input_tokens": 1104640,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 8379,
+          "reasoning_output_tokens": 2547,
+          "total_tokens": 1226895,
+          "uncached_input_tokens": 113876
+        },
+        "coordinator": {
+          "input_tokens": 3920411,
+          "cached_input_tokens": 3828480,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 21270,
+          "reasoning_output_tokens": 4721,
+          "total_tokens": 3941681,
+          "uncached_input_tokens": 91931
+        }
+      },
+      "preflight": {
+        "input_tokens": 760243,
+        "cached_input_tokens": 715904,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 3147,
+        "reasoning_output_tokens": 1002,
+        "total_tokens": 763390,
+        "uncached_input_tokens": 44339
+      },
+      "elapsed_seconds_excluding_preflight": 901.439,
+      "thread_count": 3,
+      "reviewer_threads": 1,
+      "reviewer_completed_passes": 3,
+      "restater_threads": 1,
+      "outer_tool_calls": 67,
+      "exec_command_invocations": 74,
+      "reviewer_source_path_mention_count": 46,
+      "reviewer_distinct_source_paths_mentioned": 20,
+      "source_paths_mentioned_by_multiple_reviewers": {},
+      "threads": {
+        "agent:e2e_combined_astra_high/correctness_restater_1": {
+          "role": "restater",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 1,
+          "outer_tool_calls": 6,
+          "exec_command_invocations": 14,
+          "extracted_command_literals": 13,
+          "apparent_read_commands": 13,
+          "scope_read_commands": 1,
+          "source_path_mentions_in_read_commands": {
+            "src/lib.rs": 2,
+            "Cargo.toml": 2,
+            "CONTRIBUTING.md": 1,
+            "README.md": 1,
+            "SPEC.md": 1,
+            "src/format_v2.rs": 2
+          }
+        },
+        "agent:e2e_combined_astra_high/correctness_combined": {
+          "role": "reviewer",
+          "actual_model_effort": [
+            [
+              "gpt-6-astra",
+              "high"
+            ]
+          ],
+          "completed_turns": 3,
+          "outer_tool_calls": 14,
+          "exec_command_invocations": 18,
+          "extracted_command_literals": 18,
+          "apparent_read_commands": 18,
+          "scope_read_commands": 3,
+          "source_path_mentions_in_read_commands": {
+            "AGENTS.md": 2,
+            "Cargo.toml": 8,
+            "SPEC.md": 2,
+            "src/format.rs": 2,
+            "src/format_v2.rs": 6,
+            "src/error.rs": 2,
+            "src/lib.rs": 5,
+            "README.md": 3,
+            "src/bin/saltybox.rs": 1,
+            "src/file_ops.rs": 2,
+            "src/secretcrypt_v1.rs": 2,
+            "testdata/golden-vectors-v2.json": 1,
+            "tests/cli_integration.rs": 1,
+            "Cargo.lock": 1,
+            "testdata/generate-golden-vectors-v2.py": 2,
+            "tests/golden_vectors_v2.rs": 2,
+            "CONTRIBUTING.md": 1,
+            "dist-workspace.toml": 1,
+            "testdata/README": 1,
+            "src/varmor.rs": 1
+          }
+        },
+        "agent:e2e_combined_astra_high": {
+          "role": "coordinator",
+          "actual_model_effort": [
+            [
+              "gpt-5.6-sol",
+              "high"
+            ]
+          ],
+          "completed_turns": 2,
+          "outer_tool_calls": 47,
+          "exec_command_invocations": 42,
+          "extracted_command_literals": 39,
+          "apparent_read_commands": 32,
+          "scope_read_commands": 1,
+          "source_path_mentions_in_read_commands": {
+            "Cargo.toml": 3,
+            "dist-workspace.toml": 1,
+            "src/format_v2.rs": 3,
+            "src/secretcrypt_v1.rs": 1,
+            "Cargo.lock": 2,
+            "src/lib.rs": 4
+          }
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Token totals include repeated cached input; reasoning output is included in output.",
+    "Excluding setup removes one explicit preflight turn, not all artifact bookkeeping overhead.",
+    "Read counts are command proxies. Directory searches, dynamic commands, scripting, partial reads, and truncation prevent exact file-read or source-token accounting.",
+    "Arm elapsed time runs from coordinator START turn to completed final turn. A missing completed turn yields no final duration."
+  ],
+  "execution_audit": {
+    "checked_at": "2026-09-05T05:22:20.574604+00:00",
+    "arms": {
+      "baseline": {
+        "reviewer_threads": 5,
+        "restater_threads": 2,
+        "all_threads_completed": true,
+        "all_models_and_efforts_match": true,
+        "verbatim_restated_blocks_after_rendering_whitespace": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "no_counter_warnings": true
+      },
+      "combined-sol-high": {
+        "reviewer_threads": 1,
+        "restater_threads": 1,
+        "all_threads_completed": true,
+        "all_models_and_efforts_match": true,
+        "verbatim_restated_blocks_after_rendering_whitespace": [
+          true,
+          true,
+          true
+        ],
+        "no_counter_warnings": true
+      },
+      "combined-astra-low": {
+        "reviewer_threads": 1,
+        "restater_threads": 0,
+        "all_threads_completed": true,
+        "all_models_and_efforts_match": true,
+        "verbatim_restated_blocks_after_rendering_whitespace": [],
+        "no_counter_warnings": true
+      },
+      "combined-astra-high": {
+        "reviewer_threads": 1,
+        "restater_threads": 1,
+        "all_threads_completed": true,
+        "all_models_and_efforts_match": true,
+        "verbatim_restated_blocks_after_rendering_whitespace": [
+          true,
+          true,
+          true
+        ],
+        "no_counter_warnings": true
+      }
+    },
+    "sealed_files_unchanged": true,
+    "helper_syntax_valid": true,
+    "known_conformance_defects": [
+      "Baseline initially supplied malformed restater headers; fresh retry corrected them and is charged.",
+      "Baseline bundles two independently editable test sites in one report; both are visible and normalized in assessment.",
+      "Tool truncations and read recoveries are documented in READ-AUDIT.md."
+    ]
+  },
+  "integrity": {
+    "checked_at": "2026-09-05T05:02:07.069402+00:00",
+    "arms": {
+      "baseline": {
+        "head": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+        "clean": true,
+        "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+        "frozen_files_match": {
+          "SKILL.md": true,
+          "restater.md": true,
+          "reviewers/correctness.md": true,
+          "reviewers/correctness-general.md": true,
+          "reviewers/correctness-data-flow.md": true,
+          "reviewers/correctness-state-lifecycle.md": true,
+          "reviewers/correctness-systems.md": true,
+          "reviewers/correctness-edge-inputs.md": true,
+          "reviewers/correctness-combined.md": true
+        }
+      },
+      "combined-sol-high": {
+        "head": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+        "clean": true,
+        "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+        "frozen_files_match": {
+          "SKILL.md": true,
+          "restater.md": true,
+          "reviewers/correctness.md": true,
+          "reviewers/correctness-general.md": true,
+          "reviewers/correctness-data-flow.md": true,
+          "reviewers/correctness-state-lifecycle.md": true,
+          "reviewers/correctness-systems.md": true,
+          "reviewers/correctness-edge-inputs.md": true,
+          "reviewers/correctness-combined.md": true
+        }
+      },
+      "combined-astra-low": {
+        "head": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+        "clean": true,
+        "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+        "frozen_files_match": {
+          "SKILL.md": true,
+          "restater.md": true,
+          "reviewers/correctness.md": true,
+          "reviewers/correctness-general.md": true,
+          "reviewers/correctness-data-flow.md": true,
+          "reviewers/correctness-state-lifecycle.md": true,
+          "reviewers/correctness-systems.md": true,
+          "reviewers/correctness-edge-inputs.md": true,
+          "reviewers/correctness-combined.md": true
+        }
+      },
+      "combined-astra-high": {
+        "head": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+        "clean": true,
+        "scope_sha256": "4984307854452d2430c6507f90853be5fa999b0f65d1f904da22b616858fffbf",
+        "frozen_files_match": {
+          "SKILL.md": true,
+          "restater.md": true,
+          "reviewers/correctness.md": true,
+          "reviewers/correctness-general.md": true,
+          "reviewers/correctness-data-flow.md": true,
+          "reviewers/correctness-state-lifecycle.md": true,
+          "reviewers/correctness-systems.md": true,
+          "reviewers/correctness-edge-inputs.md": true,
+          "reviewers/correctness-combined.md": true
+        }
+      }
+    }
+  },
+  "accounting": {
+    "baseline": {
+      "reviewer_findings": 12,
+      "reported_findings": 5,
+      "same_location_merges": 7,
+      "rejected": 0,
+      "equation": "12 = 5 + 7 + 0",
+      "findings": [
+        {
+          "raw_id": "R1",
+          "origin": "correctness-general p1",
+          "anchor": "src/format_v2.rs:69-81",
+          "disposition": "retained",
+          "reported_as": "F2 / COR-KDF-BUDGET"
+        },
+        {
+          "raw_id": "R2",
+          "origin": "correctness-general p2",
+          "anchor": "Cargo.toml:18; src/format_v2.rs:182-213",
+          "disposition": "same-location merge",
+          "reported_as": "F3 / COR-KDF-ZEROIZE",
+          "reason": "Same Argon2 workspace and same cleanup edit as R9; its possible tag lowers the merged confidence."
+        },
+        {
+          "raw_id": "R3",
+          "origin": "correctness-general p3",
+          "anchor": "src/format_v2.rs:193-211",
+          "disposition": "retained",
+          "reported_as": "F4 / COR-ERROR-SOURCE"
+        },
+        {
+          "raw_id": "R4",
+          "origin": "correctness-data-flow p1",
+          "anchor": "src/format_v2.rs:69-81,160-167",
+          "disposition": "same-location merge",
+          "reported_as": "F2 / COR-KDF-BUDGET",
+          "reason": "Same parameter-validation region and budget fix as R1; its possible tag lowers the merged confidence."
+        },
+        {
+          "raw_id": "R5",
+          "origin": "correctness-state-lifecycle p1 finding 1",
+          "anchor": "src/format_v2.rs:69; src/format_v2.rs:351",
+          "disposition": "same-location merge",
+          "reported_as": "F2 / COR-KDF-BUDGET",
+          "reason": "Same unauthenticated KDF budget defect as R1."
+        },
+        {
+          "raw_id": "R6",
+          "origin": "correctness-state-lifecycle p1 finding 2",
+          "anchor": "src/format_v2.rs:182; Cargo.toml:18",
+          "disposition": "same-location merge",
+          "reported_as": "F3 / COR-KDF-ZEROIZE",
+          "reason": "Same Argon2 workspace and same cleanup edit as R9."
+        },
+        {
+          "raw_id": "R7",
+          "origin": "correctness-state-lifecycle p1 finding 3",
+          "anchor": "src/format_v2.rs:436; src/format_v2.rs:448; src/format_v2.rs:468",
+          "disposition": "same-location merge",
+          "reported_as": "F5 / COR-TEST-KDF-COST",
+          "reason": "Same three-test region and same small-parameter test fix as R10; its possible tag lowers the merged confidence."
+        },
+        {
+          "raw_id": "R8",
+          "origin": "correctness-systems p1 finding 1",
+          "anchor": "src/format_v2.rs:69-81; src/format_v2.rs:351-352",
+          "disposition": "same-location merge",
+          "reported_as": "F2 / COR-KDF-BUDGET",
+          "reason": "Same unauthenticated KDF budget defect as R1."
+        },
+        {
+          "raw_id": "R9",
+          "origin": "correctness-systems p1 finding 2",
+          "anchor": "Cargo.toml:18; src/format_v2.rs:202-211",
+          "disposition": "retained",
+          "reported_as": "F3 / COR-KDF-ZEROIZE"
+        },
+        {
+          "raw_id": "R10",
+          "origin": "correctness-systems p2",
+          "anchor": "src/format_v2.rs:379-381; src/format_v2.rs:434-474",
+          "disposition": "retained",
+          "reported_as": "F5 / COR-TEST-KDF-COST"
+        },
+        {
+          "raw_id": "R11",
+          "origin": "correctness-edge-inputs p1 finding 1",
+          "anchor": "src/lib.rs:8; src/format.rs:72-78",
+          "disposition": "retained",
+          "reported_as": "F1 / COR-DISPATCH"
+        },
+        {
+          "raw_id": "R12",
+          "origin": "correctness-edge-inputs p1 finding 2",
+          "anchor": "src/format_v2.rs:69-81; src/format_v2.rs:351-352",
+          "disposition": "same-location merge",
+          "reported_as": "F2 / COR-KDF-BUDGET",
+          "reason": "Same unauthenticated KDF budget defect as R1."
+        }
+      ],
+      "merged_provenance": [
+        {
+          "id": "F1 / COR-DISPATCH",
+          "origins": [
+            "correctness-edge-inputs p1"
+          ],
+          "earliest_pass": 1
+        },
+        {
+          "id": "F2 / COR-KDF-BUDGET",
+          "origins": [
+            "correctness-general p1",
+            "correctness-data-flow p1",
+            "correctness-state-lifecycle p1",
+            "correctness-systems p1",
+            "correctness-edge-inputs p1"
+          ],
+          "earliest_pass": 1,
+          "agreement": "five correctness lenses"
+        },
+        {
+          "id": "F3 / COR-KDF-ZEROIZE",
+          "origins": [
+            "correctness-systems p1",
+            "correctness-state-lifecycle p1",
+            "correctness-general p2"
+          ],
+          "earliest_pass": 1,
+          "agreement": "three correctness lenses"
+        },
+        {
+          "id": "F4 / COR-ERROR-SOURCE",
+          "origins": [
+            "correctness-general p3"
+          ],
+          "earliest_pass": 3
+        },
+        {
+          "id": "F5 / COR-TEST-KDF-COST",
+          "origins": [
+            "correctness-state-lifecycle p1",
+            "correctness-systems p2"
+          ],
+          "earliest_pass": 1,
+          "agreement": "two correctness lenses"
+        }
+      ]
+    },
+    "combined-sol-high": {
+      "reviewer_findings": 3,
+      "reported_after_merge": 3,
+      "same_location_merges": 0,
+      "rejected_during_merge": 0,
+      "invariant": "3 = 3 + 0 + 0",
+      "findings": [
+        {
+          "source": "correctness-combined pass 1 finding 1",
+          "identifier": "F1 / COR-KDF-LIMITS",
+          "provenance": [
+            "correctness-combined p1"
+          ],
+          "merge_disposition": "retained",
+          "reason": "Unique location and independently actionable issue.",
+          "confirmed_confidence": "definite",
+          "nofix_bucket": "would surface",
+          "bucket_reason": "The defect is confirmed, but selecting lower resource ceilings or an override changes accepted input and requires a resource-policy decision."
+        },
+        {
+          "source": "correctness-combined pass 1 finding 2",
+          "identifier": "F2 / COR-ENGINE-KDF-COST",
+          "provenance": [
+            "correctness-combined p1"
+          ],
+          "merge_disposition": "retained",
+          "reason": "Unique location and independently actionable issue.",
+          "confirmed_confidence": "possible",
+          "nofix_bucket": "would fix",
+          "bucket_reason": "The duplicate production-cost round trip is confirmed and can be removed with a local, non-structural edit to existing tests."
+        },
+        {
+          "source": "correctness-combined pass 1 finding 3",
+          "identifier": "F3 / COR-RANDOM-KDF-COST",
+          "provenance": [
+            "correctness-combined p1"
+          ],
+          "merge_disposition": "retained",
+          "reason": "Distinct test location requiring an independent edit.",
+          "confirmed_confidence": "possible",
+          "nofix_bucket": "would fix",
+          "bucket_reason": "The unnecessary full-cost derivations are confirmed and can be replaced by a local test of the existing random-byte helper."
+        }
+      ]
+    },
+    "combined-astra-low": {
+      "reviewer_findings": 0,
+      "reported_findings": 0,
+      "same_location_merges": 0,
+      "rejected_findings": 0,
+      "provenance": [],
+      "dispositions": [],
+      "invariant": "0 = 0 + 0 + 0"
+    },
+    "combined-astra-high": {
+      "reviewer_findings": 3,
+      "reported_findings": 3,
+      "same_location_merges": 0,
+      "rejected_before_restatement": 0,
+      "arithmetic": "3 = 3 + 0 + 0",
+      "findings": [
+        {
+          "identifier": "F1 / COR-ARGON2-WORKSPACE",
+          "origin": "correctness-combined p1",
+          "filed_confidence": "definite",
+          "confirmed_confidence": "definite",
+          "anchor": "src/format_v2.rs:202",
+          "merge_disposition": "retained independently",
+          "reason": "This concerns the Argon2 heap workspace released by the call in derive_key; no other raw finding targets that allocation.",
+          "confirmation": "Confirmed: derive_key calls hash_password_into, which allocates a normal Vec<Block>; finalization reads the retained final lane blocks to derive the output, and no drop-time wipe applies to the vector.",
+          "nofix_bucket": "would fix"
+        },
+        {
+          "identifier": "F2 / COR-ARGON2-TEMPORARIES",
+          "origin": "correctness-combined p1",
+          "filed_confidence": "definite",
+          "confirmed_confidence": "definite",
+          "anchor": "Cargo.toml:18",
+          "merge_disposition": "retained independently",
+          "reason": "This concerns Argon2's feature-gated cleanup of internal stack temporaries and requires a distinct dependency configuration edit.",
+          "confirmation": "Confirmed: Argon2 0.5.3 gates initial_hash, blockhash, and blockhash_bytes cleanup on its zeroize feature, while Cargo.toml enables only default features and Cargo.lock records no Argon2 zeroize dependency.",
+          "nofix_bucket": "would fix"
+        },
+        {
+          "identifier": "F3 / COR-ADDRSPACE",
+          "origin": "correctness-combined p2",
+          "filed_confidence": "possible",
+          "confirmed_confidence": "possible",
+          "anchor": "src/format_v2.rs:160",
+          "merge_disposition": "retained independently",
+          "reason": "This concerns platform allocation bounds during parameter validation and is separate from secret cleanup.",
+          "confirmation": "Confirmed the 4 GiB allocation path and the absence of a platform-size guard. The release target list is 64-bit-only, but the repository does not establish whether 32-bit source builds are supported, so the premise remains open.",
+          "nofix_bucket": "would surface"
+        }
+      ]
+    }
+  }
+}
