@@ -20,7 +20,7 @@ reachable here (see Local availability); everything else comes from the request.
 
 ## The routing request
 
-A request carries thirteen facts, all of which the caller has and routing does not:
+A request carries twelve facts, all of which the caller has and routing does not:
 
 1. The work profile (see Work profiles and How to name a profile).
 2. The orchestrating harness (Claude Code, Codex, Muse Code, or OpenCode) and its model id. Routing derives the
@@ -36,12 +36,10 @@ A request carries thirteen facts, all of which the caller has and routing does n
    requires for this spawn.
 9. Whether an independent cross-family perspective is part of the goal for this unit.
 10. Provider preference, if any: `gpt`, `claude`, `muse`, or `glm`, as the caller parsed it from the user.
-11. Whether running a foreign-harness delegate with permission bypass flags is acceptable, and whether metered API
-    billing outside the session's own subscription is acceptable.
-12. Whether the native sub agent mechanism can resume a writer with a follow-up message. Only needed on a harness
+11. Whether the native sub agent mechanism can resume a writer with a follow-up message. Only needed on a harness
     routing does not know; for the four above it is known (Claude Code and Codex can; Muse and OpenCode are never
     orchestrators here).
-13. The current route and its outcome so far: `none` for a first attempt, or the model and effort last tried with one of
+12. The current route and its outcome so far: `none` for a first attempt, or the model and effort last tried with one of
     `substantive failure`, `substantive failure (lost context)`, `misclassified`, or `execution-path failure`, the last
     optionally marking that mechanism unavailable for this unit (a CLI on `PATH` whose launch path is broken, for
     example). A plain substantive failure advances to the next rung, and so does `misclassified` (the task proved more
@@ -91,10 +89,8 @@ Highest first. Each earlier rule settles what it covers and the later ones fill 
 1. A Muse Code or OpenCode session (input 2) is a coordinator delegate, never the orchestrator of record: a same-family
    spawn is `inherit` on `native`, and anything else — a cross-family profile route or an explicit cross-family demand
    alike — is `no suitable route`. No later rule applies to such a session.
-2. An explicit demand (input 8), subject to availability and to input 11: honor it, and the reason attributes the choice
-   to whoever demanded it. A demand is process, not a routing default. A demanded route whose mechanism needs a
-   permission bypass or metered billing the caller marked unacceptable is `no suitable route`, with the conflict named:
-   both constraints came from the user or the process, and only they can settle which one gives.
+2. An explicit demand (input 8), subject to availability: honor it, and the reason attributes the choice to whoever
+   demanded it. A demand is process, not a routing default.
 3. A process-defined spawn (input 7) of a design-shaped role, with no demand, is `inherit` on `native`: it runs at the
    session's own model unless the process says otherwise. Every other process-defined spawn is routed by its profile
    like the caller's own units, with the mechanism fixed to `native` unless the process says otherwise; a preference
@@ -103,16 +99,14 @@ Highest first. Each earlier rule settles what it covers and the later ones fill 
    up to the strongest available model the way critical review is routed, and a GPT session producing visual output
    (input 6) hands it to opus-5 high — the visual carve-out — whatever the preference says, with
    `diverged from preference: yes (visual)` under a `gpt` preference (see Work profiles).
-5. Bypass or billing unacceptable (input 11) restricts the answer to `native`; the reason says so. This wins over a
-   provider preference, and the answer says that it did.
-6. A `none` cell falls back to the orchestrator's family's route, `diverged from preference: yes (no suitable model)`.
-7. Required independence (input 9) crosses families: a second perspective from the same family is not independent.
-8. Provider preference (input 10): every delegation goes to the preferred family unless one of the rules above or a
+5. A `none` cell falls back to the orchestrator's family's route, `diverged from preference: yes (no suitable model)`.
+6. Required independence (input 9) crosses families: a second perspective from the same family is not independent.
+7. Provider preference (input 10): every delegation goes to the preferred family unless one of the rules above or a
    clear, strong reason below diverges, and the answer says so when it does.
-9. Suitability for the profile: the profile table row for the chosen family, including the workhorse-writer default and
+8. Suitability for the profile: the profile table row for the chosen family, including the workhorse-writer default and
    the long-context exception.
-10. The native-path size bias, which decides between equally suitable models across families.
-11. Rung selection from the outcome (input 13).
+9. The native-path size bias, which decides between equally suitable models across families.
+10. Rung selection from the outcome (input 12).
 
 ## How to name a profile
 
@@ -227,14 +221,9 @@ not covered: there the ordinary bias stands, and a Claude session's cheap native
 launch and monitoring overhead per delegate. A "short" writer task crosses families under this rule; a "tiny" one is
 still `orchestrator`. Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the
 same-family column; the same-family routes are what a session uses when the gpt path is unavailable or a preference
-directs it there. Two things this default deliberately trades, which the answer's reason names on every cross-family
-route (when the user needs reminding is the caller's call, since routing keeps no session history): shelling out runs
-the delegate with the harness's permission bypass flags where a native sub agent inherits the session's permission
-system — where that is unacceptable (input 11), the answer stays native — and it moves spend from whatever subscription
-covers the orchestrator's own family onto metered API billing; a user whose economics make that worse says
-`prefer-claude` or writes the config file. This is the one place routing treats a specific model as the default across
-harnesses; what it rests on, and what would justify revisiting it, is in `inventory.md` under "Evidence behind the rules
-in SKILL.md".
+directs it there. A user who would rather not cross families by default says `prefer-claude` or writes the config file.
+This is the one place routing treats a specific model as the default across harnesses; what it rests on, and what would
+justify revisiting it, is in `inventory.md` under "Evidence behind the rules in SKILL.md".
 
 ## Escalation facts
 
@@ -257,7 +246,7 @@ subscription with one provider and a small one with the others, and wants spend 
 a preference, is none.
 
 When a preference is given, route every delegation to the preferred family unless there is a very clear, strong reason
-to diverge — for example repeated poor output from the preferred family (which the caller reports in input 13, since
+to diverge — for example repeated poor output from the preferred family (which the caller reports in input 12, since
 routing does not remember earlier requests), no suitable model for the selected profile, a goal that explicitly needs an
 independent cross-family perspective, or a rule above it in Precedence. An explicit provider preference overrides the
 default native-path bias. Every divergence is stated in the answer as `diverged from preference: yes` with the reason,
@@ -300,7 +289,7 @@ session's own harness; shell out only when crossing vendors:
 
 When the mechanism is `native`, the caller also sets the target reasoning effort if its sub agent mechanism has an
 effort parameter; otherwise sub agents inherit the session's effort and that is acceptable. A writer needs a mechanism
-that can resume the same delegate with a follow-up message (input 12); on a harness whose native sub agents cannot, the
+that can resume the same delegate with a follow-up message (input 11); on a harness whose native sub agents cannot, the
 answer for a writer is that family's shell-out mechanism instead — the one case where a session shells out to its own
 family — and the reason says so.
 

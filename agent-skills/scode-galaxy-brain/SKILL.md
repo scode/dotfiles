@@ -148,13 +148,12 @@ Name the profile yourself, per routing's "How to name a profile", and supply wha
 model; whether the unit edits a tree; its expected size and whether its input is large; whether the output is visual;
 the spawn origin (your own decomposition, or a role another skill's process defines — see Composing); any explicit
 demand from the user or that process; whether an independent cross-family perspective is part of the goal; the provider
-preference from the invocation (below); whether foreign-harness permission bypass and metered billing are acceptable,
-which they are unless the user has said otherwise; whether the native mechanism can resume a writer (it can on Claude
-Code and Codex); the current route and its outcome (`none` on a first attempt; after a verdict, the model that failed
-and one of `substantive failure`, `substantive failure (lost context)` when the verdict carried that reason,
-`misclassified`, or `execution-path failure`); any mechanism you have found unavailable; and, under a provider
-preference, whether the preferred family has already produced poor output this session, which routing cannot remember
-for you. Routing reads the model routing config file and checks which CLIs and credentials exist itself.
+preference from the invocation (below); whether the native mechanism can resume a writer (it can on Claude Code and
+Codex); the current route and its outcome (`none` on a first attempt; after a verdict, the model that failed and one of
+`substantive failure`, `substantive failure (lost context)` when the verdict carried that reason, `misclassified`, or
+`execution-path failure`); any mechanism you have found unavailable; and, under a provider preference, whether the
+preferred family has already produced poor output this session, which routing cannot remember for you. Routing reads the
+model routing config file and checks which CLIs and credentials exist itself.
 
 Act on the answer as follows. `orchestrator`: the unit is not delegated; do it yourself. `inherit`: spawn at this
 session's own model on the caller's mechanism. `no suitable route`: nothing reachable fits; do it yourself or tell the
@@ -169,11 +168,7 @@ The invocation may include the keyword `prefer-gpt`, `prefer-claude`, `prefer-mu
 preference unrelated to model performance — typically the user has a large subscription with one provider and a small
 one with the others, and wants spend steered accordingly. Pass it to routing as the provider preference; the default,
 absent a keyword, is none. Routing honors it unless there is a very clear, strong reason to diverge, and says so in its
-answer when it does; when you announce such a delegation, say so and why. A cross-family route's reason also names what
-it trades (the delegate runs under the foreign harness's permission bypass flags, and spend moves from the session's
-subscription onto metered API billing); the announcement of the first cross-family delegation of the session is the
-natural place to remind the user of that, and a user whose economics make it worse says `prefer-<family>` or writes the
-config file.
+answer when it does; when you announce such a delegation, say so and why.
 
 ## Delegating
 
