@@ -35,8 +35,9 @@ each stop and acts on the verdict that comes back.
 
 Galaxy-brain is the top of a small stack of skills, and [SKILL.md](SKILL.md) is what an agent loads up front: the
 workflow, how to stay active for a session, what goes into a routing request, what the orchestrator supplies to a
-delegation, and what it does with each verdict. The three skills below it are inert until something loads them, and
-SKILL.md loads each by name at the moment it becomes relevant:
+delegation, and what it does with each verdict. The three skills below it are inert until something loads them. SKILL.md
+loads the first two by name at the moment each becomes relevant; the third is loaded by the delegation skill, and only
+when a delegate runs on a foreign harness:
 
 - `scode-model-routing` answers which model, effort, and launch mechanism a unit of work should run on; the inventory,
   the work-profile table, provider preference, and the model routing config file live there.

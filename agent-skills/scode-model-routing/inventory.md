@@ -70,3 +70,20 @@ the diff in full. The second weakness is long context, covered by the exception 
 is a clear spec and a reviewed assumptions list, and those are the orchestrator's to supply. Expect luna's decision log
 to be short or empty — it does not experience decisions as decisions — and a short or empty log is not evidence that the
 work was simple or that nothing was decided.
+
+## Evidence behind the rules in SKILL.md
+
+`SKILL.md` states the rules; this is what each rests on, so that calibration has one place to update.
+
+- **The opt-in families.** The muse placements rest on vendor-reported benchmarks rather than calibrated use. The glm
+  family's model ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode; its evidence base is one clean
+  clear-spec smoke run plus vendor benchmarks, and its per-token price is roughly an order of magnitude below the other
+  families.
+- **The visual carve-out.** Real-world feedback on GPT-5.6 consistently rates sol below the Claude models on visual
+  design taste even while its coding reputation holds up.
+- **The workhorse-writer default.** The cross-family cost the native-path bias exists to weigh is small and
+  characterized for writers: the shell-out path to codex (launch, resume, and monitoring) is exercised end to end (two
+  items there remain explicitly unverified), and the price gap to the same-family writer alternative is about 30× for no
+  measured difference in first-attempt correctness (the eval above). The default rests on one eval in one small
+  repository; if a follow-up on a larger, messier codebase finds luna's literalism surviving the caller's checkpoint
+  protocol, the workhorse-writer paragraph in `SKILL.md` is what to revisit.

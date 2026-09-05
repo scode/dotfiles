@@ -122,7 +122,8 @@ treat retained context that has gone quiet about galaxy-brain as a summarization
 After compaction or resume, if the retained context says or implies this skill was active, re-read this SKILL.md,
 `scode-model-routing` if any routing decision was made, and `scode-agent-delegation` if any delegation happened — each
 loaded again as What to read describes, with every sidecar of theirs you had loaded re-read per their own read-when
-rules — before doing further substantive work; the routing rules and the launch details do not survive summarization
+rules; if delegation had loaded the shell-out skill, it loads it again the same way, with every harness file used before
+the break — before doing further substantive work; the routing rules and the launch details do not survive summarization
 reliably. If the retained context is ambiguous but mentions outstanding delegated work, model or effort routing, or
 galaxy-brain at all, assume the skill is still active and say that you are assuming it.
 
@@ -173,10 +174,6 @@ it trades (the delegate runs under the foreign harness's permission bypass flags
 subscription onto metered API billing); the announcement of the first cross-family delegation of the session is the
 natural place to remind the user of that, and a user whose economics make it worse says `prefer-<family>` or writes the
 config file.
-
-The model routing config file, `~/.scode-model-routing.md`, is where the user declares which models exist in their
-environment; routing reads it on every request and it belongs to the user. If routing stops because the file it
-replaced, `~/.scode-galaxy-brainrc.md`, is still in place, relay that to the user rather than working around it.
 
 ## Delegating
 

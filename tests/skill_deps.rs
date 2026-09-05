@@ -88,6 +88,23 @@ fn declared_dependencies(spec: &str) -> Option<Vec<String>> {
     Some(rest.split(',').map(|name| name.trim().to_owned()).collect())
 }
 
+/// The `name:` value from a skill file's YAML frontmatter, or `None` when the
+/// file has no frontmatter or no `name:` line in it. Only the leading block
+/// between the first two `---` lines is read; a `name:` anywhere else in the
+/// document is not the skill's name.
+fn frontmatter_name(skill_md: &str) -> Option<String> {
+    let mut lines = skill_md.lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+    lines
+        .take_while(|line| line.trim() != "---")
+        .find_map(|line| {
+            line.strip_prefix("name:")
+                .map(|rest| rest.trim().to_owned())
+        })
+}
+
 /// Every marked stanza in a markdown file as `(dependency name, body)`, with
 /// the body's blockquote markers stripped. The body must be a blockquote:
 /// every non-blank line between the markers starts with `>`, so that a stanza
@@ -239,6 +256,24 @@ fn dependency_stanzas_match_declarations_and_template() {
                 normalize(body),
                 expected,
                 "{skill}: the stanza for {name} does not match the canonical template"
+            );
+            // A declaration and a stanza that agree with each other but name
+            // a skill that is not in the repo (a typo, or a renamed
+            // dependency) would pass every check above and then hard-stop
+            // the consumer at runtime. The stanza's name check on the loaded
+            // skill is what the installed dependency must satisfy, so the
+            // same check is made here against the source tree.
+            let dependency_md = skills_dir().join(name).join("SKILL.md");
+            let dependency = fs::read_to_string(&dependency_md).unwrap_or_else(|e| {
+                panic!(
+                    "{skill}: depends on {name}, but {} is not readable: {e}",
+                    dependency_md.display()
+                )
+            });
+            assert_eq!(
+                frontmatter_name(&dependency).as_deref(),
+                Some(name.as_str()),
+                "{skill}: depends on {name}, but that skill's frontmatter name differs"
             );
         }
     }

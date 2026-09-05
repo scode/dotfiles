@@ -17,6 +17,11 @@ which file you appended to.
 Each entry should be self-contained — the future reader has no access to this session:
 
 - A `## <date> — <short title>` heading.
+- Which layer the feedback concerns, so the report can be handed to the right skill's repository: `scode-model-routing`
+  for a model, effort, or launch-mechanism choice, `scode-agent-delegation` for the task spec, checkpoints, or gate,
+  `scode-harness-shellout` for the chosen mechanism's command, flags, monitoring, resume, or kill behavior, or
+  `scode-galaxy-brain` itself for activation, decomposition, concurrency, or what was done with a verdict. Name more
+  than one when the problem crossed a boundary.
 - The user's feedback, verbatim or near-verbatim.
 - What you were doing when the problem occurred: the task, which model and delegation path was involved, the actual
   commands or prompts where relevant, and what went wrong (exact errors beat paraphrases).

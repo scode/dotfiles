@@ -22,9 +22,10 @@ skills root, or the installer starts writing somewhere else for Codex, re-verify
 
 ## Evaluating changes
 
-After changing SKILL.md, eval the change with a fresh-context sub agent before presenting the work as done. Skill text
-is consumed by agents that have none of your conversation context, so your own reading of the new wording proves nothing
-about how it lands cold — misrouting has repeatedly been caught only by asking a clean agent.
+After changing any file in this directory that an agent reads (SKILL.md, feedback.md, the specs it points at), eval the
+change with a fresh-context sub agent before presenting the work as done. Skill text is consumed by agents that have
+none of your conversation context, so your own reading of the new wording proves nothing about how it lands cold —
+misrouting has repeatedly been caught only by asking a clean agent.
 
 How to run an eval:
 
@@ -45,6 +46,17 @@ Every change to a stanza or to what `SKILL.md` says about a dependency also runs
 consumer whose stanza names a dependency that exists nowhere, one whose name is wrong, and one whose needed sidecar is
 missing, each of which must stop and name the skill and the path or tool; and a positive load whose base directory is
 the installed one.
+
+The fixed activation and composition questions, run whenever "Staying active", "Composing with other skills", or the
+load-when text changes, each asked of a cold agent with the full situation stated (a Claude Code session on fable-5
+high, no preference, no config file, all four CLIs on `PATH`, unless the situation says otherwise):
+
+| Situation                                                                                               | Expected answer                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the task galaxy-brain was invoked for is done; the next message does not mention galaxy-brain           | routing continues; any delegation in the new task is announced with its model and effort                                                                                                                                                           |
+| a compaction summary omits the skill but mentions a running `codex exec` writer stopped at a checkpoint | galaxy-brain is assumed active and the assumption is stated; `scode-model-routing`, `scode-agent-delegation` (with `checkpoints.md`), and, through delegation, `scode-harness-shellout` and its `harness/codex.md` are re-loaded before the resume |
+| an invocation that limited scope up front ("for this one thing"); that thing is done                    | no activation for the next task                                                                                                                                                                                                                    |
+| the swarm is invoked while galaxy-brain is active, no preference                                        | correctness, security, spec-compliance, and test-quality reviewers on fable-5 high native; the rest on sonnet-5 high native; the choice announced; no checkpoint addendum or gate applied to them                                                  |
 
 When a scenario depends on the model routing config file, `~/.scode-model-routing.md`, run it in an isolated home; never
 create or edit that file in the real home for an eval — it belongs to the user.
