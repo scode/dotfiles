@@ -1,6 +1,6 @@
 # Shelling out to codex
 
-Read this file in full before the first `codex exec` launch of a session, after `harness/shell-out.md`.
+Read this file in full before the first `codex exec` launch of a session, after `SKILL.md`.
 
 ```sh
 codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
@@ -30,9 +30,9 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file
   are one line. When a whole fan-out fails the same way, treat it as one broken execution path rather than N model
   failures: stop the batch and fix the path instead of escalating each delegate through it.
 - Runs in the current working directory by default; pass `-C <dir>` to target elsewhere.
-- Resuming (checkpoints, per `harness/shell-out.md`): writers need a thread id, which only the `--json` event stream
-  gives you, so the writer launch differs from the template above by adding `--json` (with `-o` still in place; the two
-  combine):
+- Resuming (per the resume contract in `SKILL.md`): a run that will be resumed needs a thread id, which only the
+  `--json` event stream gives you, so the resumable launch differs from the template above by adding `--json` (with `-o`
+  still in place; the two combine):
 
   ```sh
   codex -c model_reasoning_effort=<effort> exec --yolo -m <model> --json [-C <dir>] -o <scratch-file> \
@@ -47,14 +47,14 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file
   ```
 
   `-m`, `-c`, and `-C` go before `resume`, `-o` after it; getting that order wrong is the one way this was observed to
-  fail. Pass `-C` again for a writer in an isolated tree — whether `resume` restores the original directory on its own
-  is unverified, and the failure mode is an implementation turn under `--yolo` in the wrong tree. The final message is
-  in the `-o` file on both turns. Verified on codex 0.151.0. `turn.completed` usage in the JSON stream is per turn, so
-  summing across launch and resumes gives the run's total. One thing the eval did not check: whether the stdin-hang
-  signature above (the `Reading additional input from stdin...` line with no version header after it) looks the same
-  under `--json`. Until someone confirms, treat a `--json` run whose event log has no `thread.started` event after a
-  minute as the same hang.
-- Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them per
-  `harness/shell-out.md`; use a foreground timeout only when it is shorter than the monitoring interval. `codex exec`
-  streams a transcript while working, so a log that keeps growing is a liveness signal, and one stuck at
-  `Reading additional input from stdin...` is the startup hang above.
+  fail. Pass `-C` again for a delegate in an isolated tree — whether `resume` restores the original directory on its own
+  is unverified, and the failure mode is an editing turn under `--yolo` in the wrong tree. The final message is in the
+  `-o` file on both turns. Verified on codex 0.151.0. `turn.completed` usage in the JSON stream is per turn, so summing
+  across launch and resumes gives the run's total. One thing the eval did not check: whether the stdin-hang signature
+  above (the `Reading additional input from stdin...` line with no version header after it) looks the same under
+  `--json`. Until someone confirms, treat a `--json` run whose event log has no `thread.started` event after a minute as
+  the same hang.
+- Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them per `SKILL.md`;
+  use a foreground timeout only when it is shorter than the monitoring interval. `codex exec` streams a transcript while
+  working, so a log that keeps growing is a liveness signal, and one stuck at `Reading additional input from stdin...`
+  is the startup hang above.

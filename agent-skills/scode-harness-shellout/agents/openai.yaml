@@ -1,0 +1,8 @@
+# Display metadata for Codex only. Deliberately no `policy: allow_implicit_invocation: false`
+# block: Muse Code reads this file too and maps that policy to "user-invocable-only", under which
+# its read_skill tool refuses to load the skill for the model (verified on Muse Code 1.0.2), and
+# the whole point of this skill is to be loaded by other skills. The description's "inert alone"
+# wording is what discourages description-based selection instead.
+interface:
+  display_name: "Harness shell-out"
+  short_description: "Launch, monitor, and resume delegates in foreign agent harnesses"
