@@ -96,6 +96,7 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "jjstack",
+    "scode-agent-delegation",
     "pre-pr-review-swarm",
     "repo-swarm",
     "sapling",
@@ -472,6 +473,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-agent-delegation",
+        PayloadSymlink::new(
+            "agent-skills/scode-agent-delegation",
+            "~/.claude/skills/scode-agent-delegation",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-harness-shellout",
         PayloadSymlink::new(
             "agent-skills/scode-harness-shellout",
@@ -705,6 +715,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         PayloadSymlink::new(
             "agent-skills/scode-galaxy-brain",
             "~/.codex/skills/scode-galaxy-brain",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-agent-delegation",
+        PayloadSymlink::new(
+            "agent-skills/scode-agent-delegation",
+            "~/.codex/skills/scode-agent-delegation",
         ),
     )
     .depends_on(&codex_skills_dir)

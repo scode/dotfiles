@@ -1,0 +1,7 @@
+# Display metadata for Codex only. Deliberately no `policy: allow_implicit_invocation: false`
+# block: Muse Code reads this file too and maps that policy to "user-invocable-only", under which
+# its read_skill tool refuses to load the skill for the model (verified on Muse Code 1.0.2), and
+# this skill exists to be loaded by other skills.
+interface:
+  display_name: "Agent delegation"
+  short_description: "Specify, launch, checkpoint, and gate a delegated unit of work"

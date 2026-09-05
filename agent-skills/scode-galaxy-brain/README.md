@@ -1,8 +1,8 @@
 # scode-galaxy-brain
 
 > [!WARNING]
-> **This skill bakes in assumptions that do not generalize.** In particular, it directly prescribes running delegate
-> harnesses with all permission checks disabled — `codex --yolo`, `muse exec --yolo`,
+> **This skill bakes in assumptions that do not generalize.** In particular, the shell-out skill at the bottom of its
+> stack prescribes running delegate harnesses with all permission checks disabled — `codex --yolo`, `muse exec --yolo`,
 > `opencode run --agent build --auto`, and `claude --dangerously-skip-permissions` — so that delegates can work
 > unattended. Do not use it in any environment where that is not acceptable: shared machines, checkouts with secrets or
 > production credentials in reach, or anywhere you would not already grant the orchestrating session the same
@@ -21,31 +21,29 @@ in your environment. Say `galaxy brain feedback: ...` to record a report about h
 
 A task description that reads as complete still leaves decisions to whoever implements it, and cheap models do not
 notice which of those decisions matter. Told "ask if unsure", they never ask; told to list their assumptions, they list
-the important one and then pick the wrong side of it anyway. So every delegate that edits code stops twice, and the
-orchestrating session does the judging.
+the important one and then pick the wrong side of it anyway. So every delegate that edits code stops for review before
+it writes code and again before it finishes, and the orchestrating session does the judging. The basis is a 32-run eval
+on four cheap models, where the checkpoint took a feature from wrong in 7 of 8 runs to right in 4 of 4, at roughly 1.5k
+tokens of orchestrator reading per run:
+[Treeward Guidance-Protocol Eval](https://claude.ai/code/artifact/ef01172f-812c-4c8f-9742-68ebe1a8a0f1).
 
-Before writing any code, the delegate writes a numbered list of every interpretation it is about to make and stops. The
-orchestrator marks each item OK or replaces it with a one-line decision, and resumes the same delegate. While
-implementing, the delegate logs each further decision as it makes it; when the checks pass it stops again, the
-orchestrator reviews that log the same way, and the delegate finishes. The files involved (`ASSUMPTIONS.md`,
-`ANSWERS.md`, `DECISIONS.md`, `REVIEW.md`, `REPORT.md`) live in a `.galaxy-brain/` directory that is hidden from version
-control and moved aside once the result is accepted.
-
-This is unconditional and not tuned to task size: a delegation too small to be worth two resumes is work the
-orchestrator does itself. Read-only delegates (reviews, scans) are not affected.
-
-The basis is a 32-run eval on four cheap models, where the checkpoint took a feature from wrong in 7 of 8 runs to right
-in 4 of 4, at roughly 1.5k tokens of orchestrator reading per run:
-[Treeward Guidance-Protocol Eval](https://claude.ai/code/artifact/ef01172f-812c-4c8f-9742-68ebe1a8a0f1). The details of
-the protocol are in [delegating.md](delegating.md).
+The protocol itself — the stops, the files, what counts as a finished run, how a stopped delegate is resumed — belongs
+to the `scode-agent-delegation` skill (its `checkpoints.md`), not to this one; galaxy-brain only supplies the answers at
+each stop and acts on the verdict that comes back.
 
 ## Layout
 
-The workflow lives in [SKILL.md](SKILL.md), which is what an agent loads up front. The procedure files next to it —
-`delegating.md`, `feedback.md` — are read on demand when a session actually delegates or gets feedback, so that a
-session which never does those things never pays for that text. Two parts other skills also need are separate skills
-that SKILL.md loads by name at the moment they become relevant, and that are inert until something loads them:
-`scode-model-routing` answers which model, effort, and launch mechanism a unit of work should run on (the inventory, the
-work-profile table, provider preference, and the model routing config file live there), and `scode-harness-shellout`
-owns the launch commands and the observed-behavior notes for `codex exec`, `claude -p`, `muse exec`, and `opencode run`.
-The reasoning behind the rules is archived under [lore/](lore/) and is not maintained.
+Galaxy-brain is the top of a small stack of skills, and [SKILL.md](SKILL.md) is what an agent loads up front: the
+workflow, how to stay active for a session, what goes into a routing request, what the orchestrator supplies to a
+delegation, and what it does with each verdict. The three skills below it are inert until something loads them, and
+SKILL.md loads each by name at the moment it becomes relevant:
+
+- `scode-model-routing` answers which model, effort, and launch mechanism a unit of work should run on; the inventory,
+  the work-profile table, provider preference, and the model routing config file live there.
+- `scode-agent-delegation` owns everything between that answer and the orchestrator's verdict: the task spec, the run id
+  and run directory, the checkpoint protocol, the gate, and the verdict vocabulary.
+- `scode-harness-shellout`, loaded by the delegation skill, owns the launch commands and the observed-behavior notes for
+  `codex exec`, `claude -p`, `muse exec`, and `opencode run`.
+
+The one procedure file next to SKILL.md, `feedback.md`, is read when the user gives feedback. The reasoning behind the
+rules is archived under [lore/](lore/) and is not maintained.

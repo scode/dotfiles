@@ -12,7 +12,7 @@ on nothing, and nothing in its text may point a reader at another skill.
 
 ## Reference audit
 
-Before presenting a change as done, search every file in this directory for the words `galaxy-brain`, `delegating.md`,
+Before presenting a change as done, search every file in this directory for the words `galaxy-brain`, `delegation`,
 `harness/`, `gate`, `checkpoint`, and `run directory`. Each hit is either a request input the text names as something
 the caller supplies, or a leak of a consumer's vocabulary into a skill that must not know its consumers; rewrite the
 leak.
