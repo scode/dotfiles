@@ -48,6 +48,21 @@ case (the source was renamed or deleted), but a broken target that merely reads 
 through an intermediate symlink is not repo-owned and must not be deleted. Deletion is irreversible and happens on
 install, so the outside-repository refusal is a hard guard, not a convenience.
 
+## Container Directories
+
+`ManagedDirectory` owns the existence of a directory that installed links live in (the skills roots, for example), not
+its contents. Install creates the directory when nothing is there and does nothing when a directory already exists;
+uninstall removes it only when it is empty and otherwise leaves it untouched. It never lists, modifies, or removes
+entries it did not create, so skills or files the user or another tool placed in the same directory are outside the
+installer's ownership entirely; each installed link inside is owned individually by its own `PayloadSymlink`, under the
+rules above.
+
+A container that is itself a symlink to a directory (a user who keeps `~/.claude/skills` in a synced or shared location,
+say) is followed on purpose: the existence check resolves the link, and the installed links are written into its target.
+That is the intended behavior, not an ownership gap, because the user chose where the container lives and the installer
+only owns its own named entries within it. Uninstall leaves a symlinked container in place, whatever its target holds:
+the installer did not create the link, and `rmdir` refuses a symlink anyway, so removing it is the user's call.
+
 ## Managed JSON Ownership
 
 `JsonManaged` edits user-owned JSON files and owns only the paths its `managed_*` operations declare. Declaring a path

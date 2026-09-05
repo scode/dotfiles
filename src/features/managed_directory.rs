@@ -54,6 +54,18 @@ impl Feature for ManagedDirectory {
     fn uninstall(&self) -> Result<FeatureResult> {
         let path = expand_tilde(&self.display_path)?;
 
+        // A container that is itself a symlink was placed by the user, and
+        // install deliberately followed it (see "Container Directories" in
+        // SPEC.md). `remove_dir` would fail on the link with ENOTDIR whatever
+        // its target holds, and deleting the link is not ours to do, so leave
+        // it exactly as found.
+        if path
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            debug!(path = %self.display_path, "leaving symlinked container in place");
+            return Ok(FeatureResult::NoOp);
+        }
         if !path.exists() {
             debug!(path = %self.display_path, "directory already removed");
             return Ok(FeatureResult::NoOp);
@@ -76,6 +88,27 @@ impl Feature for ManagedDirectory {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    /// A container that is a user-placed symlink to a directory is followed on
+    /// install (the links land in the target) and left alone on uninstall.
+    /// This is the "Container Directories" rule in SPEC.md; before it was
+    /// written down, uninstall failed here because `rmdir` refuses a symlink,
+    /// which turned a deliberately relocated skills root into a broken
+    /// uninstall.
+    #[test]
+    fn symlinked_container_is_followed_on_install_and_left_on_uninstall() {
+        let parent = tempdir().unwrap();
+        let target = parent.path().join("real");
+        std::fs::create_dir(&target).unwrap();
+        let link = parent.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let feature = ManagedDirectory::new(link.to_string_lossy().to_string());
+
+        assert_eq!(feature.install().unwrap(), FeatureResult::NoOp);
+        assert_eq!(feature.uninstall().unwrap(), FeatureResult::NoOp);
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(target.is_dir());
+    }
 
     #[test]
     fn install_creates_directory() {
