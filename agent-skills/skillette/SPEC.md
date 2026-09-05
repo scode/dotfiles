@@ -85,13 +85,15 @@ compaction because it lives in the harness's skills listing, not in the conversa
 `skillette-<name>` triggers; an agent that sees `$skillette-change` after compaction has nothing else to tell it which
 skill owns that word. Trimming the description to just `skillette` would silently break recovery on every harness.
 
-NOTE: Only explicit triggers survive that way. A natural-language phrase or an agent-action condition lives in the
-table, and the table is gone once `SKILL.md` has been compacted out; nothing in the skills listing mentions commits or
-whatever else the phrase names. A standing instruction that loads `skillette` at session start is consumed once and is
-not re-run after compaction. So a skillette that relies on its second column works until the first compaction and then
-stays silent for the rest of the session, unless the user types an explicit trigger or reloads `skillette`. This is a
-known limitation, accepted rather than paying for the whole table in every session's description. Users choosing a
-phrase should know they are choosing it.
+NOTE: Only explicit triggers survive that way on their own. A natural-language phrase or an agent-action condition lives
+in the table, and the table is gone once `SKILL.md` has been compacted out; nothing in the skills listing mentions
+commits or whatever else the phrase names. The mitigation is a standing instruction in the user's always-loaded agent
+instructions that says to load `skillette` at session start and to load it again after every compaction. The
+instructions file is part of the system prompt and so is still present after compaction, unlike the conversation; the
+shipped `agent-instructions/AGENTS.md` carries such a line. This only works to the extent the agent notices compaction
+and honors the instruction, so a skillette that relies on its second column may still go quiet mid-session. The
+alternative, carrying the whole table in every session's description, was rejected on cost. Users choosing a phrase
+should know they are choosing it.
 
 The resolution paragraph in `SKILL.md` covers the case where the table is still in context but the base directory is
 not. It compresses the same per-harness rule the repo's layered skills use for their dependencies (see
