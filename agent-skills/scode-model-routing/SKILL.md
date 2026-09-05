@@ -125,12 +125,12 @@ Each model name includes its configured reasoning effort. The family determines 
 Launch mechanism). `sota` marks models trusted with critical review and the orchestrator role. The inventory, with the
 calibration history behind it, is in `inventory.md` next to this file; the families and the `sota` marks are:
 
-| family | models (effort words)                                                          | sota             |
-| ------ | ------------------------------------------------------------------------------ | ---------------- |
-| gpt    | gpt-5.6-luna (medium), gpt-5.6-terra (medium), gpt-5.6-sol (low, medium, high) | gpt-5.6-sol high |
-| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5 (high), fable-5 (high)  | fable-5 high     |
-| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                          | none             |
-| glm    | glm-5.3-flash (low, high, max)                                                 | none             |
+| family | models (effort words)                                                                | sota             |
+| ------ | ------------------------------------------------------------------------------------ | ---------------- |
+| gpt    | gpt-5.6-luna (medium, high), gpt-5.6-terra (medium), gpt-5.6-sol (low, medium, high) | gpt-5.6-sol high |
+| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5 (high), fable-5 (high)        | fable-5 high     |
+| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                                | none             |
+| glm    | glm-5.3-flash (low, high, max)                                                       | none             |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
@@ -161,7 +161,8 @@ failure or when the task proves more demanding than its initial classification.
 | clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-5.6-luna medium → gpt-5.6-terra medium | sonnet-5 medium → sonnet-5 high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
 | complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-5.6-terra medium → gpt-5.6-sol medium  | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus-5 high)  | orchestrator                    | none                                                                | none                                   |
-| mechanical review         | Non-critical review: style, prose, idiomaticity, docs, slop, or patterns                                                                                                                      | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-5.6-luna high → gpt-5.6-sol high       | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
 
 Each cell lists the primary and then the escalation rung. The two-step routes list the common path, not the whole
@@ -169,6 +170,13 @@ ladder: if terra also fails after a luna failure, gpt-5.6-sol medium is the rema
 exhausted. The rationale behind the placements (why reviews route above similarly sized implementation work, why test
 quality is critical, what the eval behind the luna default measured) is in `inventory.md`; read it when calibrating the
 table, not when answering a request.
+
+Focused review does not narrow the review charter. A data-flow or edge-input lens still reports correctness defects
+outside its focus. Use critical review for standalone correctness reviews, general, state/lifecycle, and systems
+correctness lenses, security, test quality, SPEC compliance, and final acceptance. Idiomaticity, AI slop, and
+docs/comment correctness use the focused row in every family. Data-flow and edge-input correctness use the critical row
+outside GPT. The GPT focused-review route escalates directly from luna high to sol high, without the implementation
+ladder through terra. Provider preference and fixed native mechanisms retain their ordinary precedence.
 
 Design is the orchestrator's own work. Deciding an API shape, an architecture call, or a tradeoff is exactly what the
 expensive model's capability is for; handing the decision to a weaker model buys a worse answer than the orchestrator
@@ -192,7 +200,8 @@ than reverting to its native route. This is about input size the model must actu
 difficulty; small-input work stays on luna, and when the caller cannot tell in advance, luna first is the right bet — a
 reroute after a lost-context failure costs one cheap run. A luna delegate that loses track of earlier context mid-task
 is this weakness surfacing, not a generic substantive failure: the outcome `substantive failure (lost context)` reroutes
-to terra without counting against the profile.
+to terra without counting against the profile. For the GPT focused-review route, large input or a lost-context failure
+instead routes directly to sol high, without counting a lost-context failure as an attempt.
 
 ## Native-path bias
 
