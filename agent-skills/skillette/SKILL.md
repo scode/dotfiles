@@ -17,3 +17,4 @@ any phrase match; if two rows still plausibly match, ask which; if a `skillette-
 | Triggers         | Natural-language triggers                                      |
 | ---------------- | -------------------------------------------------------------- |
 | skillette-change | add, remove, or change a skillette, or change skillette itself |
+| skillette-hackmd | the user mentions HackMD or hackmd.io                          |
