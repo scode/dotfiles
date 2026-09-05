@@ -18,3 +18,4 @@ any phrase match; if two rows still plausibly match, ask which; if a `skillette-
 | ---------------- | -------------------------------------------------------------- |
 | skillette-change | add, remove, or change a skillette, or change skillette itself |
 | skillette-hackmd | the user mentions HackMD or hackmd.io                          |
+| skillette-lore   | the whole word "lore" meaning repo history or a ./lore dir     |
