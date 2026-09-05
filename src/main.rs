@@ -110,6 +110,7 @@ const SHARED_AGENT_SKILLS: &[&str] = &[
     "scode-modernize",
     "scode-ssh-delegate",
     "scode-todo",
+    "skillette",
     "slstack",
     "stax",
     "swarm-triage",
@@ -428,6 +429,12 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-skillette",
+        PayloadSymlink::new("agent-skills/skillette", "~/.claude/skills/skillette"),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-repo-swarm",
         PayloadSymlink::new("agent-skills/repo-swarm", "~/.claude/skills/repo-swarm"),
     )
@@ -671,6 +678,12 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-scode-todo",
         PayloadSymlink::new("agent-skills/scode-todo", "~/.codex/skills/scode-todo"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-skillette",
+        PayloadSymlink::new("agent-skills/skillette", "~/.codex/skills/skillette"),
     )
     .depends_on(&codex_skills_dir)
     .build();
