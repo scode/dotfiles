@@ -1,0 +1,171 @@
+{
+  "assessment": "unblinded parent source verification after sealing all arm reports",
+  "subject": "62d866d6a57a24ef6bb329b28a246b44b758ff7a",
+  "unit": "actionable mechanism at independently editable location; report bundles normalized explicitly",
+  "issues": [
+    {
+      "id": "E01",
+      "name": "resource-safety assurance",
+      "verdict": "accepted",
+      "severity": "low",
+      "material": false,
+      "baseline": "F2",
+      "combined-sol-high": "F1",
+      "combined-astra-low": null,
+      "combined-astra-high": null,
+      "reference": "SVE-003",
+      "qualification": "Concrete wording defect; specified caps do not establish that lower caps are a mandatory implementation fix."
+    },
+    {
+      "id": "E02",
+      "name": "unwiped Argon2 heap workspace",
+      "verdict": "accepted",
+      "severity": "moderate",
+      "material": true,
+      "baseline": "F3",
+      "combined-sol-high": null,
+      "combined-astra-low": null,
+      "combined-astra-high": "F1",
+      "reference": null,
+      "family": "secret-cleanup",
+      "qualification": "Requires a separate memory-disclosure capability; feature alone does not wipe the workspace."
+    },
+    {
+      "id": "E03",
+      "name": "uncleared Argon2 internal temporaries",
+      "verdict": "accepted",
+      "severity": "moderate",
+      "material": true,
+      "baseline": null,
+      "combined-sol-high": null,
+      "combined-astra-low": null,
+      "combined-astra-high": "F2",
+      "reference": null,
+      "family": "secret-cleanup",
+      "baseline_partial": "Lifecycle p1 asks to verify other temporaries; final E02 remedy enables the feature that fixes this as well.",
+      "qualification": "Extra explicit mechanism, not an independent security family or extra required repair beyond baseline's complete proposal."
+    },
+    {
+      "id": "E04",
+      "name": "redundant production KDF in engine armor test",
+      "verdict": "accepted",
+      "severity": "low",
+      "material": false,
+      "baseline": "F5 component 1",
+      "combined-sol-high": "F2",
+      "combined-astra-low": null,
+      "combined-astra-high": null,
+      "reference": null,
+      "qualification": "Four extra derivations across E04/E05 are source-confirmed; actual timeout or OOM is not measured."
+    },
+    {
+      "id": "E05",
+      "name": "redundant production KDF in randomness test",
+      "verdict": "accepted",
+      "severity": "low",
+      "material": false,
+      "baseline": "F5 component 2",
+      "combined-sol-high": "F3",
+      "combined-astra-low": null,
+      "combined-astra-high": null,
+      "reference": null
+    },
+    {
+      "id": "E06",
+      "name": "typed Argon2 source error",
+      "verdict": "optional",
+      "severity": "low",
+      "material": false,
+      "baseline": "F4",
+      "combined-sol-high": null,
+      "combined-astra-low": null,
+      "combined-astra-high": null,
+      "reference": "SVE-004",
+      "qualification": "Display text and error kind preserved; no established typed-source caller requirement."
+    },
+    {
+      "id": "E07",
+      "name": "unwired V2 dispatcher",
+      "verdict": "rejected",
+      "severity": null,
+      "material": false,
+      "baseline": "F1",
+      "combined-sol-high": null,
+      "combined-astra-low": null,
+      "combined-astra-high": null,
+      "qualification": "Explicitly required by step 4; baseline coordinator rejected it during nofix confirmation."
+    },
+    {
+      "id": "E08",
+      "name": "32-bit workspace capacity overflow",
+      "verdict": "uncertain",
+      "severity": "moderate if applicable",
+      "material": false,
+      "baseline": null,
+      "combined-sol-high": null,
+      "combined-astra-low": null,
+      "combined-astra-high": "F3",
+      "qualification": "4 GiB allocation is impossible on a 32-bit vector; source-build support is unresolved and release targets are 64-bit."
+    }
+  ],
+  "summary": {
+    "accepted_union": 5,
+    "moderate_union": 2,
+    "moderate_families": 1,
+    "baseline": {
+      "raw_reports": 12,
+      "final_reports": 5,
+      "accepted_atomic": 4,
+      "moderate_atomic": 1,
+      "moderate_families": 1,
+      "optional_atomic": 1,
+      "rejected_atomic": 1,
+      "uncertain_atomic": 0
+    },
+    "combined-sol-high": {
+      "raw_reports": 3,
+      "final_reports": 3,
+      "accepted_atomic": 3,
+      "moderate_atomic": 0,
+      "moderate_families": 0,
+      "optional_atomic": 0,
+      "rejected_atomic": 0,
+      "uncertain_atomic": 0
+    },
+    "combined-astra-low": {
+      "raw_reports": 0,
+      "final_reports": 0,
+      "accepted_atomic": 0,
+      "moderate_atomic": 0,
+      "moderate_families": 0,
+      "optional_atomic": 0,
+      "rejected_atomic": 0,
+      "uncertain_atomic": 0
+    },
+    "combined-astra-high": {
+      "raw_reports": 3,
+      "final_reports": 3,
+      "accepted_atomic": 2,
+      "moderate_atomic": 2,
+      "moderate_families": 1,
+      "optional_atomic": 0,
+      "rejected_atomic": 0,
+      "uncertain_atomic": 1
+    }
+  },
+  "reference_scope": {
+    "included": [
+      "SVE-003 resource-safety assurance"
+    ],
+    "excluded_documentation_targets": [
+      "SVE-001 broken SPEC reference",
+      "SVE-002 nonexistent parallel feature"
+    ],
+    "optional_reference_match": [
+      "SVE-004 typed Argon2 source"
+    ]
+  },
+  "raw_remedy_qualification": "Baseline general p2 diagnoses E02 but incorrectly says enabling zeroize alone clears the workspace; systems/lifecycle and final merged recommendation contain the complete repair.",
+  "details": "FINDINGS.md",
+  "raw_artifacts": "Each arm's reviewer pass files, accounting.json, REPORT.md, BUCKETS.md, and RUN-LOG.md retain original wording and coordinator judgments."
+}

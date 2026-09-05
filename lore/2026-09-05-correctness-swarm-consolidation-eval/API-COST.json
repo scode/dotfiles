@@ -1,0 +1,353 @@
+{
+  "pricing_checked_date": "2026-09-05",
+  "currency": "USD",
+  "source": "https://developers.openai.com/api/docs/pricing",
+  "basis": "API-equivalent token estimate, not actual Codex billing; short context, no regional uplift",
+  "rate_order": [
+    "uncached_input",
+    "cached_input",
+    "output_including_reasoning"
+  ],
+  "standard_rates_per_million": {
+    "gpt-5.6-sol": [
+      4,
+      0.4,
+      20
+    ],
+    "gpt-5.6-luna": [
+      0.2,
+      0.02,
+      1.2
+    ],
+    "gpt-6-astra": [
+      10,
+      1,
+      50
+    ]
+  },
+  "fast_rate_multiplier": 2,
+  "threads": [
+    {
+      "arm": "baseline",
+      "role": "reviewer",
+      "reviewer": "baseline_correctness_general",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1700656,
+        "cached_input_tokens": 1613440,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 19086,
+        "reasoning_output_tokens": 12672,
+        "total_tokens": 1719742,
+        "uncached_input_tokens": 87216
+      },
+      "max_request_input_tokens": 111632,
+      "standard_usd": 1.37596,
+      "fast_usd": 2.75192
+    },
+    {
+      "arm": "combined-astra-low",
+      "role": "coordinator",
+      "reviewer": "e2e_combined_astra_low",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 880444,
+        "cached_input_tokens": 844544,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 9953,
+        "reasoning_output_tokens": 2898,
+        "total_tokens": 890397,
+        "uncached_input_tokens": 35900
+      },
+      "max_request_input_tokens": 61661,
+      "standard_usd": 0.6804776,
+      "fast_usd": 1.3609552
+    },
+    {
+      "arm": "baseline",
+      "role": "coordinator",
+      "reviewer": "e2e_baseline",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 7103587,
+        "cached_input_tokens": 6942848,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 43746,
+        "reasoning_output_tokens": 11247,
+        "total_tokens": 7147333,
+        "uncached_input_tokens": 160739
+      },
+      "max_request_input_tokens": 131548,
+      "standard_usd": 4.2950152,
+      "fast_usd": 8.5900304
+    },
+    {
+      "arm": "combined-astra-low",
+      "role": "reviewer",
+      "reviewer": "correctness_combined",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "usage": {
+        "input_tokens": 360063,
+        "cached_input_tokens": 305536,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1397,
+        "reasoning_output_tokens": 333,
+        "total_tokens": 361460,
+        "uncached_input_tokens": 54527
+      },
+      "max_request_input_tokens": 65421,
+      "standard_usd": 0.920656,
+      "fast_usd": 1.841312
+    },
+    {
+      "arm": "combined-sol-high",
+      "role": "reviewer",
+      "reviewer": "correctness_combined",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 2875729,
+        "cached_input_tokens": 2747136,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 30002,
+        "reasoning_output_tokens": 10608,
+        "total_tokens": 2905731,
+        "uncached_input_tokens": 128593
+      },
+      "max_request_input_tokens": 152847,
+      "standard_usd": 2.2132664,
+      "fast_usd": 4.4265328
+    },
+    {
+      "arm": "combined-sol-high",
+      "role": "coordinator",
+      "reviewer": "e2e_combined_sol",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 4271597,
+        "cached_input_tokens": 4146048,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 26950,
+        "reasoning_output_tokens": 7295,
+        "total_tokens": 4298547,
+        "uncached_input_tokens": 125549
+      },
+      "max_request_input_tokens": 123965,
+      "standard_usd": 2.6996152,
+      "fast_usd": 5.3992304
+    },
+    {
+      "arm": "baseline",
+      "role": "reviewer",
+      "reviewer": "baseline_correctness_systems",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1875041,
+        "cached_input_tokens": 1781376,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 17133,
+        "reasoning_output_tokens": 9915,
+        "total_tokens": 1892174,
+        "uncached_input_tokens": 93665
+      },
+      "max_request_input_tokens": 118647,
+      "standard_usd": 1.4298704,
+      "fast_usd": 2.8597408
+    },
+    {
+      "arm": "baseline",
+      "role": "restater",
+      "reviewer": "baseline_restater_attempt_2",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 618364,
+        "cached_input_tokens": 560768,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 7589,
+        "reasoning_output_tokens": 1780,
+        "total_tokens": 625953,
+        "uncached_input_tokens": 57596
+      },
+      "max_request_input_tokens": 84890,
+      "standard_usd": 0.6064712,
+      "fast_usd": 1.2129424
+    },
+    {
+      "arm": "baseline",
+      "role": "reviewer",
+      "reviewer": "baseline_correctness_state_lifecycle",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1859715,
+        "cached_input_tokens": 1746688,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 21909,
+        "reasoning_output_tokens": 12523,
+        "total_tokens": 1881624,
+        "uncached_input_tokens": 113027
+      },
+      "max_request_input_tokens": 138429,
+      "standard_usd": 1.5889632,
+      "fast_usd": 3.1779264
+    },
+    {
+      "arm": "combined-astra-high",
+      "role": "restater",
+      "reviewer": "correctness_restater_1",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 359617,
+        "cached_input_tokens": 322432,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 5087,
+        "reasoning_output_tokens": 1194,
+        "total_tokens": 364704,
+        "uncached_input_tokens": 37185
+      },
+      "max_request_input_tokens": 64310,
+      "standard_usd": 0.3794528,
+      "fast_usd": 0.7589056
+    },
+    {
+      "arm": "combined-sol-high",
+      "role": "restater",
+      "reviewer": "restater_attempt1",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 455480,
+        "cached_input_tokens": 416768,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 5867,
+        "reasoning_output_tokens": 1009,
+        "total_tokens": 461347,
+        "uncached_input_tokens": 38712
+      },
+      "max_request_input_tokens": 65908,
+      "standard_usd": 0.4388952,
+      "fast_usd": 0.8777904
+    },
+    {
+      "arm": "baseline",
+      "role": "reviewer",
+      "reviewer": "baseline_correctness_data_flow",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1337973,
+        "cached_input_tokens": 1229312,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 12939,
+        "reasoning_output_tokens": 8187,
+        "total_tokens": 1350912,
+        "uncached_input_tokens": 108661
+      },
+      "max_request_input_tokens": 109319,
+      "standard_usd": 0.06184524,
+      "fast_usd": 0.12369048
+    },
+    {
+      "arm": "baseline",
+      "role": "restater",
+      "reviewer": "baseline_restater_attempt_1",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 426440,
+        "cached_input_tokens": 382336,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 7064,
+        "reasoning_output_tokens": 1763,
+        "total_tokens": 433504,
+        "uncached_input_tokens": 44104
+      },
+      "max_request_input_tokens": 71501,
+      "standard_usd": 0.4706304,
+      "fast_usd": 0.9412608
+    },
+    {
+      "arm": "combined-astra-high",
+      "role": "reviewer",
+      "reviewer": "correctness_combined",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1218516,
+        "cached_input_tokens": 1104640,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8379,
+        "reasoning_output_tokens": 2547,
+        "total_tokens": 1226895,
+        "uncached_input_tokens": 113876
+      },
+      "max_request_input_tokens": 98372,
+      "standard_usd": 2.66235,
+      "fast_usd": 5.3247
+    },
+    {
+      "arm": "combined-astra-high",
+      "role": "coordinator",
+      "reviewer": "e2e_combined_astra_high",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 3920411,
+        "cached_input_tokens": 3828480,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 21270,
+        "reasoning_output_tokens": 4721,
+        "total_tokens": 3941681,
+        "uncached_input_tokens": 91931
+      },
+      "max_request_input_tokens": 111575,
+      "standard_usd": 2.324516,
+      "fast_usd": 4.649032
+    },
+    {
+      "arm": "baseline",
+      "role": "reviewer",
+      "reviewer": "baseline_correctness_edge_inputs",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "usage": {
+        "input_tokens": 1179846,
+        "cached_input_tokens": 1108480,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 9965,
+        "reasoning_output_tokens": 6824,
+        "total_tokens": 1189811,
+        "uncached_input_tokens": 71366
+      },
+      "max_request_input_tokens": 88685,
+      "standard_usd": 0.0484008,
+      "fast_usd": 0.0968016
+    }
+  ],
+  "totals": {
+    "baseline": {
+      "standard_usd": 9.87715644,
+      "fast_usd": 19.75431288
+    },
+    "combined-sol-high": {
+      "standard_usd": 5.3517768,
+      "fast_usd": 10.7035536
+    },
+    "combined-astra-low": {
+      "standard_usd": 1.6011336,
+      "fast_usd": 3.2022672
+    },
+    "combined-astra-high": {
+      "standard_usd": 5.3663188,
+      "fast_usd": 10.7326376
+    }
+  }
+}
