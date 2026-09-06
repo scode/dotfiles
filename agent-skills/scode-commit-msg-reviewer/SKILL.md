@@ -58,13 +58,17 @@ than patching: a fresh draft aimed at the gaps beats an edited one that keeps th
    not your reasoning, not the change history, not earlier rounds. The instructions file tells the reader which wording
    is the user's, so it reports on it rather than the author being asked to change it.
 4. Read the report. Compare the paraphrase with what you meant, slot by slot. If the reader could not say what was wrong
-   or wanted before the change, the message has no problem statement, and no amount of detail below it will substitute.
-   Where the paraphrase is vague, hedged, wrong, or missing the point, the message did not carry that point — that is
-   the finding, whether or not the reader listed anything under "could not follow". The "could not follow" list is a
-   diagnosis, not a to-do list: it tells you where the reader lost the thread, not which sentences to insert. "Did not
-   need" is the opposite signal and just as real: sentences the reader could drop without losing anything are length the
-   message charges every future reader for; cut them unless they carry a why the reader missed. "Against the change"
-   names claims to correct. "Conventions" names mechanical fixes.
+   or wanted before the change, the message has no problem statement, and no amount of detail below it will substitute —
+   but only when you are holding a problem statement it failed to convey. The reader reports that slot empty either way,
+   because it cannot tell a why you left out from a why that never existed. You can. Check which one it is before you
+   rewrite, and if the honest answer is that you have no reason for this change beyond what the diff already shows, the
+   empty slot is the message being correct, not the message failing. Do not close it by inference; see "Manufactured
+   motivation" below. Where the paraphrase is vague, hedged, wrong, or missing the point, the message did not carry that
+   point — that is the finding, whether or not the reader listed anything under "could not follow". The "could not
+   follow" list is a diagnosis, not a to-do list: it tells you where the reader lost the thread, not which sentences to
+   insert. "Did not need" is the opposite signal and just as real: sentences the reader could drop without losing
+   anything are length the message charges every future reader for; cut them unless they carry a why the reader missed.
+   "Against the change" names claims to correct. "Conventions" names mechanical fixes.
 5. Decide whether the message is done. It is when the paraphrase matches your intent, nothing is contradicted, and every
    remaining "could not follow" item is something the message is right not to explain. The reader reports from total
    ignorance, which is what makes its report trustworthy, but the message's real audience is not totally ignorant: it
@@ -73,13 +77,14 @@ than patching: a fresh draft aimed at the gaps beats an edited one that keeps th
    not a defect in the message. That call is yours, and it is the judgment the reader is deliberately not making; make
    it honestly, against the repository's actual readers, not against your own familiarity. Otherwise rewrite for that
    reader, and rewrite means start over: begin from the problem statement, in plain words, and tell it through — what
-   was wrong, what this does about it, why this way. Reread the instructions file first, if there is one. Do not answer
-   the reader's items one by one. A draft that answers a list reads like a list of answers to questions the next reader
-   never saw asked, which is exactly the mid-text feel this loop exists to remove; if your new draft could have been
-   produced by inserting sentences into the old one, it is not a rewrite. Then go back to step 3 with a **new**
-   subagent. Never continue a previous reader: one that has seen an earlier draft is no longer cold. Fresh readers keep
-   finding new things, so expect diminishing returns after the first rewrite and do not chase a report that has stopped
-   changing what you would write.
+   was wrong, what this does about it, why this way. Where you have no problem statement to begin from, start at what
+   the change does and stop there; the rewrite is for clarity, and a rewrite that acquires a why between drafts has
+   invented one. Reread the instructions file first, if there is one. Do not answer the reader's items one by one. A
+   draft that answers a list reads like a list of answers to questions the next reader never saw asked, which is exactly
+   the mid-text feel this loop exists to remove; if your new draft could have been produced by inserting sentences into
+   the old one, it is not a rewrite. Then go back to step 3 with a **new** subagent. Never continue a previous reader:
+   one that has seen an earlier draft is no longer cold. Fresh readers keep finding new things, so expect diminishing
+   returns after the first rewrite and do not chase a report that has stopped changing what you would write.
 6. Hard cap of three readers per message. If the third reader still cannot follow it, stop, show the user the candidate
    and the last report, and let them decide.
 
@@ -115,7 +120,16 @@ Traps, each a reason to rewrite:
   of a genuinely large change is different from an inventory.
 - **Manufactured motivation.** Dressing routine work in an invented rationale. "Libraries were out of date" is not a
   problem being solved; a dependency bump says so plainly or says nothing. Problem/Solution headings only when there is
-  real explanatory context.
+  real explanatory context. What separates a why worth writing from a fabricated one is where it came from, not how
+  plausible it sounds. Write the why you already hold: the user told you, you diagnosed the failure, you hit the
+  constraint and picked this way around it, you rejected the obvious alternative for a reason you can name. Never write
+  one you derived by looking at the change and reasoning about what it is probably for. That reasoning is fluent and it
+  produces sentences indistinguishable from real motivation, which is exactly the danger — the future reader who
+  git-blames their way here cannot tell your guess from the truth, will believe it, and will stop looking. A missing why
+  leaves them to dig; a wrong one stops them digging. When you hold none, the body is empty, and that is the finished
+  message rather than a gap to fill. Bug fixes are never this case: what was broken is a why you necessarily have,
+  because you could not have fixed it otherwise, and a fix that does not name the failure is withholding something it
+  knows.
 - **Softened bug framing.** A fix should say directly what was broken, at the level the affected reader cares about,
   before any mechanism. Be suspicious of openings that narrate call flow or evidence instead of naming the failure.
 - **Justification before the decision.** Arguing for a choice the reader has not yet been told exists. Name the
