@@ -125,6 +125,29 @@ directory.
 Changes to `SKILL.md` itself, the table format, or this spec are changes to the `skillette` skill and go through the
 same `change` skillette as everything else.
 
+## The `ntfy` skillette
+
+`ntfy` sends one notification to an explicitly supplied topic on `https://ntfy.sh`. Its short forms are
+`ntfy <topic> <message>` and `$ntfy <topic> <message>` at the beginning of a send request; quoted examples and
+discussion do not send anything. Embedded instructions such as "do the work, then ntfy <topic> that you're done" also
+trigger it. Its explicit trigger is `skillette-ntfy`, with the same arguments. The short forms live in the table's
+natural-language column so the explicit-trigger naming convention stays intact.
+
+The topic must be explicitly supplied and match `[-_A-Za-z0-9]{1,64}` in full. In command-style requests it is the first
+argument, and the remaining message is literal text, including newlines and shell metacharacters. In natural-language
+requests the agent composes the requested meaning, preserving exact wording when supplied, and honors send conditions.
+Completion messages wait for successful completion; a blocked task does not authorize a false success or an unrequested
+failure notification. Missing topics or unclear message intent require clarification; invalid topics are rejected. There
+is no default topic or reuse from previous requests, but a pending conditional send retains its explicitly named topic.
+No real user topic appears in the shipped instructions or examples.
+
+Publishing uses curl, assumed installed; if unavailable, abort without installing it or switching clients. Publishing
+defaults to `high` priority. Overrides require a separate explicit instruction, not option-like text inside the message.
+Reject messages over 4,096 UTF-8 bytes before publishing to prevent automatic attachment conversion. One invocation
+makes one publish attempt, without automatic retries, splitting, or truncation. Success means confirmed server
+acceptance, not confirmed phone delivery. Authentication errors are reported without searching for credentials. The
+skillette neither manages subscriptions nor enables ongoing notifications.
+
 ## The `change` skillette
 
 `change` exists so that "oh, by the way, skillette should also do X" can be said mid-session, in any project, without
