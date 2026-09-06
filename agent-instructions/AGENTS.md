@@ -149,6 +149,11 @@ text. Report checks to the user in the final response instead.
 
 Do not add "Co-Authored-By" trailers or "Generated with Claude Code" badges to commits or PRs.
 
+# Linking to GitHub PRs
+
+Unless the user explicitly asks otherwise, link a GitHub PR to its diff rather than its description: append `/changes`
+to the PR URL, so `https://github.com/scode/kd/pull/82/changes` rather than `https://github.com/scode/kd/pull/82`.
+
 # Testability and tests
 
 DO NOT write, or accept during code review, tests that modify environment variables of the process running the test.
