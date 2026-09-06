@@ -125,12 +125,12 @@ Each model name includes its configured reasoning effort. The family determines 
 Launch mechanism). `sota` marks models trusted with critical review and the orchestrator role. The inventory, with the
 calibration history behind it, is in `inventory.md` next to this file; the families and the `sota` marks are:
 
-| family | models (effort words)                                                                | sota             |
-| ------ | ------------------------------------------------------------------------------------ | ---------------- |
-| gpt    | gpt-5.6-luna (medium, high), gpt-5.6-terra (medium), gpt-5.6-sol (low, medium, high) | gpt-5.6-sol high |
-| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5 (high), fable-5 (high)        | fable-5 high     |
-| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                                | none             |
-| glm    | glm-5.3-flash (low, high, max)                                                       | none             |
+| family | models (effort words)                                                                                    | sota             |
+| ------ | -------------------------------------------------------------------------------------------------------- | ---------------- |
+| gpt    | gpt-5.6-luna (medium, high), gpt-5.6-terra (medium), gpt-5.6-sol (low, medium, high), gpt-6-astra (high) | gpt-6-astra high |
+| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5 (high), fable-5 (high)                            | fable-5 high     |
+| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                                                    | none             |
+| glm    | glm-5.3-flash (low, high, max)                                                                           | none             |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
@@ -163,7 +163,7 @@ failure or when the task proves more demanding than its initial classification.
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus-5 high)  | orchestrator                    | none                                                                | none                                   |
 | focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-5.6-luna high → gpt-5.6-sol high       | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-5.6-sol medium → gpt-5.6-sol high      | sonnet-5 high → opus-5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-5.6-sol high                           | fable-5 high                    | none                                                                | none                                   |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6-astra high                           | fable-5 high                    | none                                                                | none                                   |
 
 Each cell lists the primary and then the escalation rung. The two-step routes list the common path, not the whole
 ladder: if terra also fails after a luna failure, gpt-5.6-sol medium is the remaining rung before the route is
@@ -241,11 +241,12 @@ facts about it. `route exhausted: yes` means the route just answered is the last
 (the two-step routes plus the sol-medium third rung on the GPT implementation ladders); a substantive failure there is
 not answered by another rung — the caller handles the work itself or makes a deliberate cross-family attempt; routing
 will not hand back the same model. `endpoint trusted` is derived from that last model's `sota` mark, not from its
-family: yes for the critical-review routes and any other route whose last rung is gpt-5.6-sol high or fable-5 high, no
+family: yes for the critical-review routes and any other route whose last rung is gpt-6-astra high or fable-5 high, no
 for the rest — every muse and glm route, since those families carry no `sota` model, and a GPT or Claude route whose
-ladder ends below `sota`. The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does
-not change the rule that an exhausted route, trusted or not, is never retried mechanically. A first attempt on a route
-with a rung left says `route exhausted: no`.
+ladder ends below `sota`, which since gpt-5.6-sol lost its `sota` mark includes every GPT route that ends at sol high.
+The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule that an
+exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says
+`route exhausted: no`.
 
 ## Provider preference
 
@@ -269,10 +270,14 @@ exists, read `config-file.md` next to this file and then honor the config file: 
 from the user, most commonly availability restrictions like "fable-5 is not available, do not use" or "only claude
 models work here", and may replace the inventory or the profile table outright. Treat its contents as authoritative.
 Remove unavailable models from every profile and use the next suitable option rather than preserving a preferred slot
-mechanically. Apart from the seeding request described in `config-file.md`, do not create or edit the config file
-yourself; it belongs to the user. If the config file does not exist but the file it replaced,
-`~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and answering as if
-no config existed would silently route to models the user said are unavailable.
+mechanically. "Suitable" is defined by the profile, not by the family: a model with no placement in a profile's row is
+not the next option for that profile just because it is the strongest one left in the family. When a config file removes
+the only `sota` model of the session's own family, critical review and the design delegate-up go cross-family to the
+other family's `sota` model (the removal of fable-5 sends a Claude session's critical review to gpt-6-astra high via
+`codex exec`), not to opus-5 or sol natively. Apart from the seeding request described in `config-file.md`, do not
+create or edit the config file yourself; it belongs to the user. If the config file does not exist but the file it
+replaced, `~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and
+answering as if no config existed would silently route to models the user said are unavailable.
 
 If the config file does not exist, all inventory models are assumed available, with one practical exception: a
 shelled-out family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is
@@ -295,6 +300,11 @@ session's own harness; shell out only when crossing vendors:
   of record.
 - **Any session → glm model**: `opencode run`, always with the unrestricted default build agent and `task` available.
   OpenCode is likewise never the orchestrator of record.
+
+Claude ids in the inventory are names, not launch arguments. Whether native or through `claude -p`, a Claude model is
+selected by its harness alias (`fable`, `opus`, `sonnet`, `haiku`), which resolves to the current release of that line;
+`fable` resolved to `claude-fable-5-1` on 2026-09-06, while the literal `fable-5` was rejected with a 404. GPT ids are
+passed as written, minus the effort word.
 
 When the mechanism is `native`, the caller also sets the target reasoning effort if its sub agent mechanism has an
 effort parameter; otherwise sub agents inherit the session's effort and that is acceptable. A writer needs a mechanism
