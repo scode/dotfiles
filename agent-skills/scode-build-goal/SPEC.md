@@ -78,6 +78,12 @@ whoever is judging whether a change kept the user-facing behavior intact.
   made.
 - Questions are batched, not dribbled, and only asked after the skill has read enough of the repository to answer what
   the codebase already settles.
+- The batch always presents the review-gate menu, numbered, with these five options in this order and the first marked
+  as the default: `pre-pr-review-swarm` on gpt-5.6-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm`
+  on gpt-6-astra high; an in-harness fresh-context agent at the executing session's own model with a general
+  correctness, design, and idiomatic-code charter; a fresh-context agent with that charter on fable or gpt-6-astra at
+  high effort, cross-harness when the executing harness cannot reach the model natively. The user's choice is recorded
+  in the goal file; the skill never picks a reviewer silently.
 
 ## What the goal file requires of the executing agent
 
@@ -87,9 +93,11 @@ whoever is judging whether a change kept the user-facing behavior intact.
   delegation. Reading it for mechanics does not satisfy this.
 - A resource watchdog for memory and disk, started before the first delegation, restarted if it dies, and carried in
   every handoff note.
-- A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a delegated
-  `pre-pr-review-swarm` run whose prompt names the skill, the repo root, and the range to review, with no launch command
-  copied into the goal file.
+- A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a delegated fresh-context run
+  of the reviewer the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and
+  skill or charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the
+  findings file, with no launch command copied into the goal file. For the charter options the goal file spells out the
+  charter in full: general correctness, design, and idiomatic code, findings to a named file, no edits, no VCS changes.
 - Major decisions logged with a scannable DECISION label, including forks the goal file did not settle, which the agent
   resolves on its own rather than stalling to ask.
 - The done criterion is a linear stack of open, unmerged PRs that collectively achieve the goal. Merging is the user's.
