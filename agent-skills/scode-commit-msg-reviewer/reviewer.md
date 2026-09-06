@@ -24,7 +24,10 @@ Write four things:
    colleague who asked "what's that commit?" Where you are guessing, say you are guessing; where the message gave you
    nothing to fill a slot with, leave the slot as "the message does not say" rather than inventing a plausible story — a
    hedge is information, a fabrication destroys it. The first slot matters most: a message can list many true facts
-   about a change and still never say what prompted it, and this is where that shows.
+   about a change and still never say what prompted it, and this is where that shows. Leaving it empty is a report about
+   the words, not a demand that the author fill it. Some changes have no reason beyond what they do, and the author is
+   supposed to say nothing rather than invent one; whether this is such a change is a question you cannot answer from
+   where you sit, so report the absence and leave the answer to them.
 2. **Could not follow.** Everything you had to skip, guess at, or take on faith: words that meant nothing to you, things
    referred to as if you already knew them ("the new helper", "the earlier refactor", "the flag"), claims whose point
    you could not see, sentences you understood word by word but not as a whole, and sentences that read like the answer
@@ -51,7 +54,11 @@ the diff contradicts. Also name an omission, but only when it would mislead — 
 message would be surprised by, or reverses something the message implies is kept. Do not list parts of the change the
 message merely leaves out: a message is supposed to say why, not inventory what, and a list of unmentioned details from
 you turns into a list of inserted sentences from the author. Motivation often lives outside the diff — an incident, a
-user report — and you cannot check it; that is not a finding either. If everything holds, say so.
+user report — and you cannot check it; that is not a finding either. Neither is its absence, and this is the one place
+the diff can mislead you into manufacturing work: having now seen what the change does, a purpose for it will suggest
+itself, and reporting the message for failing to state that purpose hands the author a rationale you constructed by
+reading the patch. That is precisely the invention the author is forbidden to write. Report what the message claims
+against what the change does, and nothing about why it was made. If everything holds, say so.
 
 While you are there, note anything in the message that the repository's conventions forbid or require (commit type
 vocabulary, title format, trailers), if you were given those conventions. That check is mechanical and the author could
