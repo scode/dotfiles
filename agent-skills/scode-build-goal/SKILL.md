@@ -134,11 +134,43 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - Constraints and tradeoffs: performance vs simplicity, compatibility requirements, anything the user would veto if they
   saw it in review.
 - PR shaping: any preference about how the work should be sliced, beyond the default bite-sized-stack rules.
+- Review gate: which reviewer checks each PR before it is finished, chosen from the menu in Review gate options below.
+  Present the menu every time, numbered as it appears there, with the first option marked as the default taken if the
+  user does not care.
 - File placement: the goal and log paths chosen per Placing the files, stated so the user can override them, or put as a
   question when only a temporary location was available.
 
 Keep asking until you would bet on an agent completing the goal without needing the user. Then record the answers in the
 goal file as decisions already made, so the executing agent inherits them instead of re-deriving or re-litigating them.
+
+## Review gate options
+
+Every PR in the stack gets reviewed before the executing agent finishes it, and the reviewer is chosen up front rather
+than fixed here, because the right one depends on the goal, on which subscriptions have headroom that week, and on how
+much the user trusts the model doing the writing. The menu, in the order and numbering to present it:
+
+1. `pre-pr-review-swarm` on gpt-5.6-sol high. The default.
+2. `pre-pr-review-swarm` on fable high.
+3. `pre-pr-review-swarm` on gpt-6-astra high.
+4. An in-harness fresh-context agent with the general charter below, at the executing session's own model.
+5. A fresh-context agent with the general charter below on a specific model the user names, fable or gpt-6-astra, at
+   high effort, shelled out to the other harness when the executing one cannot reach that model natively.
+
+Options 1 through 3 run a skill, and the reviewer's charter is that skill's. Options 4 and 5 run no skill; the goal file
+carries the charter itself, and it has to be complete because the reviewer has nothing else: review the PR's changes for
+general correctness (bugs, unhandled cases, broken invariants, wrong behavior against the goal's acceptance criteria),
+design (whether the shape of the change fits the codebase and the goal, and whether a simpler shape would), and
+idiomatic code for the languages involved; report findings to a named file, most severe first, with the file, the quoted
+code, what is wrong, and the smallest fix; edit nothing and touch no VCS state. "Fresh context" means a sub agent or
+shelled-out session that starts with none of the executing session's conversation, which is what makes the review
+independent of the author. Option 4 leaves the model to the executing harness, so under Codex the reviewer is the Codex
+session's model and under Claude Code it is the Claude session's; option 5 pins the model, and the user picks which of
+the two when choosing it.
+
+Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for options 1
+through 3) skill, so that the executing agent's `scode-galaxy-brain` routing honors it as a demand rather than treating
+the review as a unit to route on its own. The executing agent still delegates the review through galaxy-brain, which is
+what makes the launch mechanics, the shell-out when one is needed, and the result gate someone else's problem.
 
 ## What the goal file must contain
 
@@ -159,11 +191,12 @@ has none of this conversation's context. Include, at minimum:
 - **PR discipline.** Split the work into a linear stack of reviewable PRs using the `jjstack` skill. Err on the side of
   bite-sized PRs, but do not create churn — code added in one PR and deleted in a later PR of the same stack means the
   stack should have been shaped differently. Restructure the stack instead of stacking a correction on top.
-- **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` skill to delegate a review to
-  gpt-5.6-sol running the `pre-pr-review-swarm` skill against that PR's changes, and address what it finds before moving
-  on. Do not write a launch command into the goal file; the `scode-harness-shellout` skill's harness files own the
-  launch mechanics, and a copy pasted into a goal file drifts away from the guards they carry. The review prompt must
-  name the skill, the repo root, and the commit range or bookmark to review; the reviewer has no other context.
+- **Review gate.** Before finishing any PR, use the active `scode-galaxy-brain` skill to delegate a review of that PR's
+  changes to the reviewer chosen from Review gate options, named in the goal file as an explicit demand for its model,
+  effort, and skill or charter, and address what it finds before moving on. Do not write a launch command into the goal
+  file; the `scode-harness-shellout` skill's harness files own the launch mechanics, and a copy pasted into a goal file
+  drifts away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo
+  root, the commit range or bookmark to review, and the file the findings go to; the reviewer has no other context.
 - **Resource watchdog.** Immediately after activating galaxy-brain and before the first delegation, the executing agent
   must start a sub agent (or the harness's background-monitor equivalent, whichever delivers notifications back to the
   orchestrating session without being polled) whose only job is to watch memory and disk for the rest of the run and
