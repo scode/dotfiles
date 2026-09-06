@@ -43,30 +43,31 @@ inventory changes.
 | UI styling from a Codex session on gpt-5.6-sol high under `prefer-gpt`                       | opus-5 high via `claude -p`, diverged from preference yes (visual)                                                       |
 | routine authored under `prefer-muse`                                                         | muse-spark-1.3-contributor medium via `muse exec`, escalation high                                                       |
 | critical review under `prefer-glm`                                                           | fable-5 high native, diverged from preference yes (no suitable model)                                                    |
-| critical review under `prefer-glm` from a Codex session on gpt-5.6-sol high                  | gpt-5.6-sol high native, diverged from preference yes                                                                    |
-| config file removes fable-5; critical review                                                 | gpt-5.6-sol high via `codex exec`, cross-family yes (the only remaining `sota` model)                                    |
+| critical review under `prefer-glm` from a Codex session on gpt-6-astra high                  | gpt-6-astra high native, diverged from preference yes                                                                    |
+| config file removes fable-5; critical review                                                 | gpt-6-astra high via `codex exec`, cross-family yes (the only remaining `sota` model)                                    |
+| design decision from a Codex session on gpt-5.6-sol high (not `sota`)                        | gpt-6-astra high native (delegate up)                                                                                    |
 | config file removes sonnet-5 medium; clear-spec writer under `prefer-claude`                 | sonnet-5 high native                                                                                                     |
 | no `codex` on `PATH`; clear-spec writer, short                                               | sonnet-5 medium native, reason says the gpt path is unavailable                                                          |
 | a swarm-defined design role (process-defined spawn)                                          | `inherit`                                                                                                                |
 | a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only) | sonnet-5 high native, diverged from preference yes (mechanism fixed)                                                     |
 | user demands opus-5 for a mechanical task                                                    | opus-5 high native, reason attributes the demand                                                                         |
-| critical review with independent perspective requested                                       | gpt-5.6-sol high via `codex exec`, cross-family yes (independence)                                                       |
+| critical review with independent perspective requested                                       | gpt-6-astra high via `codex exec`, cross-family yes (independence)                                                       |
 | clear-spec writer after one `substantive failure` on gpt-5.6-luna medium                     | gpt-5.6-terra medium via `codex exec` (not sonnet)                                                                       |
 | the same after `execution-path failure`                                                      | gpt-5.6-luna medium via `codex exec` again                                                                               |
 | the same after `substantive failure (lost context)`                                          | gpt-5.6-terra medium via `codex exec`, reason says no attempt consumed                                                   |
 
 Focused-review scenarios:
 
-| Situation                                                                                                                                      | Expected answer                                                    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Codex on sol high; each of idiomaticity, AI slop, and docs/comment correctness, input not large                                                | gpt-5.6-luna high native; focused review                           |
-| Codex on sol high; each of data-flow and edge-input correctness lenses, with strong general correctness coverage in the panel, input not large | gpt-5.6-luna high native; full charter retained                    |
-| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-5.6-sol high native; no terra rung                             |
-| the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-5.6-sol high native; route exhausted yes, endpoint trusted yes |
-| Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-5.6-sol high native; critical review                           |
-| Codex on sol high; simplification review                                                                                                       | gpt-5.6-sol medium native; mechanical review                       |
-| Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet-5 high native; focused review, Claude route                 |
-| Claude Code on fable high; data-flow correctness lens in a panel, process-defined native-only role                                             | fable-5 high native; non-GPT correctness keeps critical review     |
+| Situation                                                                                                                                      | Expected answer                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Codex on sol high; each of idiomaticity, AI slop, and docs/comment correctness, input not large                                                | gpt-5.6-luna high native; focused review                          |
+| Codex on sol high; each of data-flow and edge-input correctness lenses, with strong general correctness coverage in the panel, input not large | gpt-5.6-luna high native; full charter retained                   |
+| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-5.6-sol high native; no terra rung                            |
+| the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-5.6-sol high native; route exhausted yes, endpoint trusted no |
+| Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-6-astra high native; critical review                          |
+| Codex on sol high; simplification review                                                                                                       | gpt-5.6-sol medium native; mechanical review                      |
+| Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet-5 high native; focused review, Claude route                |
+| Claude Code on fable high; data-flow correctness lens in a panel, process-defined native-only role                                             | fable-5 high native; non-GPT correctness keeps critical review    |
 
 When a scenario depends on the model routing config file, the isolated home is where it goes; never create or edit
 `~/.scode-model-routing.md` in the real home for an eval, it belongs to the user.
