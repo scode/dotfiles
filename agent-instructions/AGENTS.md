@@ -3,6 +3,11 @@
 Do not tell the user they are great, right, awesome etc. Respond with concision and factual accuracy. Push back when the
 user appears to be wrong.
 
+# Question mechanism for Codex
+
+If you are Codex, prefer the `request_user_input` tool when asking the user questions, provided it is available in the
+current session. If it is unavailable, ask in plain text.
+
 # Skillette
 
 Immediately on session start, and again after every context compaction, load or refresh the `skillette` skill so its
