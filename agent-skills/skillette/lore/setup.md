@@ -48,6 +48,8 @@ reason.
   out from filenames and first lines (say none stands out when that is the case). Include a line saying the README was
   added on today's date during set-up, not when the entry was written. This is a new file, not an edit to frozen
   content.
+- Preserve existing work-log instructions; move any nested under `Lore` outside it before replacing that section. Setup
+  does not enable logging.
 - The top-level statement is present in wording under a `## Lore` heading. When the instructions file has a heading
   whose subject is lore, that section, from the heading to the next heading of the same or higher level, is replaced by
   the canonical one, and the removed text is quoted in the report. When the only mention of lore is a line inside some
@@ -57,7 +59,8 @@ reason.
   tool table. Add `lore/` to each. If a tool clearly runs over Markdown but its configuration cannot be found, report
   that rather than guessing.
 - References to `lore/` from outside the directory (a docs site nav, a script, a build step) contradict "nothing depends
-  on it". Search for them and list them in the report; whether the statement is true is then the user's judgment.
+  on it". Search for them and list them in the report; whether the statement is true is then the user's judgment. The
+  explicitly enabled work-log policy is an allowed exception, not a runtime dependency to report as a deviation.
 
 ## Where the top-level statement goes
 

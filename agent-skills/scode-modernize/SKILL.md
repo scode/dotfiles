@@ -589,3 +589,34 @@ convention; delegating setup to it avoids maintaining a second, drifting copy he
 
 **Verify:** Recheck against the loaded setup procedure. Report changed paths, already-conforming parts, and every
 unresolved deviation; do not claim a clean setup when the procedure left findings for the user to decide.
+
+### 14. Offer an always-on agent work log in lore
+
+**Detect:** Read the repository's agent instructions for a standing work-log policy. Compare its behavior with
+`work-log.md` beside this skill, not just its heading. Missing daily append-only logging, decision/reasoning capture,
+startup or compaction reads, or committing the log with the work are findings. Read instructions, not historical log
+contents, to detect this item.
+
+**Skip if:** An equivalent policy is already present. If the repository explicitly declines automatic logging, report
+that choice as skipped rather than offering to override it.
+
+**Why:** Decisions, rejected approaches, and unfinished work otherwise disappear with the conversation. An append-only
+record kept as work happens lets later sessions recover the reasoning without treating historical notes as live specs.
+
+**Replace with:**
+
+- Present this as a separate choice in the findings list. Explain that approval makes logging always on for future
+  sessions in this repository, including small tasks; approval of lore setup alone does not approve logging.
+- Require the lore convention from item 13 first. If it is absent or needs normalization and that item was not approved,
+  ask for approval of the prerequisite or leave logging blocked. Do not silently bundle in lore setup.
+- After approval, install the policy from `work-log.md` as a standalone `Work log` section in the repository's agent
+  instructions, outside its `Lore` section so later normalization preserves it. Use `AGENTS.md` when canonical; follow
+  existing symlinks, and keep both files consistent when `AGENTS.md` and `CLAUDE.md` are separate regular files. Ask
+  before resolving conflicting policies rather than replacing a deliberate repository choice.
+- Preserve unrelated instructions and existing log entries. Do not backfill old sessions or create empty daily files as
+  setup artifacts. Keep all Markdown-tool exclusions for `lore/`; current-day logs are not a formatting exception.
+
+**Verify:** Read the installed policy and lore instructions together: only the specified work-log reads and current-day
+appends are automatic, old logs and other entries stay frozen, and normalization preserves the standalone policy.
+Confirm the policy is equivalent to the template and there is no duplicate or contradictory work-log section. Report
+whether logging was enabled, already present, declined, or blocked on lore setup.
