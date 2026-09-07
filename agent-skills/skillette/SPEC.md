@@ -142,9 +142,23 @@ repairs.
 Local storage is automatic: a shared bare cache under `${XDG_CACHE_HOME:-$HOME/.cache}/brain/`, and isolated operation
 worktrees under `${XDG_STATE_HOME:-$HOME/.local/state}/brain/operations/`. Unpublished work belongs in state, not the
 disposable cache. Cache setup and worktree metadata operations are serialized; each operation owns its fetch ref and
-detached worktree. Read-only operations may read directly from their freshly fetched commit without a worktree; they
-must never borrow another operation's worktree or trust a pre-existing tracking ref. No operation reuses the current
-project checkout or requires the user to pick a path.
+detached worktree. Read-only operations may read directly from their session snapshot without a worktree; they must
+never borrow another operation's worktree or trust a pre-existing tracking ref. No operation reuses the current project
+checkout or requires the user to pick a path.
+
+The first explicit brain request establishes a session snapshot of the repository, recording the default branch, commit
+SHA, and successful-fetch time under a private session ref. Subsequent requests, including requests for another named
+brain, reuse it without GitHub calls until it is more than six hours old, the user requests a refresh or update of the
+brain, or concrete evidence such as a stale push or merge conflict calls for a refresh. Age is checked locally on
+requests, not in the background; reads do not reset it, and exactly six hours still permits reuse. Session metadata
+survives compaction, operation cleanup retains the session ref, and one session never adopts another's mutable ref. Lost
+snapshot metadata requires initialization on the next request. Failed refreshes preserve the previous timestamp and are
+reported, with retained content identified as stale.
+
+Writes may start from that snapshot without a pre-write fetch. Publication and its verification still contact GitHub,
+and successful fetches advance the session snapshot to verified remote state, never to unpublished local work. A request
+to edit an artifact is not by itself a refresh request. An already-satisfied request is answered from the snapshot
+without a reconfirmation fetch or empty commit, and is not presented as a new check of current GitHub state.
 
 A write succeeds only after a normal push publishes the artifact and index commit to the default branch and a fetch
 verifies remote acceptance. A rejected stale push requires fetching, rebasing, and semantic reconciliation, including

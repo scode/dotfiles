@@ -29,6 +29,32 @@ from context. No date prefixes, mandatory metadata, journals, or additional inde
 edits. If a name is already taken, inspect the existing artifact: update it only when that is the requested intent;
 otherwise choose a more specific name. Never overwrite an unrelated artifact to reuse its name.
 
+## Session snapshot and refresh
+
+Reuse one repository snapshot throughout a session. On the first explicit brain request, discover the default branch and
+fetch it; retain the branch name, commit SHA, and time of the successful fetch in session state. Keep a private
+`refs/brain-sessions/<session-id>/snapshot` ref in the cache so operation cleanup does not discard the snapshot. The
+snapshot covers all named brains in `scode/brain`; switching brains does not require another GitHub request.
+
+Refresh only when the snapshot is more than six hours old, the user asks to refresh or update the brain from GitHub
+(including similar wording), or there is concrete evidence that it needs refreshing. A rejected stale push, a merge
+conflict, or the user saying another writer changed an artifact is such evidence. An ordinary read, list, edit, missing
+artifact, or new operation is not. Do not poll GitHub, rediscover the default branch, or fetch merely to see whether
+anything changed. Check the age locally when a request arrives; there is no background refresh. Exactly six hours is
+still within the reuse window. Reading the snapshot does not reset its age.
+
+Use session state that survives context compaction, stored under the XDG state directory if needed. Do not adopt another
+session's mutable ref as this session's snapshot. If the snapshot or its fetch time cannot be recovered, initialize a
+new snapshot on the next explicit request. A failed refresh does not advance the timestamp: report the failure, and
+label any answer from the retained snapshot as stale rather than claiming the requested refresh succeeded.
+
+Writes also start from the session snapshot without a pre-write fetch while it is reusable. They still must push and
+verify publication as described below; those network calls are part of storing the write, not routine refresh on every
+request. A stale push triggers fetch and reconciliation. After a successful fetch, including post-push verification,
+advance this session's snapshot and fetch time to the verified remote state so subsequent reads see published changes.
+Never advance it to an unpublished local commit. An explicit "update the brain" refreshes the snapshot; a request to
+edit a particular artifact remains an artifact write and does not by itself require an extra pre-write refresh.
+
 ## Local storage is internal
 
 The user never has to choose or remember a checkout. Use `${XDG_CACHE_HOME:-$HOME/.cache}/brain/scode-brain.git` as a
@@ -53,25 +79,25 @@ is old. Interrupted operations may leave a lock because the child command might 
 protected operation has ended before manual recovery. Do not hold this metadata lock while composing notes or accessing
 the network.
 
-Fetch outside the wrapper first, then run
+Resolve the session snapshot (fetching outside the wrapper only when required), then run
 `sh <this-skillette-directory>/with-cache-lock.sh git -C <cache> worktree add --detach <worktree> <operation-ref>`. Use
 the same wrapper for `git -C <cache> worktree remove <worktree>` at cleanup. Never put `git fetch` or `git push` inside
 the wrapper; only the short local metadata command belongs there.
 
-Verify an existing cache is bare and its origin refers to `scode/brain`; do not repurpose an unexpected repository.
-Discover GitHub's default branch for each operation. Fetch that branch into a unique ref under
-`refs/brain-operations/<operation-id>/base` using `--no-write-fetch-head --refmap=`, then add a detached worktree at
-that ref. Each operation owns its ref and worktree; concurrent operations must never reset a shared branch or fetch into
-one shared tracking ref. Avoid automatic worktree pruning and cache garbage collection, which could interfere with
-another operation: set `gc.auto=0` and `maintenance.auto=false` in the cache. If the cache was removed while unpublished
-worktrees remain, preserve those directories and drafts; do not treat broken worktree metadata as permission to delete
-unpublished content.
+Verify an existing cache is bare and its origin refers to `scode/brain`; do not repurpose an unexpected repository. Use
+the session's default branch and snapshot SHA. Create a unique ref under `refs/brain-operations/<operation-id>/base` at
+that SHA, then add a detached worktree at that ref. When refreshing, fetch using `--no-write-fetch-head --refmap=` into
+the operation's ref and update the session snapshot after success. Each operation owns its ref and worktree; concurrent
+operations must never reset a shared branch or fetch into one shared tracking ref. Avoid automatic worktree pruning and
+cache garbage collection, which could interfere with another operation: set `gc.auto=0` and `maintenance.auto=false` in
+the cache. If the cache was removed while unpublished worktrees remain, preserve those directories and drafts; do not
+treat broken worktree metadata as permission to delete unpublished content.
 
-Read-only operations can omit the worktree: fetch into their own ref, resolve it to a commit SHA, and use
-`git show <sha>:<brain>/BRAIN.md` and the selected artifact paths. Always fetch for the current operation rather than
-trusting an existing tracking ref. Never borrow another operation's worktree, even if its HEAD matches the remote: it
-may have unpublished edits, and its owner may remove it at any moment. The empty `--refmap=` keeps fetch from also
-updating shared remote-tracking refs through the cache's configured fetch mapping. A typical fetch is
+Read-only operations can omit the worktree: use the session snapshot's pinned commit SHA with
+`git show <sha>:<brain>/BRAIN.md` and the selected artifact paths. Do not use an arbitrary existing tracking ref as a
+substitute for the recorded session snapshot. Never borrow another operation's worktree, even if its HEAD matches the
+remote: it may have unpublished edits, and its owner may remove it at any moment. The empty `--refmap=` keeps fetch from
+also updating shared remote-tracking refs through the cache's configured fetch mapping. A typical fetch is
 `git -C <cache> fetch --no-write-fetch-head --refmap= origin refs/heads/<branch>:refs/brain-operations/<id>/base`.
 
 An empty remote has no base commit. Bootstrap it in an isolated repository under the operation directory, on `main`,
@@ -81,10 +107,10 @@ unrelated histories. Subsequent operations use the shared cache and worktrees.
 
 ## Reading and writing
 
-Read a fresh `BRAIN.md` first. Listing artifacts normally needs only that index; finding or reading an artifact opens
-only the relevant notes. Missing brains on reads are reported as absent, not created. A request to create a brain or add
-an artifact authorizes creating its folder and index as needed. A request to edit or remove a missing artifact does not
-authorize inventing a replacement.
+Read `BRAIN.md` from the session snapshot first. Listing artifacts normally needs only that index; finding or reading an
+artifact opens only the relevant notes. Missing brains on reads are reported as absent, not created. A request to create
+a brain or add an artifact authorizes creating its folder and index as needed. A request to edit or remove a missing
+artifact does not authorize inventing a replacement.
 
 Compose artifacts so a later agent can understand them without this session: preserve the requested substance,
 reproduction details and evidence when relevant, and distinguish observations from guesses. Keep the index current when
@@ -97,8 +123,9 @@ diff, and commit them together so the remote cannot expose half an update. Follo
 instructions. Push the detached commit explicitly to the discovered default branch with an ordinary, non-forced push;
 there is no PR step for brain writes. A local commit is pending work, never a stored artifact.
 
-If the fresh remote already has exactly the requested result, report that it is already stored; do not make an empty
-commit or duplicate an artifact. This also applies when reconciliation makes the local change redundant.
+If the session snapshot already has exactly the requested result, report that it is already stored in that snapshot; do
+not fetch to reconfirm, make an empty commit, or duplicate an artifact. Do not claim to have checked current GitHub
+state when answering from the snapshot. This also applies when reconciliation makes the local change redundant.
 
 On a non-fast-forward rejection, fetch the new remote head into this operation's ref and rebase onto it. Inspect the
 result even when Git reports a clean merge: both artifacts and index must preserve other writers' changes. For
@@ -119,7 +146,8 @@ index links before claiming the requested result is current. If a later commit c
 rather than overwriting it. Never claim success when remote acceptance cannot be verified.
 
 Once complete, remove only this operation's worktree through Git, its private ref, and its known temporary files. Keep
-the shared cache. On failure retain unpublished content and report its absolute recovery location; on a later explicit
-brain request, check for pending operations and offer to resume relevant ones without silently publishing old work.
-Routine success reports name the brain and link to the artifact or `BRAIN.md` on GitHub. Checkout paths are internal
-unless recovery is needed.
+the shared cache and session snapshot ref for later requests. Remove only this session's ref when the session ends; do
+not delete other sessions' refs. On failure retain unpublished content and report its absolute recovery location; on a
+later explicit brain request, check for pending operations and offer to resume relevant ones without silently publishing
+old work. Routine success reports name the brain and link to the artifact or `BRAIN.md` on GitHub. Checkout paths are
+internal unless recovery is needed.
