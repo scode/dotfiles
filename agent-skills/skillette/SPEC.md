@@ -125,6 +125,18 @@ directory.
 Changes to `SKILL.md` itself, the table format, or this spec are changes to the `skillette` skill and go through the
 same `change` skillette as everything else.
 
+## The `lore` skillette
+
+`lore` stores frozen historical entries under the repository's `lore/` directory. Its setup procedure owns the canonical
+instruction texts, entry naming, and Markdown-tool exclusions; setup does not enable automatic recording or routine
+history reads.
+
+A repository may explicitly opt into a daily work log through a separate repository-level policy. The canonical lore
+instructions permit only that policy's specified startup/compaction reads and current-day `YYYY-MM-DD-log.md` creation
+and appends during ordinary work. Past-day logs remain frozen, corrections go in today's log, and other historical
+entries retain the default restrictions. Normalization preserves the approved work-log policy outside the canonical
+`Lore` section and never rewrites log contents. Markdown-tool exclusions still cover the entire directory.
+
 ## The `brain` skillette
 
 `brain` manages explicitly requested Markdown artifacts in the private `scode/brain` GitHub repository. It does not load

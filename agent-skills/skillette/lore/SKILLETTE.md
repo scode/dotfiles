@@ -4,6 +4,10 @@ Repo lore is a convention for keeping historical material inside a repository wi
 This file is the concept and the canonical texts; it is what a session needs to know when the word comes up. The two
 actions that change a repository live in `setup.md` and `add.md` next to this file, and are read only when asked for.
 
+A repository may separately opt into a daily work log through its own agent instructions. That policy, not loading this
+skillette or setting up lore, enables automatic logging. Its specified startup/compaction reads and current-day appends
+are the only exception to the default frozen-history rules below; ordinary entries and past-day logs remain frozen.
+
 "Lore" here means a repository's `./lore` directory and nothing else. When the surrounding request plainly uses the word
 another way (a game's or story's world, folklore, "lorem ipsum", a wiki page called lore), this skillette does not
 apply; carry on with the request and do not mention it.
@@ -26,8 +30,8 @@ A `./lore` directory at the repository root holds historical artifacts: design n
 results, decision records, and the like, each written into lore at a point in time and then frozen. Nothing in the
 project's current behavior reads or depends on it. Agents doing normal work stay out of it, and routine maintenance
 (formatting, refactors, renames, link fixing, documentation cleanup) never touches it. An entry changes only when the
-user intentionally asks for that entry to change. Set-up is the one sanctioned exception: it renames entries and adds
-missing entry-point files, and even it never edits an entry's contents.
+user intentionally asks for that entry to change, apart from the explicitly enabled current-day work log described
+above. Set-up may rename entries and add missing entry-point files, but even it never edits an entry's contents.
 
 Layout:
 
@@ -90,6 +94,11 @@ about the past.
 Do not touch these files during routine maintenance. Formatting passes, refactors, renames, link fixes, dependency
 bumps, and documentation cleanup all skip this directory, and a stale or broken entry stays stale and broken. An entry
 changes only when the user intentionally asks for that entry to change.
+
+Repository-level instructions may explicitly enable a daily work log at `lore/YYYY-MM-DD-log.md`. Only when that policy
+is present, its specified startup/compaction reads and current-day log creation and appends are permitted during normal
+work. Past-day logs remain frozen; corrections go in the current day's log. This exception does not authorize reading
+or editing other entries, and setup alone does not enable it.
 
 ## Adding an entry
 
