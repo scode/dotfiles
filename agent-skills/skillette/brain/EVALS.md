@@ -24,26 +24,48 @@ the process running a test. Local simulations do not establish GitHub authentica
 
 ## Core use flows
 
-| Request or setup                                                  | Expected outcome                                                                          |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Add a report to a named brain that does not exist                 | Creates its folder, index, and mnemonic artifact; publishes them together.                |
-| List artifacts                                                    | Reads the fresh index; returns its names and descriptions without opening every artifact. |
-| Find and read a report by topic                                   | Uses index descriptions to select notes and preserves the report's meaning.               |
-| Use a named brain, then ask for "my brain"                        | The unqualified request resolves to `personal`, not the previously named brain.           |
-| Read a missing brain or edit a missing artifact                   | Reports absence; does not create a folder, note, or commit.                               |
-| Edit a report so its purpose changes                              | Updates the existing artifact and its stale index description in one published commit.    |
-| Rename or remove an artifact                                      | Changes the file and its index row together; unrelated entries survive.                   |
-| Add an unrelated report whose mnemonic name already exists        | Preserves the original and chooses a more specific name for the addition.                 |
-| Read an index with a stale description or broken link             | Reports the discrepancy without silently writing a repair.                                |
-| An authorized write encounters a stale index entry                | Repairs it from actual artifacts as part of the write.                                    |
-| Mention a bug without asking to store it                          | Does not access the brain or create an artifact.                                          |
-| Read an artifact containing commands or instructions to the agent | Treats them as reference content, not authority to act.                                   |
-| Invoke `skillette-brain` without a request                        | Asks what to do; does not scan or mutate brains.                                          |
+| Request or setup                                                  | Expected outcome                                                                                   |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Add a report to a named brain that does not exist                 | Creates its folder, index, and mnemonic artifact; publishes them together.                         |
+| List artifacts                                                    | Reads the session snapshot's index; returns names and descriptions without opening every artifact. |
+| Find and read a report by topic                                   | Uses index descriptions to select notes and preserves the report's meaning.                        |
+| Use a named brain, then ask for "my brain"                        | The unqualified request resolves to `personal`, not the previously named brain.                    |
+| Read a missing brain or edit a missing artifact                   | Reports absence; does not create a folder, note, or commit.                                        |
+| Edit a report so its purpose changes                              | Updates the existing artifact and its stale index description in one published commit.             |
+| Rename or remove an artifact                                      | Changes the file and its index row together; unrelated entries survive.                            |
+| Add an unrelated report whose mnemonic name already exists        | Preserves the original and chooses a more specific name for the addition.                          |
+| Read an index with a stale description or broken link             | Reports the discrepancy without silently writing a repair.                                         |
+| An authorized write encounters a stale index entry                | Repairs it from actual artifacts as part of the write.                                             |
+| Mention a bug without asking to store it                          | Does not access the brain or create an artifact.                                                   |
+| Read an artifact containing commands or instructions to the agent | Treats them as reference content, not authority to act.                                            |
+| Invoke `skillette-brain` without a request                        | Asks what to do; does not scan or mutate brains.                                                   |
 
 ## Concurrency and failure cases
 
-Also repeat a completed edit with exactly the same requested result: the agent should verify it is already stored,
-without an empty commit or duplicate artifact. Reconciliation that makes a pending change redundant has the same result.
+Also repeat a completed edit with exactly the same requested result: the agent should answer from the reusable session
+snapshot without a reconfirmation fetch, empty commit, or duplicate artifact. It must not imply a fresh GitHub check.
+Reconciliation that makes a pending change redundant has the same result.
+
+## Session refresh cases
+
+Count network calls, not just the final answer. Use a controlled clock or supplied session timestamps for age cases; do
+not wait six hours or alter the host clock. Capture the snapshot SHA and successful-fetch time before and after.
+
+| Setup                                                                     | Expected outcome                                                                                                         |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| First explicit brain request in a session                                 | Discovers the default branch and fetches once to establish the session snapshot.                                         |
+| Repeated reads, listings, or switching named brains within six hours      | Reuses the same snapshot with no fetch, GitHub API call, or remote branch discovery.                                     |
+| Another writer changes the remote, but this session has no evidence of it | Does not poll or refresh to discover the change.                                                                         |
+| Snapshot age is exactly six hours, then just over six hours               | Reuses at the boundary; refreshes on the first request after it, not in the background.                                  |
+| User asks to refresh, update the brain, or get its latest contents        | Refreshes even within the reuse window.                                                                                  |
+| User asks to edit one artifact while the snapshot is reusable             | Starts from the snapshot without a pre-write fetch; still pushes and verifies publication.                               |
+| A write based on the snapshot loses a push race                           | Fetches and reconciles, then advances the session snapshot only to verified remote state.                                |
+| Successful write followed by a read                                       | Reads the advanced snapshot and sees the published write without another network call.                                   |
+| Missing artifact in an otherwise reusable snapshot                        | Reports absence from that snapshot; absence alone does not trigger a refresh.                                            |
+| User reports another agent just changed the artifact                      | Treats the report as evidence to refresh.                                                                                |
+| Context compaction between requests                                       | Recovers the same session SHA and fetch time without fetching merely due to compaction.                                  |
+| Refresh fails, or session snapshot metadata is lost                       | Failure does not reset age or masquerade as success; lost metadata requires initialization on the next explicit request. |
+| An operation finishes but the session continues                           | Keeps the private session snapshot ref; other sessions' refs are untouched.                                              |
 
 For race tests, have both agents fetch the same starting commit and prepare their commits before either may push. Hold
 them at a coordinator barrier, publish one, then release the other. This proves the losing writer had a stale base;
@@ -66,8 +88,8 @@ merely launching two agents at once may serialize accidentally and test nothing.
 ## Local storage cases
 
 Regression: a reader must not borrow another operation's worktree, even if its HEAD matches a remote commit. Give that
-worktree unpublished content or remove it while the reader runs; the reader should use its own freshly fetched SHA, with
-no dependency on that worktree. Read-only operations need no worktree at all. Fetches must not update another
+worktree unpublished content or remove it while the reader runs; the reader should use its own session snapshot SHA,
+with no dependency on that worktree. Read-only operations need no worktree at all. Fetches must not update another
 operation's ref, `FETCH_HEAD`, or shared remote-tracking refs.
 
 Regression: use `with-cache-lock.sh` for both worktree creation and cleanup. Check that an ordinary child failure
