@@ -168,6 +168,12 @@ as not stored. An empty repository is initialized on `main`; a competing initial
 winning history. Cleanup is limited to the completed operation. Later requests surface relevant pending operations
 without automatically publishing them.
 
+Artifact commits in `scode/brain` are mechanical storage operations, exempt from development gates such as commit
+wording criteria, cold-reader reviews, review swarms, PR/stack workflows, and project tests or CI. They use short
+mechanical messages with empty bodies and direct Git publication. Content and index checks, concurrency protection, and
+remote-publication verification still apply. This exception is also recorded in shared agent instructions so the general
+commit-review requirement does not reintroduce those gates. Development of the skillette itself is not exempt.
+
 `brain/EVALS.md` records manual use flows, edge cases, and expected outcomes. Maintainers keep it current when behavior
 changes, guided by `brain/AGENTS.md` and its `CLAUDE.md` symlink. Evals run only when requested, defaulting to a cheap,
 fast available model without a hardcoded model name. These maintenance files are not part of normal brain use.
