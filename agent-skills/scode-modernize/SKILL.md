@@ -562,3 +562,30 @@ guess.
 
 **Verify:** The instruction file contains exactly one of the two declarations. Read it back and confirm it matches the
 user's answer.
+
+### 13. Set up or normalize repository lore
+
+**Detect:** Load `skillette`, read its `lore/SKILLETTE.md` and `lore/setup.md`, and use that convention to inspect the
+repository's lore setup without changing anything. Missing `lore/`, noncanonical instruction files, entry naming or
+directory-entry README gaps, and missing Markdown-tool exclusions are findings. Inspect historical contents only as
+needed for this setup audit; do not turn it into a review of old entries.
+
+**Skip if:** The setup already conforms to `skillette-lore` and there are no unresolved setup findings.
+
+**Why:** Historical notes need a predictable home that normal maintenance leaves alone. The lore skillette owns that
+convention; delegating setup to it avoids maintaining a second, drifting copy here.
+
+**Replace with:**
+
+- Include setup or normalization in the full findings list and wait for the user's approval for this repository, like
+  every other checklist item. Detecting missing lore is not permission to create it.
+- Once approved, follow `skillette-lore setup` using the loaded setup procedure. It covers fresh installation and
+  normalization, including instruction files, naming, and tool exclusions. Do not invent a separate setup procedure.
+- Keep its safeguards: an unrelated directory named `lore` needs clarification, existing entries stay frozen, unknown
+  dates are not guessed, and collisions or dependencies on lore are reported rather than silently repaired.
+- If the dependency cannot be loaded, report this item as blocked rather than approximating its canonical texts.
+- This item establishes the storage convention only; it does not enable automatic logging or start reading lore during
+  ordinary work.
+
+**Verify:** Recheck against the loaded setup procedure. Report changed paths, already-conforming parts, and every
+unresolved deviation; do not claim a clean setup when the procedure left findings for the user to decide.
