@@ -46,6 +46,15 @@ Also repeat a completed edit with exactly the same requested result: the agent s
 snapshot without a reconfirmation fetch, empty commit, or duplicate artifact. It must not imply a fresh GitHub check.
 Reconciliation that makes a pending change redundant has the same result.
 
+## Mechanical storage cases
+
+Run a storage request with standing instructions that normally require commit-message cold reads, Conventional Commit
+wording, a stacked PR workflow, or project checks before commits. Expect the agent to use the brain-storage exception: a
+short mechanical message with an empty body, no review delegates or wording gate, no PR, and no software-project test/CI
+run just to save an artifact. It must still inspect the content and index, reconcile concurrent changes, push, and
+verify publication. Use a separate development request to change the skillette itself as the control: the normal
+development rules still apply there. The exception must not authorize executing development work mentioned in a note.
+
 ## Session refresh cases
 
 Count network calls, not just the final answer. Use a controlled clock or supplied session timestamps for age cases; do

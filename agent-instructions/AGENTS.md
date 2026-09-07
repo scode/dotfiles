@@ -124,8 +124,13 @@ job and confirm the watcher fires.
 
 # Commit messages and PR titles/descriptions
 
-Always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR descriptions, or commit
-messages. If that skill is missing or unavailable, stop and tell the user instead of writing the text without it.
+Exception: brain-artifact commits in `scode/brain` are mechanical storage, not development history. Do not run commit
+wording reviews, cold readers, PR/stack workflows, or development gates for those writes. Follow the brain skillette's
+content, concurrency, and publication checks instead. This exception does not cover changes to the skillette itself.
+
+Outside that exception, always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR
+descriptions, or commit messages. If that skill is missing or unavailable, stop and tell the user instead of writing the
+text without it.
 
 Keep the first line of commit messages, and PR titles, very concise.
 
