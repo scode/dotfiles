@@ -44,13 +44,34 @@ fix the skill or change this file in the same change, never leave them apart.
   introduces for its own purposes (checkpoint files, scratch copies, prompt files, result and log files, trees it
   creates for isolated delegates) must be private to the orchestrator that created it. No orchestrator may remove,
   overwrite, or reinterpret another orchestrator's artifacts, and the skill's own state must never be the reason two
-  sessions interfere. The run id the delegation skill generates is what names every artifact at every layer: this skill
-  names the isolated trees it creates by it, and handoff notes record each run directory's absolute path. This
-  requirement is about the skill's state only. It does not ask the skill to make the work being done through it safe to
-  run concurrently: whether two sessions can edit the same working tree at once is a property of that work and of the
-  user's setup, not something the skill is responsible for detecting or preventing.
+  sessions interfere. The run id the delegation skill generates names each delegation's artifacts: this skill names the
+  isolated trees it creates by it, and handoff notes record each run directory's absolute path. Session-level evidence
+  has a separate UUID, and links attempts to delegation run ids without replacing their ownership. This requirement is
+  about the skill's state only. It does not ask the skill to make the work being done through it safe to run
+  concurrently: whether two sessions can edit the same working tree at once is a property of that work and of the user's
+  setup, not something the skill is responsible for detecting or preventing.
 - Invoking the skill activates it for the rest of the session, per "Staying active for the whole session" in `SKILL.md`;
   the two dependencies, by contrast, activate nothing when loaded.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.
+
+## Session evidence
+
+Every activated session records its routing decisions and outcomes in a private UUID-named directory under
+`${XDG_STATE_HOME:-$HOME/.local/state}/scode-galaxy-brain/sessions/`, outside the repository. It retains the same
+identity across tasks, compaction, and resume. Unknown prior identity is a reported gap, never permission to adopt
+another session's directory. Records persist until the user removes them; this skill does not garbage-collect them.
+
+Versioned structured events cover considered units kept local as well as delegated units, exact requested and reported
+model/effort, route rationale and constraints, actual launches, continuations, verdicts, local fixes, escalations,
+reroutes, takeovers, and unfinished work. Linked unit, decision, attempt, and delegation run ids distinguish retries
+from new work. Other skills' process-defined spawns are recorded without imposing the delegation skill's gate on them.
+Pre-launch replacements explicitly link to the prior decision through `supersedes_decision_id`, closing it as superseded
+rather than unfinished or failed. Replacement does not complete the unit or erase the outcomes of launched attempts.
+
+Usage is evidence-backed and optional: missing counts are null with a reason, not zero or estimates. Records preserve
+counter scope, cumulative-versus-incremental semantics, source, and model attribution so later statistics can avoid
+double-counting resumes, cached or reasoning subsets, and nested agents. Orchestrator usage is separate and may remain
+unavailable. Collection neither changes routing policy nor launches extra agents to obtain accounting. Recording
+failures are reported as evidence gaps without blocking otherwise authorized work or silently claiming complete data.
