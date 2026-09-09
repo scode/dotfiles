@@ -54,6 +54,7 @@ elsewhere, or from a similar skill.";
 /// the PR that gives it a `Dependencies:` line.
 const LAYERED_SKILLS: &[&str] = &[
     "scode-agent-delegation",
+    "scode-build-blueprint",
     "scode-galaxy-brain",
     "scode-harness-shellout",
     "scode-model-routing",

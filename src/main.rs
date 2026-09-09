@@ -100,6 +100,7 @@ const SHARED_AGENT_SKILLS: &[&str] = &[
     "pre-pr-review-swarm",
     "repo-swarm",
     "sapling",
+    "scode-build-blueprint",
     "scode-build-goal",
     "scode-chores",
     "scode-commit-msg-reviewer",
@@ -542,6 +543,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-scode-build-blueprint",
+        PayloadSymlink::new(
+            "agent-skills/scode-build-blueprint",
+            "~/.claude/skills/scode-build-blueprint",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-scode-build-goal",
         PayloadSymlink::new(
             "agent-skills/scode-build-goal",
@@ -791,6 +801,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "delete-codex-skill-scode-fable-resume",
         DeleteSymlink::new("~/.codex/skills/scode-fable-resume"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-scode-build-blueprint",
+        PayloadSymlink::new(
+            "agent-skills/scode-build-blueprint",
+            "~/.codex/skills/scode-build-blueprint",
+        ),
     )
     .depends_on(&codex_skills_dir)
     .build();
