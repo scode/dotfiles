@@ -33,12 +33,18 @@ spec rules make that binding on every delegate.
 This file is the workflow: how to decide whether to delegate, what to delegate, how to stay in charge, and what to do
 with what comes back. Two other skills carry the parts other skills also need — which model a unit of work should run
 on, and how to work with a delegate once you have one — and this file loads each by name at the moment it becomes
-relevant. The one procedure file next to this one is read the same way. "Next to this one" means the same directory this
+relevant. Procedure files next to this one are read the same way. "Next to this one" means the same directory this
 SKILL.md was loaded from, whatever path that is in the current harness.
 
-| read          | in full, the first time in a session that you...                                          |
-| ------------- | ----------------------------------------------------------------------------------------- |
-| `feedback.md` | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
+| read                 | in full, the first time in a session that you...                                          |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `feedback.md`        | hear "galaxy brain feedback: ..." or otherwise clear feedback on how this skill performed |
+| `session-records.md` | activate galaxy-brain; reload after compaction or resume                                  |
+
+On activation, follow `session-records.md` to create a private UUID-named session directory under
+`${XDG_STATE_HOME:-$HOME/.local/state}/scode-galaxy-brain/sessions/`. Record decisions to delegate or keep work local,
+routing choices, attempts, verdicts, follow-up actions, and available usage there as they happen. This is evidence
+collection, not a change to routing or escalation policy. Merely discussing or editing this skill does not activate it.
 
 The first time in a session that you need to choose a model, effort, or launch mechanism for a unit of work, load the
 skill `scode-model-routing` as follows and read its `SKILL.md` in full. Every such choice afterwards is a request to it
@@ -122,14 +128,14 @@ After compaction or resume, if the retained context is ambiguous but mentions ou
 effort routing, or galaxy-brain at all, assume the skill is still active and say that you are assuming it.
 
 When you write a handoff or pre-compaction note while this skill is active, include the routing-layer state: the current
-goal, any provider preference, what the model routing config file ruled in or out, which sidecar files and dependency
-skills were loaded, delegations still in flight, and the next routing decision. Record every run id you have generated
-and not yet moved to scratch, with the absolute path of each run directory; for each delegate stopped at a checkpoint,
-also record which checkpoint it is at and the session or thread id needed to resume it — a stopped delegate that the
-summary forgets is one that gets relaunched from scratch, and a run id the summary forgets is a directory you can no
-longer prove is yours. Do this even when no delegate is currently running — between delegations is exactly when a
-summary is most likely to drop the skill. This is a backstop, not the mechanism: stickiness applies whether or not a
-handoff was ever written.
+goal, the session-record UUID and absolute directory path, any provider preference, what the model routing config file
+ruled in or out, which sidecar files and dependency skills were loaded, delegations still in flight, and the next
+routing decision. Record every run id you have generated and not yet moved to scratch, with the absolute path of each
+run directory; for each delegate stopped at a checkpoint, also record which checkpoint it is at and the session or
+thread id needed to resume it — a stopped delegate that the summary forgets is one that gets relaunched from scratch,
+and a run id the summary forgets is a directory you can no longer prove is yours. Do this even when no delegate is
+currently running — between delegations is exactly when a summary is most likely to drop the skill. This is a backstop,
+not the mechanism: stickiness applies whether or not a handoff was ever written.
 
 ## Routing
 
@@ -216,10 +222,12 @@ over or a deliberate cross-family attempt, whether or not `endpoint trusted` was
 never end at a trusted endpoint, and a failure at their last rung gets the same treatment even though the model that
 failed is not trusted. After completing any row but `blocked on user`, tell the delegation skill the verdict is acted
 on, so it moves that run directory to private scratch; the accepted row says so explicitly and the others are no
-different.
+different. Capture the verdict, action, and available usage in the session record before that move; retain any usage
+evidence needed to interpret the counters as `session-records.md` describes.
 
 In your final report to the user, briefly note which parts were delegated and to which models, and separate what the
-gate confirmed from delegate claims that were not verified.
+gate confirmed from delegate claims that were not verified. Include the session-record directory and any usage coverage
+gaps, so the user can find the evidence for later analysis.
 
 ## Concurrency preference
 
@@ -249,10 +257,11 @@ skill's.
   process has exited but its half-done work is in the tree and it will be resumed into it.
 - Other sessions may be running this skill at the same time, on the same machine and against the same repository.
   `SPEC.md` requires that the skill's own state never be the reason two of them interfere: every layer names its
-  artifacts by the run id — run directories, scratch files, logs, trees you create — and you never remove or reinterpret
-  anything named by an id you did not generate. That is the whole of the guarantee. Whether two sessions can safely edit
-  the same working tree at once is a property of the work and the user's setup, not something this skill detects or
-  prevents; a run directory you did not create is worth a mention to the user, not a gate.
+  delegation artifacts by the run id — run directories, scratch files, logs, trees you create — while session records
+  have their own UUID. You never remove or reinterpret anything named by an id you did not generate. That is the whole
+  of the guarantee. Whether two sessions can safely edit the same working tree at once is a property of the work and the
+  user's setup, not something this skill detects or prevents; a run directory you did not create is worth a mention to
+  the user, not a gate.
 - For isolated writers create the tree yourself — a `git worktree`, a jj or Sapling workspace, a clone — at a path that
   includes the run id, with any branch, bookmark, or workspace name you choose for it carrying the run id too (a fixed
   name like `gb/fix-foo` collides with another session's, or worse, checks out its half-done work), and point the
