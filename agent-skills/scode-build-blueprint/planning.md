@@ -83,6 +83,9 @@ Write instructions addressed to a fresh executor. Include:
   which routine decisions are autonomous; new user-scope decisions remain blocked, even during unattended execution.
 - **State and evidence:** absolute blueprint/log/repository paths, baseline, recording requirements from `records.md`,
   and instructions to retain session IDs, checkpoints, review findings, budgets, and outstanding work across resumes.
+  Use the existing log for compact recovery state, including failed repair attempts and pending evidence; do not add
+  another ledger. Related consultant and repair exchanges normally resume the same session. New independent review gates
+  still start fresh.
 - **Resource watchdog:** require the independent monitor in `watchdog.md` before implementation or delegation. Include
   its watched paths, sampling interval, thresholds, alert delivery, restart/resume protocol, and low-resource actions.
   Default to a background monitor process when available; a model watchdog must use an approved worker pair and reserve

@@ -42,6 +42,14 @@ when possible, without inventing the missing interval. Telemetry failure is not 
 
 ## Events and identity
 
+The existing working log is the compact recovery view, not a second event store. Keep open finding identifiers and their
+source review, repair attempts and verification results, pending gates, exact session/process handles, and next actions
+there with links to retained artifacts. Update it when these change and reconcile it after compaction/resume and before
+completion. Never infer resolution from an attempted repair or an omitted item in a later summary. Retain closed
+dispositions and their evidence so the next session can distinguish fixed, expert-rejected, and open findings without
+replaying every event. Keep watchdog status and ownership in the same handoff; old healthy samples are not proof of
+current coverage.
+
 Write one complete immutable JSON object per `events/<event-uuid>.json`; never append to a shared file or overwrite an
 event. Common fields are `schema_version: 1`, `event_id`, `execution_id`, `at` (UTC RFC 3339), `type`, `unit_id`,
 `attempt_id`, and `data`. Nonapplicable IDs are null. A unit is a stable piece of work, including work kept local. A new

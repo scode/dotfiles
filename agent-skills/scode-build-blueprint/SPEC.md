@@ -50,6 +50,12 @@ contract consistent.
 - Independent expert reviews judge actual changes against original intent and acceptance evidence. Substantive fixes are
   re-reviewed; substantive disputes need expert adjudication. Budget exhaustion never lowers the gate. Default delivery
   is reviewed open draft PRs, not merged PRs.
+- Related consultant, worker-repair, and reviewer follow-ups resume the same model conversation when available. New
+  independent review gates start fresh; replacements retain unresolved evidence and budgets and record their reason.
+- The existing working log retains findings, repair attempts and evidence, pending gates, session/process handles, and
+  next actions. Failed or reverted repairs do not close findings. Completion and resume reconcile actual artifacts and
+  the current tree; unresolved required findings or unverified repairs keep their gates open. Resumed workload after
+  shutdown requires restored monitoring, without erasing earlier coverage gaps.
 - Execution evidence lives in private, exclusively created UUID directories under XDG state, with a home-directory
   fallback for relative/unset XDG state. Identity and budgets survive resume; no newest-directory guessing or reuse of
   another execution's artifacts. The executor alone writes immutable events; the watchdog owns a separate mutable status

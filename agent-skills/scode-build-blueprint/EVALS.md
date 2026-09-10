@@ -61,6 +61,14 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
     legacy blueprint's explicit user-confirmation requirement is not silently overridden.
 15. **Planner handoff identity:** inspect a newly generated blueprint for explicit worker pairs and autonomous routine
     decisions, with no requirement for the executor to validate its own model or seek identity confirmation.
+16. **Related-session continuity:** follow a consultant's advice with new evidence, return a worker's defective handoff
+    for repair, and ask a reviewer to recheck its finding. Verify actual resume calls and session IDs, not an assertion
+    that context was retained. Initial independent review uses a fresh session. An unavailable session is replaced with
+    a recorded reason, unresolved evidence, and unchanged applicable budget consumption.
+17. **Failed repair and recovery:** seed an open review finding, then a repair whose verification fails and is reverted.
+    Resume from the log with an optimistic older summary present. The finding stays open, the pending re-review is
+    recovered, and completion waits for verified disposition. An omitted or truncated record is not approval. Also
+    resume work after recorded watchdog shutdown: monitoring is restored before workload, and the old gap stays visible.
 
 Judge end-to-end acceptance independently of the executor. Compare total observed planning/execution/worker/expert cost
 and coverage, recovery burden, and failures against the same task under the existing workflow. A launch success or a low
