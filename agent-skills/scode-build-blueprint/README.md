@@ -39,6 +39,11 @@ the checkout, in its parent directory outside VCS. It shows the paths before wri
 The planner never creates the execution log. The executor creates it on first use and reconciles it with repository and
 process state on resume. The blueprint requires installed skills but no access to the planning conversation.
 
+Choose the executor in the harness yourself; it does not validate its own model identity or stop for confirmation when
+identity metadata is missing or disagrees. Execution assumes you are absent. Routine choices stay autonomous, and
+critical blockers go to the approved expert for an in-scope alternative when consultation is possible. Safety, required
+gates, and missing authority can still prevent completion.
+
 The Rust dotfiles installer registers this skill for all four harnesses. Initial top-level execution supports Codex and
 Claude Code because the shared routing policy currently excludes Muse and OpenCode as orchestrators. They can still host
 approved workers. Required delegate CLIs must be installed and authenticated; missing expert capability blocks its
@@ -49,10 +54,10 @@ approved delivery method. Finishing the goal never implicitly authorizes merging
 
 ## Execution boundaries
 
-The executor may launch its confirmed model/effort and explicitly approved additional workers. Experts have separate
-approved routes for consultations, diagnostics, and reviews, not production implementation. All model delegates shell
-out, even within the same harness, and are leaf agents; requests for further agents go back through the executor. Known
-background commands, such as slow tests, do not need another model merely to wait for them.
+The executor may launch the blueprint's operator-approved worker model/effort pairs. Experts have separate approved
+routes for consultations, diagnostics, and reviews, not production implementation. All model delegates shell out, even
+within the same harness, and are leaf agents; requests for further agents go back through the executor. Known background
+commands, such as slow tests, do not need another model merely to wait for them.
 
 An independent RAM/disk watchdog runs throughout execution, preferably as a background process rather than a model
 repeatedly checking resources. It samples about every minute, alerts on low resources, and is restarted after failure or

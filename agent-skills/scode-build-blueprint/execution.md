@@ -10,11 +10,12 @@ Invoke `agent-resumeable` on the blueprint's absolute log path first. Read the b
 instructions, and `records.md`. Reconcile the log with actual repository/PR state and recorded processes before
 launching anything. Preserve user changes. An existing log is evidence to investigate, not proof a checkpoint passed.
 
-Check the executing harness/model/effort against the agreed executor using exposed identity metadata. Do not infer
-identity from a model's prose or change the top-level model yourself. A mismatch or unavailable identity is a preflight
-block until the user explicitly confirms the executor; never silently enlarge the same-model worker permission. Check
-dependencies, routes, credentials and CLI availability without exposing secrets. On unsupported top-level harnesses,
-report the routing limitation rather than posing as a different orchestrator.
+The operator chose this session's model and effort. Do not validate your own model identity, compare it with the
+blueprint as a preflight gate, or ask for confirmation because metadata is missing or apparently mismatched. Record
+exposed metadata separately from the requested pair; unknown stays null. Delegate permissions come from the explicit
+blueprint pairs, never your self-description. Check the actual harness's supported tools, dependencies, routes,
+credentials and CLI availability without exposing secrets. Unsupported harness capabilities remain real limitations; do
+not pose as a different harness to bypass them.
 
 Compare the current tree with the blueprint baseline on first execution, or the last recorded checkpoint on resume.
 Unrelated drift can be documented and preserved. Drift affecting design assumptions or acceptance requires expert
@@ -35,18 +36,20 @@ For each meaningful unit, choose local execution, a worker, or an allowed expert
 including plausible work kept local. Use a background command for a known slow test command; use a worker when analysis
 or independent investigation is useful. A background test's evidence must identify the exact tested tree.
 
-Ask `scode-model-routing` for delegated routes using the real executor identity, work profile, size, input size, writer
-status, prior outcome, and explicit blueprint constraints. This skill defines these spawns as process roles with a
-shellout mechanism. Treat the answer as a recommendation subject to the blueprint allowlist: if it is outside the
-allowed set, request an explicit approved pair suitable for the work or keep it local. Do not follow an escalation rung
-outside that set. Expert requests carry the approved expert model/effort as explicit demands so design is not returned
-to the workhorse by default. Unavailable required expertise blocks its gate, not permission to use a weaker reviewer.
+Ask `scode-model-routing` for delegated routes using the actual harness and operator-selected executor pair, work
+profile, size, input size, writer status, prior outcome, and explicit blueprint constraints. This skill defines these
+spawns as process roles with a shellout mechanism. Treat the answer as a recommendation subject to the blueprint
+allowlist: if it is outside the allowed set, use a suitable already-approved pair or keep it local. Do not follow an
+escalation rung outside that set. Expert requests carry the approved expert model/effort as explicit demands so design
+is not returned to the workhorse by default. Unavailable required expertise blocks its gate, not permission to use a
+weaker reviewer.
 
-Resolve `inherit` to the confirmed executor pair. Convert a `native` mechanism to the chosen model's documented shellout
-mechanism: GPT to `codex exec`, Claude to `claude -p`, Muse to `muse exec`, GLM to `opencode run`. Verify that CLI even
-when native availability would have sufficed. Record both routing's answer and the effective shellout route, attributing
-the override to this prototype. Do not convert `no suitable route` into permission to launch. Unsupported models need a
-verified shared harness procedure before use. Never improvise launch flags.
+Resolve `inherit` to the explicit operator-approved executor pair in the blueprint, not an inferred runtime identity.
+Convert a `native` mechanism to the chosen model's documented shellout mechanism: GPT to `codex exec`, Claude to
+`claude -p`, Muse to `muse exec`, GLM to `opencode run`. Verify that CLI even when native availability would have
+sufficed. Record both routing's answer and the effective shellout route, attributing the override to this prototype. Do
+not convert `no suitable route` into permission to launch. Unsupported models need a verified shared harness procedure
+before use. Never improvise launch flags.
 
 Before each new agent launch, create a unique run UUID, private scratch directory, and prompt file. A continuation keeps
 that run UUID and directory but uses new prompt/output filenames for its turn, preserving earlier evidence. Use the
@@ -90,6 +93,24 @@ minutes. Do not use a short `timeout` as a substitute for yielding. Verify detac
 call before relying on them. A failed continuation launch is still a path failure; resuming the same model session does
 not bypass the corrected-retry limit. Preserve each attempt and turn rather than folding recovery into one successful
 launch record.
+
+## Unattended decisions and blockers
+
+Assume the user is absent. Decide routine in-scope questions, record the choice, and continue; uncertainty alone is not
+a reason to prompt or end the run. Consult an approved expert when judgment or diagnosis would help. Before declaring
+affected work blocked, give that expert the evidence, attempted alternatives, and exact missing requirement and ask
+whether there is a safe path within existing authority. An expert's `blocked` verdict with that assessment already
+satisfies this step; do not request a ceremonial second consultation. Continue useful independent work while an affected
+milestone is blocked.
+
+Pause dangerous activity immediately, before consultation. If no approved expert is reachable, monitoring safety
+prevents a launch, or an explicit approved allowance forbids another call, record that exception rather than retrying
+forever or bypassing the limit. Genuine missing authority or capability and unavailable required gates can block
+completion; expert advice cannot grant permissions, weaken acceptance, or approve an unlisted model. Report the precise
+critical blocker only after safe in-scope alternatives are exhausted, not as a routine checkpoint prompt.
+
+The task-specific blueprint still governs permissions. Do not use these defaults to override an older blueprint's
+explicit user-confirmation requirement; identify the conflict and seek an authorized path under the same rules.
 
 ## Expert checkpoints and debugging
 

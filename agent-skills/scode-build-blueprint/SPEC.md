@@ -10,13 +10,18 @@ contract consistent.
 - `/goal <absolute-blueprint-path>` suffices in a correctly selected session with the required skills installed.
   Execution needs no planning conversation; it resumes from recorded state and verifies repository drift.
 - Initial top-level execution is limited to Codex and Claude Code because shared routing excludes Muse/OpenCode
-  orchestrators. Those harnesses may host approved delegates. Missing or mismatched executor identity requires explicit
-  user confirmation, not inferred same-model permissions.
+  orchestrators. Those harnesses may host approved delegates. The operator selects the executor; self-model validation
+  and identity-confirmation gates are forbidden. Recorded unknown or mismatched identity is not a preflight blocker.
+  Worker permissions remain explicit blueprint pairs, never inferred from runtime identity.
 - Blueprint design emphasizes requirements, invariants, interfaces, milestone evidence, autonomy boundaries, and
   consultation triggers. Routine implementation choices remain with the executor. New scope or authority is not implied
   by unattended execution; unresolved material choices are settled before handoff or block affected work.
 - No dependency path activates Galaxy Brain or scode-build-goal. Routing supplies recommendations; shellout supplies
   verified launch mechanics; this skill owns the execution, delegation, and expert gate policy.
+- Execution assumes an absent user. Routine in-scope decisions proceed autonomously; before declaring critical work
+  blocked, consult the approved expert for an authorized path, or record why consultation is unavailable or unsafe.
+  Existing expert blocker assessments need not be repeated. Immediate safety pauses, explicit permissions and caps, and
+  required gates remain binding. Continue safe independent work; do not override explicit task-specific authority.
 - All model delegates, including same-harness workers and process-defined reviewers, shell out with explicit approved
   model/effort settings. Native delegates and delegated fan-out are forbidden. Known background commands need no model.
 - Ordinary workers are limited to the confirmed executor pair plus explicit approved pairs. State-of-the-art experts are
