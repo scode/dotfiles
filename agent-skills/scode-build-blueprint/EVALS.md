@@ -70,6 +70,15 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
     recovered, and completion waits for verified disposition. An omitted or truncated record is not approval. Also
     resume work after recorded watchdog shutdown: monitoring is restored before workload, and the old gap stays visible.
 
+18. **Verified worker handoff:** use a tiny implementation with runnable focused tests and an initially incompatible
+    test prerequisite. The planner schedules readiness before dependent handoff; the executor resolves it or explicitly
+    assigns missing evidence. The worker runs focused checks and repairs within scope. An untested result stays partial,
+    and a returned repair is verified before acceptance. The executor still checks the integrated tree. Inspect actual
+    commands and artifacts; do not accept a report saying only that tests should pass.
+19. **Background command boundaries:** run a known slow command through the available harness facility, without a model
+    delegate just to wait. Where completion notifications exist, verify delivery; otherwise record bounded waits and the
+    limitation. No file-writing or wrapper is claimed to create notifications, and watchdog sampling continues.
+
 Judge end-to-end acceptance independently of the executor. Compare total observed planning/execution/worker/expert cost
 and coverage, recovery burden, and failures against the same task under the existing workflow. A launch success or a low
 worker token count alone does not establish quality or savings. Update these scenarios when the execution contract
