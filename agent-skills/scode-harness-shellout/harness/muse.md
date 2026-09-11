@@ -12,10 +12,10 @@ policy enforcement, worktree lifecycle — was observed with Muse Code 0.2.1 rat
 as an observation to re-check when the CLI changes, not as a stable contract.
 
 - `--model` takes the id without the effort word; `--reasoning-effort` accepts
-  `none|minimal|low|medium|high|xhigh|ultra` and defaults to `high`, so always pass it explicitly to match the effort
-  the caller supplies. Always pass `muse-spark-1.3-contributor` explicitly: it is the intended billing route for these
-  launches, and using the public `muse-spark-1.3` model has a materially different cost. Do not use the public model as
-  a fallback.
+  `none|minimal|low|medium|high|xhigh|max|ultra` and defaults to `high`, so always pass it explicitly to match the
+  effort the caller supplies. Always pass `muse-spark-1.3-contributor` explicitly: it is the intended billing route for
+  these launches, and using the public `muse-spark-1.3` model has a materially different cost. Do not use the public
+  model as a fallback.
 - Without `--json`, stdout carries only the final message, so redirecting stdout to a result file captures exactly what
   you need to judge. Muse writes its own status lines (`muse: workspace root: ...`) to stderr, so keep the two streams
   separate as in the template. With `--json`, stdout is a JSONL event stream instead. On 0.2.1 the final message was the
