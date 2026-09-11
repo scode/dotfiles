@@ -141,11 +141,11 @@ real use calibrates them neither its benchmark tier nor its token price counts a
 (`inventory.md`, under "Evidence behind the rules in SKILL.md", says what the placements rest on). It carries no `sota`
 mark, so it is never the sole critical-review gate, and no muse route ends at a trusted endpoint (see Escalation facts).
 
-The glm family is Z.ai's GLM-5.3-Flash driven through the OpenCode harness, `opencode run`. Everything said about muse
-above applies to it unchanged: opt-in only, via a `glm` preference, a request naming it, or an announced cross-family
-decision; provisional placements; no `sota` mark; no route ending at a trusted endpoint. Its price is not a reason for
-an unprompted cross-family route until real use has calibrated it. The three effort levels are the only ones Z.ai
-accepts for this model.
+The glm family is Z.ai's GLM-5.3-Flash, reached through OpenCode Zen (`opencode/glm-5.3-flash` via `opencode run`).
+Everything said about muse above applies to it unchanged: opt-in only, via a `glm` preference, a request naming it, or
+an announced cross-family decision; provisional placements; no `sota` mark; no route ending at a trusted endpoint. Its
+price is not a reason for an unprompted cross-family route until real use has calibrated it. The provider ships three
+variants for this model — `low`, `high`, and `max` — and nothing beyond those three has been observed.
 
 ## Work profiles
 

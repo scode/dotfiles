@@ -8,11 +8,13 @@ The config file may replace the model inventory, override profile assignments, o
 constraints. An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for
 delegation. Model names are the ids to invoke — pass GPT names to `codex -m` and muse names to `muse exec --model`
 without the trailing effort word, map Claude names to the nearest `--model` alias, and pass GLM names to
-`opencode run -m` prefixed with the provider (`zai/` by default; the config file may name another provider that serves
-the same model, such as a coding-plan or router endpoint) with the effort word going to `--variant`. When a replacement
-inventory introduces models absent from the built-in profiles, the config file must assign them to profiles or describe
-their roles well enough to do so. Ask instead of inventing profile assignments when that information is missing. A new
-family also needs an invocation mechanism, and it must be one of the five an answer can carry (see Launch mechanism in
+`opencode run -m` prefixed with the provider (`opencode/`, OpenCode Zen, by default; the config file may name another
+provider that serves the same model, such as a coding-plan or router endpoint — or the `zai` provider, which serves this
+model but ships no reasoning variants, so its launches additionally need the `OPENCODE_CONFIG_CONTENT` variants block
+described in the opencode harness doc) with the effort word going to `--variant`. When a replacement inventory
+introduces models absent from the built-in profiles, the config file must assign them to profiles or describe their
+roles well enough to do so. Ask instead of inventing profile assignments when that information is missing. A new family
+also needs an invocation mechanism, and it must be one of the five an answer can carry (see Launch mechanism in
 `SKILL.md`), since those are the only launches any caller has rules for; treat a family as unavailable until the config
 file names one of them for it.
 
