@@ -3,22 +3,26 @@
 Read this file in full before the first `opencode run` launch of a session, after `SKILL.md`.
 
 ```sh
-OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":{"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}' \
-  opencode run -m zai/glm-5.3-flash --variant high --agent build --auto --format json --dir <dir> \
+opencode run -m opencode/glm-5.3-flash --variant high --agent build --auto --format json --dir <dir> \
   "$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
 ```
 
 The flag surface comes from `opencode run --help`. The runtime behavior — stdin handling, exit codes, how permissions
-and effort actually resolve, process layout — was observed with OpenCode 1.18.20 against `zai/glm-5.3-flash` rather than
-read from documentation; treat it as an observation to re-check when the CLI changes, not as a stable contract.
+resolve, process layout — was observed with OpenCode 1.18.20 against glm-5.3-flash on the `zai` provider; the variant
+behavior described next was additionally re-verified against the same model on the `opencode` (OpenCode Zen) provider.
+Treat all of it as an observation to re-check when the CLI changes, not as a stable contract.
 
-- The `OPENCODE_CONFIG_CONTENT` block is not optional decoration: it is how effort reaches the model at all. OpenCode
-  ships no reasoning variants for the `zai` provider, so without it `--variant` is silently ignored — even
-  `--variant bogus` exits 0 and runs at the default — and the effort the caller supplies would mean nothing. Z.ai
-  accepts exactly `low`, `high`, and `max` for this model (`medium` is rejected with HTTP 400: thinking cannot be
-  disabled), and with the variants defined, reasoning tokens were observed to scale monotonically across the three.
-  Leaving the variant off was observed to spend about as much reasoning as `max`, so "no variant" is the expensive
-  default, not the cheap one. The env var is per-launch and merges over the user's own config file, so it never touches
+- `--variant <v>` is how effort reaches the model, and the `opencode` (OpenCode Zen) provider ships the variants
+  natively: `low`, `high`, and `max`, observed to change the request (thinking length differed clearly between low and
+  high runs, and a run with no variant landed between them; the max rung comes from the provider's shipped variants and
+  was not distinctly measured). Pass a variant explicitly so spend is controlled rather than whatever the provider's
+  default effort is. Against the `zai` provider the variants are not shipped and must be defined with
+  `OPENCODE_CONFIG_CONTENT` (e.g.
+  `OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":
+  {"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}'`),
+  because without it `--variant` is silently ignored there — even `--variant bogus` exits 0 — and no variant spent about
+  as much reasoning as `max`. Z.ai accepted exactly `low`, `high`, and `max` for this model (`medium` was rejected with
+  HTTP 400). The env var is per-launch and merges over the user's own config file, so it never touches
   `~/.config/opencode/opencode.json`.
 - Given a prompt argument, `opencode run` reads stdin to EOF before starting: an open pipe was observed to block it
   indefinitely with no output. Keep the explicit `< /dev/null` and the prompt-in-a-file rule from `SKILL.md`; here they
@@ -28,13 +32,13 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   keeps the launch independent of the user's configured default, while `--auto` approves permissions that would
   otherwise resolve to `ask`. OpenCode must receive its full tool set: `task`, `bash`, `write`, `edit`, and `patch` stay
   available even when the assignment itself is read-only.
-- Never create or select a restricted OpenCode agent, pass `--agent ro`, or deny or remove tools in
-  `OPENCODE_CONFIG_CONTENT`. Read-only scope is a prompt-level contract the caller enforces when judging the result, not
-  a reason to cripple the harness. OpenCode needs its normal tools for scratch work and for native delegation; the
-  orchestrating session remains responsible for rejecting unauthorized repository changes. The same goes for the `skill`
-  tool: a `permission.skill` denial in `OPENCODE_CONFIG_CONTENT` or the user's config removes it, and a delegate whose
-  task loads a skill by name (a process skill in its task, or a dependency that skill loads) then cannot load anything
-  and stops, so never deny it for such a run.
+- Never create or select a restricted OpenCode agent, pass `--agent ro`, or deny or remove tools in a config override
+  (`OPENCODE_CONFIG_CONTENT`) or the user's config. Read-only scope is a prompt-level contract the caller enforces when
+  judging the result, not a reason to cripple the harness. OpenCode needs its normal tools for scratch work and for
+  native delegation; the orchestrating session remains responsible for rejecting unauthorized repository changes. The
+  same goes for the `skill` tool: a `permission.skill` denial in `OPENCODE_CONFIG_CONTENT` or the user's config removes
+  it, and a delegate whose task loads a skill by name (a process skill in its task, or a dependency that skill loads)
+  then cannot load anything and stops, so never deny it for such a run.
 - A coordinator-shaped GLM assignment is one fully equipped `opencode run`. Let that coordinator use `task` for its own
   fan-out instead of launching one outer OpenCode process per child. Disabling `task` turns a nested workload into a
   long series of memory-heavy CLI processes constrained by the outer orchestrator's concurrency. Do not restore that
@@ -135,15 +139,16 @@ read from documentation; treat it as an observation to re-check when the CLI cha
   everything down (observed with `ps -o pid= --ppid`, a GNU-only spelling; `pgrep -P` is the same query on both Linux
   and macOS). `pgrep -f` on the task text is a trap here: it matches the shell that launched the run.
 - Resuming (per the resume contract in `SKILL.md`): with `--format json` the events on stdout carry a `sessionID` field;
-  record it from the first event. Resume with the same env block and flags plus `--session <id>`:
+  record it from the first event. Resume with the same flags plus `--session <id>`, and the same env block when the
+  provider needs one:
 
   ```sh
-  OPENCODE_CONFIG_CONTENT='...' opencode run -m zai/glm-5.3-flash --variant <v> --agent build --auto --format json \
+  opencode run -m opencode/glm-5.3-flash --variant <v> --agent build --auto --format json \
     --dir <dir> --session <id> "$(cat <resume-prompt-file>)" < /dev/null > <result-file> 2> <log-file>
   ```
 
-  Verified on opencode 1.18.20. The `OPENCODE_CONFIG_CONTENT` block is per launch, so it goes on the resume too or the
-  variant silently stops applying.
+  Verified on opencode 1.18.20. `--variant` is per launch, so it goes on the resume too or the effort silently stops
+  applying; the same goes for the `OPENCODE_CONFIG_CONTENT` variant block when the provider needs one.
 - Runs in the current working directory by default; `--dir <path>` is the analogue of codex's `-C` and was observed to
   put the delegate's relative writes under that path. There is no native worktree mode; a delegate that needs its own
   tree gets one the caller created, with `--dir` pointed at it. Three simultaneous runs in one directory completed
