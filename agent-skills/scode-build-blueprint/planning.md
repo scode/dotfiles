@@ -41,6 +41,11 @@ Give every delegate an expected duration and hard deadline appropriate to its ta
 limits remain operational safeguards even without call-count caps. They are not token or dollar caps; measured usage is
 recorded separately. Record any explicit user spending limit without implying that absent counters can enforce it.
 
+Identify the test substrate workers need: compatible tool/service versions, fixtures, credentials, build artifacts, and
+isolated mutable resources. Put cheap readiness checks before dependent implementation and test handoffs, rather than
+discovering at integration that nobody could run the tests. Assign focused validation and repair with each worker's
+changes. Name the integration checks the executor still owns; worker evidence does not replace them.
+
 Default delivery is a linear stack of reviewable, open, unmerged draft PRs using `jjstack`, reviewed per PR and finally
 against the integrated goal. Confirm that scope, any alternative VCS workflow, network/external write permissions, and
 whether the unattended executor may create/push PRs. Goal completion does not authorize merging. Required repository

@@ -72,12 +72,20 @@ calls. They request needed help through their artifact; the executor launches ap
 expert calls and nested metering. Other process skills may fan out only if this executor can launch and record their
 roles without changing their charter; otherwise report an incompatible process, not silently alter it.
 
-Workers must not commit, branch, push, open PRs, or change blueprint permissions/design. They may implement within their
-assigned scope. Before making a design-changing edit they stop, recording the question and evidence. On completion they
-write changes made, checks actually run, remaining failures, and deviations to the named artifact. Exit zero is not
-acceptance. Inspect the actual diff including new files and verify evidence before integration; expert review remains
-mandatory at the blueprint's gates. Fix clear defects locally or use another allowed worker within budget; never label
-an expert implementation handoff as a consultation.
+Before a worker starts, check the relevant test substrate and give it the focused checks, stable tested-tree
+requirements, and repair responsibility for its assignment. Resolve missing fixtures or incompatible tool/service
+versions early. If verification cannot run in that environment, name the limitation and who will supply the missing
+evidence; do not silently convert implementation into an edits-only assignment.
+
+Workers must not commit, branch, push, open PRs, or change blueprint permissions/design. They may implement and repair
+within their assigned scope. Before making a design-changing edit they stop, recording the question and evidence. On
+completion they write changes made, checks actually run with results and tested-tree identity, remaining failures, and
+deviations to the named artifact. An untested patch or exit zero is a partial handoff, not acceptance. Inspect the
+actual diff including new files and verify evidence before integration; expert review remains mandatory at the
+blueprint's gates. For repairs within the assignment, normally resume that worker with failing evidence and require
+verification of its correction. Fix a small clear defect locally when cheaper, recording who owns the checks. Never
+label an expert implementation handoff as a consultation. Consult early on stubborn failures rather than repeatedly
+cycling workers or weakening the checks.
 
 ## Concurrency and long-running work
 
@@ -98,12 +106,14 @@ occasional executor checks do not substitute for it. On resume, verify process i
 old PID alone is insufficient. Never relaunch a possibly live writer into the same tree. Log path failures separately
 from model failures and allow at most one corrected path retry per unit before reporting a block.
 
-Keep long-running commands in a harness-managed persistent session where available, and poll its returned handle. A
-polling interval is not a process deadline: returning control after a short wait must not kill a review allowed several
-minutes. Do not use a short `timeout` as a substitute for yielding. Verify detached launches survive a subsequent tool
-call before relying on them. A failed continuation launch is still a path failure; resuming the same model session does
-not bypass the corrected-retry limit. Preserve each attempt and turn rather than folding recovery into one successful
-launch record.
+Use the harness's native background execution and completion notifications when supported; a known build or test command
+needs neither a model delegate nor a job wrapper just to wait for it. If notifications are unavailable, keep the command
+in a harness-managed persistent session where possible and use bounded waits on its returned handle. Disclose that
+limitation; a status file does not wake the agent, and watchdog checks still apply. A polling interval is not a process
+deadline: returning control after a short wait must not kill a review allowed several minutes. Do not use a short
+`timeout` as a substitute for yielding. Verify detached launches survive a subsequent tool call before relying on them.
+A failed continuation launch is still a path failure; resuming the same model session does not bypass the
+corrected-retry limit. Preserve each attempt and turn rather than folding recovery into one successful launch record.
 
 ## Unattended decisions and blockers
 
@@ -154,6 +164,10 @@ For flaky tests, preserve seeds, repetitions, environment and failure rates wher
 verification criterion appropriate to the failure; one green run does not establish a fix. Do not disable tests, weaken
 assertions, or inflate timeouts merely to satisfy the gate. Necessary changes to those require expert justification and
 must still preserve the user's acceptance criteria.
+
+Run focused checks while diagnosing and repairing, then the required broader checks on the integrated tree. Reuse
+evidence only when the tested code and relevant environment are still applicable; changes invalidate affected results.
+Neither a worker's green focused test nor the cost of a broad run is a reason to skip required integration coverage.
 
 When an explicitly approved consultation or repair cap is exhausted and more work under it is needed, persist the
 evidence and report the affected work blocked. Never invent a cap merely because usage seems high. Do not autonomously

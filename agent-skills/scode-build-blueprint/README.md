@@ -59,6 +59,11 @@ routes for consultations, diagnostics, and reviews, not production implementatio
 within the same harness, and are leaf agents; requests for further agents go back through the executor. Known background
 commands, such as slow tests, do not need another model merely to wait for them.
 
+Prepare workers' test prerequisites early and include focused checks and repairs in their assignments. An untested patch
+is a partial handoff, not accepted implementation; the executor still owns integrated validation. Use native background
+completion notifications where the harness supports them, otherwise bounded waits. A status file or command wrapper does
+not itself wake the agent.
+
 An independent RAM/disk watchdog runs throughout execution, preferably as a background process rather than a model
 repeatedly checking resources. It samples about every minute, alerts on low resources, and is restarted after failure or
 resume. The executor pauses new work on resource exhaustion or monitor failure; it cannot substitute occasional checks

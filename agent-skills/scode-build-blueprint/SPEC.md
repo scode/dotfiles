@@ -29,6 +29,12 @@ contract consistent.
   retries, fallback, or another skill's process cannot silently expand this authority.
 - The executor owns authorized VCS operations. Delegates perform none. Shared-tree writers are serialized, concurrent
   writers require genuine isolation, and test evidence identifies a stable tested tree. Integration is verified again.
+- Planning prepares the relevant test substrate before dependent handoffs. Workers own focused checks and repairs within
+  their assignment; missing verification is an explicit partial handoff with an owner for the outstanding evidence.
+  Related repairs normally resume that worker. Focused evidence never replaces required integrated checks.
+- Known long-running commands use native background completion notifications when supported, otherwise bounded waits on
+  known handles. No model or job wrapper is needed merely to wait; status files alone do not promise wakeups. Resource
+  checks, stable-tree evidence, and process deadlines remain binding.
 - An independent RAM/disk watchdog is mandatory before implementation or delegation and throughout owned work. It
   samples about every minute, alerts on low/falling resources and recovery, and is verified/restarted after failure or
   resume. A background process is preferred; model watchdogs use approved shellout worker routes and occupy concurrency
