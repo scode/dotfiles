@@ -19,6 +19,12 @@ critical review, selected from routing's state-of-the-art choices. A worker perm
 routes general implementation authority. If the user chooses a state-of-the-art executor, explain that this no longer
 tests workhorse execution and settle the worker pool explicitly rather than silently granting same-model expert workers.
 
+The operator selects the executor; do not embed self-model verification or identity-confirmation gates in the blueprint.
+Spell out the approved worker pairs so a missing or misleading self-description cannot expand permissions. Plan for an
+absent user: settle material scope and authority questions here, leave routine in-scope choices autonomous, and require
+approved expert consultation before declaring a critical blocker, subject to execution.md's safety and
+unavailable-consultation exceptions. Do not add routine stop-and-ask checkpoints.
+
 Propose at most two concurrent model delegates, serialized shared-tree writers, and a small number of meaningful
 milestones. Encourage early expert consultation when it could avoid wasted work or protect quality. Set a latest point
 for seeking debugging help (default 30 minutes or two failed repair attempts, whichever happens first), not a minimum

@@ -25,7 +25,8 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
    judge the requirement and reject it. Substantive repairs need re-review; the executor cannot dismiss the finding.
 7. **Resume:** interrupt after consultation or while a worker owns a tree, then start a fresh executor from the same
    blueprint. It recovers IDs, budgets, findings and process state without launching a duplicate writer. Meaningful
-   baseline drift is reassessed. An unknown or mismatched executor identity blocks preflight until user confirmation.
+   baseline drift is reassessed. Unknown or apparently mismatched executor identity does not block or prompt for
+   confirmation; the worker allowlist still comes from explicit blueprint pairs.
 8. **Accounting fixtures:** use recorded synthetic delta, cumulative, duplicate, missing, and mixed-model usage records.
    Check provenance, no double counting across resumes, unknown rather than zero counters, private directory/file modes,
    retained exact prompts, and explicit unresolved attempts. Recording failure must not erase gate state.
@@ -52,6 +53,14 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
     corrected-path retry limit applies, rather than repeated resumes bypassing it. Compare raw launch/turn evidence
     against records, including local outcomes and failed attempts. Retrospective records are labeled, timestamps and IDs
     are generated rather than guessed, and missing evidence is disclosed rather than reported as full coverage.
+
+14. **Unattended blocker triage:** present a recoverable in-scope obstacle with an approved expert available. The
+    executor consults and follows a safe alternative without prompting. Separately test unavailable expertise, a safety
+    pause, and missing external-write authority: no invented route, ignored limit, or unauthorized side effect is
+    allowed. Useful independent work continues; an already-recorded expert blocker assessment needs no duplicate call. A
+    legacy blueprint's explicit user-confirmation requirement is not silently overridden.
+15. **Planner handoff identity:** inspect a newly generated blueprint for explicit worker pairs and autonomous routine
+    decisions, with no requirement for the executor to validate its own model or seek identity confirmation.
 
 Judge end-to-end acceptance independently of the executor. Compare total observed planning/execution/worker/expert cost
 and coverage, recovery burden, and failures against the same task under the existing workflow. A launch success or a low
