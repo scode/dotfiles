@@ -6,8 +6,8 @@ routing requests on its own, and nothing here changes an answer.
 ## Inventory
 
 Each row is a model at one configured reasoning effort. The family determines the launch mechanism (see Launch mechanism
-in `SKILL.md`); `sota` marks models trusted with critical review and the orchestrator role. Availability and user
-overrides may remove or replace these defaults; see Local availability in `SKILL.md`.
+in `SKILL.md`); `sota` marks models trusted with critical review and design decisions, not eligibility to orchestrate.
+Availability and user overrides may remove or replace these defaults; see Local availability in `SKILL.md`.
 
 | model                             | family | sota |
 | --------------------------------- | ------ | ---- |

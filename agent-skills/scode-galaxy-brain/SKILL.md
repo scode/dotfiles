@@ -14,10 +14,13 @@ description: >
 
 ## Premise
 
-You — the current session — are running on a state of the art, expensive model. The point of this skill is to spend that
-capability where it matters (planning, judgment, design, quality control) and route suitable work to models likely to
-finish it at lower total cost without significantly compromising quality. You stay in charge the whole time: you
-decompose the goal, you decide what to delegate, you judge every result, and you own the overall change.
+The session using this skill is the orchestrator. Its harness, provider, and model do not change that role.
+
+The point of this skill is to spend your capability where it matters (planning, judgment, design, quality control) and
+route suitable work to models likely to finish it at lower total cost without significantly compromising quality. You
+stay in charge the whole time: you decompose the goal, you decide what to delegate, you judge every result, and you own
+the overall change. Routing may send a unit to a stronger model; that does not transfer the orchestrator role. Missing
+delegation tools limit which work you can delegate, not whether you can orchestrate.
 
 The goal is cost-effective quality; parallelize when it helps. The one hard limit is write concurrency: writers that
 share a working tree run one at a time, and concurrent writers are allowed only when each one is genuinely isolated from
@@ -148,12 +151,12 @@ Name the profile yourself, per routing's "How to name a profile", and supply wha
 model; whether the unit edits a tree; its expected size and whether its input is large; whether the output is visual;
 the spawn origin (your own decomposition, or a role another skill's process defines — see Composing); any explicit
 demand from the user or that process; whether an independent cross-family perspective is part of the goal; the provider
-preference from the invocation (below); whether the native mechanism can resume a writer (it can on Claude Code and
-Codex); the current route and its outcome (`none` on a first attempt; after a verdict, the model that failed and one of
-`substantive failure`, `substantive failure (lost context)` when the verdict carried that reason, `misclassified`, or
-`execution-path failure`); any mechanism you have found unavailable; and, under a provider preference, whether the
-preferred family has already produced poor output this session, which routing cannot remember for you. Routing reads the
-model routing config file and checks which CLIs and credentials exist itself.
+preference from the invocation (below); which models and efforts the native mechanism can select and whether it can
+resume a writer (it can on Claude Code and Codex); the current route and its outcome (`none` on a first attempt; after a
+verdict, the model that failed and one of `substantive failure`, `substantive failure (lost context)` when the verdict
+carried that reason, `misclassified`, or `execution-path failure`); any mechanism you have found unavailable; and, under
+a provider preference, whether the preferred family has already produced poor output this session, which routing cannot
+remember for you. Routing reads the model routing config file and checks which CLIs and credentials exist itself.
 
 Act on the answer as follows. `orchestrator`: the unit is not delegated; do it yourself. `inherit`: spawn at this
 session's own model on the caller's mechanism. `no suitable route`: nothing reachable fits; do it yourself or tell the
