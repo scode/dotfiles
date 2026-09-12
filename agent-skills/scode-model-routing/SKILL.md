@@ -23,8 +23,8 @@ reachable here (see Local availability); everything else comes from the request.
 A request carries twelve facts, all of which the caller has and routing does not:
 
 1. The work profile (see Work profiles and How to name a profile).
-2. The orchestrating harness (Claude Code, Codex, Muse Code, or OpenCode) and its model id. Routing derives the
-   session's family and whether it is `sota` from its own inventory.
+2. The caller's harness and model id. Routing derives the session's family and whether it is `sota` from its own
+   inventory. The caller's role is established by its task, never inferred from its harness, provider, or model tier.
 3. Whether the unit edits a tree (a writer) or is read-only.
 4. Expected size: tiny, short, medium, or large (see Native-path bias for what each means).
 5. Whether the input the delegate must reason across is large (a whole-repo scan, a big log, a change threaded through
@@ -36,9 +36,9 @@ A request carries twelve facts, all of which the caller has and routing does not
    requires for this spawn.
 9. Whether an independent cross-family perspective is part of the goal for this unit.
 10. Provider preference, if any: `gpt`, `claude`, `muse`, or `glm`, as the caller parsed it from the user.
-11. Whether the native sub agent mechanism can resume a writer with a follow-up message. Only needed on a harness
-    routing does not know; for the four above it is known (Claude Code and Codex can; Muse and OpenCode are never
-    orchestrators here).
+11. Which models and efforts the native sub agent mechanism can select, and whether it can resume a writer with a
+    follow-up message. Claude Code and Codex support resumable native writers. For other harnesses, or when the
+    available tools differ, use the capabilities the caller reports; unknown capability is not proof of support.
 12. The current route and its outcome so far: `none` for a first attempt, or the model and effort last tried with one of
     `substantive failure`, `substantive failure (lost context)`, `misclassified`, or `execution-path failure`, the last
     optionally marking that mechanism unavailable for this unit (a CLI on `PATH` whose launch path is broken, for
@@ -77,18 +77,15 @@ reason "no suitable model". A cell that reads `orchestrator` is different: the w
 provider preference redirects it, because a preference steers delegations and there is none. The one carve-out is the
 visual case in the GPT cell, which a `gpt` preference does not override.
 
-From a Muse Code or OpenCode session (only ever a coordinator delegate, never the orchestrator of record), same-family
-spawns are `inherit` on `native` and cross-family spawns are `no suitable route`, whatever the preference or demand:
-those harnesses run a process another session delegated to them, and do not shell out further on their own. This is the
-first rule under Precedence.
+If the caller's own family also has a `none` cell, choose a suitable reachable model from another family, subject to the
+request's mechanism constraints; if none fits, answer `no suitable route`. This includes critical review and design from
+families with no `sota` model. Neither answer changes the caller's role or requires it to stop orchestrating.
 
 ## Precedence
 
 Highest first. Each earlier rule settles what it covers and the later ones fill in the rest:
 
-1. A Muse Code or OpenCode session (input 2) is a coordinator delegate, never the orchestrator of record: a same-family
-   spawn is `inherit` on `native`, and anything else — a cross-family profile route or an explicit cross-family demand
-   alike — is `no suitable route`. No later rule applies to such a session.
+1. The caller's process constraints (inputs 7 and 8) bound the available mechanisms, regardless of harness.
 2. An explicit demand (input 8), subject to availability: honor it, and the reason attributes the choice to whoever
    demanded it. A demand is process, not a routing default.
 3. A process-defined spawn (input 7) of a design-shaped role, with no demand, is `inherit` on `native`: it runs at the
@@ -122,8 +119,9 @@ range. Route by work profile instead; the caller's gate and escalation policy co
 result.
 
 Each model name includes its configured reasoning effort. The family determines which launch mechanism applies (see
-Launch mechanism). `sota` marks models trusted with critical review and the orchestrator role. The inventory, with the
-calibration history behind it, is in `inventory.md` next to this file; the families and the `sota` marks are:
+Launch mechanism). `sota` marks models trusted with critical review and design decisions; it is not an eligibility
+requirement for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next
+to this file; the families and the `sota` marks are:
 
 | family | models (effort words)                                                                                    | sota             |
 | ------ | -------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -288,18 +286,17 @@ answer diverges and says so — rather than as a launch failure for the caller t
 
 ## Launch mechanism
 
-The mechanism half of an answer comes from the session's harness and the route's family. Stay native within the
-session's own harness; shell out only when crossing vendors:
+The mechanism half of an answer comes from the session's harness, its reported native capabilities (input 11), and the
+target model. Use a native mechanism when it supports the selected model and effort, subject to the effort inheritance
+rule below. Otherwise use the target family's shell-out mechanism, subject to availability and process constraints:
 
 - **Claude Code session → claude model**: `native` (the session's sub agent mechanism, with the model parameter set to
   the target model).
-- **Claude Code session → gpt model**: `codex exec`.
 - **Codex session → gpt model**: `native` (the session's sub agent mechanism, specifying the target model).
-- **Codex session → claude model**: `claude -p`.
-- **Any session → muse model**: `muse exec`. There is no native muse path, because Muse Code is never the orchestrator
-  of record.
-- **Any session → glm model**: `opencode run`, always with the unrestricted default build agent and `task` available.
-  OpenCode is likewise never the orchestrator of record.
+- **Other native paths**: use the caller's reported capabilities. A native path that only inherits the current model
+  cannot satisfy a route to a different model.
+- **Shell-out fallback from any session**: `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and
+  `opencode run` for GLM. The OpenCode launch uses the unrestricted default build agent with `task` available.
 
 Claude ids in the inventory are names, not launch arguments. Whether native or through `claude -p`, a Claude model is
 selected by its harness alias (`fable`, `opus`, `sonnet`, `haiku`), which resolves to the current release of that line;
@@ -309,8 +306,8 @@ passed as written, minus the effort word.
 When the mechanism is `native`, the caller also sets the target reasoning effort if its sub agent mechanism has an
 effort parameter; otherwise sub agents inherit the session's effort and that is acceptable. A writer needs a mechanism
 that can resume the same delegate with a follow-up message (input 11); on a harness whose native sub agents cannot, the
-answer for a writer is that family's shell-out mechanism instead — the one case where a session shells out to its own
-family — and the reason says so.
+answer for a writer is that family's shell-out mechanism instead, and the reason says so. This can be a shell-out to the
+session's own family; matching families does not establish native resume support.
 
 ## Composing with another skill's process
 

@@ -9,6 +9,9 @@ fix the skill or change this file in the same change, never leave them apart.
 
 ## Requirements
 
+- The session in which the user invokes this skill is the orchestrator, regardless of harness, provider, model, or model
+  tier. Routing a unit to a stronger model does not transfer that role, and missing delegation capabilities do not
+  disqualify the session from it.
 - The skill's dependency set is the `Dependencies:` line above, and the dependency graph between skills is one-way: this
   skill may refer to a skill it depends on, and a skill it depends on never refers back to it. A dependency's text that
   points a reader here is a bug in the dependency; this skill's text that reaches into a dependency by any path other

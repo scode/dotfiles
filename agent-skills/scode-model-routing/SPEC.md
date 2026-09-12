@@ -9,6 +9,10 @@ fix the skill or change this file in the same change, never leave them apart.
 
 ## Requirements
 
+- The caller's task establishes its role. Harness, provider, model tier, and the inventory's `sota` mark never
+  disqualify a caller from orchestrating. Native capabilities and process constraints determine available launch
+  mechanisms. A family with no suitable model may route across families or return `no suitable route`; neither answer
+  reclassifies the caller as a delegate.
 - The skill depends on no other skill, and its text refers to no other skill: no pointer upward or sideways into a
   consumer (a named skill or one of its files, "the gate", "the checkpoint protocol" as a thing the reader should go and
   read). Where the text needs a fact only a caller has, it names that fact as a request input and stops there.
