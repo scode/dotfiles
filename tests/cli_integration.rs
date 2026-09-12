@@ -207,6 +207,21 @@ fn test_install_creates_symlinks() {
         );
     }
 
+    // OpenCode gets the same instruction blob at its native global-rules path.
+    // Asserted here rather than relying on OpenCode's ~/.claude/CLAUDE.md
+    // fallback, which is exactly what the native link exists to avoid.
+    let opencode_md = fake_home.path().join(".config/opencode/AGENTS.md");
+    assert!(
+        opencode_md.is_symlink(),
+        "expected .config/opencode/AGENTS.md symlink"
+    );
+    assert!(
+        std::fs::read_link(&opencode_md)
+            .unwrap()
+            .ends_with("agent-instructions/AGENTS.md"),
+        ".config/opencode/AGENTS.md should point to agent-instructions/AGENTS.md"
+    );
+
     // Verify it points to the shared agent-instructions source with a relative path.
     let target = std::fs::read_link(&claude_md).unwrap();
     assert!(
@@ -367,6 +382,11 @@ fn test_uninstall_removes_symlinks() {
     assert!(
         !claude_md.exists() && !claude_md.is_symlink(),
         "symlink should be removed after uninstall"
+    );
+    let opencode_md = fake_home.path().join(".config/opencode/AGENTS.md");
+    assert!(
+        !opencode_md.exists() && !opencode_md.is_symlink(),
+        ".config/opencode/AGENTS.md should be removed after uninstall"
     );
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
@@ -529,6 +549,10 @@ fn test_conditional_features_skipped_when_parent_missing() {
     assert!(
         !fake_home.path().join(".claude/CLAUDE.md").exists(),
         ".claude/CLAUDE.md should not exist when .claude doesn't exist"
+    );
+    assert!(
+        !fake_home.path().join(".config/opencode/AGENTS.md").exists(),
+        ".config/opencode/AGENTS.md should not exist when .config/opencode doesn't exist"
     );
     assert!(
         !fake_home.path().join(".config/zed/keymap.json").exists(),
@@ -725,6 +749,7 @@ fn test_all_symlinks_are_relative() {
     // Check several symlinks are relative
     let symlinks_to_check = [
         ".claude/CLAUDE.md",
+        ".config/opencode/AGENTS.md",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",

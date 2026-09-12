@@ -181,7 +181,24 @@ fn add_muse_features(g: &mut FeatureGraph) {
 /// documented native root) and also from `~/.claude/skills` and
 /// `~/.agents/skills`. With the same name in two roots it picks one without
 /// error (observed on 1.18.20), so the overlap with the Claude link is fine.
+///
+/// Global instructions come from `~/.config/opencode/AGENTS.md`, with
+/// `~/.claude/CLAUDE.md` as a documented fallback. Linking the native path
+/// keeps the instructions present on a machine that has OpenCode but no
+/// `~/.claude`, and keeps them working if the Claude-compatibility fallback
+/// is ever disabled (`OPENCODE_DISABLE_CLAUDE_CODE`). Like the skills, it is
+/// gated on `~/.config/opencode` already existing.
 fn add_opencode_features(g: &mut FeatureGraph) {
+    g.add(
+        "opencode-md",
+        PayloadSymlink::new(
+            "agent-instructions/AGENTS.md",
+            "~/.config/opencode/AGENTS.md",
+        ),
+    )
+    .condition(PathExists::new("~/.config/opencode"))
+    .build();
+
     add_shared_skill_features(
         g,
         "opencode",
