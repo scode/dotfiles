@@ -43,9 +43,9 @@ fail.
 
 ## Agent Instructions
 
-Shared installed agent instructions live in `agent-instructions/`. When changing the Claude/Codex instruction blob that
-gets installed as `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, edit `agent-instructions/AGENTS.md`, not the old
-`payload/dot_claude/CLAUDE.md` path.
+Shared installed agent instructions live in `agent-instructions/`. When changing the shared agent instruction blob that
+gets installed as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and `~/.config/opencode/AGENTS.md`, edit
+`agent-instructions/AGENTS.md`, not the old `payload/dot_claude/CLAUDE.md` path.
 
 ## Lore
 
