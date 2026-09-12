@@ -10,6 +10,11 @@ Invoke `agent-resumeable` on the blueprint's absolute log path first. Read the b
 instructions, and `records.md`. Reconcile the log with actual repository/PR state and recorded processes before
 launching anything. Preserve user changes. An existing log is evidence to investigate, not proof a checkpoint passed.
 
+After compaction or restart, recover the log's open findings, attempted repairs, pending gates, next action, and exact
+consultant/reviewer/worker session handles. Cross-check them against artifacts and the current tree. A missing or
+truncated entry is unresolved evidence, not an implicit approval. Verify owned processes and watchdog coverage too; work
+resumed after shutdown needs restored monitoring before new workload, even if an earlier summary said done.
+
 The operator chose this session's model and effort. Do not validate your own model identity, compare it with the
 blueprint as a preflight gate, or ask for confirmation because metadata is missing or apparently mismatched. Record
 exposed metadata separately from the requested pair; unknown stays null. Delegate permissions come from the explicit
@@ -50,6 +55,12 @@ Convert a `native` mechanism to the chosen model's documented shellout mechanism
 sufficed. Record both routing's answer and the effective shellout route, attributing the override to this prototype. Do
 not convert `no suitable route` into permission to launch. Unsupported models need a verified shared harness procedure
 before use. Never improvise launch flags.
+
+For related follow-ups, resume the existing consultant, worker, or reviewer rather than starting a fresh conversation.
+This includes a worker repairing its assignment and a reviewer judging repairs to its findings. A new independent review
+starts fresh; its follow-ups keep that reviewer's context. Replace a session when it is unavailable, the assignment
+needs a genuinely new perspective, or a new unrelated task warrants it; record the reason and carry forward unresolved
+evidence and any applicable budget. A new harness process can resume the same model conversation.
 
 Before each new agent launch, create a unique run UUID, private scratch directory, and prompt file. A continuation keeps
 that run UUID and directory but uses new prompt/output filenames for its turn, preserving earlier evidence. Use the
@@ -152,16 +163,23 @@ while a blocked milestone waits, but the goal remains incomplete.
 
 ## Review and completion
 
-At each prescribed review, launch a fresh expert session with the blueprint, user requirements, repository instructions,
-actual full change range including untracked files, and verification evidence. Do not feed it only the executor's
-summary or consultant approval. Require a named findings artifact covering correctness, design, invariants,
+At each new independent review gate, launch a fresh expert session with the blueprint, user requirements, repository
+instructions, actual full change range including untracked files, and verification evidence. Do not feed it only the
+executor's summary or consultant approval. Require a named findings artifact covering correctness, design, invariants,
 compatibility, idiomatic implementation, and whether tests or measurements demonstrate the requested result. Include any
 additional review charter the repository requires. Reviewers edit nothing and perform no VCS operations.
 
-The executor checks findings against evidence and addresses them. Substantive fixes require expert re-review of the
-updated tree; disputed substantive findings go back for adjudication, not unilateral dismissal. Record accepted,
-rejected-with-expert-reason, and unresolved findings. Changes after approval invalidate approval for the affected scope.
-Checkpoints are milestone approvals, not automatic final approval of their integration.
+The executor checks findings against evidence and addresses them. Keep each finding open in the working log until its
+disposition has supporting evidence and any required expert judgment. A proposed repair, a failed verification, or
+removing the failed repair does not close the finding. Resume the reviewer for substantive re-review of the updated tree
+and for adjudication of substantive disputes, not unilateral dismissal. Record accepted-and-verified fixes,
+rejected-with-expert-reason findings, and unresolved findings distinctly, with links to attempts and evidence. Changes
+after approval invalidate approval for the affected scope. Checkpoints are milestone approvals, not automatic final
+approval of their integration.
+
+Before claiming completion, reconcile every required finding and pending gate in the log against actual artifacts and
+the current tree. An unresolved finding or unverified repair keeps its gate open; an earlier completion summary does not
+overrule it. Recording gaps remain distinct from implementation acceptance.
 
 Finish only after all acceptance criteria have evidence, prescribed reviews pass, and the integrated result passes the
 required repository checks. For the default PR-stack delivery, all PRs remain open and unmerged; required checks and

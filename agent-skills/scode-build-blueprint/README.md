@@ -70,6 +70,11 @@ Useful expert exchanges continue; repetition without new evidence requires reass
 actual change against the original intent, and substantive repairs need re-review. None of these rules guarantees that
 an agent will follow them; transcripts and artifacts are needed to evaluate actual behavior.
 
+Related consultant, worker-repair, and reviewer follow-ups normally resume the same model conversation. Initial
+independent reviews still start fresh. The existing execution log keeps findings, repair evidence, pending gates, and
+session handles for recovery. A failed repair leaves its finding open; completion requires reconciling the log with the
+actual reviewed and tested tree.
+
 ## Evidence and evaluation
 
 Execution records live under `${XDG_STATE_HOME:-$HOME/.local/state}/scode-build-blueprint/executions/<uuid>/`, with a
