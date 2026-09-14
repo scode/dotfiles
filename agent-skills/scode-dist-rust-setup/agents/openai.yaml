@@ -1,4 +1,4 @@
 interface:
   display_name: "scode Dist Rust Setup"
-  short_description: "Bootstrap Rust dist + Homebrew + changelog CI."
-  default_prompt: "Use $scode-dist-rust-setup to set up cargo-dist release automation, git-cliff changelogs, Linux/macOS CI gates, and scode Homebrew publishing in this Rust repo."
+  short_description: "Bootstrap Rust dist releases, tap-pulled Homebrew, changelog CI."
+  default_prompt: "Use $scode-dist-rust-setup to set up cargo-dist release automation, git-cliff changelogs, Linux/macOS CI gates, and releases shaped for the scode Homebrew tap to pull in this Rust repo."
