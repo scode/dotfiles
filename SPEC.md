@@ -240,6 +240,30 @@ The library-like pieces of the installer do need good coverage. Feature implemen
 JSON merging, and migration logic should have direct tests because regressions there can affect many installed files at
 once.
 
+## jjstack Edits PRs Through REST, Not `gh pr edit`
+
+The `jjstack` skill must work on hosts whose `gh` is older than 2.82.1. That is not a hypothetical: Ubuntu 24.04 (noble)
+ships `gh` 2.45.0 and will not bump it, and other distro packages are similarly frozen. On those versions `gh pr edit`
+fails on every invocation, whatever flags it is given, with
+
+```
+GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience, ...
+(repository.pullRequest.projectCards)
+```
+
+GitHub removed the classic Projects field from its GraphQL API, and old `gh` builds request it unconditionally while
+reading the PR before any edit, so the failure is total and the PR is never touched. The fix in `gh` landed in 2.82.1
+(cli/cli PR 11987; issues 11983 and 11986); releases through 2.82.0 are reported broken. This was hit for real on
+2026-09-13 mid-landing, after the parent PR had merged and before the child was retargeted.
+
+The skill therefore edits PR title, body, and base through the REST endpoint
+`PATCH /repos/{owner}/{repo}/pulls/{number}` via `gh api`, everywhere, rather than instructing the agent to upgrade
+`gh`. Upgrading is a host setup decision the skill is not in a position to make, the REST call is one line, and it
+already uses `gh api` for branch deletion. Reviews should not "simplify" the REST calls back to `gh pr edit`, and should
+not add a `gh pr edit` primary path with a REST fallback: the failure sits in the middle of the landing sequence, where
+a dead primary path costs a stopped landing. The rest of the `gh pr` surface the skill uses (`create`, `view`, `ready`,
+`merge`, `list`) is verified working on 2.45.0 and stays as is.
+
 ## Legacy `old/` Tree
 
 Code under `old/` is legacy reference material. Do not spend review effort on simplification, idiomaticity, style, or

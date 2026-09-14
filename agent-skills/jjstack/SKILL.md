@@ -1,6 +1,6 @@
 ---
 name: jjstack
-description: Use Jujutsu for a solo-developer stacked GitHub workflow where each reviewable change is its own commit, bookmark, and pull request; create and update the stack with jj, and use gh only for PR creation (always as a draft), publishing, and PR base updates.
+description: Use Jujutsu for a solo-developer stacked GitHub workflow where each reviewable change is its own commit, bookmark, and pull request; create and update the stack with jj, and use gh only for PR creation (always as a draft), publishing, and PR base updates (via gh api, never gh pr edit).
 ---
 
 # jjstack
@@ -85,7 +85,7 @@ environment already guarantees those operations work inside it.
 - "unpublish", "back to draft", or "convert to draft" Run `gh pr ready --undo <n>`. Rarely needed, and only ever on
   request; the skill never converts a ready PR back to a draft on its own.
 - "restack the stack" Use `jj` to rewrite or rebase the local stack. If bookmark ancestry changes in a way GitHub cares
-  about, update the affected PR bases afterwards with `gh pr edit --base ...`.
+  about, update the affected PR bases afterwards with the REST base edit from "Editing PR metadata".
 - "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
   GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally. In practice, that
   usually means using `gh pr view 45` to find the head ref, then using `jj new <bookmark>` or another explicit move to
@@ -216,8 +216,8 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   repo. Parallelizing ordinary file reads such as `sed`, `rg`, `ls`, `nl`, and `wc` is fine as long as no `jj` or Git
   repo-state command is running at the same time.
 - Treat workflow mutations as ordered steps in one shared state machine. In particular, `jj commit`, `jj bookmark set`,
-  `jj git push`, `gh pr create`, and `gh pr edit` are not independent chores you can fan out. Run them one at a time.
-  Re-read state between steps only when the next command depends on uncertain state; do not turn every successful
+  `jj git push`, `gh pr create`, and the REST PR edit are not independent chores you can fan out. Run them one at a
+  time. Re-read state between steps only when the next command depends on uncertain state; do not turn every successful
   command into a separate inspection round trip.
 - Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
   swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
@@ -267,8 +267,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   pin the bookmark to the parent change instead of the new reviewable commit.
 - Keep bookmark names stable once a PR exists. Move the bookmark to new commits; do not invent a fresh branch name for
   every revision.
-- After you change stack shape, update GitHub PR bases explicitly with `gh pr edit --base ...`. GitHub will not infer jj
-  ancestry changes from bookmark movement alone.
+- After you change stack shape, update GitHub PR bases explicitly with the REST base edit from "Editing PR metadata".
+  GitHub will not infer jj ancestry changes from bookmark movement alone. Never use `gh pr edit` for this; it is broken
+  on the `gh` versions distros ship.
 - Do not let anything else mutate the same working copy while a `jj` command is running. That includes another `jj`
   process, `git`, an editor auto-save doing broad rewrites, or another shell touching the same files. jj snapshots the
   working copy at command boundaries, so concurrent mutation is an easy way to confuse yourself.
@@ -276,9 +277,9 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
 ## Fast path for the common case
 
 NOTE: This is a tool-call optimization, not permission to parallelize state mutations. `jj commit`, `jj bookmark set`,
-`jj git push`, `gh pr create`, `gh pr merge`, and `gh pr edit` are still one ordered state machine. The faster path is
-to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence, instead
-of spending separate tool calls re-reading state after every successful step.
+`jj git push`, `gh pr create`, `gh pr merge`, and the REST PR edit are still one ordered state machine. The faster path
+is to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence,
+instead of spending separate tool calls re-reading state after every successful step.
 
 For straightforward happy paths, batch ordered commands with `&&` chaining or a per-command `|| exit 1` in one shell
 invocation when the next command does not need the model to inspect fresh output. This is still sequential execution. It
@@ -395,22 +396,63 @@ gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" 
 rm -f "$title_file" "$body_file"
 ```
 
-Use the same pattern for `gh pr edit`:
+Editing an existing PR uses the same files, but not `gh pr edit`. See "Editing PR metadata" below for why; the shape is:
 
 ```bash
 title=$(tr -d '\n' <"$title_file")
-gh pr edit <pr-number> -R owner/repo --title "$title" --body-file "$body_file"
+gh api -X PATCH "repos/owner/repo/pulls/<pr-number>" -f "title=$title" -F "body=@$body_file" --jq .number
 ```
 
 The important parts are:
 
 - use a single-quoted heredoc delimiter like `<<'EOF'` when writing literal text
 - keep the title in a quoted variable, not inline in the command text
-- pass the body with `--body-file`, not `--body`
+- pass the body from a file: `--body-file` for `gh pr create`, `-F "body=@$body_file"` for the REST edit. The `@path`
+  form makes `gh api` read the file and send its contents as the field value, so the body never passes through shell
+  parsing
 - if you fetched existing text from GitHub and want to preserve it exactly, write it to files first and then reuse the
   same file-based flow
 
 Do not ad-lib shell escaping here. Use the file-and-variable pattern every time.
+
+## Editing PR metadata
+
+Every edit to an existing PR's title, body, or base goes through the REST endpoint, never through `gh pr edit`:
+
+```bash
+# Retarget the base. --jq keeps the output to the one field you want to confirm.
+gh api -X PATCH "repos/$repo/pulls/$pr" -f "base=$new_base" --jq .base.ref
+
+# Reword. Title from a variable, body from a file (see "Passing PR text to gh safely").
+gh api -X PATCH "repos/$repo/pulls/$pr" -f "title=$title" -F "body=@$body_file" --jq .number
+```
+
+NOTE: This is a SPEC.md requirement of the dotfiles repo this skill ships from, not a style preference. `gh pr edit` is
+broken on every `gh` release before 2.82.1, with any flags: it reads the PR through GraphQL first, that query still asks
+for the classic-Projects `projectCards` field GitHub has removed, and the command exits 1 before writing anything.
+Distro packages sit on exactly those versions (Ubuntu 24.04 ships 2.45.0), and this skill has to work on such hosts
+without asking the user to install a newer `gh`. The REST call is the same operation without the GraphQL read, and it
+works on old and new `gh` alike. Do not "fix" this by upgrading `gh` or by retrying `gh pr edit`; the failure is
+deterministic. The error text to recognize, should `gh pr edit` sneak in anyway, is:
+
+```
+GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience, ...
+(repository.pullRequest.projectCards)
+```
+
+Two things to know about the REST form. `gh api` prints the full PR object on success, so always pass `--jq` to keep the
+output small, and read the field back with `gh pr view --json baseRefName` (or `title`, `body`) when a later step
+depends on it, exactly as the landing flows below already do. A base change is rejected with HTTP 422 when the named
+branch does not exist on GitHub, which is the failure you get if you retarget before pushing the new parent bookmark.
+
+A base retarget can also 422 with `A pull request already exists for base '<default>' and head '<bookmark>'` when it
+races GitHub's own retarget. On a repo with "automatically delete head branches" on, merging the parent deletes its
+branch, and GitHub then moves every PR based on that branch to the parent's base on its own, asynchronously. Land the
+PATCH inside that window and GitHub reports the collision as an error even though the PR ends up exactly where you
+wanted it. (A plain no-op retarget, where the base already matches and nothing is in flight, returns 0.) So a failed
+retarget is not automatically fatal: re-read `baseRefName`, and if it already equals the target, carry on. The landing
+snippets below encode that as `|| test "$(gh pr view ... --jq .baseRefName)" = "$target" || exit 1`. Observed on
+2026-09-13 during a fast path landing on scode/repotesting.
 
 ## Passing commit messages to jj safely
 
@@ -590,11 +632,11 @@ Assuming `title` and `body_file` were prepared with the safe pattern above:
 ```bash
 jj git push --bookmark 'exact:pr/inserted'
 gh pr create -R owner/repo --draft --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
-gh pr edit -R owner/repo <downstream-pr-number> --base pr/inserted
+gh api -X PATCH "repos/owner/repo/pulls/<downstream-pr-number>" -f base=pr/inserted --jq .base.ref
 jj git push --bookmark 'exact:pr/downstream'
 ```
 
-The `gh pr edit` step is mandatory whenever GitHub's PR parent should change, and it must happen before pushing the
+The base edit step is mandatory whenever GitHub's PR parent should change, and it must happen before pushing the
 rewritten downstream head. A base-dependent required check must see the final base when the push starts workflows for
 the new head commit.
 
@@ -627,6 +669,9 @@ Stop and surface the problem instead of improvising if:
 - you already ran commit/bookmark/push in parallel and are no longer sure which commit the bookmark points at. In that
   case, stop, inspect `jj log` and `jj bookmark list`, repair the bookmark target explicitly, and only then push or
   create/edit the PR.
+- any command fails with the `(repository.pullRequest.projectCards)` GraphQL error. That means a `gh pr edit` ran on a
+  pre-2.82.1 `gh`. Nothing was written. Redo the edit with the REST call from "Editing PR metadata"; do not retry the
+  same command and do not stop to upgrade `gh`.
 
 If a `jj` or `gh` command fails with `unexpected argument` or an unknown-flag error, treat it as version drift between
 the installed tool and whatever produced the flag — this skill's examples, or your own priors. Check `--help` for the
@@ -788,7 +833,9 @@ sequence is:
 
 ```bash
 jj rebase -s "$child_bookmark" -d main || exit 1
-gh pr edit "$child_pr" -R "$repo" --base main || exit 1
+gh api -X PATCH "repos/$repo/pulls/$child_pr" -f base=main --jq .base.ref \
+  || test "$(gh pr view "$child_pr" -R "$repo" --json baseRefName --jq .baseRefName)" = main \
+  || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr ready "$child_pr" -R "$repo" || exit 1
 gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
@@ -803,8 +850,9 @@ the old base to the new head. Rerunning that job does not fix it because GitHub 
 
 If the wrong-order race has already happened, do not rerun the failed job. Set the correct base, inspect the workflow's
 event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles
-`pull_request: edited`, a reversible PR body edit can create that evaluation; preserve and restore the exact body with
-the file-based safe-text procedure above. Do not assume every pull-request workflow handles body edits.
+`pull_request: edited`, a reversible PR body edit (the REST body edit from "Editing PR metadata") can create that
+evaluation; preserve and restore the exact body with the file-based safe-text procedure above. Do not assume every
+pull-request workflow handles body edits.
 
 After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use
 `gh pr view --json
@@ -813,9 +861,9 @@ waits. GitHub can briefly report no checks for a just-pushed or just-retargeted 
 runs. Treat "no checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it
 as success. Use workflow logs only when checks fail or get stuck.
 
-For a larger stack, repeat the same rebase, `gh pr edit --base ...`, and push process from bottom to top. The new base
-is either the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Retarget
-the lowest remaining PR before pushing any rewritten descendant bookmarks; descendants keep their immediate parent bases
+For a larger stack, repeat the same rebase, REST base edit, and push process from bottom to top. The new base is either
+the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Retarget the
+lowest remaining PR before pushing any rewritten descendant bookmarks; descendants keep their immediate parent bases
 unless that parent changed. Mark only the lowest remaining PR ready after that push; the descendants above it stay
 drafts until their own turn comes. If this is not a known stack you just created, re-read GitHub state between steps
 instead of assuming a prior local graph observation still describes the PRs.
@@ -931,7 +979,9 @@ test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
 jj git fetch --remote origin || exit 1
 jj bookmark set main -r main@origin || exit 1
 jj rebase -s "$child_bookmark" -d main || exit 1
-gh pr edit "$child_pr" -R "$repo" --base "$default_branch" || exit 1
+gh api -X PATCH "repos/$repo/pulls/$child_pr" -f "base=$default_branch" --jq .base.ref \
+  || test "$(gh pr view "$child_pr" -R "$repo" --json baseRefName --jq .baseRefName)" = "$default_branch" \
+  || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr ready "$child_pr" -R "$repo" || exit 1
 
@@ -951,9 +1001,9 @@ test "$(gh pr view "$child_pr" -R "$repo" --json state --jq .state)" = MERGED \
   || { echo "PR #$child_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
 ```
 
-You do not need to rediscover the child PR after `gh pr edit` when the command succeeds and the next operation is an
+You do not need to rediscover the child PR after the base edit when the command succeeds and the next operation is an
 explicit merge of that same PR. You still need to verify that the PR you are about to merge is open and has the expected
-base and head. If `gh pr edit` fails, if the metadata check returns nothing, or if GitHub reports the child PR as
+base and head. If the base edit fails, if the metadata check returns nothing, or if GitHub reports the child PR as
 closed, fall back to the full inspection flow above.
 
 The child guard in that snippet checks PR shape only. On repos where checks are expected to run, do not merge the child
@@ -980,7 +1030,7 @@ the stack", and a user who said "fast path" an hour ago has not said it now. Whe
 
 The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, without touching the
 local stack between merges: no `jj rebase`, no bookmark pushes, no base-retarget-then-wait-for-CI round trips. The
-entire landing is GitHub-side, and the only per-PR mutations are `gh pr edit --base <default>` (for every PR but the
+entire landing is GitHub-side, and the only per-PR mutations are the REST base edit to `<default>` (for every PR but the
 bottom one, and only after its parent is already `MERGED`), then `gh pr ready`, then immediately `gh pr merge --squash`.
 Measured on a three-PR stack this takes about 30 seconds end to end, versus minutes per PR for the CI-gated flow.
 
@@ -1003,7 +1053,7 @@ unmerged.
 Two GitHub quirks shape the snippet below. First, the child PR's diff after retargeting spans two commits (the parent's
 original and its own), so GitHub's default squash message would be the PR title plus a list of both commit messages.
 Pass `--subject "<PR title> (#N)"` and `--body-file` with the PR body explicitly so each landed commit reads as one
-change. Second, `mergeable` goes `UNKNOWN` for a few seconds after `gh pr edit --base` while GitHub recomputes it, and
+change. Second, `mergeable` goes `UNKNOWN` for a few seconds after a base edit while GitHub recomputes it, and
 `gh pr merge` during that window fails. Poll `mergeable` until it leaves `UNKNOWN` (measured 1–4 seconds; cap the wait
 at about a minute) before merging.
 
@@ -1115,7 +1165,11 @@ for entry in $plan; do
   pr=${entry%%:*}; rest=${entry#*:}; bm=${rest%%:*}; rest=${rest#*:}
   change_id=${rest%%:*}; plan_sha=${rest#*:}
   if test -n "$prev"; then
-    gh pr edit "$pr" -R "$repo" --base "$default_branch" || exit 1
+    # The retarget may 422 if GitHub already moved this PR to $default_branch itself after
+    # deleting the merged parent branch; see "Editing PR metadata". Same end state, so accept it.
+    gh api -X PATCH "repos/$repo/pulls/$pr" -f "base=$default_branch" --jq .base.ref \
+      || test "$(gh pr view "$pr" -R "$repo" --json baseRefName --jq .baseRefName)" = "$default_branch" \
+      || exit 1
   fi
   title=$(gh pr view "$pr" -R "$repo" --json title --jq .title) || exit 1
   body_file=$(mktemp) || exit 1
