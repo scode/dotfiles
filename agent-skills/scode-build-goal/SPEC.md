@@ -92,7 +92,15 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - Using `scode-galaxy-brain` for the entire run, activated right after the resume protocol and kept active through every
   delegation. Reading it for mechanics does not satisfy this.
 - A resource watchdog for memory and disk, started before the first delegation, restarted if it dies, and carried in
-  every handoff note.
+  every handoff note. Prefer a process monitor over a model watchdog to keep routine minute-level sampling out of model
+  turns. A small-context model watcher may replace frequent parent wakeups when it delivers alerts without being polled
+  and is expected to reduce total cost, including launch overhead and polling usage. Notification delivery and failure
+  detection are verified, including independent stale-heartbeat notification tested by stalling a live throwaway
+  monitor. Without verified resource-alert, exit, and stale-heartbeat notifications, the executor checks status at least
+  once a minute. Every path checks heartbeat freshness before workload launches. Dead monitors or heartbeats stale for
+  two sample intervals pause new launches until monitoring is restored. The log records how to reconcile or restart the
+  monitor, and completion stops the owned monitor. Reducing model wakeups must not reduce resource sampling or assume
+  that status-file writes or process-completion notifications deliver intermediate resource alerts.
 - A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a delegated fresh-context run
   of the reviewer the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and
   skill or charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the

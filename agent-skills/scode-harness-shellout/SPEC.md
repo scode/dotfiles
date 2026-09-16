@@ -32,3 +32,9 @@ fix the skill or change this file in the same change, never leave them apart.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.
+- Waiting prefers the parent harness's automatic process-completion delivery where available, otherwise bounded waits on
+  known handles with batched checks and compact observations. A log or status file alone is not notification delivery.
+  Prefer monitoring without model turns; a small-context watcher is allowed when it can notify the caller without being
+  polled and is expected to reduce total cost, including launch overhead and polling usage. Wait expiry alone never
+  terminates a child. Reducing wakeups must preserve monitoring intervals, caller-required resource checks,
+  responsiveness, and hard deadlines.

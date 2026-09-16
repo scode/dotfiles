@@ -88,6 +88,22 @@ The stdin hang above was found only after an orchestrator waited hours on a shel
 to finish. The lesson generalizes beyond that one bug: a background delegate has no guaranteed liveness or
 forward-progress signal before it exits, and "no news yet" is not evidence of progress.
 
+Prefer the parent harness's managed background execution with automatic completion delivery when it supports it. The
+parent owns that delivery, regardless of which CLI the child runs; a detached process, a JSON event stream, or a status
+file does not itself wake the parent model. Use the current tool contract rather than assuming all harnesses or versions
+notify. Prefer monitoring without model turns. A small-context watcher agent is reasonable when it can notify the caller
+directly and is expected to cost less than repeated caller wakeups; account for its launch overhead, model price, and
+polling usage. Give it only the monitoring context it needs. The caller must not have to poll the watcher to receive its
+alerts.
+
+Without automatic delivery, use bounded waits on the returned job/session handle, choosing the longest wait compatible
+with tool limits, required responsiveness, the next monitoring check, and the hard deadline. Batch checks of running
+jobs instead of making one model turn per job. Avoid short sleep/status loops and repeatedly reading unchanged logs:
+each empty model turn can reprocess a large conversation prefix as cached input. Keep routine observations compact (exit
+state, log growth, and new diagnostics); inspect more only when investigation warrants it. A wait returning "still
+running" is not a deadline and must not terminate the child. These choices reduce needless wakeups; they do not relax
+the monitoring obligations below or any more frequent resource checks the caller requires.
+
 - Never wait open-endedly on a shelled-out delegate, and never make a foreground call whose timeout exceeds the
   monitoring interval — a blocked foreground wait bypasses monitoring entirely. Run long delegates in the background and
   record what you need to check on and kill them later: job handle or pid, log path, output path, start time, expected
@@ -122,9 +138,9 @@ forward-progress signal before it exits, and "no news yet" is not evidence of pr
 
 A delegate that stops mid-task and is later continued with more input is resumed in the same session rather than
 relaunched. Resume works on every harness (verified 2026-08-30 with a planted codeword that each harness answered on the
-resumed turn), and a resumed turn is mostly cache hits, so it is cheap. Whether a run stops, what it must produce before
-stopping, and what the continuation says are the caller's protocol; this skill supplies the mechanics common to every
-harness:
+resumed turn). Resuming preserves context and can reuse cached input, but cache hits still count toward usage; resume
+for work or guidance, not for status polling. Whether a run stops, what it must produce before stopping, and what the
+continuation says are the caller's protocol; this skill supplies the mechanics common to every harness:
 
 - Record the harness's session or thread id at launch; each harness file says where it comes from (a `--session-id` you
   generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
