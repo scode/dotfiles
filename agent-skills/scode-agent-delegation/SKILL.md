@@ -127,6 +127,24 @@ internal choices. For an OpenCode coordinator, the task also carries the native-
 from `scode-harness-shellout`'s `harness/opencode.md`, and the outer session must not infer fan-out shape or progress
 from the number or timing of the `task` events it can see.
 
+## Waiting for native delegates
+
+Use the completion mechanism the current harness exposes. When native delegates deliver results automatically, rely on
+that delivery instead of repeatedly listing agents, asking for status, or checking result files. A native call that
+blocks until completion also avoids polling; it does not need a background-notification mechanism. Do independent work
+while a delegate runs when the harness permits it. When only a bounded wait is available, use the longest wait allowed
+by the tool and the caller's responsiveness, resource-check, and deadline requirements, and check outstanding delegates
+together when control returns. A wait expiring means the delegate may still be running, not that it failed.
+
+The cost to avoid is repeated model turns with no new information: even a tiny status reply can cause the conversation
+prefix to be processed again as cached input. Prefer monitoring without model turns. A small-context watcher agent is
+reasonable when it can notify the caller directly and is expected to cost less than repeated caller wakeups; account for
+its launch overhead, model price, and polling usage. Give it only the monitoring context it needs. The caller must not
+have to poll the watcher to receive its alerts. Completion delivery differs by harness, version, and configuration;
+neither a status file nor a UI notification proves that the model will be woken. Retain required resource checks and
+deadlines even when completion is delivered automatically. Foreign processes use the monitoring procedure in the
+shell-out dependency instead.
+
 ## Writers stop twice, and must be resumable
 
 Every writer delegation — native or shelled out, any family, any size — runs the two-checkpoint protocol in

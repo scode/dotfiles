@@ -198,20 +198,35 @@ has none of this conversation's context. Include, at minimum:
   drifts away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo
   root, the commit range or bookmark to review, and the file the findings go to; the reviewer has no other context.
 - **Resource watchdog.** Immediately after activating galaxy-brain and before the first delegation, the executing agent
-  must start a sub agent (or the harness's background-monitor equivalent, whichever delivers notifications back to the
-  orchestrating session without being polled) whose only job is to watch memory and disk for the rest of the run and
-  alert the orchestrator when either is heading for exhaustion. This is mandatory, not a suggestion: unattended runs fan
-  out delegates and worktrees, a Rust worktree costs on the order of 1.5 GB of build output, tests leave temp
-  directories behind, and a full disk or an OOM kill has ended real runs mid-implementation with no signal to the
-  orchestrator beyond a dead delegate. Spell out in the goal file what the watchdog checks and how often — free space on
-  the filesystems holding the repository, any worktrees, the scratch directory, and `/tmp`, plus available memory and
-  swap, using whatever the platform provides (`df`, `free` or `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on macOS),
-  sampled every minute or so — and the thresholds at which it alerts (a sensible default: under 10% or under 5 GB free
-  on any watched filesystem, or under 10% available memory, whichever comes first, with a second alert when the number
-  keeps falling). An alert is an instruction to act, not to note: the orchestrator stops launching new delegates,
-  removes gated worktrees and build caches it owns, waits for or kills the delegate most likely responsible, and only
-  resumes when the watchdog reports headroom. The goal file must also say that a watchdog that dies is restarted, and
-  that its running state is part of every handoff note so a resumed session restarts it too.
+  must start an independent watchdog to watch memory and disk for the rest of the run and alert the orchestrator when
+  either is heading for exhaustion. Prefer a plain background process or the harness's process-monitor facility so
+  routine sampling does not require model turns. If that path still requires frequent parent wakeups, a small-context
+  watcher agent is reasonable when it can deliver alerts directly and is expected to reduce total cost, including its
+  launch overhead, model price, and polling usage. Give it only the monitoring context it needs; the parent must not
+  have to poll it for alerts. Sending only alerts to the parent does not eliminate the watcher's own polling cost. This
+  is mandatory, not a suggestion: unattended runs fan out delegates and worktrees, a Rust worktree costs on the order of
+  1.5 GB of build output, tests leave temp directories behind, and a full disk or an OOM kill has ended real runs
+  mid-implementation with no signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the
+  watchdog checks and how often — free space on the filesystems holding the repository, any worktrees, the scratch
+  directory, and `/tmp`, plus available memory and swap, using whatever the platform provides (`df`, `free` or
+  `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on macOS), sampled every minute or so — and the thresholds at which it
+  alerts (a sensible default: under 10% or under 5 GB free on any watched filesystem, or under 10% available memory,
+  whichever comes first, with a second alert when the number keeps falling). An alert is an instruction to act, not to
+  note: the orchestrator stops launching new delegates, removes gated worktrees and build caches it owns, waits for or
+  kills the delegate most likely responsible, and only resumes when the watchdog reports headroom. The goal file must
+  also say that a watchdog that dies is restarted, and that its running state is part of every handoff note so a resumed
+  session reconciles the existing monitor or restarts it. Record its handle, watched paths, status path, and delivery
+  mechanism in the log, and stop the owned monitor when the goal is done. Separate sampling from model wakeups: keep the
+  minute-level samples in a private heartbeat/status file and use supported notifications for alerts, worsening
+  conditions, recovery, and monitor failure. A file update alone is not a notification. Verify delivery with a harmless
+  synthetic alert and verify failure detection with a throwaway monitor before relying on the mechanism. Omitting
+  periodic checks also requires independent stale-heartbeat detection: stall a throwaway monitor without exiting it and
+  verify that the caller is notified within two sample intervals. A monitor cannot detect its own sampling loop hanging.
+  If resource-alert, exit, or stale-heartbeat notifications are unavailable or unverified, say so in the log and check
+  status at least once a minute. On every path, check heartbeat freshness before new workload launches, batching that
+  check with other required observations. A dead monitor or a heartbeat stale for two sample intervals pauses new
+  launches until monitoring is restored. Do not lengthen resource sampling intervals or assume that a process-completion
+  notification delivers intermediate alerts from a still-running watchdog merely to reduce model turns.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.

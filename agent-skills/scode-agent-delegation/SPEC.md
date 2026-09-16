@@ -49,3 +49,9 @@ fix the skill or change this file in the same change, never leave them apart.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.
+- Native delegation uses available automatic completion delivery or a blocking completion call before falling back to
+  bounded waits. Waits respect tool limits and the caller's responsiveness, resource checks, and deadlines; they avoid
+  repeated empty status turns and batch checks across outstanding delegates. Prefer monitoring without model turns; a
+  small-context watcher is allowed when it can notify the caller without being polled and is expected to reduce total
+  cost, including launch overhead and polling usage. Notification support is not assumed across harnesses. Wait expiry
+  alone is not delegation failure.
