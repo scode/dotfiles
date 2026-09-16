@@ -44,10 +44,9 @@ identity metadata is missing or disagrees. Execution assumes you are absent. Rou
 critical blockers go to the approved expert for an in-scope alternative when consultation is possible. Safety, required
 gates, and missing authority can still prevent completion.
 
-The Rust dotfiles installer registers this skill for all four harnesses. Initial top-level execution supports Codex and
-Claude Code because the shared routing policy currently excludes Muse and OpenCode as orchestrators. They can still host
-approved workers. Required delegate CLIs must be installed and authenticated; missing expert capability blocks its
-review gate rather than silently choosing a weaker reviewer.
+The Rust dotfiles installer registers this skill for all four harnesses. You choose the executor harness. Required
+delegate CLIs must be installed and authenticated; missing expert capability blocks its review gate rather than silently
+choosing a weaker reviewer.
 
 Default delivery is a reviewed stack of open, unmerged draft PRs through jjstack. The blueprint can specify another
 approved delivery method. Finishing the goal never implicitly authorizes merging or new external side effects.

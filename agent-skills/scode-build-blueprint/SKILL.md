@@ -27,9 +27,7 @@ use `scode-agent-delegation`, whose caller-as-expert gate is a different policy.
 - `help` prints these two steps and the installed-skill dependencies without creating files. Missing goal text means ask
   for the goal, not invent one.
 
-The top-level model is chosen by the user, not changed by this skill or by `/goal`. In this initial version, execution
-supports Codex and Claude Code: shared routing currently treats Muse and OpenCode as delegate-only harnesses. They may
-still host allowed workers. Explain this limit when choosing the executor; do not claim unsupported execution works.
+The top-level harness and model are chosen by the user, not changed by this skill or by `/goal`.
 
 ## Shared dependency loading
 

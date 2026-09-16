@@ -9,10 +9,9 @@ contract consistent.
   session. It never starts implementation or creates the execution log. The user chooses the executor model/effort.
 - `/goal <absolute-blueprint-path>` suffices in a correctly selected session with the required skills installed.
   Execution needs no planning conversation; it resumes from recorded state and verifies repository drift.
-- Initial top-level execution is limited to Codex and Claude Code because shared routing excludes Muse/OpenCode
-  orchestrators. Those harnesses may host approved delegates. The operator selects the executor; self-model validation
-  and identity-confirmation gates are forbidden. Recorded unknown or mismatched identity is not a preflight blocker.
-  Worker permissions remain explicit blueprint pairs, never inferred from runtime identity.
+- The operator selects the executor harness and model; self-model validation and identity-confirmation gates are
+  forbidden. Recorded unknown or mismatched identity is not a preflight blocker. Worker permissions remain explicit
+  blueprint pairs, never inferred from runtime identity.
 - Blueprint design emphasizes requirements, invariants, interfaces, milestone evidence, autonomy boundaries, and
   consultation triggers. Routine implementation choices remain with the executor. New scope or authority is not implied
   by unattended execution; unresolved material choices are settled before handoff or block affected work.
