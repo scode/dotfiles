@@ -29,9 +29,9 @@ problem domain.
   the current use case. Especially suspicious when surrounding code solves similar problems more directly.
 - **Reinvented wheels**: reimplementing functionality that already exists in the codebase or its direct dependencies.
   Check the same module and imported crates/packages before flagging.
-- **Vacuous comments**: comments that restate the next line of code in prose (`// increment counter` above
-  `counter += 1`), or docstrings that just rephrase the function signature. Distinct from docs-comments-reviewer which
-  checks accuracy—this checks for zero-information commentary.
+- **Vacuous comments**: comments that restate the next line of code in prose (`// increment counter` above `counter +=
+  1`), or docstrings that just rephrase the function signature. Distinct from docs-comments-reviewer which checks
+  accuracy—this checks for zero-information commentary.
 - **Comments splitting metadata from its declaration**: in languages that permit it, inserting documentation or a
   comment between a decorator, annotation, or attribute and the declaration it decorates. Examples include `///` or `//`
   between Rust's `#[test]`, `#[derive(...)]`, or `#[cfg(...)]` and the item, or the equivalent placement after a

@@ -27,9 +27,9 @@ Search for bugs, edge-case failures, regressions, and unsafe assumptions.
   without propagation counts as swallowing.
 - Treat these as common swallowed-error signals:
   - **Rust**: `let _ = fallible_call()` or `let _foo = fallible_call()` discarding a `Result`; `if let Ok(v) = ...` with
-    no `else` branch; `.ok()` or `.unwrap_or_default()` used to silence an error rather than handle it;
-    `.map_err(|_| ...)` replacing the original error with a less informative one; `match` arms that catch `Err(_)` and
-    do nothing or return a default.
+    no `else` branch; `.ok()` or `.unwrap_or_default()` used to silence an error rather than handle it; `.map_err(|_|
+    ...)` replacing the original error with a less informative one; `match` arms that catch `Err(_)` and do nothing or
+    return a default.
   - **Python**: bare `except:` or `except Exception:` with `pass`, a log-only body, or a default return; calling a
     function and ignoring its return value when it signals failure via return code.
   - **Go**: `_ = FallibleCall()` discarding an `error` return; `if err != nil { log.Println(err) }` without returning or

@@ -21,8 +21,8 @@ resulting version for each:
 
 Then proceed:
 
-1. Ensure you're on a fresh main with a clean working copy: `gt sync --all`, `gt checkout main`, then verify
-   `git status` shows no uncommitted or untracked changes. Abort if dirty.
+1. Ensure you're on a fresh main with a clean working copy: `gt sync --all`, `gt checkout main`, then verify `git
+   status` shows no uncommitted or untracked changes. Abort if dirty.
 2. Set the version in `Cargo.toml`.
 3. Refresh the lockfile: `cargo update --workspace`
 4. Validate lockfile consistency: `cargo metadata --format-version 1 --locked > /dev/null`
@@ -45,11 +45,10 @@ Then proceed:
 14. Hand the new tag to the Homebrew tap. The release workflow does not publish a formula; `scode/homebrew-dist-tap`
     pulls a chosen tag and generates the formula itself, behind human review. Tell the user the tag is ready for a tap
     update (`cargo xtask update <crate_name> --tag v$VERSION` in the tap repository, followed by the routine update
-    checklist in the tap's `docs/pull-workflow.md`, which is the authority on what that PR must include), and that
-    `brew upgrade <crate_name>` will not see the release until that tap change is merged. The tap must already have
-    registered `<crate_name>`; its updater refuses unknown tools. Never re-upload or replace assets on a published tag:
-    the tap records the archive hashes it accepted, and different bytes for the same tag are treated as an integrity
-    error.
+    checklist in the tap's `docs/pull-workflow.md`, which is the authority on what that PR must include), and that `brew
+    upgrade <crate_name>` will not see the release until that tap change is merged. The tap must already have registered
+    `<crate_name>`; its updater refuses unknown tools. Never re-upload or replace assets on a published tag: the tap
+    records the archive hashes it accepted, and different bytes for the same tag are treated as an integrity error.
 
 ---
 
@@ -68,7 +67,7 @@ Then proceed:
 4. Ensure `.github/workflows/conventional-commit-pr-title.yml` exists.
 5. Ensure `cliff.toml` exists and is configured for Conventional Commit parsing.
 6. Confirm the archive contract the tap depends on is intact: `targets` in `dist-workspace.toml` is still exactly
-   `aarch64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, and
-   `dist plan` lists one `<crate_name>-<target>.tar.xz` per target containing only `README.md`, `CHANGELOG.md`,
-   `LICENSE`, and the `<crate_name>` binary. The tap's updater validates against this and has no fallback, so any change
-   here needs a coordinated change in the tap.
+   `aarch64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `dist
+   plan` lists one `<crate_name>-<target>.tar.xz` per target containing only `README.md`, `CHANGELOG.md`, `LICENSE`, and
+   the `<crate_name>` binary. The tap's updater validates against this and has no fallback, so any change here needs a
+   coordinated change in the tap.

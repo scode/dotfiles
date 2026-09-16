@@ -94,8 +94,8 @@ Highest first. Each earlier rule settles what it covers and the later ones fill 
    that would need another mechanism then diverges, with the reason `mechanism fixed`.
 4. The design profile is `orchestrator`, with two exceptions settled here: a session that is not `sota` delegates design
    up to the strongest available model the way critical review is routed, and a GPT session producing visual output
-   (input 6) hands it to opus-5 high — the visual carve-out — whatever the preference says, with
-   `diverged from preference: yes (visual)` under a `gpt` preference (see Work profiles).
+   (input 6) hands it to opus-5 high — the visual carve-out — whatever the preference says, with `diverged from
+   preference: yes (visual)` under a `gpt` preference (see Work profiles).
 5. A `none` cell falls back to the orchestrator's family's route, `diverged from preference: yes (no suitable model)`.
 6. Required independence (input 9) crosses families: a second perspective from the same family is not independent.
 7. Provider preference (input 10): every delegation goes to the preferred family unless one of the rules above or a
@@ -243,8 +243,8 @@ family: yes for the critical-review routes and any other route whose last rung i
 for the rest — every muse and glm route, since those families carry no `sota` model, and a GPT or Claude route whose
 ladder ends below `sota`, which since gpt-5.6-sol lost its `sota` mark includes every GPT route that ends at sol high.
 The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule that an
-exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says
-`route exhausted: no`.
+exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says `route
+exhausted: no`.
 
 ## Provider preference
 

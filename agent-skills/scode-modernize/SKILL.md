@@ -179,8 +179,8 @@ good enough: a missing flag can hide exactly the failure CI is about to report.
   `cargo clippy`, `cargo test`, `cargo check`, `cargo build`, `dprint`, or another explicit formatter/linter/test
   command.
 - Normalize only shell trivia. Compare the actual tool invocation and arguments exactly after removing harmless YAML
-  wrapping, step names, and surrounding shell boilerplate. Do not treat `cargo clippy` and
-  `cargo clippy --all-targets --all-features` as equivalent.
+  wrapping, step names, and surrounding shell boilerplate. Do not treat `cargo clippy` and `cargo clippy --all-targets
+  --all-features` as equivalent.
 - Update the finish-work section in `AGENTS.md` (preferred) or `CLAUDE.md` so the required commands match CI exactly,
   including flags, `--` argument separators, feature flags, workspace flags, package selectors, and check-only flags.
 - If both `AGENTS.md` and `CLAUDE.md` are regular files, keep them consistent with each other. If they conflict and
@@ -412,11 +412,11 @@ dprint:
 
 - Run `dprint fmt` to fix any existing formatting issues.
 
-**Verify:** Every remote plugin entry in `dprint.json` ends in `@<64 hex characters>`; for example
-`grep -E '"(https?://|npm:)[^"]*"' dprint.json | grep -v -E '@[0-9a-f]{64}"'` prints nothing. Then
-`dprint clear-cache && dprint check` passes — clearing the cache is what makes `check` actually download and verify
-against the pins instead of reusing already-cached plugins. If `dprint config update` was run, confirm afterwards that
-no entry lost its checksum. If CI was updated, confirm the `dprint` job exists in the workflow file.
+**Verify:** Every remote plugin entry in `dprint.json` ends in `@<64 hex characters>`; for example `grep -E
+'"(https?://|npm:)[^"]*"' dprint.json | grep -v -E '@[0-9a-f]{64}"'` prints nothing. Then `dprint clear-cache && dprint
+check` passes — clearing the cache is what makes `check` actually download and verify against the pins instead of
+reusing already-cached plugins. If `dprint config update` was run, confirm afterwards that no entry lost its checksum.
+If CI was updated, confirm the `dprint` job exists in the workflow file.
 
 ### 9. Add conventional commit instructions to agent config (projects with `CLAUDE.md` or `AGENTS.md`)
 
@@ -492,20 +492,20 @@ claim to commits merged under the convention.
 **Skip if:** There is no `cliff.toml`, there are no `changelog: include` parser rules at all, or the include rules
 already come after the type-based grouping rules and the rationale comment already matches the current template wording.
 
-**Why:** git-cliff applies the first matching parser. In repos where CI requires every PR body to carry a
-`changelog: include` / `changelog: skip` tag, squash merges copy that tag into the commit body — so for commits merged
-under the convention, an early include rule matches first and forces every entry into its group (typically "Changed").
-Fix commits never reach the "Fixed" group and the generated changelog misclassifies everything. This bit saltybox: every
-release section came out as "### Changed" until the parsers were reordered. The stale comment wording matters too: the
-comment is the only documentation of this load-bearing ordering constraint, and the old wording overstates the invariant
+**Why:** git-cliff applies the first matching parser. In repos where CI requires every PR body to carry a `changelog:
+include` / `changelog: skip` tag, squash merges copy that tag into the commit body — so for commits merged under the
+convention, an early include rule matches first and forces every entry into its group (typically "Changed"). Fix commits
+never reach the "Fixed" group and the generated changelog misclassifies everything. This bit saltybox: every release
+section came out as "### Changed" until the parsers were reordered. The stale comment wording matters too: the comment
+is the only documentation of this load-bearing ordering constraint, and the old wording overstates the invariant
 (pre-convention commits in migrated repos carry no tag at all).
 
 **Replace with:**
 
 - Reorder `commit_parsers` to: `changelog: skip` overrides first (skip must win over everything), then the type-based
-  grouping rules (`feat` → Added, `fix` → Fixed, `perf` → Performance, `revert` → Reverted), then the
-  `changelog: include` rules (which now only rescue commit types that would otherwise be skipped), then the type-based
-  skip rule for non-user-visible types.
+  grouping rules (`feat` → Added, `fix` → Fixed, `perf` → Performance, `revert` → Reverted), then the `changelog:
+  include` rules (which now only rescue commit types that would otherwise be skipped), then the type-based skip rule for
+  non-user-visible types.
 - The corrected block, with rationale comments, is in
   `agent-skills/scode-dist-rust-setup/references/git-cliff-and-changelog-flow.md` — keep the two in sync.
 - If the ordering is already correct and only the comment wording is stale, replace the rationale comment with the

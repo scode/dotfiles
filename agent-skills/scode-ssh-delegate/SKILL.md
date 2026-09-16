@@ -94,12 +94,12 @@ Decide per target, in this order:
   Attempt `tailscale ssh TARGET -o BatchMode=yes -o ConnectTimeout=10 'COMMAND'` first. The options must follow the
   target: everything after the target is passed to the system `ssh`, and options placed before it make the wrapper print
   its usage instead of connecting.
-- If that attempt fails because no host key is known (stderr says `No ... host key is known for HOST` and then
-  `Host key verification failed`, where HOST is the MagicDNS name rather than what the user typed), the peer is on the
-  tailnet but is not running Tailscale SSH. Retry once with plain
-  `ssh -o BatchMode=yes -o ConnectTimeout=10 TARGET 'COMMAND'` and its normal `known_hosts` checking. If that retry also
-  fails host-key verification (the key is not in `known_hosts` and `BatchMode` forbids the prompt), reject the target
-  and tell the user to connect once manually; do not add the key on their behalf.
+- If that attempt fails because no host key is known (stderr says `No ... host key is known for HOST` and then `Host key
+  verification failed`, where HOST is the MagicDNS name rather than what the user typed), the peer is on the tailnet but
+  is not running Tailscale SSH. Retry once with plain `ssh -o BatchMode=yes -o ConnectTimeout=10 TARGET 'COMMAND'` and
+  its normal `known_hosts` checking. If that retry also fails host-key verification (the key is not in `known_hosts` and
+  `BatchMode` forbids the prompt), reject the target and tell the user to connect once manually; do not add the key on
+  their behalf.
 - A changed-key warning (`REMOTE HOST IDENTIFICATION HAS CHANGED`) is a security signal, not a missing Tailscale SSH
   server. Reject the target, report the warning verbatim, and do not retry over plain `ssh`. Likewise do not retry plain
   `ssh` after a timeout or authentication failure from `tailscale ssh`; that failure is the result.
@@ -109,11 +109,11 @@ NOTE: being a tailnet peer does not mean the node runs Tailscale SSH, and there 
 `tailscale status --json` and `tailscale whois` do not expose advertised SSH host keys, and `tailscale debug netmap`
 needs root or operator rights. The attempt itself is the check.
 
-Record the transport that succeeded for each accepted worker as the exact command prefix to reuse: either
-`tailscale ssh TARGET -o BatchMode=yes` or `ssh -o BatchMode=yes TARGET`. Every later command and transfer to that
-worker uses that prefix; for rsync that means `-e 'tailscale ssh'` or `-e 'ssh -o BatchMode=yes'`, which both work
-unchanged because the wrapper passes the remote command through to `ssh`. Transport selection happens only during
-registration (and again on a later reprobe of the same target); do not re-run it on each use.
+Record the transport that succeeded for each accepted worker as the exact command prefix to reuse: either `tailscale ssh
+TARGET -o BatchMode=yes` or `ssh -o BatchMode=yes TARGET`. Every later command and transfer to that worker uses that
+prefix; for rsync that means `-e 'tailscale ssh'` or `-e 'ssh -o BatchMode=yes'`, which both work unchanged because the
+wrapper passes the remote command through to `ssh`. Transport selection happens only during registration (and again on a
+later reprobe of the same target); do not re-run it on each use.
 
 Do not inspect commands, packages, Codex or Claude authentication, project dependencies, or other machine state during
 this initial inventory. Do not bootstrap a host merely because the user declared it. A later invocation adds successful

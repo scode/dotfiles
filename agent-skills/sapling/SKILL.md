@@ -48,8 +48,8 @@ Use `sl ssl` (shorthand for `sl smartlog -T {ssl}`) to show the graph with GitHu
 
 Pay attention to landed ancestors. If `sl ssl` shows the bottom open commit parenting on a local commit annotated like
 `[Landed as ...]`, the stack is still based on the pre-merge local commit, not the landed `main` commit. That is a sign
-you need to sync the stack before trusting GitHub's diffs. Usually that means `sl goto top` followed by
-`sl pull --rebase`. If the landed ancestor is still in the chain after that, use an explicit `sl rebase` repair.
+you need to sync the stack before trusting GitHub's diffs. Usually that means `sl goto top` followed by `sl pull
+--rebase`. If the landed ancestor is still in the chain after that, use an explicit `sl rebase` repair.
 
 ## Core Operations
 
@@ -239,8 +239,7 @@ sl pr submit --stack
 
 If the bottom PR still shows diff from an already-merged ancestor after submit, the stack is probably parented on the
 pre-merge local commit rather than the landed `main` commit. From the top of the stack, run `sl pull --rebase` first. If
-that is still not enough, fix the ancestry with `sl rebase --restack` or `sl rebase -s <bottom-open-commit> -d
-main`,
+that is still not enough, fix the ancestry with `sl rebase --restack` or `sl rebase -s <bottom-open-commit> -d main`,
 then submit again from the top.
 
 ## Merging PRs

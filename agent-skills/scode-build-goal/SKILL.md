@@ -69,8 +69,8 @@ directory and the list below is skipped. Otherwise, in order of preference:
 
 1. **The parent directory of the repository checkout.** The checkout is the one containing the working directory, and
    the repository the goal text talks about does not change this. Find it by taking `$PWD` as the shell reports it and
-   walking up to the nearest directory containing `.git` or `.jj`; do not use `git rev-parse --show-toplevel` or
-   `jj root` for this step, since both resolve symlinks and a checkout at `~/git/foo -> /data/repos/foo` should get its
+   walking up to the nearest directory containing `.git` or `.jj`; do not use `git rev-parse --show-toplevel` or `jj
+   root` for this step, since both resolve symlinks and a checkout at `~/git/foo -> /data/repos/foo` should get its
    files in `~/git`, not `/data/repos`. When that checkout is itself nested inside another (a worktree at
    `~/git/foo/.worktrees/bar`, a vendored repo), keep walking up and use the outermost checkout's parent. A working tree
    rooted at the home directory (a dotfiles arrangement) is never counted as a checkout in this section: it neither

@@ -36,8 +36,8 @@ reason.
 - Every entry name has a `YYYY-MM-DD-` prefix. Rename an entry whose name carries the date in another unambiguous form
   (`YYYYMMDD-`, `YYYY_MM_DD-`); rename an entry whose name carries no date, or a form where day and month could swap, to
   `0000-00-00-<name>`. Do not read a date out of file times, VCS history, or the entry's contents. If the target name
-  already exists, leave both and report the pair. Rename with the VCS's own move command where it has one (`git mv`,
-  `sl mv`, `hg mv`); where the VCS tracks the working copy itself, as jj does, a plain `mv` is enough.
+  already exists, leave both and report the pair. Rename with the VCS's own move command where it has one (`git mv`, `sl
+  mv`, `hg mv`); where the VCS tracks the working copy itself, as jj does, a plain `mv` is enough.
 - Anything under `lore/` that is not an entry and not one of the two instruction files (an index `README.md` at the top
   level, an `assets/` directory, a `.gitkeep`) is reported, not renamed or removed. An index in particular is against
   the convention but deleting it is the user's call.

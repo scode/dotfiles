@@ -16,9 +16,9 @@ cheap delegate could be made to surface the decisions a complete-looking spec si
 
 ## The setup
 
-32 runs across four cheap models — gpt-5.6-luna at medium and high via codex, muse-spark-1.2-contributor high via
-`muse exec`, glm-5.3-flash high via opencode — on three treeward features whose specs read as complete but were silent
-on six planted decisions each. Five arms:
+32 runs across four cheap models — gpt-5.6-luna at medium and high via codex, muse-spark-1.2-contributor high via `muse
+exec`, glm-5.3-flash high via opencode — on three treeward features whose specs read as complete but were silent on six
+planted decisions each. Five arms:
 
 - A, the existing contract: decide and list deviations. Main trap avoided 0/8.
 - B, spec plus "you may ask when a decision is hard to reverse and unsettled", questions batched into `QUESTIONS.md`, at

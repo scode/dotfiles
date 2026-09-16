@@ -44,10 +44,10 @@ tl sbx exec NAME sh -c 'hostname; grep -E "^(ID|VERSION_ID)=" /etc/os-release; n
 
 The acceptance rules are the tensorlake variants: `ID=ubuntu` with `VERSION_ID=24.04` (the stock image, not 26.04), and
 at least 4 GiB of RAM because that is what the agent CLIs need. A sandbox that is not listed, or whose exec fails, is
-rejected and reported individually. Record the accepted sandbox in the worker pool with the transport
-`tl sbx exec [OPTIONS] NAME COMMAND` and the kind "borrowed". The options position matters: `-w`, `-e`, and `-t` must
-come between `exec` and the name, because everything after the name is the remote command — this is not a prefix that
-options can be appended to.
+rejected and reported individually. Record the accepted sandbox in the worker pool with the transport `tl sbx exec
+[OPTIONS] NAME COMMAND` and the kind "borrowed". The options position matters: `-w`, `-e`, and `-t` must come between
+`exec` and the name, because everything after the name is the remote command — this is not a prefix that options can be
+appended to.
 
 NOTE: an exec against a suspended sandbox transparently resumes it (about a second was observed). That is normal and not
 a reason to reject the sandbox.
@@ -89,8 +89,8 @@ from the sprite one. Verify rather than assume; the platform is under Tensorlake
   **not** forward stdin (verified: zero bytes arrive).
 - `tl sbx cp` copies single files in either direction. Directories fail with a misleading "file not found" error, so
   trees travel as tarballs (see transfer below).
-- Billing is per second while running (about $0.40/hour was observed for the default shape below on credits pricing)
-  and drops to snapshot storage only ($0.07/GiB-month at the full disk allocation) while suspended.
+- Billing is per second while running (about $0.40/hour was observed for the default shape below on credits pricing) and
+  drops to snapshot storage only ($0.07/GiB-month at the full disk allocation) while suspended.
 
 ## Creating an owned sandbox
 
@@ -165,10 +165,10 @@ snapshot amortizes the 1-2 minute bootstrap into seconds per clone. Never checkp
 The credential policy in `using-workers.md` applies unchanged; the mechanics differ. Pass the Claude token per exec with
 `-e`, expanding it from a local variable (`-e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN"`) rather than pasting
 the literal into the command, so the secret does not land in command text or transcripts. For Codex, first create the
-directory with an exec running `install -d -m 700 /home/tl-user/.codex`, then push with
-`tl sbx cp ~/.codex/auth.json NAME:/home/tl-user/.codex/auth.json` and `chmod 600` it in a follow-up exec. An owned
-sandbox is terminated with its credential when the work ends; on a borrowed sandbox, remove the pushed `auth.json` when
-the work ends unless it was already there before this session.
+directory with an exec running `install -d -m 700 /home/tl-user/.codex`, then push with `tl sbx cp ~/.codex/auth.json
+NAME:/home/tl-user/.codex/auth.json` and `chmod 600` it in a follow-up exec. An owned sandbox is terminated with its
+credential when the work ends; on a borrowed sandbox, remove the pushed `auth.json` when the work ends unless it was
+already there before this session.
 
 NOTE: a named sandbox that idles while a pushed credential file is on disk gets that file captured in the platform's
 suspend snapshot, and on a borrowed sandbox this skill has no permitted way to remove that snapshot. Prefer the per-exec
@@ -204,12 +204,12 @@ and the rules below exist to keep that mechanism working.
   many short parallel execs to one long serial one.
 - **Owned sandboxes are terminated, and their snapshots swept.** Terminate with `tl sbx terminate NAME` as soon as that
   sandbox's unit of work is done, and terminate every owned sandbox that still exists before this session ends or the
-  orchestrating workflow finishes, including after failures and aborts. Then run `tl sbx checkpoint ls` and
-  `tl sbx checkpoint rm SNAPSHOT_ID` for every snapshot whose Sandbox ID matches the recorded ID of an owned sandbox,
-  plus every recorded template snapshot — both kinds, because the platform also creates suspend snapshots on idle and
-  **snapshots survive termination** and bill storage monthly (a leftover 10 GiB suspend snapshot was observed after
-  terminating its sandbox). Match against the recorded IDs only; never delete a snapshot whose sandbox ID is not in this
-  session's ledger. If cleanup itself fails, report the exact sandbox names and snapshot IDs so the user can remove
-  them. The count of owned sandboxes never exceeds the registered budget.
+  orchestrating workflow finishes, including after failures and aborts. Then run `tl sbx checkpoint ls` and `tl sbx
+  checkpoint rm SNAPSHOT_ID` for every snapshot whose Sandbox ID matches the recorded ID of an owned sandbox, plus every
+  recorded template snapshot — both kinds, because the platform also creates suspend snapshots on idle and **snapshots
+  survive termination** and bill storage monthly (a leftover 10 GiB suspend snapshot was observed after terminating its
+  sandbox). Match against the recorded IDs only; never delete a snapshot whose sandbox ID is not in this session's
+  ledger. If cleanup itself fails, report the exact sandbox names and snapshot IDs so the user can remove them. The
+  count of owned sandboxes never exceeds the registered budget.
 - **Borrowed sandboxes are left as found.** No terminate, no explicit suspend, no checkpoint. Remove disposable work
   directories and any pushed credential when done; leave everything else, including bootstrap installs, in place.

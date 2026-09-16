@@ -25,9 +25,9 @@ vary from run to run and none is the skill's business.
 ## Inputs
 
 - **The run log.** A file the swarm writes to `~/.local/state/pre-pr-review-swarm/runs/<run name>.md`, where the run
-  name looks like `20260829-0412-62d866d-9c2e` and the swarm's session output ends with `Swarm run: <run name>` and
-  `Run log: <path>`. The user normally invokes this skill with the run name (`swarm-triage 20260829-0412-62d866d-9c2e`);
-  a path works too. Read the log in full at the start. It holds every finding verbatim as the user saw it, with the
+  name looks like `20260829-0412-62d866d-9c2e` and the swarm's session output ends with `Swarm run: <run name>` and `Run
+  log: <path>`. The user normally invokes this skill with the run name (`swarm-triage 20260829-0412-62d866d-9c2e`); a
+  path works too. Read the log in full at the start. It holds every finding verbatim as the user saw it, with the
   identifiers this skill keys on. Identifiers are per run, so the log must be the one for the findings the user is
   looking at: if the swarm said `Run log: not written (...)`, stop and say so rather than falling back to an older log
   whose identifiers will not match. If the user names no run and no `Run log:` line is at hand, list the recent logs
@@ -135,10 +135,10 @@ text and nothing else — no invented identifier, no reviewer category, no confi
 finding and the record must not dress it as one. If tracking it is not useful, leaving it out entirely is also fine;
 what is not fine is forcing it into the shape of a finding it never was.
 
-The same principle governs every other edge. A finding merged into another keeps its own state and gains a
-`merged into: <id>` line — the state follows whatever happened to the surviving item, since two duplicates can be merged
-in order to accept one or in order to drop both. An item split in two stays one finding with a note. Anything that does
-not fit gets a plain-language note rather than a fabricated field.
+The same principle governs every other edge. A finding merged into another keeps its own state and gains a `merged into:
+<id>` line — the state follows whatever happened to the surviving item, since two duplicates can be merged in order to
+accept one or in order to drop both. An item split in two stays one finding with a note. Anything that does not fit gets
+a plain-language note rather than a fabricated field.
 
 ## The record
 

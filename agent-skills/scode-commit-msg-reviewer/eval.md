@@ -17,11 +17,11 @@ of commits without hunting for them again.
 
 ## Procedure
 
-One drafting run per commit per version of the skill. Each run is a fresh agent given the commit's diff as a file
-(`git show` output with the message stripped) and not the hash, told not to consult git history, and told to write the
-commit message as if it had just authored the change, using `scode-commit-msg-reviewer` by name and running its loop
-with its own fresh reader subagents until the loop says done or reaches its cap. Have it write the final message, the
-number of readers spawned, and every round's candidate and reader report to a file.
+One drafting run per commit per version of the skill. Each run is a fresh agent given the commit's diff as a file (`git
+show` output with the message stripped) and not the hash, told not to consult git history, and told to write the commit
+message as if it had just authored the change, using `scode-commit-msg-reviewer` by name and running its loop with its
+own fresh reader subagents until the loop says done or reaches its cap. Have it write the final message, the number of
+readers spawned, and every round's candidate and reader report to a file.
 
 `~/.claude/skills` and `~/.codex/skills` symlink into this repository's working copy, so a version of the skill is put
 under test by placing its `SKILL.md` and `reviewer.md` in the working copy. Runs for one version can go concurrently;

@@ -17,8 +17,7 @@ Treat all of it as an observation to re-check when the CLI changes, not as a sta
   high runs, and a run with no variant landed between them; the max rung comes from the provider's shipped variants and
   was not distinctly measured). Pass a variant explicitly so spend is controlled rather than whatever the provider's
   default effort is. Against the `zai` provider the variants are not shipped and must be defined with
-  `OPENCODE_CONFIG_CONTENT` (e.g.
-  `OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":
+  `OPENCODE_CONFIG_CONTENT` (e.g. `OPENCODE_CONFIG_CONTENT='{"provider":{"zai":{"models":{"glm-5.3-flash":
   {"variants":{"low":{"reasoningEffort":"low"},"high":{"reasoningEffort":"high"},"max":{"reasoningEffort":"max"}}}}}}}'`),
   because without it `--variant` is silently ignored there — even `--variant bogus` exits 0 — and no variant spent about
   as much reasoning as `max`. Z.ai accepted exactly `low`, `high`, and `max` for this model (`medium` was rejected with

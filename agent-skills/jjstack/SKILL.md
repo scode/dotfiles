@@ -68,8 +68,8 @@ environment already guarantees those operations work inside it.
   commit".
 - "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, push
   it, and create a new PR, as a draft, whose base is the bookmark below it.
-- "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with
-  `jj new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the inserted
+- "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with `jj
+  new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the inserted
   bookmark, create the new PR as a draft, retarget the immediate downstream GitHub PR, then push every rewritten
   descendant bookmark.
 - "publish the PRs" or "mark the PRs ready" Run `gh pr ready <n>` for each named or implied PR, bottom-up, and report
@@ -133,8 +133,8 @@ These are session preconditions, not a toll booth before every command. Once you
 repo in the current thread, treat them as known good until something relevant changes: a command fails in a way that
 points at auth or config, the repo changes, `jj` is initialized after the check, or you switch to a different checkout.
 
-If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain,
-`cargo install --locked --bin jj jj-cli` is a reasonable generic fallback.
+If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain, `cargo
+install --locked --bin jj jj-cli` is a reasonable generic fallback.
 
 If `jj` `user.name` or `user.email` is missing, first try to copy the existing Git identity into repo-local `jj` config
 before making commits:
@@ -242,8 +242,8 @@ The jj graph and bookmark names are the source of truth. For `gh` commands, pref
   this file means this flip and nothing else; pushing a bookmark is not publishing, and running CI is not publishing
   either. Only "publish" or "mark ready" means `gh pr ready`. Any request for CI, from the user or from your own wish
   for a verdict, is a one-off: run the workflow without changing the PR's state, because a ready PR keeps starting runs
-  on every later rebase and push. On a repo whose workflow supports `workflow_dispatch`, that looks like
-  `gh workflow run ci.yml --ref <bookmark>`; the workflow filename is the repo's, not necessarily `ci.yml`, so read
+  on every later rebase and push. On a repo whose workflow supports `workflow_dispatch`, that looks like `gh workflow
+  run ci.yml --ref <bookmark>`; the workflow filename is the repo's, not necessarily `ci.yml`, so read
   `.github/workflows/` to find the right one. If no workflow can be dispatched, say so and ask rather than publishing
   the PR to get a run.
 - Never splice arbitrary PR text directly into a shell command. If a PR title or body came from the user, the model, a
@@ -352,9 +352,9 @@ gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" 
 gh pr create -R owner/repo --draft --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
 ```
 
-If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`,
-`jj log -r 'bookmarks() | @ | @-'`, `jj bookmark list`, and the relevant `gh pr view` or `gh pr list` output before
-trying to repair anything.
+If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`, `jj log
+-r 'bookmarks() | @ | @-'`, `jj bookmark list`, and the relevant `gh pr view` or `gh pr list` output before trying to
+repair anything.
 
 When a batched step fails, the steps before it have already mutated state. Resume from the failed step, not from the top
 of the batch. Rerunning the whole sequence would replay the earlier mutations: a second `jj commit` creates a spurious
@@ -457,8 +457,8 @@ snippets below encode that as `|| test "$(gh pr view ... --jq .baseRefName)" = "
 ## Passing commit messages to jj safely
 
 The same problem exists on the `jj` side, with an extra trap: `jj commit`, `jj squash`, and `jj describe` take `-m`, but
-none of them takes `-F` or `--file`, and only `jj describe` has `--stdin`. An agent that reaches for the Git habit
-`jj commit -F msg.txt` gets `unexpected argument '-F' found` (observed on jj 0.44). The inline `-m "Add first change"`
+none of them takes `-F` or `--file`, and only `jj describe` has `--stdin`. An agent that reaches for the Git habit `jj
+commit -F msg.txt` gets `unexpected argument '-F' found` (observed on jj 0.44). The inline `-m "Add first change"`
 examples elsewhere in this file are fine for one-line placeholders; a real multi-paragraph message with backticks,
 quotes, or `$` goes through a file.
 
@@ -849,17 +849,16 @@ the rewritten bookmark. The push starts workflows for the new head, and a base-d
 the old base to the new head. Rerunning that job does not fix it because GitHub reuses the original event payload.
 
 If the wrong-order race has already happened, do not rerun the failed job. Set the correct base, inspect the workflow's
-event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles
-`pull_request: edited`, a reversible PR body edit (the REST body edit from "Editing PR metadata") can create that
-evaluation; preserve and restore the exact body with the file-based safe-text procedure above. Do not assume every
-pull-request workflow handles body edits.
+event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles `pull_request:
+edited`, a reversible PR body edit (the REST body edit from "Editing PR metadata") can create that evaluation; preserve
+and restore the exact body with the file-based safe-text procedure above. Do not assume every pull-request workflow
+handles body edits.
 
-After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use
-`gh pr view --json
-state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability
-waits. GitHub can briefly report no checks for a just-pushed or just-retargeted PR before Actions has attached the new
-runs. Treat "no checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it
-as success. Use workflow logs only when checks fail or get stuck.
+After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use `gh pr view --json
+state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability waits. GitHub can
+briefly report no checks for a just-pushed or just-retargeted PR before Actions has attached the new runs. Treat "no
+checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it as success. Use
+workflow logs only when checks fail or get stuck.
 
 For a larger stack, repeat the same rebase, REST base edit, and push process from bottom to top. The new base is either
 the newly-landed branch such as `main`, or the bookmark for the nearest parent PR that is still open. Retarget the
@@ -1053,9 +1052,9 @@ unmerged.
 Two GitHub quirks shape the snippet below. First, the child PR's diff after retargeting spans two commits (the parent's
 original and its own), so GitHub's default squash message would be the PR title plus a list of both commit messages.
 Pass `--subject "<PR title> (#N)"` and `--body-file` with the PR body explicitly so each landed commit reads as one
-change. Second, `mergeable` goes `UNKNOWN` for a few seconds after a base edit while GitHub recomputes it, and
-`gh pr merge` during that window fails. Poll `mergeable` until it leaves `UNKNOWN` (measured 1–4 seconds; cap the wait
-at about a minute) before merging.
+change. Second, `mergeable` goes `UNKNOWN` for a few seconds after a base edit while GitHub recomputes it, and `gh pr
+merge` during that window fails. Poll `mergeable` until it leaves `UNKNOWN` (measured 1–4 seconds; cap the wait at about
+a minute) before merging.
 
 What the fast path does not do: it does not wait for checks. It also does not bypass branch protection. If `gh pr merge`
 is rejected because required checks or reviews are missing, stop and report that; `--admin` needs its own explicit
@@ -1264,8 +1263,8 @@ Transfer the pending suffix into "Landing stacked PRs safely" as follows:
 2. Resolve the failed PR by its stable jj change ID, then rebase it and all pending descendants onto the landed default
    branch. Resolve any local conflicts before proceeding; stop if they cannot be resolved confidently.
 3. Verify that the failed PR is the lowest pending PR and is based on the default branch. The fast loop already
-   retargeted it there; do not repeat that edit. Then push every bookmark the rebase moved in one serialized
-   `jj git push`.
+   retargeted it there; do not repeat that edit. Then push every bookmark the rebase moved in one serialized `jj git
+   push`.
 4. Rebuild the expected-head field for every pending ledger entry from the local bookmark and GitHub `headRefOid`.
    Require those SHAs to match, and verify that the already merged prefix is still `MERGED` while every pending PR keeps
    the intended head and base chain.

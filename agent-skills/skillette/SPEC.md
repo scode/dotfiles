@@ -192,11 +192,11 @@ fast available model without a hardcoded model name. These maintenance files are
 
 ## The `ntfy` skillette
 
-`ntfy` sends one notification to an explicitly supplied topic on `https://ntfy.sh`. Its short forms are
-`ntfy <topic> <message>` and `$ntfy <topic> <message>` at the beginning of a send request; quoted examples and
-discussion do not send anything. Embedded instructions such as "do the work, then ntfy <topic> that you're done" also
-trigger it. Its explicit trigger is `skillette-ntfy`, with the same arguments. The short forms live in the table's
-natural-language column so the explicit-trigger naming convention stays intact.
+`ntfy` sends one notification to an explicitly supplied topic on `https://ntfy.sh`. Its short forms are `ntfy <topic>
+<message>` and `$ntfy <topic> <message>` at the beginning of a send request; quoted examples and discussion do not send
+anything. Embedded instructions such as "do the work, then ntfy <topic> that you're done" also trigger it. Its explicit
+trigger is `skillette-ntfy`, with the same arguments. The short forms live in the table's natural-language column so the
+explicit-trigger naming convention stays intact.
 
 The topic must be explicitly supplied and match `[-_A-Za-z0-9]{1,64}` in full. In command-style requests it is the first
 argument, and the remaining message is literal text, including newlines and shell metacharacters. In natural-language

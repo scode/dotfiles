@@ -56,5 +56,5 @@ Then return the verdict:
 For read-only findings (reviews, scans, analysis): confirm the named artifact exists and holds the deliverable, then
 spot-verify against the cited code or data before relaying. When the caller reports to the user, what was confirmed must
 be separated from delegate claims that were not verified. The verdict is `accepted` when the artifact meets the
-acceptance criteria; `substantive failure, fixable` when it falls short in well-specified ways; and
-`substantive failure, structural` when the delegate declined, gave status, or answered a different question.
+acceptance criteria; `substantive failure, fixable` when it falls short in well-specified ways; and `substantive
+failure, structural` when the delegate declined, gave status, or answered a different question.
