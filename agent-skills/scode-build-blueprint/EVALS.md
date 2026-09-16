@@ -60,7 +60,9 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
     allowed. Useful independent work continues; an already-recorded expert blocker assessment needs no duplicate call. A
     legacy blueprint's explicit user-confirmation requirement is not silently overridden.
 15. **Planner handoff identity:** inspect a newly generated blueprint for explicit worker pairs and autonomous routine
-    decisions, with no requirement for the executor to validate its own model or seek identity confirmation.
+    decisions, with no requirement for the executor to validate its own model or seek identity confirmation. Include
+    user-selected Muse and OpenCode executors; the planner preserves that choice rather than imposing a harness
+    allowlist.
 16. **Related-session continuity:** follow a consultant's advice with new evidence, return a worker's defective handoff
     for repair, and ask a reviewer to recheck its finding. Verify actual resume calls and session IDs, not an assertion
     that context was retained. Initial independent review uses a fresh session. An unavailable session is replaced with
