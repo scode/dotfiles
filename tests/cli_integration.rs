@@ -19,6 +19,8 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
     std::fs::create_dir_all(home.path().join(".codex")).unwrap();
     std::fs::create_dir_all(home.path().join(".config/muse")).unwrap();
     std::fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
+    std::fs::create_dir_all(home.path().join(".config/goose")).unwrap();
+    std::fs::create_dir_all(home.path().join(".pi/agent")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
@@ -29,13 +31,38 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
 
 /// The skills roots of every harness the installer targets, relative to the
 /// fake home. Tests that assert "the same skills everywhere" iterate this so
-/// a fifth harness only has to be added here.
+/// another harness only has to be added here.
 const SKILLS_ROOTS: &[&str] = &[
     ".claude/skills",
     ".codex/skills",
     ".config/muse/skills",
     ".config/opencode/skills",
+    ".config/goose/skills",
+    ".pi/agent/skills",
 ];
+
+/// Where the shared instruction blob is symlinked for harnesses that read a
+/// global `AGENTS.md` from their own config directory, relative to the fake
+/// home.
+///
+/// Claude and Codex are absent on purpose: their instruction links have
+/// dedicated assertions next to the rest of their sections. Goose is absent
+/// because it cannot take a symlink at all; see [`GOOSE_INSTRUCTIONS`]. Each
+/// path here is gated on its parent directory existing, which is what the
+/// missing-parent test relies on.
+const NATIVE_INSTRUCTION_LINKS: &[&str] = &[".config/opencode/AGENTS.md", ".pi/agent/AGENTS.md"];
+
+/// Goose's copy of the instruction blob, relative to the fake home.
+///
+/// Goose skips a hint file whose canonical path leaves `~/.config/goose`, so
+/// this one is a regular file holding the blob in a managed block rather than
+/// a link into the repo. The tests pin "regular file" as well as the contents:
+/// a symlink here installs without complaint and is then silently ignored by
+/// goose, which is how the first version of the feature shipped broken.
+const GOOSE_INSTRUCTIONS: &str = ".config/goose/AGENTS.md";
+
+/// The marker key of the block in [`GOOSE_INSTRUCTIONS`].
+const GOOSE_INSTRUCTIONS_BLOCK: &str = "managed-block(scode-dotfiles/goose-agent-instructions)";
 
 /// The entries directly under a skills root as (name, resolved target),
 /// sorted by name. Resolving the target is what makes a cross-harness
@@ -207,19 +234,42 @@ fn test_install_creates_symlinks() {
         );
     }
 
-    // OpenCode gets the same instruction blob at its native global-rules path.
-    // Asserted here rather than relying on OpenCode's ~/.claude/CLAUDE.md
-    // fallback, which is exactly what the native link exists to avoid.
-    let opencode_md = fake_home.path().join(".config/opencode/AGENTS.md");
+    // OpenCode and Pi get the same instruction blob at their native
+    // global-rules paths. Asserted here rather than relying on a harness's
+    // ~/.claude/CLAUDE.md fallback, which is exactly what the native link
+    // exists to avoid (and which Pi does not have at all).
+    for link in NATIVE_INSTRUCTION_LINKS {
+        let path = fake_home.path().join(link);
+        assert!(path.is_symlink(), "expected {link} symlink");
+        assert!(
+            std::fs::read_link(&path)
+                .unwrap()
+                .ends_with("agent-instructions/AGENTS.md"),
+            "{link} should point to agent-instructions/AGENTS.md"
+        );
+    }
+
+    // Goose gets the blob by value. Both halves matter: the body check proves
+    // the block is wired to the instruction blob, and the regular-file check
+    // proves goose will actually read it.
+    let goose_md = fake_home.path().join(GOOSE_INSTRUCTIONS);
     assert!(
-        opencode_md.is_symlink(),
-        "expected .config/opencode/AGENTS.md symlink"
+        goose_md.is_file() && !goose_md.is_symlink(),
+        "expected {GOOSE_INSTRUCTIONS} to be a regular file, not a symlink"
     );
-    assert!(
-        std::fs::read_link(&opencode_md)
-            .unwrap()
-            .ends_with("agent-instructions/AGENTS.md"),
-        ".config/opencode/AGENTS.md should point to agent-instructions/AGENTS.md"
+    let goose_contents = std::fs::read_to_string(&goose_md).unwrap();
+    let instructions = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("agent-instructions/AGENTS.md"),
+    )
+    .unwrap();
+    assert_eq!(
+        managed_block_body(
+            &goose_contents,
+            &format!("# BEGIN {GOOSE_INSTRUCTIONS_BLOCK}"),
+            &format!("# END {GOOSE_INSTRUCTIONS_BLOCK}"),
+        ),
+        instructions,
+        "{GOOSE_INSTRUCTIONS} block body should be agent-instructions/AGENTS.md verbatim"
     );
 
     // Verify it points to the shared agent-instructions source with a relative path.
@@ -261,8 +311,8 @@ fn test_install_creates_symlinks() {
 /// resolving to the same source directory.
 ///
 /// Claude and Codex list their skill entries one by one in `src/main.rs`
-/// (their sections carry migration cleanups), while Muse and OpenCode derive
-/// theirs from a shared list. Nothing but this test ties the two spellings
+/// (their sections carry migration cleanups), while Muse, OpenCode, Goose, and Pi
+/// derive theirs from a shared list. Nothing but this test ties the two spellings
 /// together, so a skill added to one and forgotten in the other would install
 /// for some harnesses only and nobody would notice until a dependency load
 /// failed on the harness that lacked it. Comparing resolved targets rather
@@ -383,10 +433,19 @@ fn test_uninstall_removes_symlinks() {
         !claude_md.exists() && !claude_md.is_symlink(),
         "symlink should be removed after uninstall"
     );
-    let opencode_md = fake_home.path().join(".config/opencode/AGENTS.md");
+    for link in NATIVE_INSTRUCTION_LINKS {
+        let path = fake_home.path().join(link);
+        assert!(
+            !path.exists() && !path.is_symlink(),
+            "{link} should be removed after uninstall"
+        );
+    }
+    // As with the shell startup files, uninstall takes the block and leaves
+    // the file, since on a real machine the rest of it may be the user's.
+    let goose_after = std::fs::read_to_string(fake_home.path().join(GOOSE_INSTRUCTIONS)).unwrap();
     assert!(
-        !opencode_md.exists() && !opencode_md.is_symlink(),
-        ".config/opencode/AGENTS.md should be removed after uninstall"
+        !goose_after.contains(GOOSE_INSTRUCTIONS_BLOCK),
+        "managed block should be removed from {GOOSE_INSTRUCTIONS}, got: {goose_after}"
     );
     assert!(
         claude_settings.is_file() && !claude_settings.is_symlink(),
@@ -550,9 +609,18 @@ fn test_conditional_features_skipped_when_parent_missing() {
         !fake_home.path().join(".claude/CLAUDE.md").exists(),
         ".claude/CLAUDE.md should not exist when .claude doesn't exist"
     );
+    for link in NATIVE_INSTRUCTION_LINKS {
+        assert!(
+            !fake_home.path().join(link).exists(),
+            "{link} should not exist when its harness config directory doesn't exist"
+        );
+    }
+    // The block uses MissingDestination::Create, which would fail on a missing
+    // parent rather than skip; the PathExists gate is what keeps a machine
+    // without goose from failing install.
     assert!(
-        !fake_home.path().join(".config/opencode/AGENTS.md").exists(),
-        ".config/opencode/AGENTS.md should not exist when .config/opencode doesn't exist"
+        !fake_home.path().join(GOOSE_INSTRUCTIONS).exists(),
+        "{GOOSE_INSTRUCTIONS} should not exist when .config/goose doesn't exist"
     );
     assert!(
         !fake_home.path().join(".config/zed/keymap.json").exists(),
@@ -750,6 +818,7 @@ fn test_all_symlinks_are_relative() {
     let symlinks_to_check = [
         ".claude/CLAUDE.md",
         ".config/opencode/AGENTS.md",
+        ".pi/agent/AGENTS.md",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",

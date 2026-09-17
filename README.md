@@ -15,18 +15,22 @@ cargo run -p dotfiles -- uninstall
 
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
 Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. Agent skills are also
-installed for Muse Code and OpenCode, into `~/.config/muse/skills` and `~/.config/opencode/skills`, each only when the
-harness's config directory (`~/.config/muse`, `~/.config/opencode`) already exists. OpenCode additionally gets the
-shared agent instructions at `~/.config/opencode/AGENTS.md` under the same condition. The optional `scode-graphite`
-skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only
-when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
+installed for Muse Code, OpenCode, Goose, and Pi, into `~/.config/muse/skills`, `~/.config/opencode/skills`,
+`~/.config/goose/skills`, and `~/.pi/agent/skills`, each only when the harness's config directory (`~/.config/muse`,
+`~/.config/opencode`, `~/.config/goose`, `~/.pi/agent`) already exists. OpenCode, Goose, and Pi additionally get the
+shared agent instructions as `AGENTS.md` in that config directory, under the same condition. For OpenCode and Pi that is
+a symlink. Goose ignores a symlinked instruction file, so it gets a copy inside a managed block (the same mechanism as
+the shell startup files below), and picks up changes to the instructions only when install runs again. The optional
+`scode-graphite` skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill
+is installed only when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support`
+exists.
 
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.
 
 `~/.bashrc` and `~/.zshrc` are also unconditional, and they are the targets where install edits a plain-text file it
-does not own (the other non-owned file is `~/.claude/settings.json`, described below). Both receive the same block of
-shell aliases from `payload/shellrc`. The installer claims a region delimited by `# BEGIN
+does not own (the other non-owned files are `~/.claude/settings.json`, described below, and Goose's `AGENTS.md`, above).
+Both receive the same block of shell aliases from `payload/shellrc`. The installer claims a region delimited by `# BEGIN
 managed-block(scode-dotfiles/bash)` (or `.../zsh`) and a matching `END` line — other tools and your own edits can
 append, prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line
 separating the block from its neighbors and, if your file did not end in a newline, that newline. Anything you write

@@ -89,10 +89,10 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 /// Claude and Codex still spell their entries out one by one in
 /// `add_claude_features` and `add_codex_features`, because those sections
 /// interleave migration cleanups for paths earlier installer versions wrote;
-/// the Muse and OpenCode sections below derive theirs from this list. A test
-/// in `tests/cli_integration.rs` checks that all four harnesses end up with
-/// the same set, so a skill added to one place and not the other fails CI
-/// rather than silently installing for some harnesses only.
+/// the Muse, OpenCode, Goose, and Pi sections below derive theirs from this
+/// list. A test in `tests/cli_integration.rs` checks that every harness ends
+/// up with the same set, so a skill added to one place and not the other fails
+/// CI rather than silently installing for some harnesses only.
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "jjstack",
@@ -133,7 +133,7 @@ const EXTERNAL_AGENT_SKILLS: &[(&str, &str)] = &[
 /// directory so uninstall can remove the directory after its contents.
 ///
 /// The destination is the harness's *own* skills root, never another
-/// harness's. Muse and OpenCode both also scan `~/.claude/skills`, which is
+/// harness's. Muse, OpenCode, and Goose also scan `~/.claude/skills`, which is
 /// why they saw the installed skills before this existed; relying on that
 /// would make skill visibility depend on an unrelated product's home
 /// directory being present.
@@ -205,6 +205,79 @@ fn add_opencode_features(g: &mut FeatureGraph) {
         "~/.config/opencode",
         "~/.config/opencode/skills",
     );
+}
+
+/// Goose reads user-scope skills from `~/.config/goose/skills`. Checked on
+/// goose 1.50.1 by running `goose skills list` against a throwaway `HOME`: a
+/// skill directory there is listed, and so is one that is a symlink to a
+/// directory elsewhere, which is the shape this installer produces. Goose also
+/// scans `~/.claude/skills`, `~/.agents/skills`, and `~/.config/agents/skills`,
+/// and lists a name found in several roots once.
+///
+/// Global instructions: goose 1.50.1's `hints/load_hints.rs` looks in the
+/// config directory for each name in `CONTEXT_FILE_NAMES`, which defaults to
+/// `.goosehints` and `AGENTS.md`, and additionally reads `~/.agents/AGENTS.md`
+/// when `AGENTS.md` is among those names. A user who sets `CONTEXT_FILE_NAMES`
+/// without `AGENTS.md` in it turns this feature off, by goose's design.
+///
+/// The instructions are the one place a harness gets a copy instead of a
+/// symlink. Goose canonicalizes each hint file and skips it unless the result
+/// stays inside the file's own directory (the "import boundary" in
+/// `hints/import_files.rs`), so a link into this repo is dropped with only a
+/// `Skipping unsafe hint file` warning in the log. The first version of this
+/// feature was such a link, and it installed cleanly while goose ignored it.
+/// A managed block in a regular `~/.config/goose/AGENTS.md` passes the check,
+/// and it coexists with instructions the user wrote there by hand, which a
+/// symlink would have refused to replace. The cost is the usual one for
+/// `ManagedBlock`: an edit to the blob reaches Goose only on the next install,
+/// while every other harness sees it immediately through its symlink.
+///
+/// The `#` marker lines read as Markdown headings. That is harmless, since
+/// goose passes the file to the model as plain text.
+///
+/// NOTE: Goose expands `@path` tokens in these files as file imports, which no
+/// other harness does. The shared blob has none today; one added later would
+/// make goose try to inline whatever that path resolves to.
+fn add_goose_features(g: &mut FeatureGraph) {
+    g.add(
+        "goose-md",
+        ManagedBlock::new(
+            "agent-instructions/AGENTS.md",
+            "~/.config/goose/AGENTS.md",
+            "goose-agent-instructions",
+        )
+        .missing_destination(MissingDestination::Create),
+    )
+    .condition(PathExists::new("~/.config/goose"))
+    .build();
+
+    add_shared_skill_features(g, "goose", "~/.config/goose", "~/.config/goose/skills");
+}
+
+/// Pi reads user-scope skills from `~/.pi/agent/skills` (documented in its
+/// `docs/skills.md`; a symlinked skill directory there loads, checked against
+/// the skill loader of pi 0.85.1). It also reads `~/.agents/skills`, but not
+/// `~/.claude/skills` unless the user adds that to `skills` in its settings,
+/// so unlike the other derived harnesses Pi saw none of the installed skills
+/// before this existed.
+///
+/// The gate is `~/.pi/agent` rather than `~/.pi` because that is Pi's actual
+/// config directory (settings, auth, and sessions live there). Pi lets
+/// `PI_CODING_AGENT_DIR` move that directory; the installer does not follow
+/// it, so a relocated setup gets links Pi never reads, or none at all.
+///
+/// Global instructions come from `~/.pi/agent/AGENTS.md`, per Pi's README.
+/// Pi has no `~/.claude/CLAUDE.md` fallback, so without this link it ran with
+/// none of the shared instructions.
+fn add_pi_features(g: &mut FeatureGraph) {
+    g.add(
+        "pi-md",
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.pi/agent/AGENTS.md"),
+    )
+    .condition(PathExists::new("~/.pi/agent"))
+    .build();
+
+    add_shared_skill_features(g, "pi", "~/.pi/agent", "~/.pi/agent/skills");
 }
 
 fn add_zed_features(g: &mut FeatureGraph) {
@@ -868,6 +941,8 @@ fn features() -> FeatureGraph {
     add_codex_features(&mut g);
     add_muse_features(&mut g);
     add_opencode_features(&mut g);
+    add_goose_features(&mut g);
+    add_pi_features(&mut g);
     add_shell_features(&mut g);
     g
 }
