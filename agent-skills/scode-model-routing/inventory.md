@@ -5,9 +5,11 @@ routing requests on its own, and nothing here changes an answer.
 
 ## Inventory
 
-Each row is a model at one configured reasoning effort. The family determines the launch mechanism (see Launch mechanism
-in `SKILL.md`); `sota` marks models trusted with critical review and design decisions, not eligibility to orchestrate.
-Availability and user overrides may remove or replace these defaults; see Local availability in `SKILL.md`.
+Each row is a model at one calibrated reasoning effort. The rows record what routing has calibrated so far, not the
+efforts a model can run: a user may explicitly request an effort no row lists (see Routing model in `SKILL.md`). The
+family determines the launch mechanism (see Launch mechanism in `SKILL.md`); `sota` marks models trusted with critical
+review and design decisions, not eligibility to orchestrate. Availability and user overrides may remove or replace these
+defaults; see Local availability in `SKILL.md`.
 
 | model                             | family | sota |
 | --------------------------------- | ------ | ---- |

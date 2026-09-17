@@ -33,6 +33,10 @@ fix the skill or change this file in the same change, never leave them apart.
   itself when answering; those are not request inputs. If that file is absent and `~/.scode-galaxy-brainrc.md` is
   present, routing stops and tells the user to rename it rather than answering as if no config existed. Prose in this
   skill calls it "the model routing config file", never "the rc file".
+- The effort words attached to models in the inventory and profile tables are calibration defaults, not a whitelist of
+  what a model may run. An explicit user demand for a model at an effort the tables do not list routes to that model at
+  that effort (input 8); the tables' omission is never a reason to block, ask for confirmation, or substitute another
+  model. What the launch mechanism can actually select (input 11) is the limit on a demanded effort.
 - `SKILL.md` is the public surface and is kept lean, measured as what a session loads before its first delegation:
   everything needed to answer a routing request is in `SKILL.md`, and only the full inventory table, the calibration
   history, the size anchors, and config-file handling live in sidecars read on demand, each with its trigger named in
