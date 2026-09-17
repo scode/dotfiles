@@ -118,11 +118,18 @@ as "this does not apply on this machine" and installs nothing, while `Create` wr
 block. `Create` never creates parent directories — that is `ManagedDirectory`'s job — so a destination under a missing
 directory fails.
 
-The shell startup files are the registrations that use `Create`: `~/.bashrc` and `~/.zshrc` each get a block, both
-unconditionally, both from the single `payload/shellrc` body. Sharing one body is a constraint on the payload, not a
-convenience — everything in it must be valid in both shells, because the block is installed into both files regardless
-of which shell the machine uses. A shell-specific line means splitting the payload into per-shell sources, never
-guarding it inline. Uninstall removes both blocks and leaves both files, as for any managed block.
+The shell startup files are the unconditional registrations that use `Create`: `~/.bashrc` and `~/.zshrc` each get a
+block, both unconditionally, both from the single `payload/shellrc` body. Sharing one body is a constraint on the
+payload, not a convenience — everything in it must be valid in both shells, because the block is installed into both
+files regardless of which shell the machine uses. A shell-specific line means splitting the payload into per-shell
+sources, never guarding it inline. Uninstall removes both blocks and leaves both files, as for any managed block.
+
+Goose's global instructions are the other `Create` registration, gated on `~/.config/goose` existing:
+`~/.config/goose/AGENTS.md` gets a block whose body is `agent-instructions/AGENTS.md`. Every other harness gets that
+file as a symlink. Goose cannot: it canonicalizes each hint file and skips one that resolves outside the file's own
+directory, so a link into this repository installs cleanly and is then ignored (goose 1.50.1 logs `Skipping unsafe hint
+file` and carries on). The destination must therefore stay a regular file inside `~/.config/goose`. The consequence is
+that an edit to the shared instructions reaches Goose only on the next install.
 
 `Skip` is a statement about the destination, not a promise that the registration goes unchecked. The payload body is
 read and validated before the destination is examined, so a payload that is missing, not valid UTF-8, or carrying a
