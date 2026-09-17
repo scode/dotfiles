@@ -21,6 +21,7 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
     std::fs::create_dir_all(home.path().join(".config/opencode")).unwrap();
     std::fs::create_dir_all(home.path().join(".config/goose")).unwrap();
     std::fs::create_dir_all(home.path().join(".pi/agent")).unwrap();
+    std::fs::create_dir_all(home.path().join(".omp/agent")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
@@ -39,6 +40,7 @@ const SKILLS_ROOTS: &[&str] = &[
     ".config/opencode/skills",
     ".config/goose/skills",
     ".pi/agent/skills",
+    ".omp/agent/skills",
 ];
 
 /// Where the shared instruction blob is symlinked for harnesses that read a
@@ -50,7 +52,11 @@ const SKILLS_ROOTS: &[&str] = &[
 /// because it cannot take a symlink at all; see [`GOOSE_INSTRUCTIONS`]. Each
 /// path here is gated on its parent directory existing, which is what the
 /// missing-parent test relies on.
-const NATIVE_INSTRUCTION_LINKS: &[&str] = &[".config/opencode/AGENTS.md", ".pi/agent/AGENTS.md"];
+const NATIVE_INSTRUCTION_LINKS: &[&str] = &[
+    ".config/opencode/AGENTS.md",
+    ".pi/agent/AGENTS.md",
+    ".omp/agent/AGENTS.md",
+];
 
 /// Goose's copy of the instruction blob, relative to the fake home.
 ///
@@ -234,7 +240,7 @@ fn test_install_creates_symlinks() {
         );
     }
 
-    // OpenCode and Pi get the same instruction blob at their native
+    // OpenCode, Pi, and omp get the same instruction blob at their native
     // global-rules paths. Asserted here rather than relying on a harness's
     // ~/.claude/CLAUDE.md fallback, which is exactly what the native link
     // exists to avoid (and which Pi does not have at all).
@@ -311,13 +317,13 @@ fn test_install_creates_symlinks() {
 /// resolving to the same source directory.
 ///
 /// Claude and Codex list their skill entries one by one in `src/main.rs`
-/// (their sections carry migration cleanups), while Muse, OpenCode, Goose, and Pi
-/// derive theirs from a shared list. Nothing but this test ties the two spellings
-/// together, so a skill added to one and forgotten in the other would install
-/// for some harnesses only and nobody would notice until a dependency load
-/// failed on the harness that lacked it. Comparing resolved targets rather
-/// than names also catches an explicit entry whose destination name is right
-/// but whose source is a different skill.
+/// (their sections carry migration cleanups), while Muse, OpenCode, Goose, Pi,
+/// and omp derive theirs from a shared list. Nothing but this test ties the two
+/// spellings together, so a skill added to one and forgotten in the other would
+/// install for some harnesses only and nobody would notice until a dependency
+/// load failed on the harness that lacked it. Comparing resolved targets
+/// rather than names also catches an explicit entry whose destination name is
+/// right but whose source is a different skill.
 #[test]
 fn test_all_harnesses_install_the_same_skills() {
     let fake_home = setup_fake_home();
@@ -650,6 +656,47 @@ fn test_conditional_features_skipped_when_parent_missing() {
     assert!(ghostty.is_symlink(), "ghostty config should be symlinked");
 }
 
+/// Pi and omp are gated on their `agent` subdirectory, not on the dot-directory
+/// above it.
+///
+/// Both tools keep logs, caches, and run state directly under `~/.pi` or
+/// `~/.omp`, so that directory existing says little; `agent` is where config
+/// lives and what the tool itself reads skills and instructions from. A gate
+/// on the outer directory would also make install fail rather than skip: the
+/// skills root's parent would be missing, and nothing here creates parents.
+/// The missing-parents test removes every harness directory at once, so it
+/// cannot tell the two gates apart. This one leaves the outer directories in
+/// place and expects nothing to be installed under them.
+#[test]
+fn test_pi_and_omp_need_their_agent_directory() {
+    let fake_home = tempfile::tempdir().unwrap();
+    for outer in [".pi", ".omp"] {
+        std::fs::create_dir_all(fake_home.path().join(outer)).unwrap();
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for outer in [".pi", ".omp"] {
+        let entries: Vec<_> = std::fs::read_dir(fake_home.path().join(outer))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(
+            entries.is_empty(),
+            "~/{outer} without an agent directory should be left empty, got: {entries:?}"
+        );
+    }
+}
+
 #[test]
 fn test_graphite_skill_is_skipped_when_source_missing() {
     let fake_home = setup_fake_home_without_graphite_source();
@@ -819,6 +866,7 @@ fn test_all_symlinks_are_relative() {
         ".claude/CLAUDE.md",
         ".config/opencode/AGENTS.md",
         ".pi/agent/AGENTS.md",
+        ".omp/agent/AGENTS.md",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",

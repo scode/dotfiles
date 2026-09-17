@@ -34,20 +34,20 @@ The general rule: never assume a clean slate. If a path was previously installed
 
 Shared agent skills live in `agent-skills/`. When the user asks to view, modify, or discuss a skill, look there — not in
 `~/.claude/skills/`, `~/.codex/skills/`, `~/.config/muse/skills/`, `~/.config/opencode/skills/`,
-`~/.config/goose/skills/`, `~/.pi/agent/skills/`, or the old `payload/dot_claude/skills/` path.
+`~/.config/goose/skills/`, `~/.pi/agent/skills/`, `~/.omp/agent/skills/`, or the old `payload/dot_claude/skills/` path.
 
-Every skill is installed for all six harnesses (Claude Code, Codex, Muse Code, OpenCode, Goose, Pi). When adding,
-renaming, or removing a skill, update the explicit Claude and Codex entries in `src/main.rs` _and_ the
-`SHARED_AGENT_SKILLS` list that drives the Muse, OpenCode, Goose, and Pi entries; the integration test that compares the
-installed sets will otherwise fail.
+Every skill is installed for all seven harnesses (Claude Code, Codex, Muse Code, OpenCode, Goose, Pi, Oh My Pi). When
+adding, renaming, or removing a skill, update the explicit Claude and Codex entries in `src/main.rs` _and_ the
+`SHARED_AGENT_SKILLS` list that drives the Muse, OpenCode, Goose, Pi, and omp entries; the integration test that
+compares the installed sets will otherwise fail.
 
 ## Agent Instructions
 
 Shared installed agent instructions live in `agent-instructions/`. When changing the shared agent instruction blob that
 gets installed as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md`,
-`~/.config/goose/AGENTS.md`, and `~/.pi/agent/AGENTS.md`, edit `agent-instructions/AGENTS.md`, not the old
-`payload/dot_claude/CLAUDE.md` path. The Goose one is a copy in a managed block, not a symlink (see `SPEC.md`), so it
-changes only when install runs again.
+`~/.config/goose/AGENTS.md`, `~/.pi/agent/AGENTS.md`, and `~/.omp/agent/AGENTS.md`, edit `agent-instructions/AGENTS.md`,
+not the old `payload/dot_claude/CLAUDE.md` path. The Goose one is a copy in a managed block, not a symlink (see
+`SPEC.md`), so it changes only when install runs again.
 
 ## Lore
 
