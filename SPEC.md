@@ -9,10 +9,10 @@ The installer is intended to run from the repository root. Installer source path
 current working directory, not against the compiled binary path. Those sources are usually under `payload/`, but may
 also live elsewhere in the repository when the installed artifact is shared across multiple agent-specific destinations.
 
-This is acceptable for this repository because it is a personal checkout-driven installer, normally run with
-`cargo run -p dotfiles -- install` or `cargo run -p dotfiles -- uninstall` from the checkout. Future changes may make
-the base directory explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract
-changes at the same time.
+This is acceptable for this repository because it is a personal checkout-driven installer, normally run with `cargo run
+-p dotfiles -- install` or `cargo run -p dotfiles -- uninstall` from the checkout. Future changes may make the base
+directory explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract changes at
+the same time.
 
 ## Manual Skill Evals
 
@@ -256,12 +256,12 @@ reading the PR before any edit, so the failure is total and the PR is never touc
 (cli/cli PR 11987; issues 11983 and 11986); releases through 2.82.0 are reported broken. This was hit for real on
 2026-09-13 mid-landing, after the parent PR had merged and before the child was retargeted.
 
-The skill therefore edits PR title, body, and base through the REST endpoint
-`PATCH /repos/{owner}/{repo}/pulls/{number}` via `gh api`, everywhere, rather than instructing the agent to upgrade
-`gh`. Upgrading is a host setup decision the skill is not in a position to make, the REST call is one line, and it
-already uses `gh api` for branch deletion. Reviews should not "simplify" the REST calls back to `gh pr edit`, and should
-not add a `gh pr edit` primary path with a REST fallback: the failure sits in the middle of the landing sequence, where
-a dead primary path costs a stopped landing. The rest of the `gh pr` surface the skill uses (`create`, `view`, `ready`,
+The skill therefore edits PR title, body, and base through the REST endpoint `PATCH
+/repos/{owner}/{repo}/pulls/{number}` via `gh api`, everywhere, rather than instructing the agent to upgrade `gh`.
+Upgrading is a host setup decision the skill is not in a position to make, the REST call is one line, and it already
+uses `gh api` for branch deletion. Reviews should not "simplify" the REST calls back to `gh pr edit`, and should not add
+a `gh pr edit` primary path with a REST fallback: the failure sits in the middle of the landing sequence, where a dead
+primary path costs a stopped landing. The rest of the `gh pr` surface the skill uses (`create`, `view`, `ready`,
 `merge`, `list`) is verified working on 2.45.0 and stays as is.
 
 ## Legacy `old/` Tree

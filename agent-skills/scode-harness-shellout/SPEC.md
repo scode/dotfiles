@@ -21,9 +21,9 @@ fix the skill or change this file in the same change, never leave them apart.
   The guarantee is inertness: an unsolicited load does nothing.
 - `SKILL.md` is the public surface and is kept lean: what a caller needs on every load stays in it, and anything a
   caller does not need on every load lives in a sidecar read on demand. `SKILL.md` names the trigger for each sidecar,
-  and that table is keyed on the five launch-mechanism strings a caller can hold: `codex exec`, `claude -p`,
-  `muse exec`, and `opencode run` each name one file under `harness/`, and `native` names nothing, because this skill
-  has no part in a native delegation.
+  and that table is keyed on the five launch-mechanism strings a caller can hold: `codex exec`, `claude -p`, `muse
+  exec`, and `opencode run` each name one file under `harness/`, and `native` names nothing, because this skill has no
+  part in a native delegation.
 - Launch commands live only in the harness files. `SKILL.md` carries no launch line, so that every launch goes through
   the file that carries the observed-behavior notes for that harness.
 - Multiple concurrent orchestrators must not conflict through anything this skill puts on disk. Every scratch file,

@@ -56,8 +56,8 @@ Collect these values before making changes:
 
 Apply these defaults unless the user explicitly asks to diverge:
 
-- Homebrew tap repository, for the README install line only: `scode/homebrew-dist-tap`, installed as
-  `brew install scode/dist-tap/<crate_name>`
+- Homebrew tap repository, for the README install line only: `scode/homebrew-dist-tap`, installed as `brew install
+  scode/dist-tap/<crate_name>`
 - Dist installers: none (`installers = []`). No `tap`, no `publish-jobs`, no tap token secret.
 - Dist targets, in this order to match the template and the migrated repositories: `aarch64-apple-darwin`,
   `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`
@@ -167,9 +167,9 @@ rewriting the pin. Two cases:
    dist's automatic file discovery for that file (see Phase J), so a value like `LICENSE-MIT` or `README.txt` puts a
    wrongly named member in the archive and the tap rejects it. Leaving them unset is fine.
 4. `[profile.dist]` is added automatically by `dist init --yes` on the new-repository path in Phase E. On the
-   existing-pin path nothing adds it; if it is missing, add what `dist init` writes (`inherits = "release"` and
-   `lto = "thin"` on dist 0.32.0) by hand. dist runs without it, but the release binaries would then be built with the
-   plain `release` profile.
+   existing-pin path nothing adds it; if it is missing, add what `dist init` writes (`inherits = "release"` and `lto =
+   "thin"` on dist 0.32.0) by hand. dist runs without it, but the release binaries would then be built with the plain
+   `release` profile.
 
 ### Phase E: Generate the Dist Release Workflow
 
@@ -187,18 +187,18 @@ New repository (no existing pin):
 Existing pin (a migration, or any later change to `dist-workspace.toml`):
 
 1. Edit `dist-workspace.toml` (Phase C).
-2. Run `$D generate`, then `$D generate --check`, with `$D` the pinned-version binary from Phase B. Never run
-   `dist init` here; it would bump the pin. `generate` leaves comments in `dist-workspace.toml` alone.
+2. Run `$D generate`, then `$D generate --check`, with `$D` the pinned-version binary from Phase B. Never run `dist
+   init` here; it would bump the pin. `generate` leaves comments in `dist-workspace.toml` alone.
 
 Existing pin with `allow-dirty = ["ci"]` (saltybox's shape, from Phase A):
 
 `allow-dirty = ["ci"]` does more than tolerate a hand edit. With it set, `$D generate` exits 0 and writes nothing, and
 `$D generate --check` exits 0 whatever the file contains, so the previous case's two commands silently do nothing and
-the old publish job stays in `release.yml`. Regenerate by removing the `allow-dirty` line temporarily, running
-`$D generate`, re-applying the repository's local patch to the fresh output (for saltybox, the `contents: read` at
-workflow level with `contents: write` only on the `host` job), then restoring `allow-dirty`. Say in the PR that
-`generate --check` proves nothing on this repository. If the local patch is not documented anywhere, diff the old
-`release.yml` against the fresh output before discarding it; that diff is the patch.
+the old publish job stays in `release.yml`. Regenerate by removing the `allow-dirty` line temporarily, running `$D
+generate`, re-applying the repository's local patch to the fresh output (for saltybox, the `contents: read` at workflow
+level with `contents: write` only on the `host` job), then restoring `allow-dirty`. Say in the PR that `generate
+--check` proves nothing on this repository. If the local patch is not documented anywhere, diff the old `release.yml`
+against the fresh output before discarding it; that diff is the patch.
 
 In all cases, confirm afterwards that `release.yml` has no `publish-homebrew-formula` job and references no secret other
 than `GITHUB_TOKEN`. If either is present, push-model keys survive somewhere dist reads (`dist-workspace.toml`, or the
@@ -351,8 +351,9 @@ hand-off. Nothing here writes to the tap.
 Run these checks after setup. The negative checks matter as much as the positive ones; a push-model key that survived
 regenerates the publish job on the next `dist generate`.
 
-1. `rg -n '^cargo-dist-version = "' dist-workspace.toml && rg -n '^installers = \[\]' dist-workspace.toml && rg -n '^plan-jobs = \["./release-plan-tests"\]' dist-workspace.toml`
-   (three separate checks; one alternation would pass on any single hit)
+1. `rg -n '^cargo-dist-version = "' dist-workspace.toml && rg -n '^installers = \[\]' dist-workspace.toml && rg -n
+   '^plan-jobs = \["./release-plan-tests"\]' dist-workspace.toml` (three separate checks; one alternation would pass on
+   any single hit)
 2. `! rg -n '^\s*(tap|publish-jobs)\s*=|^\s*installers\s*=.*homebrew' dist-workspace.toml Cargo.toml` (keys, not words,
    so a comment that names the tap does not trip it; `Cargo.toml` is included because dist also reads its
    `metadata.dist` tables)
@@ -360,7 +361,8 @@ regenerates the publish job on the next `dist generate`.
 4. `rg -n 'custom-release-plan-tests' .github/workflows/release.yml`
 5. `! rg -n 'publish-homebrew-formula|HOMEBREW_TAP_TOKEN|homebrew-dist-tap' .github/workflows/release.yml`
 6. `rg -n 'test-linux|test-macos' .github/workflows/release-plan-tests.yml`
-7. `rg -n 'action-semantic-pull-request|changelog-decision|github-script' .github/workflows/conventional-commit-pr-title.yml`
+7. `rg -n 'action-semantic-pull-request|changelog-decision|github-script'
+   .github/workflows/conventional-commit-pr-title.yml`
 8. `rg -n 'Conventional Commits|PR titles|Releasing|CONTRIBUTING.md' CLAUDE.md`
 9. `rg -n 'conventional_commits = true' cliff.toml`
 10. `rg -n 'git-cliff --tag|CHANGELOG\.md|Conventional Commits|cut a release|bump|release-notes/' CONTRIBUTING.md`

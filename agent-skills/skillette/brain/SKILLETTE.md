@@ -79,9 +79,9 @@ name (or login) and numeric id, and configure only the brain repository with tha
 `<id>+<login>@users.noreply.github.com`. Do not change global Git configuration or invent an email address. Apply the
 same rule to the isolated bootstrap repository when the remote is empty.
 
-Create operation directories with `mktemp -d` under that state directory. Initialize the bare cache if absent with
-`git init --bare`, then set its `origin` to `https://github.com/scode/brain.git`. Serialize cache initialization and
-worktree add/remove operations through `sh <this-skillette-directory>/with-cache-lock.sh <command> <args...>`. For a
+Create operation directories with `mktemp -d` under that state directory. Initialize the bare cache if absent with `git
+init --bare`, then set its `origin` to `https://github.com/scode/brain.git`. Serialize cache initialization and worktree
+add/remove operations through `sh <this-skillette-directory>/with-cache-lock.sh <command> <args...>`. For a
 multi-command setup, pass a shell script whose commands have explicit failure guards. This wrapper owns the one shared
 lock at `${XDG_CACHE_HOME:-$HOME/.cache}/brain/scode-brain.lock` and releases it on ordinary completion or failure. Do
 not acquire a lock in one tool call and use it in another, invent another lock path, or remove a lock merely because it
@@ -89,10 +89,10 @@ is old. Interrupted operations may leave a lock because the child command might 
 protected operation has ended before manual recovery. Do not hold this metadata lock while composing notes or accessing
 the network.
 
-Resolve the session snapshot (fetching outside the wrapper only when required), then run
-`sh <this-skillette-directory>/with-cache-lock.sh git -C <cache> worktree add --detach <worktree> <operation-ref>`. Use
-the same wrapper for `git -C <cache> worktree remove <worktree>` at cleanup. Never put `git fetch` or `git push` inside
-the wrapper; only the short local metadata command belongs there.
+Resolve the session snapshot (fetching outside the wrapper only when required), then run `sh
+<this-skillette-directory>/with-cache-lock.sh git -C <cache> worktree add --detach <worktree> <operation-ref>`. Use the
+same wrapper for `git -C <cache> worktree remove <worktree>` at cleanup. Never put `git fetch` or `git push` inside the
+wrapper; only the short local metadata command belongs there.
 
 Verify an existing cache is bare and its origin refers to `scode/brain`; do not repurpose an unexpected repository. Use
 the session's default branch and snapshot SHA. Create a unique ref under `refs/brain-operations/<operation-id>/base` at
@@ -103,12 +103,12 @@ cache garbage collection, which could interfere with another operation: set `gc.
 the cache. If the cache was removed while unpublished worktrees remain, preserve those directories and drafts; do not
 treat broken worktree metadata as permission to delete unpublished content.
 
-Read-only operations can omit the worktree: use the session snapshot's pinned commit SHA with
-`git show <sha>:<brain>/BRAIN.md` and the selected artifact paths. Do not use an arbitrary existing tracking ref as a
-substitute for the recorded session snapshot. Never borrow another operation's worktree, even if its HEAD matches the
-remote: it may have unpublished edits, and its owner may remove it at any moment. The empty `--refmap=` keeps fetch from
-also updating shared remote-tracking refs through the cache's configured fetch mapping. A typical fetch is
-`git -C <cache> fetch --no-write-fetch-head --refmap= origin refs/heads/<branch>:refs/brain-operations/<id>/base`.
+Read-only operations can omit the worktree: use the session snapshot's pinned commit SHA with `git show
+<sha>:<brain>/BRAIN.md` and the selected artifact paths. Do not use an arbitrary existing tracking ref as a substitute
+for the recorded session snapshot. Never borrow another operation's worktree, even if its HEAD matches the remote: it
+may have unpublished edits, and its owner may remove it at any moment. The empty `--refmap=` keeps fetch from also
+updating shared remote-tracking refs through the cache's configured fetch mapping. A typical fetch is `git -C <cache>
+fetch --no-write-fetch-head --refmap= origin refs/heads/<branch>:refs/brain-operations/<id>/base`.
 
 An empty remote has no base commit. Bootstrap it in an isolated repository under the operation directory, on `main`,
 with the requested brain's empty index (and artifact, if adding one). Push normally. If another writer initializes it

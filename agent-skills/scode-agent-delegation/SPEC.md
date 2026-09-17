@@ -41,11 +41,11 @@ fix the skill or change this file in the same change, never leave them apart.
   run id as the first step of every delegation, creates and owns `<tree>/.agent-delegation/<run-id>/`, names every
   artifact it prescribes by that id, never removes or reinterprets a run directory it did not create, and moves its own
   run directory to the session's private scratch space only once the caller reports having acted on the verdict.
-- The gate returns exactly one of the verdicts listed in `SKILL.md` — `accepted`, `accepted with local fixes`,
-  `spec defect`, `substantive failure, fixable`, `substantive failure, structural`, `execution-path failure`,
-  `misclassified`, `inconclusive`, `unresumable`, `blocked on user` — with the payload the table names, and never a
-  verdict outside that list. What the caller does with a verdict is the caller's; this skill never escalates, reroutes,
-  relaunches, or removes changes from the tree.
+- The gate returns exactly one of the verdicts listed in `SKILL.md` — `accepted`, `accepted with local fixes`, `spec
+  defect`, `substantive failure, fixable`, `substantive failure, structural`, `execution-path failure`, `misclassified`,
+  `inconclusive`, `unresumable`, `blocked on user` — with the payload the table names, and never a verdict outside that
+  list. What the caller does with a verdict is the caller's; this skill never escalates, reroutes, relaunches, or
+  removes changes from the tree.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.

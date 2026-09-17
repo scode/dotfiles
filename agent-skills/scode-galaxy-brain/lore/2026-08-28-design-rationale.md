@@ -101,9 +101,8 @@ escalation model for a fresh implementation informed by concrete acceptance fail
 ## Permissions and concurrency
 
 The skill needs the `claude`, `codex`, and `muse` CLIs installed and authenticated for whichever families it crosses
-into. Foreign-harness delegation bypasses permission checks with `codex --yolo`, `muse exec --yolo`, or
-`claude --dangerously-skip-permissions`. Use it only where you would accept the same permissions for the orchestrating
-session.
+into. Foreign-harness delegation bypasses permission checks with `codex --yolo`, `muse exec --yolo`, or `claude
+--dangerously-skip-permissions`. Use it only where you would accept the same permissions for the orchestrating session.
 
 Meta's Muse Code is never chosen on its own. It becomes a route only through `prefer-muse`, an explicit request, or a
 deliberate cross-family decision announced as such. Its profile placements are provisional, based on vendor-reported

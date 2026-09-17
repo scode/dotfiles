@@ -50,10 +50,10 @@ is not returned to the workhorse by default. Unavailable required expertise bloc
 weaker reviewer.
 
 Resolve `inherit` to the explicit operator-approved executor pair in the blueprint, not an inferred runtime identity.
-Convert a `native` mechanism to the chosen model's documented shellout mechanism: GPT to `codex exec`, Claude to
-`claude -p`, Muse to `muse exec`, GLM to `opencode run`. Verify that CLI even when native availability would have
-sufficed. Record both routing's answer and the effective shellout route, attributing the override to this prototype. Do
-not convert `no suitable route` into permission to launch. Unsupported models need a verified shared harness procedure
+Convert a `native` mechanism to the chosen model's documented shellout mechanism: GPT to `codex exec`, Claude to `claude
+-p`, Muse to `muse exec`, GLM to `opencode run`. Verify that CLI even when native availability would have sufficed.
+Record both routing's answer and the effective shellout route, attributing the override to this prototype. Do not
+convert `no suitable route` into permission to launch. Unsupported models need a verified shared harness procedure
 before use. Never improvise launch flags.
 
 For related follow-ups, resume the existing consultant, worker, or reviewer rather than starting a fresh conversation.

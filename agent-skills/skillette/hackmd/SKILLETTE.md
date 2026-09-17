@@ -43,8 +43,8 @@ every trailing newline, so a file that ends in a blank line comes back from `exp
 wants the file byte-for-byte, PATCH it through the API with a `jq`-built body instead (see the API section). Linux also
 refuses a single argument over 128 KB, but that never matters because HackMD's own cap is lower; see the next paragraph.
 
-NOTE: HackMD rejects any create or update whose JSON request body exceeds 100 KiB (102,400 bytes) with
-`413 {"message":"Bad Request"}`. The content is counted after JSON escaping, so every newline and double quote costs two
+NOTE: HackMD rejects any create or update whose JSON request body exceeds 100 KiB (102,400 bytes) with `413
+{"message":"Bad Request"}`. The content is counted after JSON escaping, so every newline and double quote costs two
 bytes, and a real Markdown document tops out somewhere around 90 KB on disk. The CLI sends the same request as the API,
 so both paths hit the same wall and neither has a workaround. Check `wc -c` before you start; a document over the cap
 has to be split into several notes, and how to split it is the user's call, not yours.
@@ -59,8 +59,8 @@ ones, so a `diff` against the source file whose only differences are trailing bl
 difference means the wrong content landed.
 
 When the user names a note by title, list with `--output=json` and pick the entry whose title matches exactly;
-`--filter` does substring matching, so "Delete me" also matches "Delete me not". Confirm the id with
-`notes --noteId=<id>` before anything destructive, and after a delete re-list to confirm the id is gone.
+`--filter` does substring matching, so "Delete me" also matches "Delete me not". Confirm the id with `notes
+--noteId=<id>` before anything destructive, and after a delete re-list to confirm the id is gone.
 
 ## Permissions
 
@@ -91,10 +91,9 @@ The 2.5.0 bug was invisible without this check, and someone may have changed per
 permissions on every update of a note that is meant to be shared, so they self-heal. `commentPermission` is not in the
 `GET` response, so it cannot be read back; set it at creation and leave it.
 
-The end-to-end test for guest readability is an anonymous request to the view link:
-`curl -sS -o /dev/null -w '%{http_code}\n' 'https://hackmd.io/<id>?type=view'` prints 200 for a guest-readable note and
-403 for an owner-only one. Run it after sharing, and after tightening, since it proves what a stranger sees rather than
-what the API claims.
+The end-to-end test for guest readability is an anonymous request to the view link: `curl -sS -o /dev/null -w
+'%{http_code}\n' 'https://hackmd.io/<id>?type=view'` prints 200 for a guest-readable note and 403 for an owner-only one.
+Run it after sharing, and after tightening, since it proves what a stranger sees rather than what the API claims.
 
 ## Links and rendering
 
@@ -117,8 +116,8 @@ bottleneck. Header `Authorization: Bearer <token>`, JSON bodies, base URL and to
 - `GET /notes/:id` reads metadata, permissions, and content.
 - `PATCH /notes/:id` with a body of `content`, `readPermission`, and `writePermission` replaces content and permissions
   in one request; fields you leave out are left unchanged. Success is 202. With `$tok` and `$api` from the snippet
-  above, an update that keeps the file byte-for-byte is
-  `jq -Rs '{content: .}' doc.md | curl -sS -X PATCH -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -d @- "$api/notes/<id>"`.
+  above, an update that keeps the file byte-for-byte is `jq -Rs '{content: .}' doc.md | curl -sS -X PATCH -H
+  "Authorization: Bearer $tok" -H 'Content-Type: application/json' -d @- "$api/notes/<id>"`.
 - `DELETE /notes/:id` removes a note.
 
 On a failed request, report the HTTP status and the first few hundred bytes of the body; that is where HackMD puts the

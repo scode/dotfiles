@@ -76,10 +76,10 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    - Keep the checkout aligned with the selected scope's after-state while reviewers run. If that is not true, use an
      isolated checkout/worktree or abort instead of asking reviewers to infer context from stale files.
    - Record a short human-readable scope label that names the selection and includes the touched-file count and diff
-     line count, such as `current commit <id> (3 files, 120 diff lines)` or
-     `commit <id> + uncommitted changes (7 files, 480 diff lines)`. The counts are a guard, not decoration: a label
-     showing a handful of diff lines when the in-flight change is known to be large means the wrong scope was selected,
-     and the user should be able to see that before reviewers spend anything on it.
+     line count, such as `current commit <id> (3 files, 120 diff lines)` or `commit <id> + uncommitted changes (7 files,
+     480 diff lines)`. The counts are a guard, not decoration: a label showing a handful of diff lines when the
+     in-flight change is known to be large means the wrong scope was selected, and the user should be able to see that
+     before reviewers spend anything on it.
    - Name the run: `<YYYYMMDD>-<HHMM>-<short commit id>-<4 hex of scope hash>`, for example
      `20260829-0412-62d866d-9c2e`, built from `date -u +%Y%m%d-%H%M`, the abbreviated id of the current commit (the
      parent, when the working copy is itself a commit), and the first four characters of `sha256sum` over the scope
@@ -132,8 +132,8 @@ Review the uncommitted slice by itself despite an unpublished current commit onl
    own. Every finding must carry at least one specific source file reference; that reference is evidence and an anchor,
    not a substitute for context. Length follows the explanation: a quarter to half a page is fine when the claim needs
    it, and neither forced brevity nor padding is acceptable. The reader should not need to open the code merely to
-   understand the claim and decide whether it is worth addressing. Return each finding with the literal fields
-   `What happens:`, `Why it matters:`, and `Suggested change:` from the Output Contract. Do not collapse them into one
+   understand the claim and decide whether it is worth addressing. Return each finding with the literal fields `What
+   happens:`, `Why it matters:`, and `Suggested change:` from the Output Contract. Do not collapse them into one
    rationale paragraph. Actionability is a quality bar, not an invitation to summarize: a reviewer that spots the same
    pattern in several independently editable places returns one finding per place, not one aggregate finding for the
    pattern. If a reviewer has zero findings, it returns an empty list together with a one-line statement that it
@@ -462,11 +462,11 @@ Write findings for a reader who does not already know the codebase. Every findin
 
 The body is the restater's prose, verbatim (step 11): one or more paragraphs, written by an agent that did not know the
 code and went and read it, covering what the code does, what goes wrong, why anyone should care, and what to change, in
-whatever order explains it best. The three labeled fields reviewers use (`What happens:`, `Why it matters:`,
-`Suggested change:`) are a wire format between reviewers and the coordinator, there to stop a reviewer from compressing
-a finding into a polished one-liner such as "cover the cached assembly path" that is technically accurate but useful
-only after the reader reconstructs the code. They never appear in the user-facing report. If there is no validated
-restater output, there is no report — see step 11.
+whatever order explains it best. The three labeled fields reviewers use (`What happens:`, `Why it matters:`, `Suggested
+change:`) are a wire format between reviewers and the coordinator, there to stop a reviewer from compressing a finding
+into a polished one-liner such as "cover the cached assembly path" that is technically accurate but useful only after
+the reader reconstructs the code. They never appear in the user-facing report. If there is no validated restater output,
+there is no report — see step 11.
 
 The prose states the finding in the plainest terms that do not lose precision, for a reader who does not know the
 codebase at all. Project or domain jargon appears only when necessary and is introduced before it is relied on. A
@@ -491,12 +491,12 @@ reviewer that returned something other than a review did not complete one, howev
 the reviewers it skipped. A skipped reviewer's findings section must say it was skipped by the fast path — an unspawned
 reviewer did not return an empty finding list, and the report must not read as if it did.
 
-Always include
-`Reviewer continuation: <p2>/<eligible2> second passes, <p3>/<eligible3> third passes; unavailable: <names or none>; capped with new findings: <names or none>`
-before the findings sections. A reviewer is eligible for a second pass when its first pass was non-empty, and eligible
-for a third when its second pass produced at least one significant, credible new finding. A reviewer belongs in
-`unavailable` when the host could not resume it, and in `capped with new findings` when its third pass was non-empty.
-This line distinguishes a bounded search from both a one-shot review and a claim that every reviewer reached saturation.
+Always include `Reviewer continuation: <p2>/<eligible2> second passes, <p3>/<eligible3> third passes; unavailable:
+<names or none>; capped with new findings: <names or none>` before the findings sections. A reviewer is eligible for a
+second pass when its first pass was non-empty, and eligible for a third when its second pass produced at least one
+significant, credible new finding. A reviewer belongs in `unavailable` when the host could not resume it, and in `capped
+with new findings` when its third pass was non-empty. This line distinguishes a bounded search from both a one-shot
+review and a claim that every reviewer reached saturation.
 
 Always include `Restatement: <n>/<n> findings restated, <a> attempt(s)` before the findings sections, where both counts
 are the number of reported findings and the attempt count is 1 or 2. A successful report always says `n/n`; the line is

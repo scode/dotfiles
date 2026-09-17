@@ -112,15 +112,15 @@ anything else; the bullets are in precedence order, and the first that matches w
   assumptions and implements straight through, and it is the case the protocol exists to prevent. Do not accept the
   later checkpoint as if it were the one you were waiting for: the skipped file was never answered. If the skipped file
   is missing altogether, the run gave you a diff with no account of the choices in it: gate the diff now per `gate.md`
-  and return `substantive failure, fixable` when the gate finds only well-specified defects or
-  `substantive failure, structural` when it finds the diff broadly wrong, in either case with "no assumptions file"
-  listed as an acceptance failure. Otherwise do the skipped review now, against the diff: read the skipped file and
-  decide, item by item, what you would have answered. If every answer is `OK`, or the replacements are local edits,
-  write the reply file for the skipped stop and the reply for the stop it did reach, and resume with a prompt that says
-  both: it skipped the assumptions stop, `ANSWERS.md` now exists and its replacements must be applied to the
-  implementation that already exists, `REVIEW.md` covers `DECISIONS.md`, and it should re-run the checks and continue
-  from where the protocol expects it. That resume counts as the one extra reply the cap allows for the checkpoint it
-  skipped. If a replacement invalidates the design, the diff is broadly wrong: return `substantive failure, structural`.
+  and return `substantive failure, fixable` when the gate finds only well-specified defects or `substantive failure,
+  structural` when it finds the diff broadly wrong, in either case with "no assumptions file" listed as an acceptance
+  failure. Otherwise do the skipped review now, against the diff: read the skipped file and decide, item by item, what
+  you would have answered. If every answer is `OK`, or the replacements are local edits, write the reply file for the
+  skipped stop and the reply for the stop it did reach, and resume with a prompt that says both: it skipped the
+  assumptions stop, `ANSWERS.md` now exists and its replacements must be applied to the implementation that already
+  exists, `REVIEW.md` covers `DECISIONS.md`, and it should re-run the checks and continue from where the protocol
+  expects it. That resume counts as the one extra reply the cap allows for the checkpoint it skipped. If a replacement
+  invalidates the design, the diff is broadly wrong: return `substantive failure, structural`.
 - An outcome from earlier than expected — `AWAITING GUIDANCE` again after `ANSWERS.md`, `AWAITING REVIEW` again after
   `REVIEW.md`: a repeat stop, handled by the cap under Reviewing a checkpoint.
 - On the first resume turn only, `AWAITING REVIEW` with a `REPORT.md` already written: proceed with the review, and tell

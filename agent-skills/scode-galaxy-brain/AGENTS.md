@@ -17,8 +17,8 @@ test, and then in every skill that carries one.
 The stanza reads a dependency on Codex from `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`, because Codex has no
 mid-turn skill loader and that is the root the Codex 0.152 binary uses (the bundled `skill-installer` skill and
 `codex-rs/skills` both say so). Codex's public docs already describe a `.agents/skills` root. When Codex changes its
-skills root, or the installer starts writing somewhere else for Codex, re-verify the stanza's path with a live
-`codex exec` run in an isolated `CODEX_HOME` and update the template in `tests/skill_deps.rs` and every stanza together.
+skills root, or the installer starts writing somewhere else for Codex, re-verify the stanza's path with a live `codex
+exec` run in an isolated `CODEX_HOME` and update the template in `tests/skill_deps.rs` and every stanza together.
 
 ## Evaluating changes
 

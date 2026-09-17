@@ -31,8 +31,8 @@ cargo xtask eval synthesize --comparison eval-runs/pre-pr-review-swarm/<comparis
 By default, `run` repeats each case three times. Outputs go under `eval-runs/`, and cloned target repositories go under
 `eval-worktrees/`; both directories are ignored by git.
 
-Use `--skill-path <path>` to evaluate a local skill directory other than the working tree default. Use
-`--skill-ref <git-ref>` when you want the harness to export the skill from a specific commit, branch, or tag.
+Use `--skill-path <path>` to evaluate a local skill directory other than the working tree default. Use `--skill-ref
+<git-ref>` when you want the harness to export the skill from a specific commit, branch, or tag.
 
 Use `--reviewer <name>` to restrict a run to a single reviewer charter (for example `--reviewer test-quality`). The full
 swarm costs one agent per reviewer charter per repeat, which is wasted spend when only one charter changed. The name

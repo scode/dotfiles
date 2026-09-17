@@ -13,8 +13,8 @@ jobs:
   fmt:
     runs-on: ubicloud
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -31,14 +31,14 @@ jobs:
   dprint:
     runs-on: ubicloud
     steps:
-      - uses: actions/checkout@v4
-      - uses: dprint/check@v2.3
+      - uses: actions/checkout@v6
+      - uses: dprint/check@v2.5
 
   clippy:
     runs-on: ubicloud
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -55,8 +55,8 @@ jobs:
   test:
     runs-on: ubicloud
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v6
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/

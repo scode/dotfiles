@@ -26,9 +26,9 @@ The statusline script is not conditional on Claude or Codex. Install creates `~/
 
 `~/.bashrc` and `~/.zshrc` are also unconditional, and they are the targets where install edits a plain-text file it
 does not own (the other non-owned file is `~/.claude/settings.json`, described below). Both receive the same block of
-shell aliases from `payload/shellrc`. The installer claims a region delimited by
-`# BEGIN managed-block(scode-dotfiles/bash)` (or `.../zsh`) and a matching `END` line — other tools and your own edits
-can append, prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line
+shell aliases from `payload/shellrc`. The installer claims a region delimited by `# BEGIN
+managed-block(scode-dotfiles/bash)` (or `.../zsh`) and a matching `END` line — other tools and your own edits can
+append, prepend, and rearrange freely around it. The only things install writes outside the markers are a blank line
 separating the block from its neighbors and, if your file did not end in a newline, that newline. Anything you write
 _between_ the markers is overwritten on the next install. Either file is created if it does not exist yet, so a machine
 that never runs zsh ends up with a small `~/.zshrc` it does not use. The zsh path is always `~/.zshrc`; a setup that

@@ -108,9 +108,9 @@ Do not rely on `set -e` in commands run through an agent's shell tool. Agent har
 `eval` placed in a non-final position of an `&&` list, and bash ignores errexit there — both for the `eval` itself and
 for everything it executes. The flag still shows as enabled in `$-` and `SHELLOPTS`, so every diagnostic says the script
 is guarded while every failed guard falls through to the next command. Guard-then-mutate scripts fail open; this has
-caused a real unguarded `gh pr merge`. Give each command its own failure path instead: chain with `&&`, or append
-`|| exit 1` (an explicit `exit` does propagate out of the wrapper). Standalone script files executed via their own
-shebang get a fresh shell and are unaffected.
+caused a real unguarded `gh pr merge`. Give each command its own failure path instead: chain with `&&`, or append `||
+exit 1` (an explicit `exit` does propagate out of the wrapper). Standalone script files executed via their own shebang
+get a fresh shell and are unaffected.
 
 # Watching a background process: never `pgrep -f` for liveness
 

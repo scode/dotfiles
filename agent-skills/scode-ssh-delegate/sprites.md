@@ -28,8 +28,8 @@ with existing sprites:
 
 Both forms can coexist with SSH hosts, and with each other, in one invocation.
 
-Sprite names beginning with `-` are rejected. Sprite work needs the `sprite` CLI on `PATH` and a configured org
-(`sprite org list` shows one); if either is missing, report that and register nothing sprite-related.
+Sprite names beginning with `-` are rejected. Sprite work needs the `sprite` CLI on `PATH` and a configured org (`sprite
+org list` shows one); if either is missing, report that and register nothing sprite-related.
 
 ### Registering named sprites
 
@@ -93,8 +93,8 @@ by:
 - Homebrew, then `brew install codex`. Download `https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh`
   completely over HTTPS and run it with `NONINTERACTIVE=1 bash`; it installs to `/home/linuxbrew/.linuxbrew`. The
   preinstalled `~/.local/bin/codex` still shadows the brew one on the default `PATH`, so every later exec that runs
-  Codex must put `/home/linuxbrew/.linuxbrew/bin` first: `PATH=/home/linuxbrew/.linuxbrew/bin:$PATH`. Verify with
-  `codex --version` under that `PATH`.
+  Codex must put `/home/linuxbrew/.linuxbrew/bin` first: `PATH=/home/linuxbrew/.linuxbrew/bin:$PATH`. Verify with `codex
+  --version` under that `PATH`.
 - Whatever language toolchain the task needs, brought to a current version rather than trusted as shipped. For Rust,
   `rustup update stable && rustup default stable` through the preinstalled shim is enough: the shim's rustup home is
   writable by the `sprite` user despite being root-owned, and on a fresh sprite this moved `cargo` from 1.90.0 to

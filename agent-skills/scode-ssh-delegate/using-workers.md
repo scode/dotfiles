@@ -68,10 +68,10 @@ repository remote to clone, fetch, pull, or push.
 The orchestrating workflow decides how a worker is launched; galaxy-brain's launch rules come from
 `scode-harness-shellout` and have been verified locally only. The two proven remote entrypoints are the ones below.
 
-If the orchestrating workflow chooses unrestricted execution, the proven entrypoints are `codex exec --yolo` and
-`claude -p --dangerously-skip-permissions`. These modes give the agent full access to the remote Unix account. They are
-worker capabilities, not a request from this skill to run either agent. Use a disposable remote directory, and remember
-that the remote agent has none of the controlling session's conversation.
+If the orchestrating workflow chooses unrestricted execution, the proven entrypoints are `codex exec --yolo` and `claude
+-p --dangerously-skip-permissions`. These modes give the agent full access to the remote Unix account. They are worker
+capabilities, not a request from this skill to run either agent. Use a disposable remote directory, and remember that
+the remote agent has none of the controlling session's conversation.
 
 Choose what to transfer for the task at hand. Over SSH that is normally `rsync` with the recorded transport as `-e`; on
 a sprite it is `sprite file push` as described in `sprites.md`; on a tensorlake sandbox it is `tl sbx cp` with tarballs

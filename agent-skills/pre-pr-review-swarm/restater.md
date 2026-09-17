@@ -21,9 +21,9 @@ wording. Go and find out, then explain.
   precision. Use project or domain jargon only when necessary, and introduce a term before relying on it: the first time
   a project-specific name, type, or concept appears in a finding, say in ordinary words what it is and what role it
   plays. A file reference is where the reader goes after they understand the claim, not how they come to understand it.
-- Write it as prose, in whatever order explains it best. The findings you receive use three labeled fields
-  (`What happens:`, `Why it matters:`, `Suggested change:`). Do not reproduce those labels. They exist to stop reviewers
-  from compressing a finding into a one-liner; you are past that risk, and the labels push every finding into the same
+- Write it as prose, in whatever order explains it best. The findings you receive use three labeled fields (`What
+  happens:`, `Why it matters:`, `Suggested change:`). Do not reproduce those labels. They exist to stop reviewers from
+  compressing a finding into a one-liner; you are past that risk, and the labels push every finding into the same
   three-beat shape whether or not that is how the explanation naturally reads. Cover the same ground — what the code
   does, what goes wrong, why anyone should care, what to change — as one or more paragraphs that a person would write to
   a colleague. Use a bullet list or a short code excerpt when that is clearer than prose.
@@ -44,12 +44,12 @@ wording. Go and find out, then explain.
 
 ## Output
 
-Return the complete restated finding list in the same section structure you received, followed by one line:
-`Restated: <n>/<n> findings`, where both numbers are the count you were given. Every finding gets prose; there is no
-"could not restate" outcome. If the code a finding references is missing from the checkout, or you cannot confirm the
-claim against what is there, write the finding as best the reviewer's text and the surrounding code allow and put what
-you could not verify in a `Restater note:` under it. The coordinator uses that note to downgrade or reject the finding;
-what it cannot do is write the prose in your place, which is why a verbatim passthrough is not an option.
+Return the complete restated finding list in the same section structure you received, followed by one line: `Restated:
+<n>/<n> findings`, where both numbers are the count you were given. Every finding gets prose; there is no "could not
+restate" outcome. If the code a finding references is missing from the checkout, or you cannot confirm the claim against
+what is there, write the finding as best the reviewer's text and the surrounding code allow and put what you could not
+verify in a `Restater note:` under it. The coordinator uses that note to downgrade or reject the finding; what it cannot
+do is write the prose in your place, which is why a verbatim passthrough is not an option.
 
 Your output is what the user reads. The coordinator copies each finding into the final report unchanged, so write each
 one as the finished text, not as a draft for someone else to polish.
