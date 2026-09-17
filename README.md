@@ -15,15 +15,15 @@ cargo run -p dotfiles -- uninstall
 
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
 Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. Agent skills are also
-installed for Muse Code, OpenCode, Goose, and Pi, into `~/.config/muse/skills`, `~/.config/opencode/skills`,
-`~/.config/goose/skills`, and `~/.pi/agent/skills`, each only when the harness's config directory (`~/.config/muse`,
-`~/.config/opencode`, `~/.config/goose`, `~/.pi/agent`) already exists. OpenCode, Goose, and Pi additionally get the
-shared agent instructions as `AGENTS.md` in that config directory, under the same condition. For OpenCode and Pi that is
-a symlink. Goose ignores a symlinked instruction file, so it gets a copy inside a managed block (the same mechanism as
-the shell startup files below), and picks up changes to the instructions only when install runs again. The optional
-`scode-graphite` skill is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill
-is installed only when `~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support`
-exists.
+installed for Muse Code, OpenCode, Goose, Pi, and Oh My Pi (`omp`), into `~/.config/muse/skills`,
+`~/.config/opencode/skills`, `~/.config/goose/skills`, `~/.pi/agent/skills`, and `~/.omp/agent/skills`, each only when
+the harness's config directory (`~/.config/muse`, `~/.config/opencode`, `~/.config/goose`, `~/.pi/agent`,
+`~/.omp/agent`) already exists. OpenCode, Goose, Pi, and omp additionally get the shared agent instructions as
+`AGENTS.md` in that config directory, under the same condition. For OpenCode, Pi, and omp that is a symlink. Goose
+ignores a symlinked instruction file, so it gets a copy inside a managed block (the same mechanism as the shell startup
+files below), and picks up changes to the instructions only when install runs again. The optional `scode-graphite` skill
+is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only when
+`~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
 
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.

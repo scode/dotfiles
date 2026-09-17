@@ -89,10 +89,10 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 /// Claude and Codex still spell their entries out one by one in
 /// `add_claude_features` and `add_codex_features`, because those sections
 /// interleave migration cleanups for paths earlier installer versions wrote;
-/// the Muse, OpenCode, Goose, and Pi sections below derive theirs from this
-/// list. A test in `tests/cli_integration.rs` checks that every harness ends
-/// up with the same set, so a skill added to one place and not the other fails
-/// CI rather than silently installing for some harnesses only.
+/// the Muse, OpenCode, Goose, Pi, and omp sections below derive theirs from
+/// this list. A test in `tests/cli_integration.rs` checks that every harness
+/// ends up with the same set, so a skill added to one place and not the other
+/// fails CI rather than silently installing for some harnesses only.
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "jjstack",
@@ -278,6 +278,41 @@ fn add_pi_features(g: &mut FeatureGraph) {
     .build();
 
     add_shared_skill_features(g, "pi", "~/.pi/agent", "~/.pi/agent/skills");
+}
+
+/// Oh My Pi (`omp`, a Pi fork) reads user-scope skills from
+/// `~/.omp/agent/skills` and global instructions from
+/// `~/.omp/agent/AGENTS.md`; both paths are in the builtin provider of its
+/// discovery code (`src/discovery/builtin.ts`, omp 18.2.3). Symlinks work for
+/// both. The realpath containment check in its `contained-path.ts` applies to
+/// plugin packages only, not to these user-level files; Goose's equivalent
+/// check is why this was worth confirming rather than assuming.
+///
+/// omp has importers for other harnesses' user-level config (`~/.claude`,
+/// `~/.codex`, OpenCode, and more), which makes it look as if it would pick
+/// the skills up on its own. It does not: those importers are opt-in through
+/// `enabledProviders` in its `config.yml`, empty by default. With `~/.claude`
+/// fully populated and nothing under `~/.omp/agent`, omp loads no skills and
+/// no instructions, so these links are the only way it gets either.
+///
+/// For a user who does opt in, the overlap is harmless. omp keeps one skill
+/// per name and one user-level context file, taken from the highest-priority
+/// provider, and its native provider outranks every importer, so nothing
+/// reaches the model twice.
+///
+/// As with Pi, the agent directory can move and the installer does not follow
+/// it: `PI_CODING_AGENT_DIR` relocates it, `--profile` (or `OMP_PROFILE` /
+/// `PI_PROFILE`) selects `~/.omp/profiles/<name>/agent`, and `PI_CONFIG_DIR`
+/// renames `.omp` itself.
+fn add_omp_features(g: &mut FeatureGraph) {
+    g.add(
+        "omp-md",
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.omp/agent/AGENTS.md"),
+    )
+    .condition(PathExists::new("~/.omp/agent"))
+    .build();
+
+    add_shared_skill_features(g, "omp", "~/.omp/agent", "~/.omp/agent/skills");
 }
 
 fn add_zed_features(g: &mut FeatureGraph) {
@@ -943,6 +978,7 @@ fn features() -> FeatureGraph {
     add_opencode_features(&mut g);
     add_goose_features(&mut g);
     add_pi_features(&mut g);
+    add_omp_features(&mut g);
     add_shell_features(&mut g);
     g
 }
