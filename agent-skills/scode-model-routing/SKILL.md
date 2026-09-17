@@ -118,10 +118,10 @@ model can spend more tokens, take longer, require more review, and trigger an es
 range. Route by work profile instead; the caller's gate and escalation policy control total cost through an accepted
 result.
 
-Each model name includes its configured reasoning effort. The family determines which launch mechanism applies (see
-Launch mechanism). `sota` marks models trusted with critical review and design decisions; it is not an eligibility
-requirement for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next
-to this file; the families and the `sota` marks are:
+Each model name includes its reasoning effort. The family determines which launch mechanism applies (see Launch
+mechanism). `sota` marks models trusted with critical review and design decisions; it is not an eligibility requirement
+for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next to this
+file; the families and the `sota` marks are:
 
 | family | models (effort words)                                                                                    | sota             |
 | ------ | -------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -131,6 +131,13 @@ to this file; the families and the `sota` marks are:
 | glm    | glm-5.3-flash (low, high, max)                                                                           | none             |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
+
+The effort words in these tables — here and in the profile rows under Work profiles — are calibration defaults, what
+routing picks on its own initiative, not a whitelist of what a model may run. When the user explicitly requests a model
+at an effort no table lists ("run the review on fable-5 at medium"), that request is an explicit demand (input 8), and
+routing answers with that model at that effort: the omission is not an availability fact, and it is never a reason to
+block, ask for confirmation, or substitute another model. What the launch mechanism can actually select (input 11) is
+the limit on a demanded effort.
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `muse` preference, a user request naming it, or a
