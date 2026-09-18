@@ -13,6 +13,10 @@ exploration and design, writes a blueprint, and stops. The user opens a separate
 and runs `/goal <absolute-blueprint-path>`. That session owns implementation, tests, recovery, and authorized VCS
 operations. Experts supply design judgments and code review, not production implementation.
 
+Planning must resolve the implementation design deeply enough for that workhorse: concrete interfaces, algorithms, state
+transitions, compatibility, worked cases, and test assertions for non-trivial units. An architecture and file list alone
+are not a finished blueprint. The design-completeness check in `planning.md` governs the handoff.
+
 The blueprint needs no planning-conversation context, but requires these installed skills and their referenced files:
 this skill, `agent-resumeable`, `scode-model-routing`, `scode-harness-shellout`, and the agreed VCS workflow. Do not
 load or activate `scode-galaxy-brain` or `scode-build-goal`. This skill owns delegation contracts and gates; it does not
