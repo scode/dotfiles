@@ -12,9 +12,19 @@ contract consistent.
 - The operator selects the executor harness and model; self-model validation and identity-confirmation gates are
   forbidden. Recorded unknown or mismatched identity is not a preflight blocker. Worker permissions remain explicit
   blueprint pairs, never inferred from runtime identity.
-- Blueprint design emphasizes requirements, invariants, interfaces, milestone evidence, autonomy boundaries, and
-  consultation triggers. Routine implementation choices remain with the executor. New scope or authority is not implied
-  by unattended execution; unresolved material choices are settled before handoff or block affected work.
+- Planning resolves implementation design for a less capable executor. Non-trivial units specify concrete code structure
+  and contracts, algorithms or state transitions, compatibility at intermediate revisions, worked boundary cases, and
+  tests with discriminating assertions. Detail is proportional to behavior; neither a file inventory nor a full patch is
+  the target. Existing facts and proposed interfaces are distinguished and source-backed.
+- The planner checks completeness by walking cases through the design and tests, then resolving material decisions still
+  needed for that walk. The blueprint records readiness, evidence-dependent gates, and explicitly remaining routine
+  discretion. Unknown facts require a probe, outcome-dependent design, and a dependent-work gate; unresolved design is
+  labeled as such. Routine discretion does not include semantics, compatibility, or test oracles. New scope or authority
+  is not implied by unattended execution.
+- Initial execution consultation validates or revises a concrete design rather than serving as the planned place to
+  finish it. Older or incomplete blueprints remain usable: the executor records design gaps, resolves them with the
+  approved expert before dependent implementation, and retains the resulting detail for workers. Early consultation for
+  surprises remains available. The planning completeness check adds no mandatory model call or automatic eval.
 - No dependency path activates Galaxy Brain or scode-build-goal. Routing supplies recommendations; shellout supplies
   verified launch mechanics; this skill owns the execution, delegation, and expert gate policy.
 - Execution assumes an absent user. Routine in-scope decisions proceed autonomously; before declaring critical work

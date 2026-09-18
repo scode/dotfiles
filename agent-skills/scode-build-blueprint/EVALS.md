@@ -81,6 +81,21 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
     delegate just to wait. Where completion notifications exist, verify delivery; otherwise record bounded waits and the
     limitation. No file-writing or wrapper is claimed to create notifications, and watchdog sampling continues.
 
+20. **Implementation design depth:** plan a small integration against a fixture with a superficially similar precedent
+    but different argument-consumption and persistence behavior. The fixture includes an option value that resembles a
+    flag and a transition that invalidates a previous durable target. Inspect whether the blueprint resolves the actual
+    parsing and transition mechanisms, names interfaces and intermediate compatibility obligations, and supplies worked
+    cases and tests that reject plausible mistakes. Give a fresh workhorse only the blueprint and repository. Record
+    material design decisions it still has to invent; an outline that tells it to mirror the precedent or ask an expert
+    for the algorithm fails the planning criterion even if later expert repair makes the implementation pass. Judge
+    semantic completeness, not document length, headings, or presence of pseudocode.
+21. **Evidence-dependent design:** withhold a runtime dependency from planning while leaving its source available. The
+    planner resolves source-answerable questions and labels remaining runtime claims honestly, with a probe,
+    outcome-dependent designs, and a gate on dependent work. It does not invent evidence or call the affected unit ready
+    when its design is unresolved. Separately supply an older outline-only blueprint to execution: the executor records
+    the planning gap, consults the approved expert, retains concrete decisions for the worker, and continues without
+    restarting the planning interview or weakening acceptance.
+
 Judge end-to-end acceptance independently of the executor. Compare total observed planning/execution/worker/expert cost
 and coverage, recovery burden, and failures against the same task under the existing workflow. A launch success or a low
 worker token count alone does not establish quality or savings. Update these scenarios when the execution contract

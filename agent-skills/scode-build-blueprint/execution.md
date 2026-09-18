@@ -135,6 +135,13 @@ explicit user-confirmation requirement; identify the conflict and seek an author
 
 ## Expert checkpoints and debugging
 
+An initial design checkpoint receives the blueprint's concrete design and evidence, plus any drift or unresolved probe
+results. Its normal role is to validate or revise that design. If the blueprint instead leaves algorithms, interfaces,
+or compatibility decisions for the expert to invent, record a planning gap and resolve it with the approved expert
+before dependent implementation. Preserve the resulting contracts, worked cases, and test expectations in the working
+log or a retained artifact linked from it, and include them in worker handoffs. Do not silently pass the same open
+design questions to an implementation worker or restart planning for an otherwise usable older blueprint.
+
 Consult at the planned checkpoints and when a trigger fires; do not depend solely on feeling uncertain. Seek expert help
 early when a short exchange could avoid wasted implementation or protect quality. You do not need to prove you are
 stuck. Unexpected requirements or design-invalidating facts require consultation before dependent work. For tricky
