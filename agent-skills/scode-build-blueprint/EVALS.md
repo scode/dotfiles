@@ -8,6 +8,16 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
 
 ## Scenarios and expectations
 
+- **Capability-based dependency loading:** exercise omp's `skill://<name>` and sidecar URIs, an unfamiliar harness's
+  exact catalog-supplied `SKILL.md` path without a dedicated loader, and a loader with a skill-scoped resource resolver
+  but no filesystem metadata. Each permits progress after identity and required content are verified, without a
+  permission question solely about harness support. A complete identified skill needing no sidecars needs no base.
+  Recover truncated skill or sidecar output through a supplied continuation, range read, or full-output artifact before
+  acting. Unknown skills, missing or conflicting identity, denied access, unresolved required sidecars, and incomplete
+  content with no working recovery path stop the affected operation and name the failed path, URI, or tool. Do not
+  bypass denials, guess a resolver, or search other skill roots. A Codex catalog-supplied path takes precedence over its
+  fixed-path fallback.
+
 1. **Fresh handoff:** plan a small feature in a fixture repository, then give a fresh executor only the blueprint and
    installed skills. It implements and verifies the feature without the planner's conversation, and does not restart the
    planning interview. Planning must not create the execution log or change the fixture source.

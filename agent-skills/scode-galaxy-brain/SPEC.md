@@ -17,22 +17,26 @@ fix the skill or change this file in the same change, never leave them apart.
   points a reader here is a bug in the dependency; this skill's text that reaches into a dependency by any path other
   than the one below is a bug here. The shell-out skill is not a dependency of this skill: it is loaded by the
   delegation skill, and this skill's text names it only to say so.
-- A dependency is reached by loading it by name through the harness's own skill mechanism, and the dependency's base
-  directory is whatever that mechanism reports; everything inside the dependency is read relative to that directory.
-  This skill never assumes where a dependency is installed relative to itself, never uses `../<name>/`, and never
-  searches skills roots. On Codex, which has no mid-turn loader, the dependency's `SKILL.md` is read from the root the
-  Codex binary uses, `$CODEX_HOME/skills/<name>/` (verified against Codex 0.152; a same-named project-local skill is not
-  honored on that path). The loading text is the marked stanza in `SKILL.md`, one per dependency, whose wording
-  `tests/skill_deps.rs` at the repository root checks against the canonical template.
-- A dependency is either fully loaded or the skill stops. Fully loaded means the loader returned a result that is not
-  marked truncated, for the skill whose frontmatter `name` matches what was asked, with a base directory, and every
-  sidecar the current step needs is readable under that directory. Anything else — unknown skill, denied tool, truncated
-  result, wrong name, missing sidecar, a harness whose loader reports no base directory — is a stop: tell the user which
-  skill is missing or unloadable and at what path or tool, and do not continue from memory, from a copy, from a search
-  for the file elsewhere, or from a similar skill.
-- A same-named project-local skill can shadow the installed dependency on every harness whose loader honors
-  project-local skills (all but Codex's file-read path). That is accepted: the name check proves identity, not revision,
-  and project-local overrides are how these skills get developed.
+- Dependencies use the current harness's authorized skill loader or resource resolver, or, when no dedicated loader
+  exists, the exact `SKILL.md` location its catalog or instructions supplies. On Codex, when no location is supplied,
+  use `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md` (the root verified for Codex 0.152). Known interfaces are
+  examples, not an allowlist of harnesses. Missing filesystem metadata or an unfamiliar harness alone must not block
+  loading or trigger a permission question; actual tool permissions remain binding. Never guess installation paths or
+  URI schemes, assume a sibling dependency directory, or search other skill roots.
+- Identify the exact requested skill from its returned frontmatter, or the loader's reported identity when frontmatter
+  is not exposed. Missing or conflicting identity fails loading. Read the skill in full and all sidecars the current
+  step needs, using the resolver for that same skill, its reported base, or the directory of its supplied `SKILL.md`
+  path. A filesystem base is unnecessary when a resolver addresses required resources or no sidecars are needed.
+- Truncated or elided output is incomplete delivery, not a terminal failure by itself. Recover omitted content through
+  the tool's continuation, range reads, or full-output artifact tied to the same resource or result before acting.
+  Unknown skills, denied access, invalid identity, unresolved required resources, or content that cannot be fully
+  retrieved stop the affected operation and name the skill and failing path, URI, or tool. No permission bypass,
+  remembered instructions, alternate copy, or similar skill may replace a failed load.
+- The loading text is the marked stanza in `SKILL.md`, one per dependency, checked against the canonical template in
+  `tests/skill_deps.rs`. On omp, `read` resolves `skill://<name>` and `skill://<name>/<relative-path>`; these satisfy
+  the same capability-based contract as other authorized loaders.
+- A same-named project-local skill may shadow the installed dependency when the harness selects it. This is accepted:
+  the name check proves identity, not revision. Codex's fixed-path fallback does not discover project-local overrides.
 - Every choice of model, effort, and launch mechanism is a request to `scode-model-routing` naming a work profile with
   the request inputs that skill's `SKILL.md` lists, acted on through the answer shape it defines. This skill's text
   never names a model as a routing default, never carries an inventory or profile table, and never reads the model

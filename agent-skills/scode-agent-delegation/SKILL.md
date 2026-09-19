@@ -99,18 +99,24 @@ rules and the exact commands live there and nowhere else.
 
 <!-- dependency: scode-harness-shellout -->
 
-> Load the skill `scode-harness-shellout` through your harness's skill mechanism: the Skill tool on Claude Code, the
-> `skill` tool on OpenCode, the `read_skill` tool on Muse Code. On Codex, which has no such tool, read
-> `${CODEX_HOME:-$HOME/.codex}/skills/scode-harness-shellout/SKILL.md`; if it is absent or unreadable, report that exact
-> path and do not search elsewhere. On any other harness, use its skill loader only if the result reports the skill's
-> base directory; otherwise stop and say this skill has not been verified on that harness. The base directory is the
-> directory containing the loaded `SKILL.md`. Confirm the name the loader reports is `scode-harness-shellout`; if the
-> loader shows no name, read only the frontmatter (the first lines up to the closing `---`) of `<base>/SKILL.md`. Read
-> its sidecars relative to the base directory. Stop and tell the user that `scode-harness-shellout` is not installed or
-> could not be loaded, naming the path or tool, if the loader reports the skill as unknown or denied, the file is absent
-> or unreadable on Codex (the skills root for Codex 0.152), the result says it was truncated, the name does not match,
-> or a sidecar this step needs is not readable under the base directory. Do not continue from memory, from a copy, from
-> a search for the file elsewhere, or from a similar skill.
+> Load the exact skill `scode-harness-shellout` through the current harness's authorized skill mechanism. Use its skill
+> loader or resource resolver; when it provides no dedicated loader, read the exact `SKILL.md` location supplied by its
+> skill catalog or instructions. Known interfaces include the Skill tool on Claude Code, `skill` on OpenCode, and
+> `read_skill` on Muse Code. On Oh My Pi (omp), use `read` at `skill://scode-harness-shellout` and
+> `skill://scode-harness-shellout/<relative-path>` for sidecars. On Codex, if no skill location is supplied, read
+> `${CODEX_HOME:-$HOME/.codex}/skills/scode-harness-shellout/SKILL.md` (the root verified for Codex 0.152). These are
+> known interfaces, not a harness allowlist. Do not ask permission merely because the harness is unfamiliar or returns
+> no filesystem base-directory metadata; actual tool permissions still apply. Confirm the name is
+> `scode-harness-shellout` from the returned frontmatter, or from the loader's reported identity if frontmatter is not
+> exposed. Missing or conflicting identity is a load failure. Read the skill in full and every sidecar the current step
+> needs. Resolve sidecars through the harness's resolver for that same skill, or relative to its reported base directory
+> or the directory containing its supplied `SKILL.md` path. No base directory is required unless needed to address a
+> required resource. If output is truncated or elided, retrieve the omitted content through the tool's continuation,
+> range reads, or full-output artifact tied to that same resource or result; do not act on incomplete instructions. If
+> complete retrieval cannot be established, stop the affected operation. Stop and report `scode-harness-shellout` and
+> the failing path, URI, or tool when the skill is unknown, access is denied, identity does not match, or required
+> content cannot be resolved or fully read. Do not bypass a denial, guess paths or URI schemes, search other skill
+> roots, substitute another copy or similar skill, or continue from memory.
 
 <!-- /dependency -->
 

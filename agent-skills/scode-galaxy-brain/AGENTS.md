@@ -14,11 +14,12 @@ test, and then in every skill that carries one.
 
 ## The Codex path in the stanza
 
-The stanza reads a dependency on Codex from `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`, because Codex has no
-mid-turn skill loader and that is the root the Codex 0.152 binary uses (the bundled `skill-installer` skill and
-`codex-rs/skills` both say so). Codex's public docs already describe a `.agents/skills` root. When Codex changes its
-skills root, or the installer starts writing somewhere else for Codex, re-verify the stanza's path with a live `codex
-exec` run in an isolated `CODEX_HOME` and update the template in `tests/skill_deps.rs` and every stanza together.
+When Codex supplies no skill location, the stanza falls back to `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md`,
+the root verified for Codex 0.152 (the bundled `skill-installer` skill and `codex-rs/skills` both say so). A
+harness-supplied location takes precedence. Codex's public docs already describe a `.agents/skills` root. When Codex
+changes its skills root, or the installer starts writing somewhere else for Codex, re-verify the stanza's path with a
+live `codex exec` run in an isolated `CODEX_HOME` and update the template in `tests/skill_deps.rs` and every stanza
+together.
 
 ## Evaluating changes
 
@@ -44,8 +45,10 @@ How to run an eval:
 
 Every change to a stanza or to what `SKILL.md` says about a dependency also runs the dependency checks: a temporary
 consumer whose stanza names a dependency that exists nowhere, one whose name is wrong, and one whose needed sidecar is
-missing, each of which must stop and name the skill and the path or tool; and a positive load whose base directory is
-the installed one.
+missing, each of which must stop and name the skill and the path or tool. Positive cases cover a catalog-supplied file
+path without a dedicated loader, a skill-scoped resolver without filesystem metadata, and recovery of truncated output
+through the tool's continuation or artifact. Verify that unknown or denied access, invalid identity, and incomplete
+content with no recovery path still stop; a complete skill needing no sidecars needs no base directory.
 
 The fixed activation and composition questions, run whenever "Staying active", "Composing with other skills", or the
 load-when text changes, each asked of a cold agent with the full situation stated (a Claude Code session on fable-5
