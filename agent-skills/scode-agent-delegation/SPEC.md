@@ -14,20 +14,27 @@ fix the skill or change this file in the same change, never leave them apart.
   upward into a consumer ("escalate per the caller's rules", a named orchestration skill or one of its files); where the
   text needs a fact only a caller has — the tree, whether isolation is allowed, the recorded base, the model and
   mechanism, what to do with a verdict — it names that fact as an input the caller supplies and stops there.
-- The dependency is reached by loading it by name through the harness's own skill mechanism, and its base directory is
-  whatever that mechanism reports; everything inside it is read relative to that directory. This skill never assumes
-  where the dependency is installed relative to itself, never uses `../<name>/`, and never searches skills roots. On
-  Codex, which has no mid-turn loader, the dependency's `SKILL.md` is read from the root the Codex binary uses,
-  `$CODEX_HOME/skills/<name>/` (verified against Codex 0.152). The loading text is the marked stanza in `SKILL.md`,
-  whose wording `tests/skill_deps.rs` at the repository root checks against the canonical template.
-- The dependency is either fully loaded or the skill stops: a loader result that is not marked truncated, for the skill
-  whose name matches what was asked, with a base directory, and every sidecar the current step needs readable under it.
-  Anything else is a stop that names the missing skill and the path or tool; no inline copy, no similar skill, no search
-  elsewhere, no launch from memory. The dependency is loaded only when a delegate runs on a foreign harness; a native
-  delegation never loads it.
-- A same-named project-local `scode-harness-shellout` can shadow the installed one on every harness whose loader honors
-  project-local skills (all but Codex's file-read path). That is accepted: the name check proves identity, not revision,
-  and project-local overrides are how these skills get developed.
+- The dependency uses the current harness's authorized skill loader or resource resolver, or, when no dedicated loader
+  exists, the exact `SKILL.md` location its catalog or instructions supplies. On Codex, when no location is supplied,
+  use `${CODEX_HOME:-$HOME/.codex}/skills/<name>/SKILL.md` (the root verified for Codex 0.152). Known interfaces are
+  examples, not an allowlist of harnesses. Missing filesystem metadata or an unfamiliar harness alone must not block
+  loading or trigger a permission question; actual tool permissions remain binding. Never guess installation paths or
+  URI schemes, assume a sibling dependency directory, or search other skill roots.
+- Identify the exact requested skill from its returned frontmatter, or the loader's reported identity when frontmatter
+  is not exposed. Missing or conflicting identity fails loading. Read the skill in full and all sidecars the current
+  step needs, using the resolver for that same skill, its reported base, or the directory of its supplied `SKILL.md`
+  path. A filesystem base is unnecessary when a resolver addresses required resources or no sidecars are needed.
+- Truncated or elided output is incomplete delivery, not a terminal failure by itself. Recover omitted content through
+  the tool's continuation, range reads, or full-output artifact tied to the same resource or result before acting.
+  Unknown skills, denied access, invalid identity, unresolved required resources, or content that cannot be fully
+  retrieved stop the affected operation and name the skill and failing path, URI, or tool. No permission bypass,
+  remembered instructions, alternate copy, or similar skill may replace a failed load.
+- The loading text is the marked stanza in `SKILL.md`, checked against the canonical template in `tests/skill_deps.rs`.
+  On omp, `read` resolves `skill://<name>` and `skill://<name>/<relative-path>`; these satisfy the same capability-based
+  contract as other authorized loaders. The dependency is loaded only for foreign-harness delegation, never for native
+  delegation.
+- A same-named project-local skill may shadow the installed dependency when the harness selects it. This is accepted:
+  the name check proves identity, not revision. Codex's fixed-path fallback does not discover project-local overrides.
 - Loading this skill is side-effect free. Invoking it activates nothing for the session, writes nothing, and claims
   nothing about later spawns; its `SKILL.md` says so in its first paragraph and its description says it is loaded by
   other skills and inert alone. No harness-level switch turns off description-based selection (Codex's
