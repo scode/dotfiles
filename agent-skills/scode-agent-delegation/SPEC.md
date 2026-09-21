@@ -53,6 +53,18 @@ fix the skill or change this file in the same change, never leave them apart.
   `inconclusive`, `unresumable`, `blocked on user` — with the payload the table names, and never a verdict outside that
   list. What the caller does with a verdict is the caller's; this skill never escalates, reroutes, relaunches, or
   removes changes from the tree.
+- Task specifications preserve the caller-supplied user intent, later decisions, binding repository constraints, and
+  implementation outline when available, separately from proposed mechanisms. The gate checks unnecessary obligations as
+  well as omitted behavior, at assumptions review, implementation review, and before further repair after repeated
+  corrective reviews. It considers the aggregate design without demanding a periodic review loop or treating novelty as
+  a defect. `spec defect` covers both directions, including a defect found before implementation; its payload names the
+  defect and the smallest correction preserving explicit requirements and repository constraints. A simplification that
+  instead needs a user decision returns `blocked on user`; the gate does not authorize scope changes.
+- The existing `AWAITING REVIEW` checkpoint permits an explicitly incomplete scope exception when a substantial
+  mechanism outside caller-supplied boundaries is needed. The delegate leaves that portion unimplemented, finishes
+  independent in-scope work, and records the dependency, alternatives, unfinished behavior, and actual checks in
+  `DECISIONS.md`. The caller gates the dependency before authorizing more work. This adds no stop type, does not claim
+  completion or passing checks, and does not excuse ordinary implementation defects or test failures.
 - The skill is meant to work on modern Linux and macOS. Commands, paths, and tools it prescribes must be available on
   both; nothing may rely on one without an equivalent for the other. No other platform is of concern, and the skill's
   text need not accommodate one.

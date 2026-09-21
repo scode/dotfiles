@@ -12,9 +12,10 @@ has happened yet, or resumes from the working log if it has. The user never has 
 the goal file decides from what exists on disk. The same command can be repeated session after session until the work is
 done.
 
-NOTE: The whole design assumes unattended execution. The executing agent will not have the user available, so every
-decision it would otherwise have to ask about must be resolved before the goal file is written. That is why the up-front
-questions section below is not optional politeness — it is the mechanism that makes unattended progress possible.
+NOTE: The design assumes unattended execution. Settle foreseeable product decisions and acceptable fallbacks before
+writing the goal. Unforeseen implementation choices can be made during execution; material scope changes cannot be
+authorized by logging them. When no agreed fallback covers such a change, dependent work waits for the user while
+independent authorized work continues.
 
 ## Invocation
 
@@ -129,8 +130,8 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - Scope boundaries: what is explicitly in, what is explicitly out, and what "done" looks like beyond the mechanical
   PR-stack criterion below.
 - Design forks: places where the goal could reasonably be built more than one way — technology choices, API shape, data
-  model, user-visible behavior. Ask about the forks you can foresee; for the ones you cannot, the goal file's
-  decision-logging rules cover the gap.
+  model, user-visible behavior. Ask about the forks you can foresee; for the ones you cannot, the goal file's unattended
+  fallback rules bound what the executor can decide.
 - Constraints and tradeoffs: performance vs simplicity, compatibility requirements, anything the user would veto if they
   saw it in review.
 - PR shaping: any preference about how the work should be sliced, beyond the default bite-sized-stack rules.
@@ -140,8 +141,41 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - File placement: the goal and log paths chosen per Placing the files, stated so the user can override them, or put as a
   question when only a temporary location was available.
 
-Keep asking until you would bet on an agent completing the goal without needing the user. Then record the answers in the
-goal file as decisions already made, so the executing agent inherits them instead of re-deriving or re-litigating them.
+Resolve consequential choices and fallbacks, not every hypothetical edge case. Show their aggregate implementation cost
+using the outline below; piecemeal approval of user-facing behavior does not approve every mechanism attached to it.
+Record the actual answers as settled decisions, keeping planner proposals distinct.
+
+## Implementation outline and scope review
+
+Before finalizing the goal, show a short, repository-grounded outline: the existing path to extend, the smallest design
+that satisfies the request, substantial new persistent state or subsystems, and promises that drive the cost. Compare
+with the nearest existing implementation when useful. Explain the size and uncertainty in terms of mechanisms and
+validation needed; do not invent precise line counts or turn estimates into targets. A routine change may need only a
+paragraph. The outline exposes consequential choices, not a detailed prescription for every defensive helper.
+
+Keep three sources of requirements distinct in the goal: the user's request and later decisions (retain their relevant
+words), binding repository constraints (cite the source), and planner-proposed implementation choices with reasons.
+Trace substantial mechanisms to the requirement they serve. Start with existing facilities and ordinary libraries; extra
+machinery needs a concrete contract or demonstrated failure the smaller design cannot handle. An unsupported case can be
+refused only when that still meets the agreed behavior. Neither novelty nor an unfamiliar technology alone proves
+overengineering.
+
+Run one fresh-context planning review before writing the final goal. Use a native sub-agent at the planning session's
+model unless the user specifies otherwise; this is a focused review, separate from the per-PR menu, not a swarm or a
+reason to activate the execution workflow. Supply the original request, later user decisions, proposed goal and outline,
+relevant repository constraints and existing implementation paths. Give it this charter:
+
+> Identify where this plan does more than the user needs. For each substantial new mechanism, explain which requirement
+> makes it necessary and whether an existing facility or narrower supported behavior would suffice. Propose the smallest
+> coherent design. Challenge planner-authored requirements; identify any simplification that would change an explicit
+> user requirement or repository constraint. Report concrete findings and alternatives, or say no unnecessary complexity
+> was found. Do not manufacture objections or add safeguards to justify an unnecessary subsystem. Write findings to the
+> supplied private file; change no product files or VCS state.
+
+Name that private findings file in the prompt. Assess the findings, remove unjustified planner obligations, and ask only
+about unresolved product tradeoffs. A reviewer cannot authorize weaker behavior. Recheck affected conclusions if the
+resolution materially changes the outline; do not repeat the whole review for wording fixes. If fresh-context review is
+unavailable, report the limitation before finalizing rather than calling a self-review independent.
 
 ## Review gate options
 
@@ -180,6 +214,19 @@ has none of this conversation's context. Include, at minimum:
 - **The goal.** The user's intent, sharpened by the Q&A. State the acceptance criteria.
 - **Decisions already made.** The Q&A answers, phrased as settled decisions with their reasoning. The executing agent
   must not silently reverse these.
+- **Implementation outline and requirement sources.** Carry the reviewed outline, the distinct requirement sources, and
+  agreed fallbacks above into the goal. Preserve the original request and later decisions so a reviewer can challenge
+  the planner's interpretation rather than merely checking compliance with it.
+- **Scope reassessment.** Before implementing a substantial departure from the outline, use a fresh-context review with
+  the planning charter above, included in full in the goal. Supply the request, decisions, outline, current diff, and
+  proposed departure: what changed, why it is necessary, and which simpler alternative was ruled out. A new parser,
+  installation registry, recovery protocol, or compatibility layer can signal such a departure; these are examples, not
+  a blacklist. Repeated corrective reviews of the same component also require reassessing its necessity before another
+  repair round. Reuse an existing review or delegation checkpoint that can answer this question, rather than scheduling
+  periodic swarms or reviewing every helper. Apply the same decision boundary as Unattended fallback below. Give
+  delegates bounded units within the outline; unapproved new mechanisms are outside their task. If discovered mid-unit,
+  leave that part unimplemented and report the dependency at the existing checkpoint, with checks and incomplete work
+  stated honestly; do not require the delegate to build it merely to satisfy the completion checkpoint.
 - **Resume protocol.** The first action is to invoke the `agent-resumeable` skill with the log file's absolute path.
   Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and resume
   where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather than
@@ -230,7 +277,12 @@ has none of this conversation's context. Include, at minimum:
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.
-- **Unattended fallback.** When the agent hits a fork the goal file does not settle, it makes the call, logs it as a
-  DECISION with the alternatives considered, and keeps going. Stalling to ask is the one thing it must not do.
+- **Unattended fallback.** Resolve routine implementation forks within the agreed scope and log consequential choices as
+  DECISION with the alternatives considered. Remove unnecessary planner-invented machinery when the requested behavior
+  and repository constraints still hold. A material scope expansion, weakened guarantee, or omitted required behavior
+  needs an already agreed fallback or a user decision. If neither is available, record the concrete tradeoff and pause
+  only dependent work pending that decision; continue independent authorized work without claiming completion. A review
+  finding or a decision log is not authorization. When the user reduces scope, rewrite the active obligations and remove
+  excluded code and validation gates rather than preserving them as latent completion requirements.
 - **Done criterion.** The goal is achieved when a linear stack of open PRs — open, not merged — collectively achieves
   the goal. Merging is the user's job.

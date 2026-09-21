@@ -32,6 +32,9 @@ whether writers may run concurrently and in which trees, and what to do with eac
 The delegate has none of the caller's conversation context. Every delegation prompt must be self-contained:
 
 - The goal and any constraints that bound it.
+- The caller's relevant user request and later decisions, binding repository constraints, and implementation outline
+  when one exists. Keep these distinct from proposed mechanisms so the gate can detect both missing behavior and
+  unnecessary obligations; a spec's existence does not prove every requirement in it came from the user.
 - Exact file paths or directories in scope.
 - Acceptance criteria: what done looks like, concretely.
 - For a performance request — one whose success is a measurable improvement in runtime behavior or resource use:
@@ -181,7 +184,7 @@ user actually asked for. It ends in exactly one of these verdicts, which is what
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `accepted`                        | diff, checks, decisions, and the user's request all hold                                                                                          | optional note of what a later unit still owes                                                                                   |
 | `accepted with local fixes`       | as above after the caller fixed small defects itself (naming, comments, minor logic; a fixup round-trip costs more)                               | what was fixed                                                                                                                  |
-| `spec defect`                     | the delegate is correct against its spec, but the spec dropped something the user asked for                                                       | what the spec dropped                                                                                                           |
+| `spec defect`                     | the spec drops requested behavior or adds unnecessary obligations, whether found before code or in a diff correct against that spec               | the missing behavior or unjustified obligation and smallest correction preserving user requirements and repository constraints  |
 | `substantive failure, fixable`    | wrong or incomplete against the spec, but well-specified defects one fixup round can close                                                        | the concrete acceptance failures                                                                                                |
 | `substantive failure, structural` | broadly wrong, a decline or status turn, or a replacement at the assumptions stop that invalidates the design; repairing is worse than restarting | the acceptance failures or the delegate's message; reason `lost context` when a delegate lost track of earlier context mid-task |
 | `execution-path failure`          | the delegate never did the work because of the launch path: a hang, a launch error, a sandbox that refused to start                               | the signature seen                                                                                                              |
