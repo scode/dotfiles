@@ -92,6 +92,13 @@ The delegate ends the final message of a stopped turn with one of two lines, alo
 - `AWAITING GUIDANCE` — after writing `ASSUMPTIONS.md`.
 - `AWAITING REVIEW` — after the implementation is complete and the checks pass, with `DECISIONS.md` current.
 
+There is one scope exception to the second condition. If completing the unit would require a substantial mechanism
+outside the caller's supplied boundaries, leave that part unimplemented, finish independent in-scope work, and use the
+same `AWAITING REVIEW` checkpoint. Record the dependency, alternatives, unfinished behavior, and actual check results in
+`DECISIONS.md`; explicitly label this an incomplete scope exception. Passing checks is not claimed or required for that
+unfinished portion. The caller applies `gate.md` before deciding whether any further implementation is authorized. This
+is not a third stop, a claim of completion, or an escape from ordinary implementation or test failures.
+
 A stopped turn exits 0 on every harness, same as a finished one, so detect the stop by reading the final message, not
 the exit status (shelled out, `scode-harness-shellout`'s file for the mechanism says where the final message lands on a
 resumed turn). Confirm the file the sentinel promises exists in the run directory. Each turn has exactly one expected
@@ -280,9 +287,13 @@ code forced a tradeoff, anything that changes what a user sees or what the progr
 a numbered entry *at the moment you make it*, with the alternative you rejected and why. Even a decision that seems
 minor belongs here if it could matter to a reviewer; the orchestrator would rather skim an entry than find it in the
 diff. Naming and local code structure still do not qualify. Do not stop to ask questions mid-implementation: make the
-call, log it, and the orchestrator will review it at the next step.
+call within the task's scope, log it, and the orchestrator will review it at the next step. If a substantial mechanism
+outside the caller's supplied boundaries appears necessary, leave it unimplemented. Finish independent in-scope work
+and record the dependency, alternatives, unfinished behavior, and actual check results in `DECISIONS.md`.
 
-**Step 3 — when the implementation is complete and the project's checks pass**, do not write `REPORT.md` yet. End
+**Step 3 — when the implementation is complete and the project's checks pass**, do not write `REPORT.md` yet. The one
+exception is the out-of-scope dependency above: explicitly label the checkpoint incomplete, with the dependency and
+actual checks recorded; do not implement it merely to satisfy this step. Ordinary defects are not this exception. End
 your final message with the line `AWAITING REVIEW` and stop. You will be resumed with `REVIEW.md` in the run
 directory listing each `DECISIONS.md` entry number with either `OK` or a change to make. Apply the changes, re-run the
 checks, and write `REPORT.md` in the run directory as the task describes; its Deviations section should point at `ASSUMPTIONS.md`

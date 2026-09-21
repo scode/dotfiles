@@ -73,9 +73,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
 
 ## Up-front questions
 
-- The skill assumes the executing agent will run unattended. Every decision the run would otherwise have to ask the user
-  about is settled before the goal file is written, and the answers are recorded in the goal file as decisions already
-  made.
+- The skill assumes unattended execution. Foreseeable consequential choices and acceptable fallbacks are settled before
+  the goal file is written. Answers are retained as decisions already made; planner proposals remain distinguishable.
+  Unforeseen material scope changes are not implicitly authorized by the unattended assumption.
 - Questions are batched, not dribbled, and only asked after the skill has read enough of the repository to answer what
   the codebase already settles.
 - The batch always presents the review-gate menu, numbered, with these five options in this order and the first marked
@@ -84,6 +84,22 @@ whoever is judging whether a change kept the user-facing behavior intact.
   correctness, design, and idiomatic-code charter; a fresh-context agent with that charter on fable or gpt-6-astra at
   high effort, cross-harness when the executing harness cannot reach the model natively. The user's choice is recorded
   in the goal file; the skill never picks a reviewer silently.
+
+## Proportionate planning
+
+- Before finalizing, show a short repository-grounded implementation outline: existing paths to reuse, the smallest
+  sufficient design, substantial new state or subsystems, expensive promises, and uncertainty. Explain aggregate cost;
+  do not prescribe every defensive detail or use invented precise estimates as targets.
+- Keep the original request and later user decisions, sourced repository constraints, and planner-proposed mechanisms
+  distinct. Substantial mechanisms need a concrete contract or demonstrated failure that the smaller design cannot
+  handle. Refusal of unsupported cases must still satisfy the agreed behavior.
+- Run one fresh-context planning review, using a native sub-agent at the planner's model unless the user specifies
+  otherwise. It receives the request and decisions as well as the proposed goal, outline, and repository context. Its
+  charter explicitly challenges unnecessary planner-authored obligations and asks for concrete smaller alternatives,
+  distinguishing changes that need a user decision. No findings is valid. Findings go to a named private file; no
+  product or VCS edits. This does not activate execution skills or change the per-PR reviewer selection.
+- Resolve findings before finalizing. Reassess affected conclusions after material design changes, not wording changes.
+  Disclose unavailable independent review; self-review must not be represented as independent.
 
 ## What the goal file requires of the executing agent
 
@@ -106,6 +122,16 @@ whoever is judging whether a change kept the user-facing behavior intact.
   skill or charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the
   findings file, with no launch command copied into the goal file. For the charter options the goal file spells out the
   charter in full: general correctness, design, and idiomatic code, findings to a named file, no edits, no VCS changes.
-- Major decisions logged with a scannable DECISION label, including forks the goal file did not settle, which the agent
-  resolves on its own rather than stalling to ask.
+- The reviewed outline and requirement sources, including the user's relevant words and later decisions, survive into
+  the goal. Before implementing substantial departures, or undertaking another repair round after repeated corrective
+  reviews of a component, reassess necessity with a fresh-context review carrying the full planning charter, original
+  intent, current diff, and concrete alternatives. Reuse existing checkpoints or reviews when they serve this purpose;
+  no periodic review schedule, technology blacklist, or review of every helper is required. Delegated units exclude
+  unapproved mechanisms; a newly discovered dependency can remain unimplemented and be reported at an existing
+  checkpoint with an honest account of checks and incompleteness.
+- Log major decisions with a scannable DECISION label. Routine choices proceed within scope. Removing unnecessary
+  planner machinery is permitted when explicit behavior and repository constraints still hold. Material expansion,
+  weakened guarantees, or omitted required behavior need an agreed fallback or user decision; otherwise only dependent
+  work pauses and independent authorized work continues. Logging or review does not grant authorization. Explicit scope
+  reductions remove obsolete active obligations, code, and validation gates.
 - The done criterion is a linear stack of open, unmerged PRs that collectively achieve the goal. Merging is the user's.
