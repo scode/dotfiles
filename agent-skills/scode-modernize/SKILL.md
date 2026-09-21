@@ -235,30 +235,45 @@ and eliminates a supply-chain risk.
 
 ### 5. Canonicalize agent instructions as `AGENTS.md`
 
-**Detect:** Check the repository root for `AGENTS.md` and `CLAUDE.md`.
+**Detect:** Find every `CLAUDE.md` in the repository, at the root and in subdirectories. For each one, note whether it
+is a symlink resolving to the sibling `AGENTS.md` (compare by canonicalized path, so `AGENTS.md`, `./AGENTS.md`, and
+equivalent forms all count), a dangling symlink, a symlink pointing elsewhere, or a regular file, and whether a sibling
+`AGENTS.md` exists in the same directory.
 
-**Skip if:** `AGENTS.md` exists and is a regular file. It is fine if `CLAUDE.md` is missing or is already a symlink to
-`AGENTS.md`.
+**Skip if:** No `CLAUDE.md` exists anywhere in the repository. There is nothing to canonicalize.
 
-**Also skip if:** Neither `AGENTS.md` nor `CLAUDE.md` exists. Some projects have no agent instructions yet, and this
-modernization should not create a blank file just to satisfy a naming preference.
-
-**Why:** `AGENTS.md` is the canonical cross-agent instruction file. Keeping `CLAUDE.md` as a symlink preserves
-compatibility with older Claude-specific tooling without forcing people to maintain two copies of the same rules.
+**Why:** Claude now reads `AGENTS.md` directly, so the old `CLAUDE.md -> AGENTS.md` compatibility symlink serves no
+purpose. One canonical instruction file per directory, named `AGENTS.md`, with no symlinks to maintain.
 
 **Replace with:**
 
-- If `AGENTS.md` exists and is a symlink, replace it with a regular file containing the symlink target's current
-  content. Do not leave the canonical instruction file as a symlink.
-- If `AGENTS.md` does not exist and `CLAUDE.md` exists, move `CLAUDE.md` to `AGENTS.md`, then create `CLAUDE.md` as a
-  symlink to `AGENTS.md`.
-- If both files exist as regular files, do not guess which one is authoritative. Report the conflict and ask the user
-  which content should become canonical before changing either file.
-- If `CLAUDE.md` exists but is already a symlink somewhere other than `AGENTS.md`, report that explicitly before
-  changing it. The target may be intentional project-specific wiring.
+Apply these branches in order for each directory containing a `CLAUDE.md`:
 
-**Verify:** `test -f AGENTS.md && test ! -L AGENTS.md` succeeds when either agent instruction file exists. If
-`CLAUDE.md` exists after the change, `test -L CLAUDE.md && test "$(readlink CLAUDE.md)" = "AGENTS.md"` succeeds.
+- Never create a `CLAUDE.md` symlink. This item only removes or renames; it does not set up new symlinks.
+- First, if the sibling `AGENTS.md` is itself a symlink: if its target is readable, replace it with a regular file
+  containing the target's current content. If it is dangling, report it as blocked and do nothing with that pair until
+  the user decides. This runs before any content comparison below, so a reverse `AGENTS.md -> CLAUDE.md` symlink is
+  materialized first and its content is never deleted.
+- For each `CLAUDE.md` that is a symlink resolving to the sibling `AGENTS.md`: include its full path in the findings
+  list, and after the user approves, delete the symlink. Present the complete list of paths to be removed before
+  deleting anything.
+- For each `CLAUDE.md` that is a dangling symlink (including one whose target string names `AGENTS.md` when no sibling
+  exists): include its full path in the findings list, and after the user approves, delete it. A dangling link points at
+  nothing, so deleting it loses no content.
+- For each `CLAUDE.md` that is a regular file:
+  - If no sibling `AGENTS.md` exists in the same directory, rename `CLAUDE.md` to `AGENTS.md` (use `git mv` when the
+    file is tracked).
+  - If a sibling `AGENTS.md` exists with byte-identical content (compare with `cmp`, no normalization), delete
+    `CLAUDE.md`.
+  - If a sibling `AGENTS.md` exists with different content, do not guess which one is authoritative. Report the conflict
+    with both paths and ask the user what to do before changing either file.
+- If `CLAUDE.md` is a symlink pointing somewhere other than the sibling `AGENTS.md`, report that explicitly: the target
+  may be intentional project-specific wiring. Delete it only after explicit per-path approval, like the branches above.
+
+Note: this item covers all directories, while items 6, 9, and 12 only cover root-level instruction files.
+
+**Verify:** No `CLAUDE.md` remains anywhere in the repository, except cases the user explicitly asked to keep. Every
+remaining `AGENTS.md` is a regular file (`test ! -L` succeeds).
 
 ### 6. Remove architecture-overview bloat from `CLAUDE.md` / `AGENTS.md`
 
@@ -429,6 +444,8 @@ bumps automatically. Even without automation, a consistent prefix makes `git log
 
 **Replace with:**
 
+- If item 5 is also approved, apply it first, then edit the surviving canonical file. Editing before canonicalization
+  can turn identical twins into a conflict.
 - Add the following section to the project's `AGENTS.md` (preferred) or `CLAUDE.md`. Place it near any existing commit
   message or PR guidance. If the file already has a commit-message section, merge the conventional commit rules into it
   rather than creating a duplicate section.
@@ -537,6 +554,8 @@ guess.
 
 **Replace with:**
 
+- If item 5 is also approved, apply it first, then add the statement to the surviving canonical file. Editing before
+  canonicalization can turn identical twins into a conflict.
 - Ask the user which of the two applies. Do not pick one on their behalf, and do not infer it from the presence of a
   GitHub remote or a license file — a public remote today does not mean personal details were intended to be there, and
   a private remote does not mean it will stay private.
@@ -610,8 +629,9 @@ record kept as work happens lets later sessions recover the reasoning without tr
 - Require the lore convention from item 13 first. If it is absent or needs normalization and that item was not approved,
   ask for approval of the prerequisite or leave logging blocked. Do not silently bundle in lore setup.
 - After approval, install the policy from `work-log.md` as a standalone `Work log` section in the repository's agent
-  instructions, outside its `Lore` section so later normalization preserves it. Use `AGENTS.md` when canonical; follow
-  existing symlinks, and keep both files consistent when `AGENTS.md` and `CLAUDE.md` are separate regular files. Ask
+  instructions, outside its `Lore` section so later normalization preserves it. Install in `AGENTS.md` when it exists,
+  or when neither file exists; if item 5 has not been applied and only `CLAUDE.md` exists, install there instead so this
+  item does not manufacture a both-files state. If both exist as separate regular files, keep both consistent. Ask
   before resolving conflicting policies rather than replacing a deliberate repository choice.
 - Preserve unrelated instructions and existing log entries. Do not backfill old sessions or create empty daily files as
   setup artifacts. Keep all Markdown-tool exclusions for `lore/`; current-day logs are not a formatting exception.
