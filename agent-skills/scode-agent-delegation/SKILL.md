@@ -124,7 +124,7 @@ rules and the exact commands live there and nowhere else.
 <!-- /dependency -->
 
 Name every sub agent (label, description, or whatever the mechanism displays) so the name includes the task plus the
-model and effort actually doing the work, e.g. `fix-foo-gpt-5.6-sol-medium`. Harness UIs otherwise show only the wrapper
+model and effort actually doing the work, e.g. `fix-foo-gpt-6-sol-medium`. Harness UIs otherwise show only the wrapper
 or default model, which misleads anyone watching progress.
 
 A delegated unit that is itself a coordinator — one that runs a process skill with its own fan-out — is one delegation,

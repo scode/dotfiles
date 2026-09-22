@@ -3,7 +3,7 @@
 Read this file in full before the first `codex exec` launch of a session, after `SKILL.md`.
 
 ```sh
-codex -c model_reasoning_effort=high exec --yolo -m gpt-5.6-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
+codex -c model_reasoning_effort=high exec --yolo -m gpt-6-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
 ```
 
 - Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
