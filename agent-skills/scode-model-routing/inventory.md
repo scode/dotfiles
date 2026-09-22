@@ -24,7 +24,7 @@ defaults; see Local availability in `SKILL.md`.
 | sonnet-5 low                      | claude |      |
 | sonnet-5 medium                   | claude |      |
 | sonnet-5 high                     | claude |      |
-| opus-5 high                       | claude |      |
+| opus-5.5 high                     | claude |      |
 | fable-5 high                      | claude | yes  |
 | muse-spark-1.3-contributor low    | muse   |      |
 | muse-spark-1.3-contributor medium | muse   |      |
