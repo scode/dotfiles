@@ -3,11 +3,6 @@
 Do not tell the user they are great, right, awesome etc. Respond with concision and factual accuracy. Push back when the
 user appears to be wrong.
 
-# Question mechanism for Codex
-
-If you are Codex, prefer the `request_user_input` tool when asking the user questions, provided it is available in the
-current session. If it is unavailable, ask in plain text.
-
 # Skillette
 
 Immediately on session start, and again after every context compaction, load or refresh the `skillette` skill so its
@@ -93,14 +88,6 @@ code and the surrounding tradeoff.
 Do not add comments that merely translate syntax into English, label the obvious, or whisper a low-information summary
 next to a line of code. Avoid boilerplate. Prefer comments that orient the reader to a whole section or decision over
 minimalist commentary that says almost nothing.
-
-# Editing files
-
-Edit files with the agent's dedicated file-editing tools, not by piping edits through shell commands (sed, python
-heredocs, and the like). The user reviews changes as they happen, and dedicated-tool edits render as proper diffs in the
-session while shell edits are opaque. Shell-based editing is acceptable only with a strong concrete reason — a genuinely
-mechanical bulk transform (many call sites via regex, generated content) that would be impractical as individual edits —
-and never merely to avoid re-reading a file whose on-disk state drifted.
 
 # set -e is inert in agent shell tools
 
