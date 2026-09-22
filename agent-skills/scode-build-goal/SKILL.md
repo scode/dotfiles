@@ -183,7 +183,7 @@ Every PR in the stack gets reviewed before the executing agent finishes it, and 
 than fixed here, because the right one depends on the goal, on which subscriptions have headroom that week, and on how
 much the user trusts the model doing the writing. The menu, in the order and numbering to present it:
 
-1. `pre-pr-review-swarm` on gpt-5.6-sol high. The default.
+1. `pre-pr-review-swarm` on gpt-6-sol high. The default.
 2. `pre-pr-review-swarm` on fable high.
 3. `pre-pr-review-swarm` on gpt-6-astra high.
 4. An in-harness fresh-context agent with the general charter below, at the executing session's own model.

@@ -79,11 +79,11 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - Questions are batched, not dribbled, and only asked after the skill has read enough of the repository to answer what
   the codebase already settles.
 - The batch always presents the review-gate menu, numbered, with these five options in this order and the first marked
-  as the default: `pre-pr-review-swarm` on gpt-5.6-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm`
-  on gpt-6-astra high; an in-harness fresh-context agent at the executing session's own model with a general
-  correctness, design, and idiomatic-code charter; a fresh-context agent with that charter on fable or gpt-6-astra at
-  high effort, cross-harness when the executing harness cannot reach the model natively. The user's choice is recorded
-  in the goal file; the skill never picks a reviewer silently.
+  as the default: `pre-pr-review-swarm` on gpt-6-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm` on
+  gpt-6-astra high; an in-harness fresh-context agent at the executing session's own model with a general correctness,
+  design, and idiomatic-code charter; a fresh-context agent with that charter on fable or gpt-6-astra at high effort,
+  cross-harness when the executing harness cannot reach the model natively. The user's choice is recorded in the goal
+  file; the skill never picks a reviewer silently.
 
 ## Proportionate planning
 
