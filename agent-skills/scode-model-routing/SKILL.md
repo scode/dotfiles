@@ -54,8 +54,8 @@ A request carries twelve facts, all of which the caller has and routing does not
 
 The answer carries:
 
-- The route: a model id with its effort (`gpt-6-luna medium`), or `orchestrator` (the caller does this unit itself, it
-  is not delegated), or `inherit` (run at the session's own model on the caller's mechanism), or `no suitable route`
+- The route: a model id with its effort (`gpt-6-luna high`), or `orchestrator` (the caller does this unit itself, it is
+  not delegated), or `inherit` (run at the session's own model on the caller's mechanism), or `no suitable route`
   (nothing in any reachable family fits; there is no implied fallback, and the caller decides).
 - The launch mechanism: `native`, `codex exec`, `claude -p`, `muse exec`, or `opencode run`, exactly those strings, from
   the session-by-family table under Launch mechanism.
@@ -123,12 +123,12 @@ mechanism). `sota` marks models trusted with critical review and design decision
 for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next to this
 file; the families and the `sota` marks are:
 
-| family | models (effort words)                                                                                | sota             |
-| ------ | ---------------------------------------------------------------------------------------------------- | ---------------- |
-| gpt    | gpt-6-luna (medium, high), gpt-5.6-terra (medium), gpt-6-sol (low, medium, high), gpt-6-astra (high) | gpt-6-astra high |
-| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5.5 (high), fable-5 (high)                      | fable-5 high     |
-| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                                                | none             |
-| glm    | glm-5.3-flash (low, high, max)                                                                       | none             |
+| family | models (effort words)                                                           | sota             |
+| ------ | ------------------------------------------------------------------------------- | ---------------- |
+| gpt    | gpt-6-luna (medium, high), gpt-6-sol (low, medium, high), gpt-6-astra (high)    | gpt-6-astra high |
+| claude | haiku-4.5 (high), sonnet-5 (low, medium, high), opus-5.5 (high), fable-5 (high) | fable-5 high     |
+| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                           | none             |
+| glm    | glm-5.3-flash (low, high, max)                                                  | none             |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
@@ -161,27 +161,26 @@ failure or when the task proves more demanding than its initial classification.
 
 | profile                   | use when                                                                                                                                                                                      | GPT route                                   | Claude route                    | Muse route                                                          | GLM route                              |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna medium → gpt-5.6-terra medium    | haiku-4.5 high → sonnet-5 low   | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna high → gpt-6-sol medium          | haiku-4.5 high → sonnet-5 low   | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
 | routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                                            | gpt-6-sol low → gpt-6-sol medium            | sonnet-5 low → sonnet-5 medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna medium → gpt-5.6-terra medium    | sonnet-5 medium → sonnet-5 high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-5.6-terra medium → gpt-6-sol medium     | sonnet-5 high → opus-5.5 high   | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna high → gpt-6-sol medium          | sonnet-5 medium → sonnet-5 high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-6-sol medium → gpt-6-sol high           | sonnet-5 high → opus-5.5 high   | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus-5.5 high) | orchestrator                    | none                                                                | none                                   |
 | focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-6-luna high → gpt-6-sol high            | sonnet-5 high → opus-5.5 high   | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-6-sol medium → gpt-6-sol high           | sonnet-5 high → opus-5.5 high   | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6-astra high                            | fable-5 high                    | none                                                                | none                                   |
 
-Each cell lists the primary and then the escalation rung. The two-step routes list the common path, not the whole
-ladder: if terra also fails after a luna failure, gpt-6-sol medium is the remaining rung before the route is exhausted.
-The rationale behind the placements (why reviews route above similarly sized implementation work, why test quality is
-critical, what the eval behind the luna default measured) is in `inventory.md`; read it when calibrating the table, not
-when answering a request.
+Each cell lists the primary and then the escalation rung. The implementation routes have two rungs; a substantive
+failure on the second rung exhausts that family route. The rationale behind the placements (why reviews route above
+similarly sized implementation work, why test quality is critical, what the eval behind the luna default measured) is in
+`inventory.md`; read it when calibrating the table, not when answering a request.
 
 Focused review does not narrow the review charter. A data-flow or edge-input lens still reports correctness defects
 outside its focus. Use critical review for standalone correctness reviews, general, state/lifecycle, and systems
 correctness lenses, security, test quality, SPEC compliance, and final acceptance. Idiomaticity, AI slop, and
 docs/comment correctness use the focused row in every family. Data-flow and edge-input correctness use the critical row
 outside GPT. The GPT focused-review route escalates directly from luna high to sol high, without the implementation
-ladder through terra. Provider preference and fixed native mechanisms retain their ordinary precedence.
+ladder. Provider preference and fixed native mechanisms retain their ordinary precedence.
 
 Design is the orchestrator's own work. Deciding an API shape, an architecture call, or a tradeoff is exactly what the
 expensive model's capability is for; handing the decision to a weaker model buys a worse answer than the orchestrator
@@ -196,18 +195,16 @@ anything judged by how it looks hands that to opus-5.5 high — the table's GPT 
 under "Evidence behind the rules in SKILL.md" — and that is a sufficient reason to diverge from a `gpt` preference,
 announced as a divergence. A Claude session does its own visual design.
 
-Long context is an exception to the luna routes, from every orchestrator. Earlier luna calibration found much weaker
-long-context retrieval than terra and sol (around 41% on MRCR versus roughly 90%); this rule carries over to gpt-6-luna
-until it is recalibrated. A mechanical or clear-spec task whose input is genuinely large — whole-repo scans, big log
-files, long-document analysis, a change that has to be reasoned across many files at once — starts at gpt-5.6-terra
-medium instead of luna, escalating to gpt-6-sol medium; a Claude session shelling out to luna under the workhorse
-default shells out to terra for these instead, rather than reverting to its native route. This is about input size the
-model must actually reason across (input 5), not task difficulty; small-input work stays on luna, and when the caller
-cannot tell in advance, luna first is the right bet — a reroute after a lost-context failure costs one cheap run. A luna
-delegate that loses track of earlier context mid-task is this weakness surfacing, not a generic substantive failure: the
-outcome `substantive failure (lost context)` reroutes to terra without counting against the profile. For the GPT
-focused-review route, large input or a lost-context failure instead routes directly to sol high, without counting a
-lost-context failure as an attempt.
+Long context is an exception to the luna routes, from every orchestrator. Luna's current calibration is weaker on
+long-context retrieval, so a mechanical or clear-spec task whose input is genuinely large — whole-repo scans, big log
+files, long-document analysis, a change that has to be reasoned across many files at once — starts at gpt-6-sol medium
+instead of luna. A Claude session shelling out to luna under the workhorse default shells out to sol for these instead,
+rather than reverting to its native route. This is about input size the model must actually reason across (input 5), not
+task difficulty; small-input work stays on luna, and when the caller cannot tell in advance, luna first is the right bet
+— a reroute after a lost-context failure costs one cheap run. A luna delegate that loses track of earlier context
+mid-task is this weakness surfacing, not a generic substantive failure: the outcome `substantive failure (lost context)`
+reroutes to sol without counting against the profile. For the GPT focused-review route, large input or a lost-context
+failure instead routes directly to sol high, without counting a lost-context failure as an attempt.
 
 ## Native-path bias
 
@@ -228,30 +225,29 @@ not nominal token price alone. For critical work, reliability and useful indepen
 bias.
 
 The bias does not apply to workhorse writers. For delegates that edit the tree under the mechanical or clear-spec
-implementation profile, the default from any orchestrator is gpt-6-luna medium, reached however the session reaches a
-gpt model per Launch mechanism — `codex exec` from a Claude session, the native sub agent mechanism from a Codex session
-— unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from a
+implementation profile, the default from any orchestrator is gpt-6-luna high, reached however the session reaches a gpt
+model per Launch mechanism — `codex exec` from a Claude session, the native sub agent mechanism from a Codex session —
+unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from a
 non-Codex session), or the config file rules the model out. Read-only mechanical work (searches, scans, log reading) is
 not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
 launch and monitoring overhead per delegate. A "short" writer task crosses families under this rule; a "tiny" one is
-still `orchestrator`. Escalation after a luna failure follows the GPT route (terra medium, then sol medium), not the
-same-family column; the same-family routes are what a session uses when the gpt path is unavailable or a preference
-directs it there. A user who would rather not cross families by default says `prefer-claude` or writes the config file.
-This is the one place routing treats a specific model as the default across harnesses; what it rests on, and what would
-justify revisiting it, is in `inventory.md` under "Evidence behind the rules in SKILL.md".
+still `orchestrator`. After a luna-high failure, a workhorse writer follows the GPT route to sol medium; that is the
+rung for mechanical and clear-spec work. The complex-implementation route starts at sol medium and may escalate to sol
+high. The same-family routes are what a session uses when the gpt path is unavailable or a preference directs it there.
+A user who would rather not cross families by default says `prefer-claude` or writes the config file.
 
 ## Escalation facts
 
 Routing never decides to escalate; the caller does, from its own outcome. What routing supplies is the next rung and two
-facts about it. `route exhausted: yes` means the route just answered is the last rung its family offers for this profile
-(the two-step routes plus the sol-medium third rung on the GPT implementation ladders); a substantive failure there is
-not answered by another rung — the caller handles the work itself or makes a deliberate cross-family attempt; routing
-will not hand back the same model. `endpoint trusted` is derived from that last model's `sota` mark, not from its
-family: yes for the critical-review routes and any other route whose last rung is gpt-6-astra high or fable-5 high, no
-for the rest — every muse and glm route, since those families carry no `sota` model, and a GPT or Claude route whose
-ladder ends below `sota`, including every GPT route that ends at gpt-6-sol high. The flag tells the caller how much the
-exhausted rung's own judgment can be trusted; it does not change the rule that an exhausted route, trusted or not, is
-never retried mechanically. A first attempt on a route with a rung left says `route exhausted: no`.
+facts about it. `route exhausted: yes` means the route just answered is the last rung its family offers for this
+profile; a substantive failure there is not answered by another rung — the caller handles the work itself or makes a
+deliberate cross-family attempt; routing will not hand back the same model. `endpoint trusted` is derived from that last
+model's `sota` mark, not from its family: yes for the critical-review routes and any other route whose last rung is
+gpt-6-astra high or fable-5 high, no for the rest — every muse and glm route, since those families carry no `sota`
+model, and a GPT or Claude route whose ladder ends below `sota`, including every GPT route that ends at gpt-6-sol high.
+The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule that an
+exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says `route
+exhausted: no`.
 
 ## Provider preference
 

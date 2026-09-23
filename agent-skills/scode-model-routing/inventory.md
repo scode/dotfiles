@@ -15,7 +15,6 @@ defaults; see Local availability in `SKILL.md`.
 | --------------------------------- | ------ | ---- |
 | gpt-6-luna medium                 | gpt    |      |
 | gpt-6-luna high                   | gpt    |      |
-| gpt-5.6-terra medium              | gpt    |      |
 | gpt-6-sol low                     | gpt    |      |
 | gpt-6-sol medium                  | gpt    |      |
 | gpt-6-sol high                    | gpt    |      |
@@ -45,17 +44,15 @@ profile; planning, decomposition, quality gating, and VCS ownership remain with 
 
 ## The mid tier, and what the eval behind the luna default measured
 
-Within implementation work, the mid tier — terra and sol as delegates rather than sol-high-as-reviewer — earns its cost
-in two situations. Context economy: work that has to be reasoned across more input than the orchestrator can afford to
-spend its own context on (a change threaded through dozens of files, a diagnosis that means reading a large subsystem)
-goes to terra, because luna cannot hold it and the orchestrator should not have to; that is the center of the complex
-implementation profile, and why its route starts at terra rather than sol. And the escalation rung: when a workhorse
-fails substantively, terra is the cheap next step before sol and before the orchestrator takes the work over. Difficult
-debugging and ambiguity that survives decomposition also live in the complex implementation profile — its route carries
-sol for exactly the case where the delegate's own judgment turns out to matter mid-task. What the eval behind these
-routes (https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248) actually showed is narrower than "the mid
-tier is useless": in 36 runs every model passed every hidden test, so the tasks separated prices, not failure rates, and
-the expensive models' visible advantages were soft — documentation quality, benchmark discipline — which a reviewed
+Within implementation work, sol is the escalation and long-context tier rather than a replacement for luna's workhorse
+role. Work that has to be reasoned across more input than the orchestrator can afford to spend its own context on (a
+change threaded through dozens of files, a diagnosis that means reading a large subsystem) starts at sol medium, because
+luna's long-context retrieval is weaker. Difficult debugging and ambiguity that survives decomposition also use sol,
+with high as the escalation rung when the delegate's own judgment matters mid-task. For mechanical and clear-spec work,
+sol medium is the terminal fallback after a Luna-high failure; sol high requires explicit reclassification as complex
+implementation or a deliberate new route. The eval behind these routes showed something narrower than "the mid tier is
+useless": in 36 runs every model passed every hidden test, so the tasks separated prices, not failure rates, and the
+expensive models' visible advantages were soft — documentation quality and benchmark discipline — which a reviewed
 assumptions list and a gate that reads the diff cover. The honest conclusion is that nothing there justified paying
 mid-tier prices for well-specified work, not that no task ever will. An orchestrator reaching for sol or opus to
 implement something well-specified usually has an unsettled design, and the fix is to settle it; the routine authored
@@ -64,16 +61,17 @@ measured.
 
 Luna is the workhorse on purpose, not as a compromise. Across six treeward features and a planted bug, every model from
 luna medium up to sonnet passed every hidden test on the first attempt; the gate rejected three results for hidden
-work-done regressions, none of them luna's, making luna medium the cheapest clean record — $0.64 for the six features
-against $5.57 for terra and $21.73 for sonnet (https://claude.ai/code/artifact/43a3d4f1-fd32-41df-84bc-d62d6fb1f248).
-Luna has two demonstrated weaknesses. Judgment on open questions is the first, and the caller's checkpoint protocol
-moves that judgment to the orchestrator before any code exists: in the guidance eval, the checkpoint arm went 8 for 8
-across the four cheap models — luna medium and high among them — on a feature the same models had gotten right once in
-eight runs without it. It does not move mid-implementation judgment anywhere, which is why the caller's gate still reads
-the diff in full. The second weakness is long context, covered by the exception in `SKILL.md`. What the workhorse needs
-is a clear spec and a reviewed assumptions list, and those are the orchestrator's to supply. Expect luna's decision log
-to be short or empty — it does not experience decisions as decisions — and a short or empty log is not evidence that the
-work was simple or that nothing was decided.
+work-done regressions, none of them luna's, making luna medium the cheapest clean record in that eval. The current
+Luna-high default is an explicit economic hypothesis: its incremental cost may be offset by fewer escalations, but no
+direct medium-versus-high workhorse comparison has established that yet. Luna has two demonstrated weaknesses. Judgment
+on open questions is the first, and the caller's checkpoint protocol moves that judgment to the orchestrator before any
+code exists: in the guidance eval, the checkpoint arm went 8 for 8 across the four cheap models — luna medium and high
+among them — on a feature the same models had gotten right once in eight runs without it. It does not move
+mid-implementation judgment anywhere, which is why the caller's gate still reads the diff in full. The second weakness
+is long context, covered by the exception in `SKILL.md`. What the workhorse needs is a clear spec and a reviewed
+assumptions list, and those are the orchestrator's to supply. Expect luna's decision log to be short or empty — it does
+not experience decisions as decisions — and a short or empty log is not evidence that the work was simple or that
+nothing was decided.
 
 ## Evidence behind the rules in SKILL.md
 
@@ -88,8 +86,8 @@ work was simple or that nothing was decided.
   family's model ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode; its evidence base is one clean
   clear-spec smoke run plus vendor benchmarks, and its per-token price is roughly an order of magnitude below the other
   families.
-- **The visual carve-out.** Real-world feedback on GPT-5.6 consistently rates sol below the Claude models on visual
-  design taste even while its coding reputation holds up.
+- **The visual carve-out.** Real-world feedback consistently rates sol below the Claude models on visual design taste
+  even while its coding reputation holds up.
 - **The workhorse-writer default.** The cross-family cost the native-path bias exists to weigh is small and
   characterized for writers: the shell-out path to codex (launch, resume, and monitoring) is exercised end to end (two
   items there remain explicitly unverified), and the price gap to the same-family writer alternative is about 30× for no

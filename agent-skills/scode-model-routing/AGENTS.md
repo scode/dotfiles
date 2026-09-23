@@ -34,7 +34,7 @@ inventory changes.
 
 | Situation                                                                                    | Expected answer                                                                                                          |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| clear-spec writer, short, input not large                                                    | gpt-6-luna medium via `codex exec`, cross-family yes (workhorse default)                                                 |
+| clear-spec writer, short, input not large                                                    | gpt-6-luna high via `codex exec`, cross-family yes (workhorse default)                                                   |
 | clear-spec writer, tiny                                                                      | `orchestrator`                                                                                                           |
 | read-only scan of one subsystem, input not large                                             | haiku-4.5 high native                                                                                                    |
 | read-only whole-repo scan, input large                                                       | haiku-4.5 high native (read-only work never takes the luna route, so the long-context exception has nothing to redirect) |
@@ -52,9 +52,9 @@ inventory changes.
 | a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only) | sonnet-5 high native, diverged from preference yes (mechanism fixed)                                                     |
 | user demands opus-5.5 for a mechanical task                                                  | opus-5.5 high native, reason attributes the demand                                                                       |
 | critical review with independent perspective requested                                       | gpt-6-astra high via `codex exec`, cross-family yes (independence)                                                       |
-| clear-spec writer after one `substantive failure` on gpt-6-luna medium                       | gpt-5.6-terra medium via `codex exec` (not sonnet)                                                                       |
-| the same after `execution-path failure`                                                      | gpt-6-luna medium via `codex exec` again                                                                                 |
-| the same after `substantive failure (lost context)`                                          | gpt-5.6-terra medium via `codex exec`, reason says no attempt consumed                                                   |
+| clear-spec writer after one `substantive failure` on gpt-6-luna high                         | gpt-6-sol medium via `codex exec` (not sonnet)                                                                           |
+| the same after `execution-path failure`                                                      | gpt-6-luna high via `codex exec` again                                                                                   |
+| the same after `substantive failure (lost context)`                                          | gpt-6-sol medium via `codex exec`, reason says no attempt consumed                                                       |
 
 Focused-review scenarios:
 
@@ -62,7 +62,7 @@ Focused-review scenarios:
 | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | Codex on sol high; each of idiomaticity, AI slop, and docs/comment correctness, input not large                                                | gpt-6-luna high native; focused review                          |
 | Codex on sol high; each of data-flow and edge-input correctness lenses, with strong general correctness coverage in the panel, input not large | gpt-6-luna high native; full charter retained                   |
-| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-6-sol high native; no terra rung                            |
+| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-6-sol high native; no additional GPT rung                   |
 | the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-6-sol high native; route exhausted yes, endpoint trusted no |
 | Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-6-astra high native; critical review                        |
 | Codex on sol high; simplification review                                                                                                       | gpt-6-sol medium native; mechanical review                      |
