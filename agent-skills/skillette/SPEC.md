@@ -213,6 +213,36 @@ makes one publish attempt, without automatic retries, splitting, or truncation. 
 acceptance, not confirmed phone delivery. Authentication errors are reported without searching for credentials. The
 skillette neither manages subscriptions nor enables ongoing notifications.
 
+## The `cr-triage` skillette
+
+`cr-triage` walks the user through a set of code review findings and records one outcome per finding: `spec` (change
+`SPEC.md` or `SPEC_impl.md`, typically because the reviewer lacked a constraint), `fix` (queue a code fix), `spec+fix`,
+`discard` (not worth discussing, with no implied verdict on correctness), or `other` in the user's words. Besides
+catching bugs, the aim is a project whose stated constraints stop agent reviewers from raising the same invalid findings
+repeatedly. Its explicit trigger is `skillette-cr-triage`; the bare word `cr-triage` sits in the natural-language column
+for the same reason ntfy's short forms do, and like every phrase it stops working once the table has been compacted out.
+
+It is triage only. No code or spec is edited during the flow unless the user asks outright, and then only after the
+outcome is recorded. The skillette names no particular review tool or skill; findings from any source are handled the
+same way.
+
+The findings are whatever the user points at, or by default those produced earlier in the session; when that is unclear
+the agent asks. A bare trigger is therefore a complete request, an exception to the general rule that a trigger with no
+request around it makes the skillette ask. Questions are settled before assessment. When the user has not said where the
+queue goes, the agent asks, offering a secret GitHub gist as the default and taking whatever else the user names.
+Findings that exist only in the session are, with the user's agreement, saved next to the queue before assessment, so
+the queue's references to them survive the session. Secret values are never copied into either file.
+
+The queue keeps every finding; the only reduction is merging exact duplicates. Each entry records the agent's
+correctness assessment, made with a high bar for calling a finding invalid. Entries are sorted into P1 (security, data
+loss, critical correctness), P2 (serious UX or behavior bugs), and P3 (minor, rare, style) by what the finding claims,
+not by the assessment or by rarity, so an invalid or rare security or data-loss finding stays where it gets attention.
+
+The queue is Markdown by default, holds enough of every finding to be triaged without the original review output, and
+gives each entry a `T<n>` identifier that is never renumbered or reused. Each decision is written as soon as it is made;
+a failed read or write of the queue or findings copy stops the flow until the user decides how to proceed. Invoking the
+skillette again with the same findings and queue resumes at the first `pending` entry.
+
 ## The `change` skillette
 
 `change` exists so that "oh, by the way, skillette should also do X" can be said mid-session, in any project, without

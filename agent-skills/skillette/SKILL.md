@@ -14,10 +14,11 @@ name the path or tool; do not continue from memory or from a search elsewhere. A
 any phrase match; if two rows still plausibly match, ask which; if a `skillette-` word matches no row, say so. Bare
 `skillette` with no trigger just confirms the skill is loaded.
 
-| Triggers         | Natural-language triggers                                           |
-| ---------------- | ------------------------------------------------------------------- |
-| skillette-brain  | use or create a brain or its artifacts; not skillette changes       |
-| skillette-change | add, remove, or change a skillette, or change skillette itself      |
-| skillette-hackmd | the user mentions HackMD or hackmd.io                               |
-| skillette-lore   | the whole word "lore" meaning repo history or a ./lore dir          |
-| skillette-ntfy   | a request to send via `ntfy` or `$ntfy`, including after other work |
+| Triggers            | Natural-language triggers                                           |
+| ------------------- | ------------------------------------------------------------------- |
+| skillette-brain     | use or create a brain or its artifacts; not skillette changes       |
+| skillette-change    | add, remove, or change a skillette, or change skillette itself      |
+| skillette-cr-triage | invoking `cr-triage`; not skillette changes                         |
+| skillette-hackmd    | the user mentions HackMD or hackmd.io                               |
+| skillette-lore      | the whole word "lore" meaning repo history or a ./lore dir          |
+| skillette-ntfy      | a request to send via `ntfy` or `$ntfy`, including after other work |
