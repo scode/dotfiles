@@ -800,45 +800,99 @@ lines are for:
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
 test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
-read -r state base head head_sha <<EOF
+
+# The guards and the merge are one retryable unit. GitHub can briefly retain
+# stale branch-policy state after the preceding base edit, ready transition, or
+# descendant push. Refresh every guard before retrying; never reuse a head or
+# base read from the failed attempt.
+merged=no
+for attempt in 1 2 3 4 5; do
+  read -r state base head head_sha mergeable merge_status <<EOF
 $(gh pr view "$parent_pr" -R "$repo" \
-  --json state,baseRefName,headRefName,headRefOid \
-  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
+  --json state,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid, .mergeable, .mergeStateStatus] | @tsv')
 EOF
-test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
-test "$base" = "$default_branch" \
-  || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
-test "$head" = "$parent_bookmark" \
-  || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
-test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
-gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
+  test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
+  test "$base" = "$default_branch" \
+    || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
+  test "$head" = "$parent_bookmark" \
+    || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
+  test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
+
+  # A non-CLEAN merge state is a real gate or unresolved GitHub state, not
+  # evidence that the stack is blocked by the transient policy race. The
+  # normal check-wait guidance above handles required checks; optional checks
+  # must not be promoted to required blockers here.
+  if test "$mergeable" = UNKNOWN || test "$merge_status" = UNKNOWN; then
+    test "$attempt" -lt 5 || { echo "PR #$parent_pr mergeability stayed UNKNOWN" >&2; exit 1; }
+    sleep 3
+    continue
+  fi
+  test "$mergeable" = MERGEABLE && test "$merge_status" = CLEAN \
+    || { echo "PR #$parent_pr mergeable=$mergeable mergeStateStatus=$merge_status" >&2; exit 1; }
+
+  merge_err=$(gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha" 2>&1) \
+    && { merged=yes; break; }
+  case "$merge_err" in
+    *"base branch policy prohibits the merge"*|*"Base branch was modified"*)
+      test "$attempt" -lt 5 \
+        || { echo "PR #$parent_pr still rejected after transient-policy retries: $merge_err" >&2; exit 1; }
+      echo "PR #$parent_pr: GitHub policy state has not converged; refreshing and retrying ($attempt)" >&2
+      sleep 3
+      ;;
+    *) echo "$merge_err" >&2; exit 1 ;;
+  esac
+done
+test "$merged" = yes || exit 1
 test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
   || { echo "PR #$parent_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
 ```
+
+The bounded retry above is specifically for GitHub convergence after a base edit, ready transition, or rewritten head.
+The generic `base branch policy prohibits the merge` response is not enough evidence that the stack is blocked. On each
+retry, re-read the state, default-branch base, head branch, exact head SHA, `mergeable`, `mergeStateStatus`, and status
+contexts. Retry only while the exact guards still match, mergeability is converging, and no check is pending or failed.
+This does not wait for CI, start another workflow, rebase, push, or use `--admin`. If a required check is pending or
+failed, or the guards change, stop and report that actual condition. Record the first rejected attempt in the landing
+ledger as a transient GitHub-policy rejection; do not mark the stack blocked unless the bounded retry is exhausted or a
+real guard/check failure remains. This behavior was observed during a 19-PR landing where GitHub returned that exact
+policy error immediately after a base retarget and push, then reported `CLEAN`, `MERGEABLE`, and a successful required
+check seconds later. See the incident note: https://gist.github.com/scode/33ba018851f1e1acfc8dde4e302a86fb
+
+For the two-PR shortcut below, use the same retryable verify-and-merge block rather than the one-shot `gh pr merge`
+command. The shortcut may omit repeated stack discovery, but it must not omit the convergence retry after the child base
+edit and rewritten push.
+
+After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use `gh pr view --json
+state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability waits. GitHub can
+briefly report no checks for a just-pushed or just-retargeted PR before Actions has attached the new runs. Treat "no
+checks" as pending if checks were expected; wait briefly and re-read PR metadata instead of treating it as success. Use
+workflow logs only when checks fail or get stuck.
 
 That final `MERGED` check is not paranoia: on repos with a merge queue or auto-merge, `gh pr merge` can queue the merge
 and exit zero without anything having landed. If the check fails while the PR sits queued, wait and re-read instead of
 proceeding — fetching and restacking now would rebase descendants onto a stale default branch and retarget the next PR
 before its parent actually landed.
 
-Then fetch the landed state and move local `main` to the remote result:
+Then fetch the landed state and move the local default-branch bookmark to the remote result:
 
 ```bash
-jj git fetch --remote origin
-jj bookmark set main -r main@origin
+jj git fetch --remote origin || exit 1
+jj bookmark set "$default_branch" -r "$default_branch@origin" || exit 1
 ```
 
-Restack downstream bookmarks in stack order. For a two-PR stack where the child should now target `main`, the concrete
-sequence is:
+Restack downstream bookmarks in stack order. For a two-PR stack where the child should now target the default branch,
+the concrete sequence is:
 
 ```bash
-jj rebase -s "$child_bookmark" -d main || exit 1
-gh api -X PATCH "repos/$repo/pulls/$child_pr" -f base=main --jq .base.ref \
-  || test "$(gh pr view "$child_pr" -R "$repo" --json baseRefName --jq .baseRefName)" = main \
+jj rebase -s "$child_bookmark" -d "$default_branch" || exit 1
+gh api -X PATCH "repos/$repo/pulls/$child_pr" -f "base=$default_branch" --jq .base.ref \
+  || test "$(gh pr view "$child_pr" -R "$repo" --json baseRefName --jq .baseRefName)" = "$default_branch" \
   || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr ready "$child_pr" -R "$repo" || exit 1
-gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
+gh pr view "$child_pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup \
+  || exit 1
 ```
 
 The `gh pr ready` comes after the push on purpose: the push of the rewritten head lands while the PR is still a draft,
@@ -960,44 +1014,55 @@ per the paragraph above; that wait is the reason the first merge cannot be batch
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
 test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
-read -r state base head head_sha <<EOF
-$(gh pr view "$parent_pr" -R "$repo" \
-  --json state,baseRefName,headRefName,headRefOid \
-  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
+merge_one() {
+  local pr="$1" bookmark="$2" merged=no
+  for attempt in 1 2 3 4 5; do
+    read -r state base head head_sha mergeable merge_status <<EOF
+$(gh pr view "$pr" -R "$repo" \
+  --json state,baseRefName,headRefName,headRefOid,mergeable,mergeStateStatus,statusCheckRollup \
+  --jq '[.state, .baseRefName, .headRefName, .headRefOid, .mergeable, .mergeStateStatus] | @tsv')
 EOF
-test "$state" = OPEN || { echo "PR #$parent_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
-test "$base" = "$default_branch" \
-  || { echo "PR #$parent_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
-test "$head" = "$parent_bookmark" \
-  || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
-test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
-gh pr merge "$parent_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
-test "$(gh pr view "$parent_pr" -R "$repo" --json state --jq .state)" = MERGED \
-  || { echo "PR #$parent_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
+    test "$state" = OPEN || { echo "PR #$pr is ${state:-unreadable}, not OPEN" >&2; return 1; }
+    test "$base" = "$default_branch" \
+      || { echo "PR #$pr base is '$base', expected '$default_branch'" >&2; return 1; }
+    test "$head" = "$bookmark" \
+      || { echo "PR #$pr head is '$head', expected '$bookmark'" >&2; return 1; }
+    test -n "$head_sha" || { echo "no head sha for PR #$pr" >&2; return 1; }
+    if test "$mergeable" = UNKNOWN || test "$merge_status" = UNKNOWN; then
+      test "$attempt" -lt 5 || { echo "PR #$pr mergeability stayed UNKNOWN" >&2; return 1; }
+      sleep 3
+      continue
+    fi
+    test "$mergeable" = MERGEABLE && test "$merge_status" = CLEAN \
+      || { echo "PR #$pr mergeable=$mergeable mergeStateStatus=$merge_status" >&2; return 1; }
+    merge_err=$(gh pr merge "$pr" -R "$repo" --squash --match-head-commit "$head_sha" 2>&1) \
+      && { merged=yes; break; }
+    case "$merge_err" in
+      *"base branch policy prohibits the merge"*|*"Base branch was modified"*)
+        test "$attempt" -lt 5 \
+          || { echo "PR #$pr still rejected after transient-policy retries: $merge_err" >&2; return 1; }
+        sleep 3
+        ;;
+      *) echo "$merge_err" >&2; return 1 ;;
+    esac
+  done
+  test "$merged" = yes || return 1
+  test "$(gh pr view "$pr" -R "$repo" --json state --jq .state)" = MERGED \
+    || { echo "PR #$pr did not reach MERGED (merge queue?)" >&2; return 1; }
+}
+
+merge_one "$parent_pr" "$parent_bookmark" || exit 1
 
 jj git fetch --remote origin || exit 1
-jj bookmark set main -r main@origin || exit 1
-jj rebase -s "$child_bookmark" -d main || exit 1
+jj bookmark set "$default_branch" -r "$default_branch@origin" || exit 1
+jj rebase -s "$child_bookmark" -d "$default_branch" || exit 1
 gh api -X PATCH "repos/$repo/pulls/$child_pr" -f "base=$default_branch" --jq .base.ref \
   || test "$(gh pr view "$child_pr" -R "$repo" --json baseRefName --jq .baseRefName)" = "$default_branch" \
   || exit 1
 jj git push --bookmark "exact:$child_bookmark" || exit 1
 gh pr ready "$child_pr" -R "$repo" || exit 1
 
-read -r state base head head_sha <<EOF
-$(gh pr view "$child_pr" -R "$repo" \
-  --json state,baseRefName,headRefName,headRefOid \
-  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
-EOF
-test "$state" = OPEN || { echo "PR #$child_pr is ${state:-unreadable}, not OPEN" >&2; exit 1; }
-test "$base" = "$default_branch" \
-  || { echo "PR #$child_pr base is '$base', expected '$default_branch'" >&2; exit 1; }
-test "$head" = "$child_bookmark" \
-  || { echo "PR #$child_pr head is '$head', expected '$child_bookmark'" >&2; exit 1; }
-test -n "$head_sha" || { echo "no head sha for PR #$child_pr" >&2; exit 1; }
-gh pr merge "$child_pr" -R "$repo" --squash --match-head-commit "$head_sha" || exit 1
-test "$(gh pr view "$child_pr" -R "$repo" --json state --jq .state)" = MERGED \
-  || { echo "PR #$child_pr did not reach MERGED (merge queue?)" >&2; exit 1; }
+merge_one "$child_pr" "$child_bookmark" || exit 1
 ```
 
 You do not need to rediscover the child PR after the base edit when the command succeeds and the next operation is an
@@ -1214,7 +1279,10 @@ EOF
     merge_err=$(gh pr merge "$pr" -R "$repo" --squash --match-head-commit "$head_sha" \
       --subject "$title (#$pr)" --body-file "$body_file" 2>&1) && { merged=yes; break; }
     case $merge_err in
-      *"Base branch was modified"*) echo "PR #$pr: base moved under the merge, retrying ($attempt)" >&2; sleep 3 ;;
+      *"base branch policy prohibits the merge"*|*"Base branch was modified"*)
+        echo "PR #$pr: GitHub policy state has not converged, retrying ($attempt)" >&2
+        sleep 3
+        ;;
       *) echo "$merge_err" >&2; break ;;
     esac
   done
@@ -1228,11 +1296,11 @@ done
 set +f
 ```
 
-The merge retry exists for one specific GitHub response: `Base branch was modified. Review and try the merge again.`
-GitHub returns it when the default branch moved between its mergeability computation and the merge call, which in this
-loop happens when something else lands on the default branch at the same moment (seen while landing several stacks
-concurrently). The head SHA is pinned by `--match-head-commit` and the base is re-read before each attempt, so the retry
-merges the same change into the same base or not at all; any other error is not retried.
+The merge retry covers two GitHub responses: `base branch policy prohibits the merge` and `Base branch was modified`.
+The first can occur briefly after a PR becomes ready or after a base/head update while GitHub recomputes branch-policy
+state. The second occurs when the default branch moves between mergeability computation and the merge call. The head SHA
+is pinned by `--match-head-commit`, and the state, base, head, and mergeability are re-read before each attempt, so the
+retry merges the same change into the same base or not at all. Any other error is not retried.
 
 The `MERGED` check after the merge is there because `gh pr merge` exits 0 on a merge-queue repo after merely enqueueing
 the PR, and can similarly leave auto-merge armed. When the check fails, the PR may still land later on its own; say so
@@ -1343,25 +1411,20 @@ will also use the fast path.
 
 This section applies after the final merge of a landing, when no open stacked PRs remain above what you merged. If open
 descendants remain, keep following the restack flow in "Landing stacked PRs safely" instead — the `jj rebase -s @` below
-moves only the working-copy commit, and running it mid-landing strands `@` away from the stack it was sitting on.
-
-After GitHub merges the PR, bring the local jj view back into sync before doing anything else:
+moves only the working-copy commit, and running it mid-landing strands `@` away from the stack it was sitting on. After
+GitHub merges the PR, bring the local jj view back into sync before doing anything else:
 
 ```bash
-jj git fetch --remote origin
-jj bookmark set main -r main@origin
-jj rebase -s @ -d main
+default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
+test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
+jj git fetch --remote origin || exit 1
+jj bookmark set "$default_branch" -r "$default_branch@origin" || exit 1
+jj rebase -s @ -d "$default_branch" || exit 1
 ```
 
-The first command imports the new remote state. The second makes the local `main` bookmark match the merged remote
-bookmark. The third moves the usually-empty working-copy commit on top of the new `main` so the checkout is coherent
-again.
-
-Then run the guarded branch cleanup from "Landing stacked PRs safely" for every PR/bookmark pair landed in this
-operation. Remote stack branches and local bookmarks are part of the landing's cleanup, not an optional follow-up.
-
-If the repository's default branch is not named `main`, use the correct local and remote bookmark names instead of
-blindly pasting `main`.
+The first command imports the new remote state. The second makes the local default-branch bookmark match the merged
+remote bookmark. The third moves the usually-empty working-copy commit on top of the merged default branch so the
+checkout is coherent again.
 
 ## Practical notes
 
