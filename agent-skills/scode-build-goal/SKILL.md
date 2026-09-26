@@ -1,6 +1,6 @@
 ---
 name: scode-build-goal
-description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file that requires scode-galaxy-brain and is meant to be passed to /goal. `scode-build-goal help` prints a usage TLDR instead.
+description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file that requires scode-galaxy-brain and is meant to be passed to /goal. A `no-workhorse` mode has the executing session do all the work itself instead of delegating it to cheaper models. `scode-build-goal help` prints a usage TLDR instead.
 ---
 
 # scode-build-goal
@@ -22,6 +22,7 @@ independent authorized work continues.
 ```
 $scode-build-goal <goal text...>
 $scode-build-goal in /path/to/dir <goal text...>
+$scode-build-goal no-workhorse <goal text...>
 ```
 
 (equivalently `/scode-build-goal ...`). The argument string is the user's natural-language statement of what they want
@@ -43,11 +44,36 @@ and this skill does not mine the brief for where to put its own files. Resolve `
 the working directory, `~` expanded), and if it does not exist or is not a writable directory, say so and ask rather
 than creating it or falling back to the defaults.
 
-If the entire argument string is `help`, answer in chat with a TLDR — both invocation shapes, what the two files are
-for, where they get put by default, and that the output is a file to pass to `/goal` — and stop. Do not create or modify
-anything.
+If the entire argument string is `help`, answer in chat with a TLDR — the invocation shapes including no-workhorse mode,
+what the two files are for, where they get put by default, and that the output is a file to pass to `/goal` — and stop.
+Do not create or modify anything.
 
 If the goal text is missing, ask rather than guessing.
+
+## No-workhorse mode
+
+By default the goal file has the executing agent hand suitable units of its own work (implementation, mechanical edits,
+searches, fixups) to cheaper or faster models through `scode-galaxy-brain`, while it keeps planning, gating, and version
+control for itself. No-workhorse mode turns off exactly that and nothing else: the executing agent does every unit of
+its own decomposition itself, at its own model, and delegates none of it, read-only or writing. The review gate and the
+scope reassessment review work the same way in both modes: they are not a cheaper model standing in for the executing
+agent, they exist to be independent of the author, and that matters no less when the author wrote every line.
+Galaxy-brain is still required for the whole run in this mode, because it is what routes and launches those reviews. The
+resource watchdog keeps every one of its obligations, but loses its option of a small-context watcher agent, since that
+is a cheaper model doing monitoring the executing agent would otherwise do; it runs as a background process only.
+
+The mode exists because this override kept getting written into the goal text by hand ("orchestrating agent will do all
+the implementation, no use of sub agent for workhorse/mechanical"), where it had to be reconciled ad hoc with the goal
+file's standing requirement to delegate through galaxy-brain.
+
+The mode is on when the argument string asks for it: the word `no-workhorse` used as a switch, or a plain-language
+request that the executing or orchestrating agent do the implementation itself without sub-agents for workhorse or
+mechanical work. Unlike placement, this is read from the goal text on purpose, since how the executing agent works is
+part of its brief. A mention is not a switch: `document the no-workhorse mode`, a quoted or negated `no-workhorse`, or
+the word inside a path leaves the mode off and stays in the goal text. Drop only an occurrence that was consumed as the
+switch. When the role of the word is unclear, or a request only leans that way ("do as much as you can yourself"), ask
+in the up-front batch rather than guess. None of this changes the `in <dir>` clause, which still has to come first, or
+the `help` path, which still requires `help` to be the entire argument string.
 
 ## Placing the files
 
@@ -138,6 +164,8 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - Review gate: which reviewer checks each PR before it is finished, chosen from the menu in Review gate options below.
   Present the menu every time, numbered as it appears there, with the first option marked as the default taken if the
   user does not care.
+- Delegation mode: standard or no-workhorse, per No-workhorse mode, stated rather than asked unless the request was
+  ambiguous, so a misread costs the user one line to fix.
 - File placement: the goal and log paths chosen per Placing the files, stated so the user can override them, or put as a
   question when only a temporary location was available.
 
@@ -226,7 +254,8 @@ has none of this conversation's context. Include, at minimum:
   periodic swarms or reviewing every helper. Apply the same decision boundary as Unattended fallback below. Give
   delegates bounded units within the outline; unapproved new mechanisms are outside their task. If discovered mid-unit,
   leave that part unimplemented and report the dependency at the existing checkpoint, with checks and incomplete work
-  stated honestly; do not require the delegate to build it merely to satisfy the completion checkpoint.
+  stated honestly; do not require the delegate to build it merely to satisfy the completion checkpoint. In no-workhorse
+  mode there are no such delegates, so the goal file leaves out the sentences about them.
 - **Resume protocol.** The first action is to invoke the `agent-resumeable` skill with the log file's absolute path.
   Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and resume
   where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather than
@@ -234,7 +263,11 @@ has none of this conversation's context. Include, at minimum:
 - **Galaxy-brain execution.** State explicitly that the user requires the executing agent to use `$scode-galaxy-brain`
   to achieve the entire goal. Invoke that skill immediately after setting up the resume protocol and keep it active for
   the whole run, including every delegation. Merely reading it for delegation mechanics does not satisfy this
-  requirement.
+  requirement. In no-workhorse mode, add that the user forbids delegating any unit of the executing agent's own
+  decomposition, read-only or writing: the agent does all of that work itself and does not ask routing about it, and
+  this demand overrides galaxy-brain's own judgment of what is worth delegating. The spawns the goal file itself calls
+  for (the review gate and the scope reassessment review) are still routed and launched through galaxy-brain exactly as
+  in the standard mode.
 - **PR discipline.** Split the work into a linear stack of reviewable PRs using the `jjstack` skill. Err on the side of
   bite-sized PRs, but do not create churn — code added in one PR and deleted in a later PR of the same stack means the
   stack should have been shaped differently. Restructure the stack instead of stacking a correction on top.
@@ -273,7 +306,9 @@ has none of this conversation's context. Include, at minimum:
   status at least once a minute. On every path, check heartbeat freshness before new workload launches, batching that
   check with other required observations. A dead monitor or a heartbeat stale for two sample intervals pauses new
   launches until monitoring is restored. Do not lengthen resource sampling intervals or assume that a process-completion
-  notification delivers intermediate alerts from a still-running watchdog merely to reduce model turns.
+  notification delivers intermediate alerts from a still-running watchdog merely to reduce model turns. In no-workhorse
+  mode, the goal file leaves out the watcher-agent option: the watchdog is a background process, and any status checks
+  it cannot deliver as notifications are the executing agent's own.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.

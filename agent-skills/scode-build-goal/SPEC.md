@@ -71,6 +71,21 @@ whoever is judging whether a change kept the user-facing behavior intact.
   exist or is not a writable directory is reported and asked about. The skill neither creates it nor silently falls back
   to the default placement.
 
+## No-workhorse mode
+
+- The skill supports a no-workhorse mode, turned on by the word `no-workhorse` used as a switch in the argument string
+  or by a plain-language request that the executing agent do the implementation itself without workhorse or mechanical
+  sub-agents. A mention that is not a switch (quoted, negated, part of a path, or the subject of the goal) leaves the
+  mode off and stays in the goal text; only an occurrence consumed as the switch is removed. An unclear role, or a
+  request that only leans that way, is asked about, not guessed. The `in <dir>` clause and `help` rules are unchanged.
+- The up-front batch states which mode applies, standard or no-workhorse, so the user can correct it before anything is
+  written.
+- In no-workhorse mode the goal file forbids the executing agent from delegating any unit of its own decomposition,
+  read-only or writing; it does that work itself. The resource watchdog keeps all its obligations but runs as a
+  background process only, without the small-context watcher-agent option. The mode changes nothing else:
+  `scode-galaxy-brain` is still required for the whole run, and the review gate and scope reassessment review are the
+  same as in the standard mode and still routed through galaxy-brain.
+
 ## Up-front questions
 
 - The skill assumes unattended execution. Foreseeable consequential choices and acceptable fallbacks are settled before
@@ -106,7 +121,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
 - Using `scode-galaxy-brain` for the entire run, activated right after the resume protocol and kept active through every
-  delegation. Reading it for mechanics does not satisfy this.
+  delegation. Reading it for mechanics does not satisfy this. In no-workhorse mode, the no-delegation demand described
+  under No-workhorse mode, stated as overriding galaxy-brain's own judgment of what is worth delegating.
 - A resource watchdog for memory and disk, started before the first delegation, restarted if it dies, and carried in
   every handoff note. Prefer a process monitor over a model watchdog to keep routine minute-level sampling out of model
   turns. A small-context model watcher may replace frequent parent wakeups when it delivers alerts without being polled
