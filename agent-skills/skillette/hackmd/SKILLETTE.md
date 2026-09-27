@@ -2,9 +2,9 @@
 
 Mechanics for reading and writing HackMD notes from an agent session through `@hackmd/hackmd-cli`. The whole message
 carrying the trigger, or the mention of HackMD, is the request: publish this file as a note, update note such-and-such
-from this file, pull down a note, share a note with someone. This file tells you how to do those things without tripping
-over the CLI; it does not prescribe a workflow, a manifest format, or a sync design. If the user wants a repeatable
-sync, design it with them using these mechanics.
+from this file, publish a document together with its SVG, PNG, or JPEG figures, pull down a note, share a note with
+someone. This file tells you how to do those things without tripping over the CLI; it does not prescribe a workflow, a
+manifest format, or a sync design. If the user wants a repeatable sync, design it with them using these mechanics.
 
 NOTE: A note whose read permission is `guest` is readable by anyone holding the link. Create notes owner-only unless the
 user asked to share, and say which permissions you set when you report back.
@@ -71,6 +71,64 @@ When the user names a note by title, list with `--output=json` and pick the entr
 `--filter` does substring matching, so "Delete me" also matches "Delete me not". Confirm the id with `notes
 --noteId=<id>` before anything destructive, and after a delete re-list to confirm the id is gone.
 
+## Images
+
+HackMD hosts images itself, so a note can carry figures without hosting them anywhere else and without putting them in
+the Markdown. Each image is uploaded to a specific note and comes back as an ordinary link, and only that link lands in
+the body. Do not inline images as base64 `data:` URIs: they count against the 100 KiB request cap above and a single
+modest PNG blows through it.
+
+`hackmd-cli` has no image command as of 2.5.1. Use `upload-image.sh`, next to this file, which wraps `POST
+/notes/:id/images` and reads the token the same way the CLI does:
+
+```bash
+<this directory>/upload-image.sh <id> fig/arch.svg fig/plot.png   # prints: <file><TAB>https://hackmd.io/_uploads/<x>.svg
+```
+
+It prints one line per file, in order, and on the first failure stops with the HTTP status and HackMD's message on
+stderr and exits 1; lines printed before the failure are real uploads. When curl itself fails (the network, not an HTTP
+error), the failing file may or may not have been stored, and the message says so; retrying it at worst leaves one
+orphan (see below), which is usually fine, but say so to the user. It refuses up front any file that is missing, lacks
+an image extension, or has `;`, `,`, or `"` in its name (curl's `-F` would misparse those; copy the file to a plain name
+first).
+
+Because an upload needs a note id, a new note with images takes three steps:
+
+- Keep the Markdown source referring to local files (`![Architecture](fig/arch.svg)`), which keeps it previewable
+  locally.
+- Create the note from that source, which gives you the id. Create it owner-readable even when the user asked to share,
+  since the image references are broken on HackMD until the next step. Comment permission is the exception: it cannot be
+  changed after creation, so set it in this call to what the note will need once shared (`signed_in_users` or `everyone`
+  for reviewers, per "Permissions"), not to the private default.
+- Upload each referenced file with `upload-image.sh`, write a copy of the source with each local path replaced by its
+  link (leave the source file alone unless the user wants it rewritten), `notes update` from that copy, and verify with
+  `export` as usual. Only then set the read permission the user asked for, and run the guest check.
+
+Measured on 2026-09-27: SVG, PNG, JPEG, GIF, and WebP upload and all render in the note view, SVG included. A non-image
+file gets 415, and so does a real PNG uploaded without an image extension, even with an explicit multipart type; the
+content is sniffed too, so a PNG named `.jpg` comes back as a `.png` link. A file of 1,000,296 bytes went through and
+one of 1,048,872 got `413 Payload Too Large`, which fits HackMD's documented 1 MB per image on the free plan (20 MB on
+Prime); I have not checked which plan the measuring account was on. When a file is over the limit, tell the user and
+offer to shrink it (downscale or recompress a raster, simplify an SVG) rather than doing it silently, since that changes
+their figure. Success is 201 even though the docs at https://hackmd.io/@docs/attachments-api say 200.
+
+Images follow the note they were uploaded to. On an owner-only note an anonymous `GET` of the `_uploads` link answers
+403, and it becomes 200 as soon as the note is `guest`-readable and 403 again when it is tightened back. The API token
+works on `hackmd.io` too, so `curl -L -H "Authorization: Bearer $tok"` on the link fetches the image back; without `-L`
+you get the redirect, not the image. The link 302s to a short-lived signed S3 URL; always embed the
+`hackmd.io/_uploads/...` link, never where it redirects to. HackMD's help page on images in team notes says deleting the
+note breaks its images everywhere they are referenced, so upload an image to the note that displays it, do not reuse one
+note's image links in another, and update notes in place rather than deleting and recreating them. I have not tested the
+deletion claim.
+
+Uploading is not idempotent. The same file uploaded twice gets two different links, and there is no endpoint to list or
+delete a note's attachments (nothing in the Swagger spec as of 2026-09-27), so every re-upload leaves a permanent orphan
+attached to the note. On an update, upload only images that are new or changed and reuse the existing links for the
+rest. The note itself does not say which link came from which local file, so for anything beyond a one-off, record that
+mapping somewhere (next to the source, keyed by path and content hash, for example) and agree with the user where; that
+is part of designing a sync, which is theirs to decide. Team notes have no image endpoint in the spec; I have not tried
+uploading to a team note through the user endpoint.
+
 ## Permissions
 
 Values: `--readPermission` and `--writePermission` take `owner`, `signed_in`, or `guest`; `--commentPermission` takes
@@ -113,7 +171,9 @@ nothing to read back or re-assert for them; get them right in the create call.
 
 The end-to-end test for guest readability is an anonymous request to the view link: `curl -sS -o /dev/null -w
 '%{http_code}\n' 'https://hackmd.io/<id>?type=view'` prints 200 for a guest-readable note and 403 for an owner-only one.
-Run it after sharing, and after tightening, since it proves what a stranger sees rather than what the API claims.
+Run it after sharing, and after tightening, since it proves what a stranger sees rather than what the API claims. For a
+note with uploaded images, run it with `-L` against one of the `_uploads` links as well; it should give the same answer
+as the view link (see "Images").
 
 ## Links and rendering
 
@@ -201,8 +261,9 @@ Swagger spec named under Preflight.
 - `DELETE /notes/:id` removes a note.
 - `GET /notes/:id/comments`, `GET /notes/:id/comments/:commentId`, `PUT` and `DELETE
   /notes/:id/comments/:commentId/resolution`, `GET /notes/:id/versions`, `GET /notes/:id/versions/:versionId`, and `GET
-  /notes/:id/versions/compare` are covered under "Reading feedback". `POST /notes/:id/versions` creates a named version
-  and `PATCH /notes/:id/versions` renames one.
+  /notes/:id/versions/compare` are covered under "Reading feedback". `POST /notes/:id/images` is covered under "Images"
+  and wrapped by `upload-image.sh`. `POST /notes/:id/versions` creates a named version and `PATCH /notes/:id/versions`
+  renames one.
 
 On a failed request, report the HTTP status and the first few hundred bytes of the body; that is where HackMD puts the
 useful message.

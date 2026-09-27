@@ -243,6 +243,21 @@ gives each entry a `T<n>` identifier that is never renumbered or reused. Each de
 a failed read or write of the queue or findings copy stops the flow until the user decides how to proceed. Invoking the
 skillette again with the same findings and queue resumes at the first `pending` entry.
 
+## The `hackmd` skillette
+
+`hackmd` gives an agent the mechanics for reading and writing HackMD notes through `hackmd-cli` and, where the CLI falls
+short, the REST API. It fires when the user mentions HackMD. It prescribes no workflow or sync design; a repeatable sync
+is designed with the user. Notes are created owner-only with owner comments unless the user asks otherwise, and the
+agent reports the permissions it set.
+
+A note can carry SVG, PNG, JPEG, GIF, and WebP figures uploaded to HackMD itself, so that neither external hosting nor
+inline `data:` URIs (which run into HackMD's 100 KiB body cap) are needed. The skillette ships `upload-image.sh` for
+this, because the CLI has no upload command. Uploads belong to one note and inherit its read permission, so a note with
+images is created private, gets its images uploaded and linked, and is shared only afterwards; its comment permission is
+still chosen for the shared state at creation, because HackMD cannot change it later. Uploads are not idempotent and
+cannot be listed or deleted through the API, so the agent does not re-upload unchanged images, and it reports a partial
+or uncertain upload rather than retrying silently. The agent does not shrink an oversized image without asking.
+
 ## The `change` skillette
 
 `change` exists so that "oh, by the way, skillette should also do X" can be said mid-session, in any project, without
