@@ -258,6 +258,18 @@ still chosen for the shared state at creation, because HackMD cannot change it l
 cannot be listed or deleted through the API, so the agent does not re-upload unchanged images, and it reports a partial
 or uncertain upload rather than retrying silently. The agent does not shrink an oversized image without asking.
 
+## The `snippets` skillette
+
+`snippets` is a pointer to the user's private `scode/snippets` repository, whose root `AGENTS.md` is the authority on
+how snippets are created, changed, and published. The skillette carries none of that process itself: it tells the agent
+to read the current `AGENTS.md` from the default branch on every use and follow it, and to stop if the file cannot be
+read. Keeping the process in one place means the snippets repository can change it without a matching edit here.
+
+The natural-language trigger is the word `scode-snippets`. A plain "snippet" was the first choice, but it collides with
+ordinary talk about code snippets in almost every coding session, and a distinctive word avoids having the agent decide
+each time whether the user meant the repository. The skillette assumes the agent can reach the private repository and
+does not ask.
+
 ## The `change` skillette
 
 `change` exists so that "oh, by the way, skillette should also do X" can be said mid-session, in any project, without
