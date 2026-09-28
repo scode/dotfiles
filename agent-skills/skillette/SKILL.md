@@ -22,3 +22,4 @@ any phrase match; if two rows still plausibly match, ask which; if a `skillette-
 | skillette-hackmd    | the user mentions HackMD or hackmd.io                               |
 | skillette-lore      | the whole word "lore" meaning repo history or a ./lore dir          |
 | skillette-ntfy      | a request to send via `ntfy` or `$ntfy`, including after other work |
+| skillette-snippets  | the user mentions `scode-snippets`                                  |
