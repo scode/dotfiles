@@ -20,9 +20,9 @@ defaults; see Local availability in `SKILL.md`.
 | gpt-6-sol high                    | gpt    |      |
 | gpt-6-astra high                  | gpt    | yes  |
 | haiku-4.5 high                    | claude |      |
-| sonnet-5 low                      | claude |      |
-| sonnet-5 medium                   | claude |      |
-| sonnet-5 high                     | claude |      |
+| sonnet-5.5 low                    | claude |      |
+| sonnet-5.5 medium                 | claude |      |
+| sonnet-5.5 high                   | claude |      |
 | opus-5.5 high                     | claude |      |
 | fable-5 high                      | claude | yes  |
 | muse-spark-1.3-contributor low    | muse   |      |
