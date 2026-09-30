@@ -1,6 +1,8 @@
-# Agent launchers. Model and reasoning effort are pinned explicitly on every
-# launcher so the CLIs' own model-selection defaults never decide for us.
-alias claude-yolo='claude --model claude-fable-5 --effort high --dangerously-skip-permissions'
+# Agent launchers. Reasoning effort is pinned explicitly on every launcher so
+# the CLIs' own defaults never decide it for us. The codex launchers also pin
+# the model; claude-yolo deliberately leaves the model to Claude Code's own
+# selection rather than pinning an id that goes stale with each release.
+alias claude-yolo='claude --effort high --dangerously-skip-permissions'
 alias codex-yolo='codex -m gpt-6.1-sol -c model_reasoning_effort=high --yolo'
 # on-request: the model approves its own commands and asks only when it judges
 # human approval is warranted; writes stay inside the workspace sandbox.
