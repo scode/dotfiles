@@ -37,6 +37,9 @@ fix the skill or change this file in the same change, never leave them apart.
   what a model may run. An explicit user demand for a model at an effort the tables do not list routes to that model at
   that effort (input 8); the tables' omission is never a reason to block, ask for confirmation, or substitute another
   model. What the launch mechanism can actually select (input 11) is the limit on a demanded effort.
+- A request that names a model by its line alone ("sol high", "sonnet medium") resolves to that line's model in the
+  inventory, never to an older release of the line. A request that names a model by version is an explicit demand even
+  when the inventory does not list that version; absence from the inventory is not an availability fact.
 - `SKILL.md` is the public surface and is kept lean, measured as what a session loads before its first delegation:
   everything needed to answer a routing request is in `SKILL.md`, and only the full inventory table, the calibration
   history, the size anchors, and config-file handling live in sidecars read on demand, each with its trigger named in
