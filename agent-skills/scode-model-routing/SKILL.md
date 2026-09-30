@@ -94,7 +94,7 @@ Highest first. Each earlier rule settles what it covers and the later ones fill 
    that would need another mechanism then diverges, with the reason `mechanism fixed`.
 4. The design profile is `orchestrator`, with two exceptions settled here: a session that is not `sota` delegates design
    up to the strongest available model the way critical review is routed, and a GPT session producing visual output
-   (input 6) hands it to opus-5.5 high — the visual carve-out — whatever the preference says, with `diverged from
+   (input 6) hands it to opus high — the visual carve-out — whatever the preference says, with `diverged from
    preference: yes (visual)` under a `gpt` preference (see Work profiles).
 5. A `none` cell falls back to the orchestrator's family's route, `diverged from preference: yes (no suitable model)`.
 6. Required independence (input 9) crosses families: a second perspective from the same family is not independent.
@@ -123,25 +123,29 @@ mechanism). `sota` marks models trusted with critical review and design decision
 for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next to this
 file; the families and the `sota` marks are:
 
-| family | models (effort words)                                                             | sota             |
-| ------ | --------------------------------------------------------------------------------- | ---------------- |
-| gpt    | gpt-6-luna (medium, high), gpt-6.1-sol (low, medium, high), gpt-6-astra (high)    | gpt-6-astra high |
-| claude | haiku-4.5 (high), sonnet-5.5 (low, medium, high), opus-5.5 (high), fable-5 (high) | fable-5 high     |
-| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                             | none             |
-| glm    | glm-5.3-flash (low, high, max)                                                    | none             |
+| family | models (effort words)                                                          | sota             |
+| ------ | ------------------------------------------------------------------------------ | ---------------- |
+| gpt    | gpt-6-luna (medium, high), gpt-6.1-sol (low, medium, high), gpt-6-astra (high) | gpt-6-astra high |
+| claude | haiku (high), sonnet (low, medium, high), opus (high), fable (high)            | fable high       |
+| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                          | none             |
+| glm    | glm-5.3-flash (low, high, max)                                                 | none             |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
 A request that names a model by its line alone ("sol high", "sonnet medium") means that line's model in the table above,
-never an older release of it.
+never an older release of it. Until 2026-09-30 this skill labeled the Claude aliases with versions (`haiku-4.5`,
+`sonnet-5.5`, `opus-5.5`, `fable-5`), and older prompts and config files still use those labels; they mean the plain
+alias, not a pinned release. Only a request that names an older Claude release by its full model id (`claude-fable-5`),
+or says outright that it wants an older release, is a versioned demand.
 
 The effort words in these tables — here and in the profile rows under Work profiles — are calibration defaults, what
 routing picks on its own initiative, not a whitelist of what a model may run. When the user explicitly requests a model
-at an effort no table lists ("run the review on fable-5 at medium"), that request is an explicit demand (input 8), and
+at an effort no table lists ("run the review on fable at medium"), that request is an explicit demand (input 8), and
 routing answers with that model at that effort: the omission is not an availability fact, and it is never a reason to
 block, ask for confirmation, or substitute another model. What the launch mechanism can actually select (input 11) is
 the limit on a demanded effort. The same holds for a model the inventory does not list: a user naming one by version (an
-older release, say) is an explicit demand, and its absence from the inventory is not an availability fact.
+older release, say; the former Claude labels above aside) is an explicit demand, and its absence from the inventory is
+not an availability fact.
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `muse` preference, a user request naming it, or a
@@ -163,16 +167,16 @@ available, except that workhorse writers — tree-editing delegates under the me
 profile — default to luna from any family (see Native-path bias). Move to the escalation model after a substantive
 failure or when the task proves more demanding than its initial classification.
 
-| profile                   | use when                                                                                                                                                                                      | GPT route                                   | Claude route                        | Muse route                                                          | GLM route                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna high → gpt-6.1-sol medium        | haiku-4.5 high → sonnet-5.5 low     | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
-| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                                            | gpt-6.1-sol low → gpt-6.1-sol medium        | sonnet-5.5 low → sonnet-5.5 medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna high → gpt-6.1-sol medium        | sonnet-5.5 medium → sonnet-5.5 high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-6.1-sol medium → gpt-6.1-sol high       | sonnet-5.5 high → opus-5.5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus-5.5 high) | orchestrator                        | none                                                                | none                                   |
-| focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-6-luna high → gpt-6.1-sol high          | sonnet-5.5 high → opus-5.5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-6.1-sol medium → gpt-6.1-sol high       | sonnet-5.5 high → opus-5.5 high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6-astra high                            | fable-5 high                        | none                                                                | none                                   |
+| profile                   | use when                                                                                                                                                                                      | GPT route                               | Claude route                | Muse route                                                          | GLM route                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna high → gpt-6.1-sol medium    | haiku high → sonnet low     | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
+| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                                            | gpt-6.1-sol low → gpt-6.1-sol medium    | sonnet low → sonnet medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna high → gpt-6.1-sol medium    | sonnet medium → sonnet high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-6.1-sol medium → gpt-6.1-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus high) | orchestrator                | none                                                                | none                                   |
+| focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-6-luna high → gpt-6.1-sol high      | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-6.1-sol medium → gpt-6.1-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6-astra high                        | fable high                  | none                                                                | none                                   |
 
 Each cell lists the primary and then the escalation rung. The implementation routes have two rungs; a substantive
 failure on the second rung exhausts that family route. The rationale behind the placements (why reviews route above
@@ -195,7 +199,7 @@ running a `sota`-marked model, treat design the way critical review is treated �
 available model rather than keeping it by default — and when another skill's process spawns a design-shaped subagent,
 that spawn is process, not routing: it is `inherit`, at the session's own model, unless that process demands otherwise.
 The one case where design output itself is delegated is visual: a GPT session producing UI, frontend styling, slides, or
-anything judged by how it looks hands that to opus-5.5 high — the table's GPT cell says so, and `inventory.md` says why
+anything judged by how it looks hands that to opus high — the table's GPT cell says so, and `inventory.md` says why
 under "Evidence behind the rules in SKILL.md" — and that is a sufficient reason to diverge from a `gpt` preference,
 announced as a divergence. A Claude session does its own visual design.
 
@@ -247,11 +251,11 @@ facts about it. `route exhausted: yes` means the route just answered is the last
 profile; a substantive failure there is not answered by another rung — the caller handles the work itself or makes a
 deliberate cross-family attempt; routing will not hand back the same model. `endpoint trusted` is derived from that last
 model's `sota` mark, not from its family: yes for the critical-review routes and any other route whose last rung is
-gpt-6-astra high or fable-5 high, no for the rest — every muse and glm route, since those families carry no `sota`
-model, and a GPT or Claude route whose ladder ends below `sota`, including every GPT route that ends at gpt-6.1-sol
-high. The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule
-that an exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says
-`route exhausted: no`.
+gpt-6-astra high or fable high, no for the rest — every muse and glm route, since those families carry no `sota` model,
+and a GPT or Claude route whose ladder ends below `sota`, including every GPT route that ends at gpt-6.1-sol high. The
+flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule that an
+exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says `route
+exhausted: no`.
 
 ## Provider preference
 
@@ -272,17 +276,17 @@ so the caller can tell the user.
 The inventory and profiles describe models that exist; they do not know which ones the user can access in this
 environment. Before answering a request, check for the model routing config file, `~/.scode-model-routing.md`. If it
 exists, read `config-file.md` next to this file and then honor the config file: it contains natural language adjustments
-from the user, most commonly availability restrictions like "fable-5 is not available, do not use" or "only claude
-models work here", and may replace the inventory or the profile table outright. Treat its contents as authoritative.
-Remove unavailable models from every profile and use the next suitable option rather than preserving a preferred slot
+from the user, most commonly availability restrictions like "fable is not available, do not use" or "only claude models
+work here", and may replace the inventory or the profile table outright. Treat its contents as authoritative. Remove
+unavailable models from every profile and use the next suitable option rather than preserving a preferred slot
 mechanically. "Suitable" is defined by the profile, not by the family: a model with no placement in a profile's row is
 not the next option for that profile just because it is the strongest one left in the family. When a config file removes
 the only `sota` model of the session's own family, critical review and the design delegate-up go cross-family to the
-other family's `sota` model (the removal of fable-5 sends a Claude session's critical review to gpt-6-astra high via
-`codex exec`), not to opus-5.5 or sol natively. Apart from the seeding request described in `config-file.md`, do not
-create or edit the config file yourself; it belongs to the user. If the config file does not exist but the file it
-replaced, `~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and
-answering as if no config existed would silently route to models the user said are unavailable.
+other family's `sota` model (the removal of fable sends a Claude session's critical review to gpt-6-astra high via
+`codex exec`), not to opus or sol natively. Apart from the seeding request described in `config-file.md`, do not create
+or edit the config file yourself; it belongs to the user. If the config file does not exist but the file it replaced,
+`~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and answering as if
+no config existed would silently route to models the user said are unavailable.
 
 If the config file does not exist, all inventory models are assumed available, with one practical exception: a
 shelled-out family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is
@@ -305,10 +309,13 @@ rule below. Otherwise use the target family's shell-out mechanism, subject to av
 - **Shell-out fallback from any session**: `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and
   `opencode run` for GLM. The OpenCode launch uses the unrestricted default build agent with `task` available.
 
-Claude ids in the inventory are names, not launch arguments. Whether native or through `claude -p`, a Claude model is
-selected by its harness alias (`fable`, `opus`, `sonnet`, `haiku`), which resolves to the current release of that line;
-`fable` resolved to `claude-fable-5-1` on 2026-09-06, while the literal `fable-5` was rejected with a 404. GPT ids are
-passed as written, minus the effort word.
+Claude models are named in the inventory by their harness alias (`fable`, `opus`, `sonnet`, `haiku`), and that alias is
+also the launch argument, whether native or through `claude -p`. Each alias resolves to the current release of its line,
+so the inventory carries no Claude version numbers. A demand for a specific older Claude release (input 8) is launched
+by that release's full model id, as `modelUsage` reports it (`claude-fable-5`, `claude-sonnet-5`); a short form such as
+`sonnet-5` is not a model id and is rejected. A native mechanism whose model parameter takes only aliases (input 11)
+cannot satisfy such a demand, so it goes through `claude -p`. GPT, Muse, and GLM ids are passed to their CLIs as
+written, minus the effort word.
 
 When the mechanism is `native`, the caller also sets the target reasoning effort if its sub agent mechanism has an
 effort parameter; otherwise sub agents inherit the session's effort and that is acceptable. A writer needs a mechanism

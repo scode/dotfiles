@@ -141,9 +141,14 @@ claude alias list, the muse and opencode model ids), the `scode-build-goal` revi
 the example run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, and the codex
 launchers in `payload/shellrc`.
 
-The stakes differ by family. GPT, Muse, and GLM ids are passed to their CLIs literally, so a stale one keeps launching
-the old model. Claude models launch through harness aliases (`sonnet`, `opus`, ...) that already follow the newest
-release, so a stale Claude name only mislabels what runs.
+The work differs by family. GPT, Muse, and GLM ids are passed to their CLIs literally, so a stale one keeps launching
+the old model, and bumping the id is the fix. Claude models are named everywhere by their plain harness alias (`haiku`,
+`sonnet`, `opus`, `fable`), which is also what gets passed at launch and already follows the newest release. For Claude,
+confirm each alias still resolves to the newest release of its line (a hello-world through `claude -p --output-format
+json` reports the concrete model under `modelUsage`). If an alias lags the newest release, report it rather than pinning
+a versioned id in its place. Replace any versioned Claude name that has crept into a table or label with the plain
+alias. The deliberate versioned names in `scode-model-routing` stay as they are: the full ids in its launch paragraph,
+the former-label lists in its `SKILL.md` and `SPEC.md`, and the eval rows that exercise them.
 
 Before switching a literal id, launch a hello-world through the CLI that will use it (for GPT, `codex exec` through the
 configured provider) and confirm it answers on the new model; a model the local proxy does not serve yet stays on the

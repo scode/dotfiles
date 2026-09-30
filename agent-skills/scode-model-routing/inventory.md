@@ -11,6 +11,11 @@ family determines the launch mechanism (see Launch mechanism in `SKILL.md`); `so
 review and design decisions, not eligibility to orchestrate. Availability and user overrides may remove or replace these
 defaults; see Local availability in `SKILL.md`.
 
+Claude rows carry no version because they are harness aliases that follow each new release on their own. Their
+placements therefore move to a new release without anyone re-measuring them, the same as a GPT row whose id is bumped.
+Unlike a GPT bump, nothing records when that happens, so the evidence below does not say which Claude release it was
+measured on.
+
 | model                             | family | sota |
 | --------------------------------- | ------ | ---- |
 | gpt-6-luna medium                 | gpt    |      |
@@ -19,12 +24,12 @@ defaults; see Local availability in `SKILL.md`.
 | gpt-6.1-sol medium                | gpt    |      |
 | gpt-6.1-sol high                  | gpt    |      |
 | gpt-6-astra high                  | gpt    | yes  |
-| haiku-4.5 high                    | claude |      |
-| sonnet-5.5 low                    | claude |      |
-| sonnet-5.5 medium                 | claude |      |
-| sonnet-5.5 high                   | claude |      |
-| opus-5.5 high                     | claude |      |
-| fable-5 high                      | claude | yes  |
+| haiku high                        | claude |      |
+| sonnet low                        | claude |      |
+| sonnet medium                     | claude |      |
+| sonnet high                       | claude |      |
+| opus high                         | claude |      |
+| fable high                        | claude | yes  |
 | muse-spark-1.3-contributor low    | muse   |      |
 | muse-spark-1.3-contributor medium | muse   |      |
 | muse-spark-1.3-contributor high   | muse   |      |
