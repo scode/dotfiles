@@ -15,9 +15,9 @@ defaults; see Local availability in `SKILL.md`.
 | --------------------------------- | ------ | ---- |
 | gpt-6-luna medium                 | gpt    |      |
 | gpt-6-luna high                   | gpt    |      |
-| gpt-6-sol low                     | gpt    |      |
-| gpt-6-sol medium                  | gpt    |      |
-| gpt-6-sol high                    | gpt    |      |
+| gpt-6.1-sol low                   | gpt    |      |
+| gpt-6.1-sol medium                | gpt    |      |
+| gpt-6.1-sol high                  | gpt    |      |
 | gpt-6-astra high                  | gpt    | yes  |
 | haiku-4.5 high                    | claude |      |
 | sonnet-5.5 low                    | claude |      |
@@ -77,11 +77,11 @@ nothing was decided.
 
 `SKILL.md` states the rules; this is what each rests on, so that calibration has one place to update.
 
-- **The GPT `sota` mark.** gpt-6-astra high carries the family's `sota` mark; gpt-6-sol high does not. The mark follows
-  the model trusted to orchestrate, not a measurement of sol against astra. The decision to mark astra as the flagship
-  was made on 2026-09-06, before these sol and luna version changes. Their routes retain the earlier placements, but the
-  measurements below have not been repeated on the new versions. Astra has no placement below critical review because
-  nothing has calibrated it as a delegate; give it one when real use says so.
+- **The GPT `sota` mark.** gpt-6-astra high carries the family's `sota` mark; gpt-6.1-sol high does not. The mark
+  follows the model trusted to orchestrate, not a measurement of sol against astra. The decision to mark astra as the
+  flagship was made on 2026-09-06, before these sol and luna version changes. Their routes retain the earlier
+  placements, but the measurements below have not been repeated on the new versions. Astra has no placement below
+  critical review because nothing has calibrated it as a delegate; give it one when real use says so.
 - **The opt-in families.** The muse placements rest on vendor-reported benchmarks rather than calibrated use. The glm
   family's model ran as the `ox-alpha` stealth preview on OpenRouter and OpenCode; its evidence base is one clean
   clear-spec smoke run plus vendor benchmarks, and its per-token price is roughly an order of magnitude below the other
