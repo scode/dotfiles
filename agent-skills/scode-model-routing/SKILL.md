@@ -132,12 +132,16 @@ file; the families and the `sota` marks are:
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
+A request that names a model by its line alone ("sol high", "sonnet medium") means that line's model in the table above,
+never an older release of it.
+
 The effort words in these tables — here and in the profile rows under Work profiles — are calibration defaults, what
 routing picks on its own initiative, not a whitelist of what a model may run. When the user explicitly requests a model
 at an effort no table lists ("run the review on fable-5 at medium"), that request is an explicit demand (input 8), and
 routing answers with that model at that effort: the omission is not an availability fact, and it is never a reason to
 block, ask for confirmation, or substitute another model. What the launch mechanism can actually select (input 11) is
-the limit on a demanded effort.
+the limit on a demanded effort. The same holds for a model the inventory does not list: a user naming one by version (an
+older release, say) is an explicit demand, and its absence from the inventory is not an availability fact.
 
 The muse family is Meta's Muse Code harness and its Muse Spark model. It is an option, not a default: never route to it
 on your own initiative. It enters a route only through an explicit `muse` preference, a user request naming it, or a
