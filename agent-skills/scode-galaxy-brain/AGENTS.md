@@ -51,15 +51,15 @@ through the tool's continuation or artifact. Verify that unknown or denied acces
 content with no recovery path still stop; a complete skill needing no sidecars needs no base directory.
 
 The fixed activation and composition questions, run whenever "Staying active", "Composing with other skills", or the
-load-when text changes, each asked of a cold agent with the full situation stated (a Claude Code session on fable-5
-high, no preference, no config file, all four CLIs on `PATH`, unless the situation says otherwise):
+load-when text changes, each asked of a cold agent with the full situation stated (a Claude Code session on fable high,
+no preference, no config file, all four CLIs on `PATH`, unless the situation says otherwise):
 
-| Situation                                                                                               | Expected answer                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the task galaxy-brain was invoked for is done; the next message does not mention galaxy-brain           | routing continues; any delegation in the new task is announced with its model and effort                                                                                                            |
-| a compaction summary omits the skill but mentions a running `codex exec` writer stopped at a checkpoint | galaxy-brain is assumed active and the assumption is stated; the resume proceeds from the recorded session id and run directory, and no skill is re-read on that account alone                      |
-| an invocation that limited scope up front ("for this one thing"); that thing is done                    | no activation for the next task                                                                                                                                                                     |
-| the swarm is invoked while galaxy-brain is active, no preference                                        | correctness, security, spec-compliance, and test-quality reviewers on fable-5 high native; the rest on sonnet-5.5 high native; the choice announced; no checkpoint addendum or gate applied to them |
+| Situation                                                                                               | Expected answer                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the task galaxy-brain was invoked for is done; the next message does not mention galaxy-brain           | routing continues; any delegation in the new task is announced with its model and effort                                                                                                      |
+| a compaction summary omits the skill but mentions a running `codex exec` writer stopped at a checkpoint | galaxy-brain is assumed active and the assumption is stated; the resume proceeds from the recorded session id and run directory, and no skill is re-read on that account alone                |
+| an invocation that limited scope up front ("for this one thing"); that thing is done                    | no activation for the next task                                                                                                                                                               |
+| the swarm is invoked while galaxy-brain is active, no preference                                        | correctness, security, spec-compliance, and test-quality reviewers on fable high native; the rest on sonnet high native; the choice announced; no checkpoint addendum or gate applied to them |
 
 When a scenario depends on the model routing config file, `~/.scode-model-routing.md`, run it in an isolated home; never
 create or edit that file in the real home for an eval — it belongs to the user.

@@ -4,11 +4,11 @@ Read this file in full before the first `claude -p` launch of a session, after `
 
 ```sh
 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
-  claude -p --model <alias> --effort <level> --dangerously-skip-permissions "$(cat <prompt-file>)" < /dev/null
+  claude -p --model <model> --effort <level> --dangerously-skip-permissions "$(cat <prompt-file>)" < /dev/null
 ```
 
-- Model aliases: `sonnet`, `opus`, `haiku`, `fable`. Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. The final
-  response is printed to stdout.
+- Model: an alias (`sonnet`, `opus`, `haiku`, `fable`), or a full model id such as `claude-fable-5` when the caller was
+  given one. Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. The final response is printed to stdout.
 - Print mode otherwise terminates background tasks after 600 seconds and exits successfully with a diagnostic instead of
   the requested result. Keep its inner wait unlimited; the outer orchestrator already owns monitoring and cancellation.
 - A zero exit status is necessary but not sufficient. Reject empty or truncated output and results that do not satisfy
@@ -26,7 +26,7 @@ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
 
   ```sh
   CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
-    claude -p --model <alias> --effort <level> --resume <uuid> --dangerously-skip-permissions \
+    claude -p --model <model> --effort <level> --resume <uuid> --dangerously-skip-permissions \
     "$(cat <resume-prompt-file>)" < /dev/null
   ```
 
