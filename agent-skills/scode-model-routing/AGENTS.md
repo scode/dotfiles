@@ -39,17 +39,17 @@ inventory changes.
 | read-only scan of one subsystem, input not large                                             | haiku-4.5 high native                                                                                                    |
 | read-only whole-repo scan, input large                                                       | haiku-4.5 high native (read-only work never takes the luna route, so the long-context exception has nothing to redirect) |
 | design decision, own decomposition                                                           | `orchestrator`                                                                                                           |
-| design decision from a sonnet-5 orchestrator (not `sota`)                                    | fable-5 high native (delegate up)                                                                                        |
+| design decision from a sonnet-5.5 orchestrator (not `sota`)                                  | fable-5 high native (delegate up)                                                                                        |
 | UI styling from a Codex session on gpt-6-sol high under `prefer-gpt`                         | opus-5.5 high via `claude -p`, diverged from preference yes (visual)                                                     |
 | routine authored under `prefer-muse`                                                         | muse-spark-1.3-contributor medium via `muse exec`, escalation high                                                       |
 | critical review under `prefer-glm`                                                           | fable-5 high native, diverged from preference yes (no suitable model)                                                    |
 | critical review under `prefer-glm` from a Codex session on gpt-6-astra high                  | gpt-6-astra high native, diverged from preference yes                                                                    |
 | config file removes fable-5; critical review                                                 | gpt-6-astra high via `codex exec`, cross-family yes (the only remaining `sota` model)                                    |
 | design decision from a Codex session on gpt-6-sol high (not `sota`)                          | gpt-6-astra high native (delegate up)                                                                                    |
-| config file removes sonnet-5 medium; clear-spec writer under `prefer-claude`                 | sonnet-5 high native                                                                                                     |
-| no `codex` on `PATH`; clear-spec writer, short                                               | sonnet-5 medium native, reason says the gpt path is unavailable                                                          |
+| config file removes sonnet-5.5 medium; clear-spec writer under `prefer-claude`               | sonnet-5.5 high native                                                                                                   |
+| no `codex` on `PATH`; clear-spec writer, short                                               | sonnet-5.5 medium native, reason says the gpt path is unavailable                                                        |
 | a swarm-defined design role (process-defined spawn)                                          | `inherit`                                                                                                                |
-| a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only) | sonnet-5 high native, diverged from preference yes (mechanism fixed)                                                     |
+| a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only) | sonnet-5.5 high native, diverged from preference yes (mechanism fixed)                                                   |
 | user demands opus-5.5 for a mechanical task                                                  | opus-5.5 high native, reason attributes the demand                                                                       |
 | critical review with independent perspective requested                                       | gpt-6-astra high via `codex exec`, cross-family yes (independence)                                                       |
 | clear-spec writer after one `substantive failure` on gpt-6-luna high                         | gpt-6-sol medium via `codex exec` (not sonnet)                                                                           |
@@ -66,7 +66,7 @@ Focused-review scenarios:
 | the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-6-sol high native; route exhausted yes, endpoint trusted no |
 | Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-6-astra high native; critical review                        |
 | Codex on sol high; simplification review                                                                                                       | gpt-6-sol medium native; mechanical review                      |
-| Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet-5 high native; focused review, Claude route              |
+| Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet-5.5 high native; focused review, Claude route            |
 | Claude Code on fable high; data-flow correctness lens in a panel, process-defined native-only role                                             | fable-5 high native; non-GPT correctness keeps critical review  |
 
 When a scenario depends on the model routing config file, the isolated home is where it goes; never create or edit
