@@ -113,3 +113,39 @@ The following must all pass before creating a PR or claiming work is done:
 - `cargo fmt --check`
 - `cargo test`
 - `cargo clippy -- -D warnings`
+
+## Chores
+
+Periodic maintenance for this repository. When asked to do the chores, work through every entry below and report which
+ones produced a change, which were already current, and which could not be checked. Each chore that produces a change
+gets its own PR.
+
+NOTE: These are chores specific to this repository. They are separate from the generic dependency, dprint, and GitHub
+Actions updates that the `scode-chores` skill runs, and that skill does not read this list.
+
+### Keep model references current
+
+Skills and shell aliases in this repo name specific models, and nothing updates those names when a provider ships a new
+release. For each model line the repo names, find the newest release upstream and update every reference that is behind.
+The lines are:
+
+- GPT: sol, luna, astra.
+- Claude: haiku, sonnet, opus, fable.
+- Muse: muse-spark.
+- GLM: glm-flash.
+
+Search `agent-skills/` and `payload/` for the current names; `lore/` is history and is not updated. The places known to
+carry model names are the `scode-model-routing` tables (`SKILL.md`, `inventory.md`, and the eval tables in its
+`AGENTS.md`), the `scode-harness-shellout` harness files (the codex launch template and its list of current ids, the
+claude alias list, the muse and opencode model ids), the `scode-build-goal` review defaults in `SKILL.md` and `SPEC.md`,
+the example run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, and the codex
+launchers in `payload/shellrc`.
+
+The stakes differ by family. GPT, Muse, and GLM ids are passed to their CLIs literally, so a stale one keeps launching
+the old model. Claude models launch through harness aliases (`sonnet`, `opus`, ...) that already follow the newest
+release, so a stale Claude name only mislabels what runs.
+
+Before switching a literal id, launch a hello-world through the CLI that will use it (for GPT, `codex exec` through the
+configured provider) and confirm it answers on the new model; a model the local proxy does not serve yet stays on the
+old id until it does. A version bump keeps the model's existing placements in the routing tables; recalibrating them is
+separate work.
