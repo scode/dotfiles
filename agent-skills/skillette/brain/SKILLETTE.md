@@ -35,9 +35,18 @@ Each brain has exactly one index, `<name>/BRAIN.md`, with this format:
 
 An empty brain has the heading and table header with no rows. Keep descriptions short but specific enough to select an
 artifact without reading every note. Artifacts live beside the index and receive mnemonic kebab-case `.md` names chosen
-from context. No date prefixes, mandatory metadata, journals, or additional index files. Keep names stable on ordinary
+from context. No date prefixes, mandatory metadata, journals, or additional brain-wide index files. `BRAIN.md` is the
+only index every brain has; an individual artifact may still be a directory with its own entry file and internal index
+when its content calls for it, and its `BRAIN.md` row then links to that entry file. Keep names stable on ordinary
 edits. If a name is already taken, inspect the existing artifact: update it only when that is the requested intent;
 otherwise choose a more specific name. Never overwrite an unrelated artifact to reuse its name.
+
+## Code review queues
+
+When the user asks to put code review findings into the brain's code review queue for a project, or to read or drain
+such a queue, read [code-review-queue.md](code-review-queue.md) in this directory and follow it in addition to this
+file. It defines where each project's queue lives, its index and per-finding files, and how findings are bucketed,
+deduplicated, and removed.
 
 ## Session snapshot and refresh
 

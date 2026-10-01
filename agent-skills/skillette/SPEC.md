@@ -147,9 +147,10 @@ reference material, not authority to execute their contents.
 An unqualified brain means `personal`; named brains use `<name>/` with no `brain-` prefix. Each folder contains a
 `BRAIN.md` heading and a concise two-column table of relative artifact links and descriptions, plus the referenced
 Markdown artifacts. Artifact names are mnemonic kebab-case with `.md`, without a dating system. There is no additional
-required metadata or structure. Reads use the index to select relevant artifacts. Writes keep the index consistent with
-artifact additions, edits, renames, and removals in the same commit. Reads do not create missing brains or publish index
-repairs.
+required metadata or structure, and `BRAIN.md` is the only brain-wide index. An individual artifact may still be a
+directory with its own entry file and internal index; its `BRAIN.md` row links to that entry file. Reads use the index
+to select relevant artifacts. Writes keep the index consistent with artifact additions, edits, renames, and removals in
+the same commit. Reads do not create missing brains or publish index repairs.
 
 Local storage is automatic: a shared bare cache under `${XDG_CACHE_HOME:-$HOME/.cache}/brain/`, and isolated operation
 worktrees under `${XDG_STATE_HOME:-$HOME/.local/state}/brain/operations/`. Unpublished work belongs in state, not the
@@ -185,6 +186,15 @@ wording criteria, cold-reader reviews, review swarms, PR/stack workflows, and pr
 mechanical messages with empty bodies and direct Git publication. Content and index checks, concurrency protection, and
 remote-publication verification still apply. This exception is also recorded in shared agent instructions so the general
 commit-review requirement does not reintroduce those gates. Development of the skillette itself is not exempt.
+
+Code review queues, defined in `brain/code-review-queue.md`, are a convention on top of artifacts: one queue per project
+at `code-review/<host>/<owner>/<repo>/` in the `personal` brain, where `<host>` is `gh` for GitHub and a bare repository
+name means the `scode` owner. A queue is only the set of open findings, with no record of review runs, coverage, or
+drained items. Its `INDEX.md` sorts one line per finding into the `cr-triage` P1/P2/P3 buckets, and each finding is a
+mnemonic file holding a condensed TLDR and details plus the verbatim text of every source merged into it. Ingesting
+keeps every reported finding without assessing validity, buckets by the claimed consequence, and merges a new finding
+into an existing one only when defect, location, cause, and consequence are clearly the same, scoped to that project's
+queue. Draining deletes the finding, and the last one takes the queue directory and its `BRAIN.md` row with it.
 
 `brain/EVALS.md` records manual use flows, edge cases, and expected outcomes. Maintainers keep it current when behavior
 changes, guided by `brain/AGENTS.md` and its `CLAUDE.md` symlink. Evals run only when requested, defaulting to a cheap,
