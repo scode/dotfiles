@@ -94,11 +94,16 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - Questions are batched, not dribbled, and only asked after the skill has read enough of the repository to answer what
   the codebase already settles.
 - The batch always presents the review-gate menu, numbered, with these five options in this order and the first marked
-  as the default: `pre-pr-review-swarm` on gpt-6.1-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm`
-  on gpt-6-astra high; an in-harness fresh-context agent at the executing session's own model with a general
-  correctness, design, and idiomatic-code charter; a fresh-context agent with that charter on fable or gpt-6-astra at
-  high effort, cross-harness when the executing harness cannot reach the model natively. The user's choice is recorded
-  in the goal file; the skill never picks a reviewer silently.
+  as the default: a single in-harness fresh-context agent at the executing session's own model with a general
+  correctness, design, and idiomatic-code charter; a single fresh-context agent with that charter on a model the user
+  names, at the effort they name or high, cross-harness when the executing harness cannot reach the model natively;
+  `pre-pr-review-swarm` on gpt-6.1-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm` on gpt-6-astra
+  high. The user's choice is recorded in the goal file; the skill never picks a reviewer silently.
+- A swarm is the reviewer only when the user explicitly asks for one (saying "swarm" or naming `pre-pr-review-swarm`) or
+  picks a swarm option from the menu. A reviewer request that names only a model and effort, such as "gpt 6.1 sol high
+  reviewer", means the single-agent option on that model, never a swarm. When the request already names a reviewer, the
+  batch states which menu option it maps to alongside the menu. A swarm request that matches no swarm option is asked
+  about.
 
 ## Proportionate planning
 

@@ -211,26 +211,36 @@ Every PR in the stack gets reviewed before the executing agent finishes it, and 
 than fixed here, because the right one depends on the goal, on which subscriptions have headroom that week, and on how
 much the user trusts the model doing the writing. The menu, in the order and numbering to present it:
 
-1. `pre-pr-review-swarm` on gpt-6.1-sol high. The default.
-2. `pre-pr-review-swarm` on fable high.
-3. `pre-pr-review-swarm` on gpt-6-astra high.
-4. An in-harness fresh-context agent with the general charter below, at the executing session's own model.
-5. A fresh-context agent with the general charter below on a specific model the user names, fable or gpt-6-astra, at
-   high effort, shelled out to the other harness when the executing one cannot reach that model natively.
+1. A single in-harness fresh-context agent with the general charter below, at the executing session's own model. The
+   default.
+2. A single fresh-context agent with the general charter below on a specific model the user names (for example
+   gpt-6.1-sol, gpt-6-astra, or fable), at the effort the user names or high when they name none, shelled out to the
+   other harness when the executing one cannot reach that model natively.
+3. `pre-pr-review-swarm` on gpt-6.1-sol high.
+4. `pre-pr-review-swarm` on fable high.
+5. `pre-pr-review-swarm` on gpt-6-astra high.
 
-Options 1 through 3 run a skill, and the reviewer's charter is that skill's. Options 4 and 5 run no skill; the goal file
+A swarm is only ever the reviewer when the user asks for one: by saying "swarm" or naming `pre-pr-review-swarm`, or by
+picking option 3, 4, or 5 from the menu. A reviewer request that names only a model and effort, in the invocation or in
+an answer ("gpt 6.1 sol high reviewer", "review with fable"), is option 2 on that model, never the swarm on it. A swarm
+fans out many reviewers per PR, which costs far more than one agent, so it is not something to infer from a model name.
+When the request already names a reviewer, the batch still shows the menu but states which option that request maps to,
+so a misread costs the user one line to fix. A request for a swarm that matches none of options 3 through 5 (no model,
+or a model the menu does not list for the swarm) is asked about, not guessed.
+
+Options 3 through 5 run a skill, and the reviewer's charter is that skill's. Options 1 and 2 run no skill; the goal file
 carries the charter itself, and it has to be complete because the reviewer has nothing else: review the PR's changes for
 general correctness (bugs, unhandled cases, broken invariants, wrong behavior against the goal's acceptance criteria),
 design (whether the shape of the change fits the codebase and the goal, and whether a simpler shape would), and
 idiomatic code for the languages involved; report findings to a named file, most severe first, with the file, the quoted
 code, what is wrong, and the smallest fix; edit nothing and touch no VCS state. "Fresh context" means a sub agent or
 shelled-out session that starts with none of the executing session's conversation, which is what makes the review
-independent of the author. Option 4 leaves the model to the executing harness, so under Codex the reviewer is the Codex
-session's model and under Claude Code it is the Claude session's; option 5 pins the model, and the user picks which of
-the two when choosing it.
+independent of the author. Option 1 leaves the model to the executing harness, so under Codex the reviewer is the Codex
+session's model and under Claude Code it is the Claude session's; option 2 pins the model, and the user names it when
+choosing that option.
 
-Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for options 1
-through 3) skill, so that the executing agent's `scode-galaxy-brain` routing honors it as a demand rather than treating
+Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for options 3
+through 5) skill, so that the executing agent's `scode-galaxy-brain` routing honors it as a demand rather than treating
 the review as a unit to route on its own. The executing agent still delegates the review through galaxy-brain, which is
 what makes the launch mechanics, the shell-out when one is needed, and the result gate someone else's problem.
 
