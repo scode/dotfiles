@@ -1,0 +1,8 @@
+# Display metadata for Codex only. Deliberately no `policy: allow_implicit_invocation: false`
+# block: Muse Code reads this file too and maps that policy to "user-invocable-only", under which
+# its read_skill tool refuses to load the skill for the model (verified on Muse Code 1.0.2 for
+# scode-galaxy-brain), and a goal file asks the executing agent to load this skill by name.
+interface:
+  display_name: "Powerhorse"
+  short_description: "Supervise large parallel chunks of work on strong delegates"
+  default_prompt: "Use $scode-powerhorse to achieve the goal I describe, delegating large independent chunks in parallel."
