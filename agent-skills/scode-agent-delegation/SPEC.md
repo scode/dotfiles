@@ -60,6 +60,10 @@ fix the skill or change this file in the same change, never leave them apart.
   a defect. `spec defect` covers both directions, including a defect found before implementation; its payload names the
   defect and the smallest correction preserving explicit requirements and repository constraints. A simplification that
   instead needs a user decision returns `blocked on user`; the gate does not authorize scope changes.
+- `REVIEW.md` may end with numbered `Also:` items: changes the caller requires that no `DECISIONS.md` entry covers,
+  typically defects found by reading the diff at the `AWAITING REVIEW` stop. They bind the delegate like the per-entry
+  changes, and they are optional: a caller that writes none gets the protocol exactly as it was before they existed.
+  This adds no stop and no file.
 - The existing `AWAITING REVIEW` checkpoint permits an explicitly incomplete scope exception when a substantial
   mechanism outside caller-supplied boundaries is needed. The delegate leaves that portion unimplemented, finishes
   independent in-scope work, and records the dependency, alternatives, unfinished behavior, and actual checks in

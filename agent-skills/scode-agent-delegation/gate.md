@@ -18,7 +18,10 @@ protocol in `checkpoints.md`, and each stop is a gate step:
 2. At `AWAITING REVIEW`: read `DECISIONS.md` in the run directory and apply the same necessity check. An incomplete
    scope exception from `checkpoints.md` is not a skipped stop or a delegate question: inspect the dependency and actual
    diff, then return `spec defect` or `blocked on user` if appropriate before authorizing further work. Do not accept
-   incomplete required behavior. Otherwise write `REVIEW.md` the same way and resume again.
+   incomplete required behavior. Otherwise write `REVIEW.md` the same way and resume again. A caller whose own rules
+   review the diff at this stop, while the delegate can still be resumed, sends any defect no `DECISIONS.md` entry
+   covers as a numbered `Also:` item (`checkpoints.md` describes the shape); the steps below still apply at the finish.
+   A caller without such a rule need not read the diff here.
 3. When it finishes: inspect the actual change set yourself, not just the report — status plus diff in whatever VCS is
    in use (under git, `git status` and `git diff`; a plain diff misses new files, renames, and mode changes, and a new
    file is where a delegate's surprises tend to live). Strip any edit to ignore files or formatter configuration made to
