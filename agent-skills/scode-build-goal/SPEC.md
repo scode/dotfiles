@@ -86,6 +86,29 @@ whoever is judging whether a change kept the user-facing behavior intact.
   `scode-galaxy-brain` is still required for the whole run, and the review gate and scope reassessment review are the
   same as in the standard mode and still routed through galaxy-brain.
 
+## Powerhorse mode
+
+- The skill supports a powerhorse mode, turned on by the word `powerhorse` used as a switch in the argument string or by
+  a plain-language request that the executing agent supervise large parallel chunks on strong models. What counts as a
+  switch, a mention, or an unclear request follows the no-workhorse rules. Powerhorse and no-workhorse are mutually
+  exclusive; a request for both is asked about.
+- The up-front batch states the mode, and in powerhorse mode states defaults the user can override for the worker model
+  (the executing session's own model and effort), the width (two writer chunks in flight), and PR sizing (one PR per
+  chunk, or bite-sized PRs with chunk specs naming the boundaries).
+- In powerhorse mode the goal file requires `scode-powerhorse` for the whole run in place of `scode-galaxy-brain`, and
+  forbids invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing`; if galaxy-brain is already
+  active, the goal file is the user's express instruction to stop it. Only one orchestrator is ever loaded in the run.
+  The settled worker model, width, and PR sizing are carried as explicit demands, and the chunk table gets its own
+  absolute path next to the working log, never created by this skill. A model the user names for the workers sets the
+  worker model (at the named effort, or the executing session's own when none is named), the goal file records what
+  happens if it is unreachable at run time (by default, pause the chunks that need it and ask), and the batch says when
+  this machine lacks the CLI it needs; a model named for the reviewer stays review-gate option 2; an unclear role is
+  asked about. The per-PR review gate runs while other chunks continue.
+- The mode changes nothing else: the resume protocol, planning outline and scope reassessment, PR discipline (apart from
+  sizing), decision logging, unattended fallback, done criterion, and the user's review-gate choice are the same, with
+  the review gate and the scope reassessment launched through powerhorse. The resource watchdog runs as a background
+  process only, without the watcher-agent option.
+
 ## Up-front questions
 
 - The skill assumes unattended execution. Foreseeable consequential choices and acceptable fallbacks are settled before
@@ -127,22 +150,25 @@ whoever is judging whether a change kept the user-facing behavior intact.
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
 - Using `scode-galaxy-brain` for the entire run, activated right after the resume protocol and kept active through every
   delegation. Reading it for mechanics does not satisfy this. In no-workhorse mode, the no-delegation demand described
-  under No-workhorse mode, stated as overriding galaxy-brain's own judgment of what is worth delegating.
-- A resource watchdog for memory and disk, started before the first delegation, restarted if it dies, and carried in
-  every handoff note. Prefer a process monitor over a model watchdog to keep routine minute-level sampling out of model
-  turns. A small-context model watcher may replace frequent parent wakeups when it delivers alerts without being polled
-  and is expected to reduce total cost, including launch overhead and polling usage. Notification delivery and failure
-  detection are verified, including independent stale-heartbeat notification tested by stalling a live throwaway
-  monitor. Without verified resource-alert, exit, and stale-heartbeat notifications, the executor checks status at least
-  once a minute. Every path checks heartbeat freshness before workload launches. Dead monitors or heartbeats stale for
-  two sample intervals pause new launches until monitoring is restored. The log records how to reconcile or restart the
-  monitor, and completion stops the owned monitor. Reducing model wakeups must not reduce resource sampling or assume
-  that status-file writes or process-completion notifications deliver intermediate resource alerts.
-- A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a delegated fresh-context run
-  of the reviewer the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and
-  skill or charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the
-  findings file, with no launch command copied into the goal file. For the charter options the goal file spells out the
-  charter in full: general correctness, design, and idiomatic code, findings to a named file, no edits, no VCS changes.
+  under No-workhorse mode, stated as overriding galaxy-brain's own judgment of what is worth delegating. In powerhorse
+  mode, `scode-powerhorse` in place of galaxy-brain throughout, as described under Powerhorse mode.
+- A resource watchdog for memory and disk, started before the first delegation and without the watcher-agent option in
+  the no-workhorse and powerhorse modes, restarted if it dies, and carried in every handoff note. Prefer a process
+  monitor over a model watchdog to keep routine minute-level sampling out of model turns. A small-context model watcher
+  may replace frequent parent wakeups when it delivers alerts without being polled and is expected to reduce total cost,
+  including launch overhead and polling usage. Notification delivery and failure detection are verified, including
+  independent stale-heartbeat notification tested by stalling a live throwaway monitor. Without verified resource-alert,
+  exit, and stale-heartbeat notifications, the executor checks status at least once a minute. Every path checks
+  heartbeat freshness before workload launches. Dead monitors or heartbeats stale for two sample intervals pause new
+  launches until monitoring is restored. The log records how to reconcile or restart the monitor, and completion stops
+  the owned monitor. Reducing model wakeups must not reduce resource sampling or assume that status-file writes or
+  process-completion notifications deliver intermediate resource alerts.
+- A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a fresh-context run, delegated
+  through the active orchestration skill, of the reviewer the user chose from the menu, stated in the goal file as an
+  explicit demand for its model, effort, and skill or charter. The prompt names the skill or carries the full charter,
+  the repo root, the range to review, and the findings file, with no launch command copied into the goal file. For the
+  charter options the goal file spells out the charter in full: general correctness, design, and idiomatic code,
+  findings to a named file, no edits, no VCS changes.
 - The reviewed outline and requirement sources, including the user's relevant words and later decisions, survive into
   the goal. Before implementing substantial departures, or undertaking another repair round after repeated corrective
   reviews of a component, reassess necessity with a fresh-context review carrying the full planning charter, original
