@@ -167,7 +167,10 @@ answer from the eval that fixed a broken design, for calibration:
 ```
 
 `REVIEW.md` has the same shape against `DECISIONS.md`: `N. OK` or the change to make. `No entries. OK` is a valid review
-when the log is empty.
+when the log is empty. It may also end with numbered `Also:` items: changes you require that no `DECISIONS.md` entry
+covers, such as a defect you found by reading the diff at this stop. The delegate is still resumable here, so it fixes
+them in its own context, which is far cheaper than a fixup round after it has finished. A caller that does not read the
+diff until the final gate simply writes none, and the protocol is unchanged for it.
 
 Expect `ASSUMPTIONS.md` to run 8–20 items and cost the delegate a minute or four; expect `DECISIONS.md` on a ~300-line
 feature to run anywhere from 0 to about a dozen entries depending on the model, and expect most of them to be fine. The
@@ -220,7 +223,8 @@ After `REVIEW.md`:
 
 ```
 The orchestrator has reviewed `<run-dir>/DECISIONS.md` and written `<run-dir>/REVIEW.md`, listing each decision
-number with either `OK` or a change to make. Apply the changes, re-run the project's checks, and write
+number with either `OK` or a change to make, possibly followed by numbered `Also:` items for changes no decision
+covers. Apply the changes and the `Also:` items, re-run the project's checks, and write
 `<run-dir>/REPORT.md` as the task describes; its Deviations section should point at `ASSUMPTIONS.md` and
 `DECISIONS.md` and note what the orchestrator changed at each checkpoint. Then finish with a short summary pointing
 at `REPORT.md`.
@@ -295,8 +299,9 @@ and record the dependency, alternatives, unfinished behavior, and actual check r
 exception is the out-of-scope dependency above: explicitly label the checkpoint incomplete, with the dependency and
 actual checks recorded; do not implement it merely to satisfy this step. Ordinary defects are not this exception. End
 your final message with the line `AWAITING REVIEW` and stop. You will be resumed with `REVIEW.md` in the run
-directory listing each `DECISIONS.md` entry number with either `OK` or a change to make. Apply the changes, re-run the
-checks, and write `REPORT.md` in the run directory as the task describes; its Deviations section should point at `ASSUMPTIONS.md`
+directory listing each `DECISIONS.md` entry number with either `OK` or a change to make, possibly followed by numbered
+`Also:` items for changes no entry covers; those bind you the same way. Apply the changes and the `Also:` items, re-run
+the checks, and write `REPORT.md` in the run directory as the task describes; its Deviations section should point at `ASSUMPTIONS.md`
 and `DECISIONS.md` and note what the orchestrator changed at each checkpoint. If `DECISIONS.md` is empty at step 3,
 say so and still stop for review.
 ```
