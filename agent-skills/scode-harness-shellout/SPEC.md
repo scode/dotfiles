@@ -14,16 +14,24 @@ fix the skill or change this file in the same change, never leave them apart.
   a fact only a caller has — the model and effort, the run id, the tree, the deadline, whether the run will be resumed —
   it names that fact as an input the caller supplies and stops there.
 - Loading the skill is side-effect free. Invoking it activates nothing for the session, writes nothing, and claims
-  nothing about later spawns; its `SKILL.md` says so in its first paragraph and its description says it is loaded by
-  other skills and inert alone. No harness-level switch turns off description-based selection: Codex's
-  `allow_implicit_invocation: false` in `agents/openai.yaml` is also read by Muse Code, which then refuses to load the
-  skill for the model at all (verified on Muse Code 1.0.2), and a skill that other skills load by name cannot carry it.
-  The guarantee is inertness: an unsolicited load does nothing.
+  nothing about later spawns; its `SKILL.md` says so in its first paragraph. A current delegation request can use its
+  mechanics without establishing a session-wide mode. No harness-level switch turns off description-based selection:
+  Codex's `allow_implicit_invocation: false` in `agents/openai.yaml` is also read by Muse Code, which then refuses to
+  load the skill for the model at all (verified on Muse Code 1.0.2), and a skill that other skills load by name cannot
+  carry it. Loading alone does not authorize a launch.
+- The description and `SKILL.md` recognize direct requests to start or use named-model agents (including "astra agent"
+  and "opus agent"), agents from another provider or harness, and models unsupported by native delegation. The user need
+  not name the skill; requiring that has repeatedly prevented the intended shell-out path from being discovered. Mere
+  model mentions and questions about models do not authorize delegation. For a direct request with no selected launch
+  mechanism, prefer native delegation when it supports the requested model, effort, and required resume behavior.
+  Otherwise use the requested family's shell-out path if locally available. Preserve a mechanism selected by the user or
+  caller, including an external mechanism when native delegation is available. Do not silently substitute a native model
+  or report native limitations as proof that the requested agent cannot run externally.
 - `SKILL.md` is the public surface and is kept lean: what a caller needs on every load stays in it, and anything a
   caller does not need on every load lives in a sidecar read on demand. `SKILL.md` names the trigger for each sidecar,
   and that table is keyed on the five launch-mechanism strings a caller can hold: `codex exec`, `claude -p`, `muse
   exec`, and `opencode run` each name one file under `harness/`, and `native` names nothing, because this skill has no
-  part in a native delegation.
+  shell-out mechanics to apply to a native delegation.
 - Launch commands live only in the harness files. `SKILL.md` carries no launch line, so that every launch goes through
   the file that carries the observed-behavior notes for that harness.
 - Multiple concurrent orchestrators must not conflict through anything this skill puts on disk. Every scratch file,

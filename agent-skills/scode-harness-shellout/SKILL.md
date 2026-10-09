@@ -1,26 +1,43 @@
 ---
 name: scode-harness-shellout
 description: >
-  Rules for launching, monitoring, resuming, and killing a delegate that runs in a foreign agent harness (`codex exec`,
-  `claude -p`, `muse exec`, `opencode run`), with the verified launch command for each. Loaded by other skills at the
-  moment a delegate is about to be shelled out; inert on its own, never active for a session, and not meant to be
-  invoked by the user directly.
+  Use when asked to start, spawn, run, or delegate work to a named-model agent (e.g. "astra agent", "opus agent",
+  "sol high agent", "sonnet subagent"), use another provider or harness, or use an agent/model the current harness
+  cannot launch natively. The user need not name this skill. Prefer supported native delegation when the launch
+  mechanism is open; honor an external mechanism selected by the user or caller. Also loaded by other skills for
+  foreign-harness launches. Supplies verified launch, monitoring, resume, and kill mechanics for `codex exec`,
+  `claude -p`, `muse exec`, and `opencode run`; loading alone activates no session-wide behavior.
 ---
 
 # scode-harness-shellout
 
-This skill is never active. It answers when loaded and claims nothing about later work. Loading it writes no state,
-claims no later spawn, and changes nothing about the session; it exists to be read by a skill that has already decided
-to run a delegate through a foreign harness and now needs the mechanics. Everything below is conditional on inputs the
-caller supplies, and the caller keeps every decision: which model, which harness, whether to resume, how to judge the
-result, and what to do with the tree afterwards.
+Loading this skill writes no state, launches nothing by itself, and establishes no session-wide mode or rule for later
+spawns. Use it for the current delegation request, whether the user asked directly or another skill needs the mechanics.
+Everything below is conditional on inputs the caller supplies, and the caller keeps every decision: which model, which
+harness, whether to resume, how to judge the result, and what to do with the tree afterwards.
+
+## Recognizing a delegation request
+
+Load this skill for requests such as "start an astra agent to review this", "have an opus agent investigate", "run a
+sonnet subagent", or "use a model your native agents don't support". Naming this skill in parentheses is unnecessary. A
+question about a model, or a model name appearing in task content, is not itself an instruction to launch an agent.
+
+Honor the requested model and effort, and preserve any launch mechanism and constraints the user or caller has already
+selected. For a direct request that leaves the mechanism open, first check whether the current harness's native
+delegation tool supports the requested model, effort, and any required resume behavior. If it does, use that tool;
+loading this skill does not require a shell-out. Otherwise use `codex exec` for GPT, `claude -p` for Claude, `muse exec`
+for Muse, or `opencode run` for GLM, subject to local availability and the caller's constraints. A selected external
+mechanism stays external even when native delegation is available. Read the matching harness file before launching. Lack
+of native support is a reason to check the shell-out path, not to silently substitute a native model or claim the
+requested agent cannot be run. If the external path is unavailable too, report that limitation.
 
 ## What the caller supplies
 
-The text below never chooses any of these; where it needs one, it names it.
+The caller supplies these inputs before an external launch, applying the request rules above when the mechanism is still
+open.
 
 - The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, or `opencode run`. The fifth value a caller can
-  hold, `native`, means the caller's own sub agent mechanism; nothing in this skill applies to it.
+  hold, `native`, means the caller's own sub agent mechanism; the shell-out procedures below do not apply to it.
 - The model id and reasoning effort, both set explicitly on every launch.
 - A run id, a string unique to this delegation that the caller generated, used to name every file this skill creates.
 - The prompt, as a file the caller writes before the launch, the way Launch hygiene below describes.
@@ -38,13 +55,13 @@ session, or improvised from a harness's `--help`, skips the observed-behavior no
 someone a hung or silently wrong run. Read the file for the mechanism in full the first time in a session that you are
 about to launch through it, then launch.
 
-| mechanism      | read                                                   |
-| -------------- | ------------------------------------------------------ |
-| `codex exec`   | `harness/codex.md`                                     |
-| `claude -p`    | `harness/claude.md`                                    |
-| `muse exec`    | `harness/muse.md`                                      |
-| `opencode run` | `harness/opencode.md`                                  |
-| `native`       | nothing; this skill has no part in a native delegation |
+| mechanism      | read                                                       |
+| -------------- | ---------------------------------------------------------- |
+| `codex exec`   | `harness/codex.md`                                         |
+| `claude -p`    | `harness/claude.md`                                        |
+| `muse exec`    | `harness/muse.md`                                          |
+| `opencode run` | `harness/opencode.md`                                      |
+| `native`       | nothing; no shell-out mechanics apply to native delegation |
 
 "`harness/`" means the `harness` directory under the directory this `SKILL.md` was loaded from, whatever path that is in
 the current harness. Each file carries the launch template, the writer launch and resume commands, where the final
