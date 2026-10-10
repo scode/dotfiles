@@ -280,6 +280,21 @@ ordinary talk about code snippets in almost every coding session, and a distinct
 each time whether the user meant the repository. The skillette assumes the agent can reach the private repository and
 does not ask.
 
+## The `scripts` skillette
+
+`scripts` records the user's strong preference for Deno with TypeScript over shell, Python, Perl, or anything else
+whenever the agent is about to write a script or non-trivial inline code. It fires on the agent's own action, so its
+natural-language phrase is what makes it work; the explicit trigger exists only because every skillette has one.
+Deviating needs a very strong reason, stated in a line. A missing Deno is not by itself one: the agent asks the user,
+and when unattended it may `brew install deno` if brew and its permissions allow. Only when neither gets Deno installed
+does it fall back to whatever scripting language is available, saying so in a line. The preference is strong but never a
+blocker.
+
+The skillette is deliberately small. It carries only the preferences an agent cannot infer (single-file scripts, exact
+version pins, dax for subprocesses, tests in the script itself) and the gotchas observed when agents first wrote Deno
+scripts this way, chiefly that `deno test` is sandboxed regardless of the shebang and needs `-A`. Further rules are
+added when real use shows they are needed, not in advance.
+
 ## The `change` skillette
 
 `change` exists so that "oh, by the way, skillette should also do X" can be said mid-session, in any project, without
