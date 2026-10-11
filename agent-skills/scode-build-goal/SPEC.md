@@ -102,8 +102,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
   absolute path next to the working log, never created by this skill. A model the user names for the workers sets the
   worker model (at the named effort, or the executing session's own when none is named), the goal file records what
   happens if it is unreachable at run time (by default, pause the chunks that need it and ask), and the batch says when
-  this machine lacks the CLI it needs; a model named for the reviewer stays review-gate option 2; an unclear role is
-  asked about. The per-PR review gate runs while other chunks continue.
+  this machine lacks the CLI it needs; a model named for the reviewer sets the review gate as a single charter agent; an
+  unclear role is asked about. The per-PR review gate runs while other chunks continue.
 - The mode changes nothing else: the resume protocol, planning outline and scope reassessment, PR discipline (apart from
   sizing), decision logging, unattended fallback, done criterion, and the user's review-gate choice are the same, with
   the review gate and the scope reassessment launched through powerhorse. The resource watchdog runs as a background
@@ -116,17 +116,17 @@ whoever is judging whether a change kept the user-facing behavior intact.
   Unforeseen material scope changes are not implicitly authorized by the unattended assumption.
 - Questions are batched, not dribbled, and only asked after the skill has read enough of the repository to answer what
   the codebase already settles.
-- The batch always presents the review-gate menu, numbered, with these five options in this order and the first marked
-  as the default: a single in-harness fresh-context agent at the executing session's own model with a general
-  correctness, design, and idiomatic-code charter; a single fresh-context agent with that charter on a model the user
-  names, at the effort they name or high, cross-harness when the executing harness cannot reach the model natively;
-  `pre-pr-review-swarm` on gpt-6.1-sol high; `pre-pr-review-swarm` on fable high; `pre-pr-review-swarm` on gpt-6-astra
-  high. The user's choice is recorded in the goal file; the skill never picks a reviewer silently.
-- A swarm is the reviewer only when the user explicitly asks for one (saying "swarm" or naming `pre-pr-review-swarm`) or
-  picks a swarm option from the menu. A reviewer request that names only a model and effort, such as "gpt 6.1 sol high
-  reviewer", means the single-agent option on that model, never a swarm. When the request already names a reviewer, the
-  batch states which menu option it maps to alongside the menu. A swarm request that matches no swarm option is asked
-  about.
+- The batch always presents the review-gate menu, numbered, with these four options in this order and the first marked
+  as the default: a single fresh-context agent with a general correctness, design, and idiomatic-code charter on opus
+  high; the same on gpt-6.1-sol high; the same on gpt-6-astra high; and Other, a plain-text answer naming any other
+  reviewer. Each reviewer runs on the model it names, cross-harness when the executing harness cannot reach the model
+  natively; an Other answer naming a model without an effort runs at high. The user's choice is recorded in the goal
+  file; the skill never picks a reviewer silently.
+- The menu offers no swarm option, and the default is never a swarm. A swarm is the reviewer only when the user
+  explicitly asks for one (saying "swarm" or naming `pre-pr-review-swarm`), in the invocation or in an Other answer. A
+  reviewer request that names only a model and effort, such as "gpt 6.1 sol high reviewer", means a single charter agent
+  on that model, never a swarm. When the request already names a reviewer, the batch states which menu option it maps to
+  alongside the menu. A swarm request that names no model is asked about.
 
 ## Proportionate planning
 
@@ -166,8 +166,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a fresh-context run, delegated
   through the active orchestration skill, of the reviewer the user chose from the menu, stated in the goal file as an
   explicit demand for its model, effort, and skill or charter. The prompt names the skill or carries the full charter,
-  the repo root, the range to review, and the findings file, with no launch command copied into the goal file. For the
-  charter options the goal file spells out the charter in full: general correctness, design, and idiomatic code,
+  the repo root, the range to review, and the findings file, with no launch command copied into the goal file. For every
+  non-swarm reviewer the goal file spells out the charter in full: general correctness, design, and idiomatic code,
   findings to a named file, no edits, no VCS changes.
 - The reviewed outline and requirement sources, including the user's relevant words and later decisions, survive into
   the goal. Before implementing substantial departures, or undertaking another repair round after repeated corrective
