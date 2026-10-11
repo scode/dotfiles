@@ -97,10 +97,10 @@ one line:
 - The worker model: the model and effort of the session that first runs the goal, unless the user names another. A model
   named for the workers, in the invocation or in an answer ("use gpt-6.1 sol high for the powerhorses", "chunks on
   fable"), sets it, at the effort named or the executing session's own effort when none is. A model named for the
-  reviewer is the review gate's option 2 as before. When it is unclear which role a named model is for, ask. When the
-  named worker model needs a CLI this machine lacks (`codex` for GPT, for example), say so in the batch; either way the
-  goal file records what happens if the model is unreachable at run time, which by default is that the executing agent
-  pauses the chunks that need it and asks.
+  reviewer sets the review gate, per Review gate options. When it is unclear which role a named model is for, ask. When
+  the named worker model needs a CLI this machine lacks (`codex` for GPT, for example), say so in the batch; either way
+  the goal file records what happens if the model is unreachable at run time, which by default is that the executing
+  agent pauses the chunks that need it and asks.
 - The width: at most two writer chunks in flight at once unless the user picks another number. More is not automatically
   faster, since every chunk waits on the executing agent at its checkpoints, gate, and integration.
 - PR sizing: in this mode a PR defaults to one chunk (one coherent change with its tests). The user may instead keep the
@@ -255,40 +255,38 @@ Every PR in the stack gets reviewed before the executing agent finishes it, and 
 than fixed here, because the right one depends on the goal, on which subscriptions have headroom that week, and on how
 much the user trusts the model doing the writing. The menu, in the order and numbering to present it:
 
-1. A single in-harness fresh-context agent with the general charter below, at the executing session's own model. The
-   default.
-2. A single fresh-context agent with the general charter below on a specific model the user names (for example
-   gpt-6.1-sol, gpt-6-astra, or fable), at the effort the user names or high when they name none, shelled out to the
-   other harness when the executing one cannot reach that model natively.
-3. `pre-pr-review-swarm` on gpt-6.1-sol high.
-4. `pre-pr-review-swarm` on fable high.
-5. `pre-pr-review-swarm` on gpt-6-astra high.
+1. A single fresh-context agent with the general charter below on opus high. The default.
+2. A single fresh-context agent with the general charter below on gpt-6.1-sol high.
+3. A single fresh-context agent with the general charter below on gpt-6-astra high.
+4. Other: a plain-text answer naming any other reviewer, such as another model or effort for the single agent, or a
+   `pre-pr-review-swarm` run.
 
-A swarm is only ever the reviewer when the user asks for one: by saying "swarm" or naming `pre-pr-review-swarm`, or by
-picking option 3, 4, or 5 from the menu. A reviewer request that names only a model and effort, in the invocation or in
-an answer ("gpt 6.1 sol high reviewer", "review with fable"), is option 2 on that model, never the swarm on it. A swarm
-fans out many reviewers per PR, which costs far more than one agent, so it is not something to infer from a model name.
-When the request already names a reviewer, the batch still shows the menu but states which option that request maps to,
-so a misread costs the user one line to fix. A request for a swarm that matches none of options 3 through 5 (no model,
-or a model the menu does not list for the swarm) is asked about, not guessed.
+Every option runs on the model it names, shelled out to the other harness when the executing one cannot reach that model
+natively. An Other answer that names a model without an effort runs at high.
 
-Options 3 through 5 run a skill, and the reviewer's charter is that skill's. Options 1 and 2 run no skill; the goal file
+A swarm is only ever the reviewer when the user asks for one: by saying "swarm" or naming `pre-pr-review-swarm`, in the
+invocation or in an Other answer. The menu offers no swarm option and no default ever is one. A reviewer request that
+names only a model and effort ("gpt 6.1 sol high reviewer", "review with fable") is a single charter agent on that
+model, never the swarm on it. A swarm fans out many reviewers per PR, which costs far more than one agent, so it is not
+something to infer from a model name. When the request already names a reviewer, the batch still shows the menu but
+states which option that request maps to, so a misread costs the user one line to fix. A request for a swarm that names
+no model is asked about, not guessed.
+
+A swarm runs a skill, and the reviewer's charter is that skill's. Every other reviewer runs no skill; the goal file
 carries the charter itself, and it has to be complete because the reviewer has nothing else: review the PR's changes for
 general correctness (bugs, unhandled cases, broken invariants, wrong behavior against the goal's acceptance criteria),
 design (whether the shape of the change fits the codebase and the goal, and whether a simpler shape would), and
 idiomatic code for the languages involved; report findings to a named file, most severe first, with the file, the quoted
 code, what is wrong, and the smallest fix; edit nothing and touch no VCS state. "Fresh context" means a sub agent or
 shelled-out session that starts with none of the executing session's conversation, which is what makes the review
-independent of the author. Option 1 leaves the model to the executing harness, so under Codex the reviewer is the Codex
-session's model and under Claude Code it is the Claude session's; option 2 pins the model, and the user names it when
-choosing that option.
+independent of the author.
 
-Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for options 3
-through 5) skill, so that the executing agent's orchestration skill honors it as a demand rather than treating the
-review as a unit to choose a model for on its own. In the standard and no-workhorse modes that skill is
-`scode-galaxy-brain`, whose routing honors the demand; in powerhorse mode it is `scode-powerhorse`, which runs a spawn
-the goal file defines at exactly the demanded model. Either way, the orchestration skill is what makes the launch
-mechanics, the shell-out when one is needed, and the result gate someone else's problem.
+Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for a swarm)
+skill, so that the executing agent's orchestration skill honors it as a demand rather than treating the review as a unit
+to choose a model for on its own. In the standard and no-workhorse modes that skill is `scode-galaxy-brain`, whose
+routing honors the demand; in powerhorse mode it is `scode-powerhorse`, which runs a spawn the goal file defines at
+exactly the demanded model. Either way, the orchestration skill is what makes the launch mechanics, the shell-out when
+one is needed, and the result gate someone else's problem.
 
 ## What the goal file must contain
 
