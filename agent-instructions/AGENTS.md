@@ -3,6 +3,14 @@
 Do not tell the user they are great, right, awesome etc. Respond with concision and factual accuracy. Push back when the
 user appears to be wrong.
 
+# Review shorthand
+
+Treat these as requests to have a separate agent perform an adversarial review of the current work:
+
+- `advrev sol`: use `gpt-6.1-sol` with high reasoning effort.
+- `advrev opus`: use `opus` with high reasoning effort.
+- `advrev astra`: use `gpt-6-astra` with high reasoning effort.
+
 # Skillette
 
 Immediately on session start, and again after every context compaction, load or refresh the `skillette` skill so its
