@@ -117,6 +117,35 @@ matches the watcher itself and reports "still running" forever after the job die
 notification instead of a separate watcher. Whatever the mechanism, prove it once before trusting it: kill a throwaway
 job and confirm the watcher fires.
 
+# Claude Code shell commands: no globs, no expansions
+
+This section applies only to Claude Code and its subagents. If you are Claude Code, a shell command you compose and run
+(through Bash, Monitor, or any other tool that hands a command to a shell, or in a prompt to a Claude Code subagent that
+will run it) contains no glob and no `$` expansion of any kind: no `*`, `?` or `[...]` patterns, no `{a,b}` brace
+patterns, no variables (`$HOME`, `$d`), no `$(...)` or backticks, no `${...}`, no `$((...))`. It also does not `cd` as
+part of a compound command; use absolute paths instead. Anything that needs one of those is written as a script file
+following `skillette-scripts` and run as that file. This overrides the allowance for trivial one-liners there. Put the
+script in the scratchpad directory the harness names, or else in a fresh directory under `/tmp`, unless it belongs in
+the repository. Commands with literal arguments (`git status`, `gh pr view 123`) and pipelines of them are fine. So are
+`*`, `?`, `[...]` and `$` inside single quotes, because the shell passes them through as literal text rather than
+expanding them: `find . -name '*.md'`, `grep 'foo$'` and `awk '{print $1}'` stay in the shell. I have not confirmed that
+Claude Code never prompts on those. This allowance does not cover quoted text that another shell will run, as with `bash
+-c`, `sh -c`, `eval`, `ssh`, or `find -exec sh -c`: that shell expands it, and Claude Code inspects it as a script.
+Under `--dangerously-skip-permissions` it was observed to prompt on `bash -c 'AB=echo; $AB "{a, b}"'`, which runs
+nothing dangerous ([anthropics/claude-code#99630](https://github.com/anthropics/claude-code/issues/99630)). Write a
+script file instead.
+
+The point is that work never stops on an approval prompt. Claude Code can still ask for approval of a shell command when
+it runs with `--dangerously-skip-permissions`, and I attribute those prompts to shell constructs it treats as unsafe, of
+which globs and expansions are the usual ones (Claude Code's own Bash tool instructions also warn that `cd` in a
+compound command can trigger one). The exact rules are Claude Code's and are not documented here. A prompt in the main
+session stalls the work until I happen to come back. A prompt in a delegate is worse, because nobody can see it: one
+held a release subagent for 70 minutes on a single `montage $(cat $g)` command.
+
+The exception is a command that these instructions or a loaded skill give word for word, such as the pidfile check in
+the section above: run it as written, with only its placeholders filled in. Those predate this rule and stay as they are
+for now; do not use the exception to compose new commands in their style.
+
 # Commit messages and PR titles/descriptions
 
 Exception: brain-artifact commits in `scode/brain` are mechanical storage, not development history. Do not run commit
