@@ -1,0 +1,294 @@
+#!/usr/bin/env -S deno run -A
+/**
+ * Serves a local `snippets/` tree for the scode-snippets preview flow, on loopback only.
+ *
+ * Usage: `preview-server <snippets-dir>`, where `<snippets-dir>` is the `snippets/` directory of a scratch clone of
+ * the snippets repository. The preview lives at `snippets/<slug>/` next to `snippets/stylepacks/`, so the relative
+ * stylepack link (`../stylepacks/<name>/style.css`) resolves the same way it does on the deployed site. Locally there
+ * is no `/s/` prefix: the preview is at `http://127.0.0.1:<port>/<slug>/`.
+ *
+ * The server binds 127.0.0.1 and nothing else. The preview exists precisely so that content is not published, so it
+ * must not become reachable from the network either. Someone previewing from another machine should forward the port
+ * over SSH rather than change the bind address.
+ *
+ * It takes the first free port in 14100-14120 and prints one line, `listening <base-url>`, on stdout once bound, so a
+ * caller can read the URL from the output. If every port in the range is taken it exits non-zero without serving.
+ *
+ * NOTE: This deliberately does not detach itself, and the preview flow forbids detaching it from outside. It lives
+ * as long as whatever started it keeps it alive, so a dead session never leaves an orphaned server behind. The price
+ * is that in some harnesses it may stop before the user is done looking; that was judged the lesser problem.
+ */
+
+import { serveDir } from "jsr:@std/http@1.1.4/file-server";
+import { join, SEPARATOR } from "jsr:@std/path@1.1.6";
+import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+
+const HOSTNAME = "127.0.0.1";
+export const FIRST_PORT = 14100;
+export const LAST_PORT = 14120;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Request handling
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Builds the request handler for `root`: `serveDir` plus the two things it does not do on its own.
+ *
+ * First, a directory URL falls back to `index.md` when there is no `index.html`. The snippets repository allows an
+ * `index.md` entry point for raw Markdown or plain text, and the deployed site serves it at `/s/<slug>/`, but
+ * `serveDir` only knows `index.html` and would 404 the URL the user is given. The fallback is served as
+ * `text/plain; charset=utf-8` so browsers show it rather than offer a download. The deployed site sends
+ * `text/markdown` for that URL instead; the preview cares about seeing the text, not matching the header.
+ *
+ * Second, nothing outside `root` is served, even through a symlink. `serveDir` only checks the path lexically and
+ * then follows symlinks, so a link inside a snippet could expose any file the process can read, the clone's `.git`
+ * included. The handler resolves the real path of every request first and answers 404 when it lands outside the real
+ * root. Paths that do not exist are left to `serveDir`, which 404s them itself.
+ */
+export function makeHandler(root: string): (req: Request) => Promise<Response> {
+  const realRoot = Deno.realPathSync(root);
+  return async (req) => {
+    const url = new URL(req.url);
+    let rel: string;
+    try {
+      rel = decodeURIComponent(url.pathname);
+    } catch {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    let markdownIndex = false;
+    if (
+      rel.endsWith("/") && !(await isFile(join(realRoot, rel, "index.html"))) &&
+      await isFile(join(realRoot, rel, "index.md"))
+    ) {
+      markdownIndex = true;
+      rel += "index.md";
+      url.pathname += "index.md";
+      req = new Request(url, req);
+    }
+
+    const real = await Deno.realPath(join(realRoot, rel)).catch(() =>
+      undefined
+    );
+    if (
+      real !== undefined && real !== realRoot &&
+      !real.startsWith(realRoot + SEPARATOR)
+    ) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const res = await serveDir(req, { fsRoot: realRoot, quiet: true });
+    if (!markdownIndex) return res;
+    const headers = new Headers(res.headers);
+    headers.set("content-type", "text/plain; charset=utf-8");
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers,
+    });
+  };
+}
+
+/** True when `path` exists and, after following symlinks, is a regular file. */
+async function isFile(path: string): Promise<boolean> {
+  return (await Deno.stat(path).catch(() => undefined))?.isFile ?? false;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Port selection
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Binds the handler on 127.0.0.1:`port`; throws `Deno.errors.AddrInUse` synchronously when the port is taken. */
+function bindLoopback(
+  handler: Deno.ServeHandler,
+): (port: number) => Deno.HttpServer<Deno.NetAddr> {
+  return (port) =>
+    Deno.serve({ hostname: HOSTNAME, port, onListen: () => {} }, handler);
+}
+
+/**
+ * Calls `bind` on each port in `[first, last]` in order and returns the first success, or undefined when all are
+ * taken.
+ *
+ * Only `AddrInUse` moves on to the next port. Any other bind error (permissions, a bad hostname) is a real problem
+ * that would repeat on every port, so it propagates instead of being reported as "range exhausted". Trying the bind
+ * itself, rather than probing for a free port first, leaves no window for another process to take the port between
+ * the probe and the bind.
+ */
+export function firstFreePort<T>(
+  bind: (port: number) => T,
+  first: number,
+  last: number,
+): T | undefined {
+  for (let port = first; port <= last; port++) {
+    try {
+      return bind(port);
+    } catch (err) {
+      if (err instanceof Deno.errors.AddrInUse) continue;
+      throw err;
+    }
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------------------------------------------------
+
+if (import.meta.main) {
+  const root = Deno.args[0];
+  if (
+    Deno.args.length !== 1 ||
+    !(await Deno.stat(root).catch(() => null))?.isDirectory
+  ) {
+    console.error("usage: preview-server <snippets-dir>");
+    Deno.exit(2);
+  }
+  const server = firstFreePort(
+    bindLoopback(makeHandler(root)),
+    FIRST_PORT,
+    LAST_PORT,
+  );
+  if (!server) {
+    console.error(`no free port in ${FIRST_PORT}-${LAST_PORT} on ${HOSTNAME}`);
+    Deno.exit(1);
+  }
+  console.log(`listening http://${HOSTNAME}:${server.addr.port}/`);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Port selection is the one piece of logic here that can go wrong quietly: a preview that grabbed a port outside the
+ * agreed range would still appear to work. The bind function is faked so the outcome per port is controlled rather
+ * than depending on what else happens to be listening on the machine.
+ */
+Deno.test("firstFreePort skips taken ports and returns the first successful bind", () => {
+  const tried: number[] = [];
+  const got = firstFreePort(
+    (port) => {
+      tried.push(port);
+      if (port < 12) throw new Deno.errors.AddrInUse("taken");
+      return port;
+    },
+    10,
+    20,
+  );
+  assertEquals(got, 12);
+  assertEquals(tried, [10, 11, 12]);
+});
+
+/** An exhausted range must be reported as such rather than silently falling back to some other port. */
+Deno.test("firstFreePort returns undefined when every port in the range is taken", () => {
+  const got = firstFreePort(
+    () => {
+      throw new Deno.errors.AddrInUse("taken");
+    },
+    10,
+    12,
+  );
+  assertEquals(got, undefined);
+});
+
+/** A bind failure other than a taken port would recur on every port, so it must surface instead of being retried. */
+Deno.test("firstFreePort propagates bind errors other than AddrInUse", () => {
+  assertThrows(() =>
+    firstFreePort(
+      () => {
+        throw new Deno.errors.PermissionDenied("nope");
+      },
+      10,
+      12,
+    ), Deno.errors.PermissionDenied);
+});
+
+/** The real bind must stay on IPv4 loopback; this is the localhost-only guarantee the preview flow promises. */
+Deno.test("bindLoopback listens on 127.0.0.1", async () => {
+  const server = bindLoopback(() => new Response("ok"))(0);
+  try {
+    assertEquals(server.addr.hostname, HOSTNAME);
+  } finally {
+    await server.shutdown();
+  }
+});
+
+/**
+ * Builds a scratch tree with a served root and a sibling directory outside it, runs `fn` against a handler for the
+ * root, and removes the tree afterwards. The layout covers both entry-point kinds and both symlink shapes (file and
+ * directory) that point out of the root.
+ */
+async function withTree(
+  fn: (
+    get: (path: string) => Promise<[number, string, string]>,
+  ) => Promise<void>,
+) {
+  const tmp = await Deno.makeTempDir();
+  try {
+    const root = join(tmp, "snippets");
+    const outside = join(tmp, "outside");
+    await Deno.mkdir(join(root, "html"), { recursive: true });
+    await Deno.mkdir(join(root, "md"), { recursive: true });
+    await Deno.mkdir(outside);
+    await Deno.writeTextFile(join(root, "html", "index.html"), "<p>html</p>");
+    await Deno.writeTextFile(join(root, "html", "app.js"), "js");
+    await Deno.writeTextFile(join(root, "md", "index.md"), "# md");
+    await Deno.writeTextFile(join(outside, "secret"), "secret");
+    await Deno.symlink(
+      join(outside, "secret"),
+      join(root, "html", "file-link"),
+    );
+    await Deno.symlink(outside, join(root, "html", "dir-link"));
+    await Deno.symlink(
+      join(root, "html", "app.js"),
+      join(root, "html", "inside-link"),
+    );
+    const handler = makeHandler(root);
+    await fn(async (path) => {
+      const res = await handler(new Request(`http://${HOSTNAME}${path}`));
+      return [
+        res.status,
+        res.headers.get("content-type") ?? "",
+        await res.text(),
+      ];
+    });
+  } finally {
+    await Deno.remove(tmp, { recursive: true });
+  }
+}
+
+/** The ordinary case: an HTML snippet and its assets are served at the URLs the skillette hands out. */
+Deno.test("makeHandler serves an HTML snippet and its assets", async () => {
+  await withTree(async (get) => {
+    assertEquals((await get("/html/"))[2], "<p>html</p>");
+    assertEquals((await get("/html/app.js"))[2], "js");
+  });
+});
+
+/**
+ * A raw Markdown snippet must come up at `/<slug>/` like an HTML one, since that is the only URL the user is given,
+ * and it must render as text rather than trigger a download.
+ */
+Deno.test("makeHandler serves index.md at the directory URL as text/plain", async () => {
+  await withTree(async (get) => {
+    const [status, type, body] = await get("/md/");
+    assertEquals([status, type, body], [
+      200,
+      "text/plain; charset=utf-8",
+      "# md",
+    ]);
+  });
+});
+
+/**
+ * Symlinks must not widen what the server exposes: a link to a file or directory outside the root is a 404, while a
+ * link that stays inside the root still works, so the guard is not just "refuse all symlinks".
+ */
+Deno.test("makeHandler refuses symlinks that resolve outside the root", async () => {
+  await withTree(async (get) => {
+    assertEquals((await get("/html/file-link"))[0], 404);
+    assertEquals((await get("/html/dir-link/secret"))[0], 404);
+    assertEquals((await get("/html/inside-link"))[2], "js");
+  });
+});

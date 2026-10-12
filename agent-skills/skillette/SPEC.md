@@ -280,6 +280,30 @@ ordinary talk about code snippets in almost every coding session, and a distinct
 each time whether the user meant the repository. The skillette assumes the agent can reach the private repository and
 does not ask.
 
+The trigger also covers "a scode snippet" and "the preview flow", because the user asks for the preview flow in those
+words rather than by the repository's name. A bare "preview flow" is the user's own requested phrase. It is more generic
+than `scode-snippets`, and the cost is that an unrelated "preview flow" may load this skillette; that was accepted so
+the phrase works in a session where snippets have not come up yet.
+
+The preview flow is the one piece of process the skillette carries itself. On request, the agent builds the snippet in a
+scratch clone exactly as `AGENTS.md` says (same stylepack, same content rules) but commits and pushes nothing. Instead
+it serves the clone's `snippets/` directory with `snippets/preview-server`, a Deno script next to `SKILLETTE.md`, and
+hands the user a loopback URL. Serving the clone rather than a copy of the snippet is what keeps the relative stylepack
+link working. The server binds `127.0.0.1` only, on the first free port in 14100-14120, and the agent must not widen
+that: the whole point of the preview is that nothing leaves the machine. For the same reason it refuses any request
+whose real path, after following symlinks, lands outside the served directory. It also serves an `index.md` entry point
+at `/<slug>/`, as `text/plain`, since `AGENTS.md` allows Markdown snippets and the user is only ever given that URL.
+
+The server runs under the harness's ordinary background mechanism and is never detached (`nohup`, `setsid`, and the like
+are forbidden), so it dies with the session that started it. A review found that in some harnesses this can kill it
+before the user has looked; that was accepted over the alternative, a detached server left running as an orphan once the
+session is gone. If premature death turns out to be a real problem, the user intends to revisit it; an idle timeout on a
+detached server was the option discussed.
+
+The flow lives here rather than in `AGENTS.md` because it is about not using the repository's publication process, and
+everything about the snippet's content still comes from `AGENTS.md`. Publishing a previewed snippet later is the normal
+flow, privacy check included.
+
 ## The `scripts` skillette
 
 `scripts` records the user's strong preference for Deno with TypeScript over shell, Python, Perl, or anything else

@@ -23,4 +23,4 @@ any phrase match; if two rows still plausibly match, ask which; if a `skillette-
 | skillette-lore      | the whole word "lore" meaning repo history or a ./lore dir                          |
 | skillette-ntfy      | a request to send via `ntfy` or `$ntfy`, including after other work                 |
 | skillette-scripts   | about to write a script or non-trivial inline code in any language                  |
-| skillette-snippets  | the user mentions `scode-snippets`                                                  |
+| skillette-snippets  | the user mentions `scode-snippets`, a scode snippet, or "the preview flow"          |
