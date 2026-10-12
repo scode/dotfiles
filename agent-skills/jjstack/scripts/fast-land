@@ -1,0 +1,783 @@
+#!/usr/bin/env -S deno run -A
+/**
+ * Lands a jjstack stack on the default branch without waiting for CI: one squash commit per PR, bottom-up.
+ *
+ * Usage: `fast-land [--dir <checkout>] [--repo owner/name] [--remote origin] [--top <rev>] [--expect 12,13,14]
+ * [--plan-only] [--no-cleanup] [--resume]`
+ *
+ * Run it from anywhere; every command runs in `--dir`, a colocated jj checkout whose working copy sits on the stack (or
+ * pass the top bookmark as `--top`). `--plan-only` fetches, plans, and simulates without changing anything else.
+ * `--resume` continues a landing an earlier run stopped partway; see `main` for what it can and cannot recover.
+ *
+ * This is the executable form of the "Fast path merge" section of the jjstack skill. It exists as a script because the
+ * same logic as prose snippets had to be transcribed by the agent on every landing, which is slow, error-prone, and
+ * impossible under shell rules that forbid `$` expansions in composed commands.
+ *
+ * The landing has two per-PR modes, and the switch from the first to the second is one-way:
+ *
+ * - `github`: retarget the PR to the default branch once its parent is MERGED and squash it as-is. No rebase, no push.
+ *   This only works while GitHub's three-way merge is clean. A squash commit is never an ancestor of the next PR's
+ *   head, so the merge base stays at the pre-stack tip for the whole landing, and any later PR that edits a file an
+ *   earlier PR created or changed conflicts (add/add for created files).
+ * - `restack`: rebase the PR onto the landed default branch with jj, push only that one bookmark, then squash it. A
+ *   rebase onto a squash whose tree equals the parent's tree reproduces the PR's own change exactly, so this never
+ *   needs conflict resolution when the simulation below says so. Once one PR is restacked, every PR above it is too:
+ *   jj has rewritten their local commits, so their GitHub heads no longer match local state.
+ *
+ * Before merging anything, the script simulates the whole landing with `git merge-tree` and refuses to start if any
+ * PR would need a manual conflict resolution. Every merge is then checked against the simulation: the tree GitHub's
+ * squash produced must equal the predicted tree, which also catches anything else landing on the default branch
+ * mid-landing. The simulation is what makes skipping CI defensible: no landed tree is content nobody predicted.
+ *
+ * Lines starting with `JJSTACK_` are the machine-readable ledger: `JJSTACK_PLAN`, `JJSTACK_LANDED`, `JJSTACK_KEPT`,
+ * and `JJSTACK_STOPPED`. Everything else is narration.
+ */
+import $ from "jsr:@david/dax@0.50.1";
+import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Plan: map the jj stack onto GitHub PRs
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** One commit of `<default>@<remote>..<top>` as jj reports it, bottom-up. */
+type StackRow = {
+  sha: string;
+  changeId: string;
+  empty: boolean;
+  conflict: boolean;
+  parents: string[];
+  bookmarks: string[];
+};
+
+/** The subset of `gh pr list --json` the plan needs. */
+type OpenPr = {
+  number: number;
+  headRefName: string;
+  baseRefName: string;
+  headRefOid: string;
+  isCrossRepository: boolean;
+  isDraft: boolean;
+};
+
+type Mode = "github" | "restack";
+
+/**
+ * One PR of the landing. `sha` is the head GitHub must show at merge time: the planned head in `github` mode, the
+ * pushed rebased head in `restack` mode. `tree` is the simulation's prediction of the default branch's tree right after
+ * this PR's squash lands. `landedSha` is filled exactly once, from the head the guarded merge pinned, and is what
+ * cleanup compares refs against.
+ */
+type Entry = {
+  pr: number;
+  bookmark: string;
+  changeId: string;
+  sha: string;
+  parentSha: string;
+  isDraft: boolean;
+  mode: Mode;
+  tree: string;
+  landedSha?: string;
+  /** Set right before `gh pr merge` runs: from then on, until `landedSha` is set, the outcome is unknown, not pending. */
+  attempted?: boolean;
+};
+
+/** A bookmarked commit of the stack: one review unit, before it is matched to its PR. */
+type Unit = { sha: string; changeId: string; parentSha: string; bookmark: string };
+
+/** jj template producing one space-separated `StackRow` per line; parsed by `parseStack`. */
+const STACK_TEMPLATE = 'commit_id ++ " " ++ change_id ++ " " ++ if(empty, "empty", "nonempty") ++ " " ++ ' +
+  'if(conflict, "conflict", "ok") ++ " " ++ parents.map(|c| c.commit_id()).join(",") ++ " " ++ ' +
+  'local_bookmarks.map(|b| b.name()).join(",") ++ "\\n"';
+
+/**
+ * Parses `STACK_TEMPLATE` output. jj's bookmark grammar rejects whitespace and `,`, so splitting on both is exact.
+ */
+function parseStack(text: string): StackRow[] {
+  return text.split("\n").filter((l) => l.trim() !== "").map((line) => {
+    const [sha, changeId, empty, conflict, parents, bookmarks = ""] = line.split(" ");
+    return {
+      sha,
+      changeId,
+      empty: empty === "empty",
+      conflict: conflict === "conflict",
+      parents: parents.split(",").filter(Boolean),
+      bookmarks: bookmarks.split(",").filter(Boolean),
+    };
+  });
+}
+
+/**
+ * Turns the stack rows into review units, enforcing the stack invariants the landing depends on.
+ *
+ * The one unbookmarked commit a clean stack may contain is an empty one (the working copy). A non-empty commit without
+ * a bookmark has no PR of its own, and GitHub's squash of the PR above it would silently fold it in. Merge commits and
+ * conflicted commits have no single well-defined diff to land.
+ */
+function reviewUnits(rows: StackRow[]): Unit[] {
+  const units = [];
+  for (const r of rows) {
+    if (r.parents.length !== 1) throw new Error(`commit ${r.sha} has ${r.parents.length} parents; not stackable`);
+    if (r.conflict) throw new Error(`commit ${r.sha} has unresolved conflicts`);
+    if (r.bookmarks.length === 0) {
+      if (!r.empty) throw new Error(`non-empty commit ${r.sha} has no bookmark and would be folded into the PR above`);
+      continue;
+    }
+    if (r.bookmarks.length > 1) throw new Error(`commit ${r.sha} carries several bookmarks (${r.bookmarks.join(",")})`);
+    units.push({ sha: r.sha, changeId: r.changeId, parentSha: r.parents[0], bookmark: r.bookmarks[0] });
+  }
+  if (units.length === 0) throw new Error("no bookmarked commits in the stack");
+  return units;
+}
+
+/**
+ * Pairs each review unit with its open same-repo PR and checks GitHub's base chain against jj ancestry.
+ *
+ * jj is the source of truth, so GitHub must show exactly the commit each local bookmark names. A mismatch is unpushed
+ * local work or a stale checkout, and landing the GitHub copy would merge something other than what the user sees.
+ * Fork PRs are excluded because `--head` style matching is by branch name across forks.
+ *
+ * `resumeBases` switches to resuming a landing that stopped partway. The lowest pending PR may then still be based on
+ * the branch of the last landed PR (one of `resumeBases`), and local heads may legitimately differ from GitHub's
+ * because the stopped run already restacked them locally. Each entry's `sha` is then GitHub's head, not the local one:
+ * the simulation predicts from what GitHub shows, and restacking the local commit must reproduce that prediction, which
+ * is the check that replaces head equality.
+ */
+function matchPrs(units: Unit[], prs: OpenPr[], defaultBranch: string, resumeBases?: string[]): Entry[] {
+  let expectedBases = [defaultBranch, ...(resumeBases ?? [])];
+  return units.map((u) => {
+    const matches = prs.filter((p) => !p.isCrossRepository && p.headRefName === u.bookmark);
+    if (matches.length !== 1) {
+      throw new Error(`expected exactly one open PR with head ${u.bookmark}, got ${matches.length}`);
+    }
+    const p = matches[0];
+    if (!expectedBases.includes(p.baseRefName)) {
+      throw new Error(`PR #${p.number} (${u.bookmark}) is based on '${p.baseRefName}', expected '${expectedBases[0]}'`);
+    }
+    expectedBases = [u.bookmark];
+    if (resumeBases) return { pr: p.number, ...u, sha: p.headRefOid, isDraft: p.isDraft, mode: "restack", tree: "" };
+    if (p.headRefOid !== u.sha) {
+      throw new Error(
+        `PR #${p.number} head is ${p.headRefOid} but local ${u.bookmark} is ${u.sha}; push or fetch first`,
+      );
+    }
+    return { pr: p.number, ...u, isDraft: p.isDraft, mode: "github" as Mode, tree: "" };
+  });
+}
+
+/** The subset of `gh pr list --state merged --json` that resuming needs. */
+type MergedPr = { number: number; headRefName: string; headRefOid: string };
+
+/**
+ * Finds the merged PR a stack commit already landed as, for `--resume`, or undefined if it has not landed.
+ *
+ * A matching head SHA alone is not enough: the same commit can be the head of an old merged PR and of a current open
+ * one (a change that was reverted and is being reintroduced). So a commit whose bookmark is the head of an open PR is
+ * never landed, a bookmarked commit must match a merged PR from that same branch, and an unbookmarked one (its branch
+ * auto-deleted and the bookmark dropped by a fetch) must match exactly one merged PR.
+ */
+function landedAs(row: StackRow, merged: MergedPr[], open: OpenPr[]): MergedPr | undefined {
+  if (row.bookmarks.some((b) => open.some((o) => o.headRefName === b && !o.isCrossRepository))) return undefined;
+  const same = merged.filter((m) => m.headRefOid === row.sha);
+  if (row.bookmarks.length > 0) return same.find((m) => row.bookmarks.includes(m.headRefName));
+  return same.length === 1 ? same[0] : undefined;
+}
+
+/**
+ * Whether every URL names `repo` (`owner/name`), in https, ssh, or scp-like form, with or without `.git`.
+ *
+ * Every push the script makes goes through the jj/Git remote, while every guard reads GitHub through `gh -R repo`. A
+ * remote that fetches from one repository but pushes elsewhere (a separate `pushurl`, a mirror) would have guards pass
+ * against one repository and a branch deletion land in another, so the landing refuses to start instead. The host is
+ * not compared, which keeps GitHub Enterprise working; two hosts with the same `owner/name` are not a case worth the
+ * parsing.
+ */
+function remoteNamesRepo(urls: string[], repo: string): boolean {
+  const want = repo.toLowerCase();
+  return urls.length > 0 && urls.every((u) => {
+    const path = u.trim().toLowerCase().replace(/\/+$/, "").replace(/\.git$/, "");
+    return path.endsWith("/" + want) || path.endsWith(":" + want);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Process helpers
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Everything bound to one checkout and repository, plus the few reads several phases share. */
+class Ctx {
+  /** dax `$` whose commands all run in the checkout, so no command depends on the caller's working directory. */
+  readonly sh: typeof $;
+
+  constructor(readonly dir: string, readonly repo: string, readonly remote: string, readonly defaultBranch: string) {
+    this.sh = $.build$({ commandBuilder: (b) => b.cwd(dir) });
+  }
+
+  /** The remote default branch as a jj revset; quoted so unusual branch names stay one symbol. */
+  get defaultRev() {
+    return `${JSON.stringify(this.defaultBranch)}@${JSON.stringify(this.remote)}`;
+  }
+
+  async commitOf(rev: string): Promise<string> {
+    return await this.sh`jj log --no-graph -r ${rev} -T ${'commit_id ++ "\\n"'}`.text();
+  }
+  async treeOf(sha: string): Promise<string> {
+    return await this.sh`git rev-parse ${sha + "^{tree}"}`.text();
+  }
+  async pr(n: number, fields: string): Promise<Record<string, unknown>> {
+    return await this.sh`gh pr view ${n} -R ${this.repo} --json ${fields}`.json();
+  }
+  /**
+   * Recently merged PRs into the default branch. Used only to recognize the already landed prefix when resuming;
+   * 200 covers any realistic stack.
+   */
+  async mergedPrs(): Promise<MergedPr[]> {
+    return await this.sh`gh pr list -R ${this.repo} --state merged --base ${this.defaultBranch} --limit 200 \
+      --json number,headRefName,headRefOid`.json();
+  }
+  async openPrs(): Promise<OpenPr[]> {
+    return await this.sh`gh pr list -R ${this.repo} --state open --limit 1000 \
+      --json number,headRefName,baseRefName,headRefOid,isCrossRepository,isDraft`.json();
+  }
+  /**
+   * Fetches from the remote without letting jj abandon anything. By default jj abandons commits that only a now-deleted
+   * remote branch kept reachable, and rebases their descendants away, even when the working copy or someone's side
+   * work sits on top. Observed on jj 0.46: the working copy ended up on an older default-branch commit, and side work
+   * built on a landed commit silently lost that commit's content. Abandoning landed commits is cleanup's decision.
+   */
+  async fetch(defaultOnly = false) {
+    const only = defaultOnly ? ["--branch", "exact:" + JSON.stringify(this.defaultBranch)] : [];
+    await this.sh`jj git fetch --config git.abandon-unreachable-commits=false --remote ${this.remote} ${only}`;
+  }
+  /** The default branch's current commit as GitHub reports it, without going through a fetch. */
+  async remoteTip(): Promise<string> {
+    return await this.sh`gh api ${`repos/${this.repo}/git/ref/heads/${this.defaultBranch}`} --jq .object.sha`.text();
+  }
+}
+
+/** Polls `read` until `done` accepts its value or `seconds` pass; returns the last value either way. */
+async function pollUntil<T>(seconds: number, read: () => Promise<T>, done: (v: T) => boolean): Promise<T> {
+  const deadline = Date.now() + seconds * 1000;
+  let v = await read();
+  while (!done(v) && Date.now() < deadline) {
+    await $.sleep(2000);
+    v = await read();
+  }
+  return v;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Simulation
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Predicts each entry's mode and post-squash default-branch tree, starting from `tip` and at index `from`.
+ *
+ * `github` mode mirrors GitHub's mergeability check: a plain `git merge-tree` of the simulated default branch and the
+ * PR head, which finds the same stale merge base GitHub will. `restack` mode mirrors `jj rebase`: a three-way merge
+ * with the PR's own parent as the base. Each simulated squash is a real but unreferenced commit object whose parent is
+ * the previous one, the same shape GitHub's squash merges give the default branch. `restackFrom` forces restack mode
+ * from that index on, for re-simulating after GitHub reports a conflict the prediction missed.
+ */
+async function simulate(ctx: Ctx, entries: Entry[], from: number, tip: string, restackFrom = Infinity) {
+  const mergeTree = (args: string[]) =>
+    ctx.sh`git merge-tree --write-tree --name-only --no-messages ${args}`.noThrow()
+      .stdout("piped");
+  let sim = tip;
+  let mode: Mode = "github";
+  for (let i = from; i < entries.length; i++) {
+    const e = entries[i];
+    if (i >= restackFrom) mode = "restack";
+    let tree = "";
+    if (mode === "github") {
+      const r = await mergeTree([sim, e.sha]);
+      if (r.code === 0) tree = r.stdout.trim();
+      else if (r.code !== 1) throw new Error(`git merge-tree failed for PR #${e.pr}`);
+      else if (i === 0) {
+        throw new Error(`bottom PR #${e.pr} conflicts with ${ctx.defaultBranch}: ${conflicts(r.stdout)}`);
+      } else mode = "restack";
+    }
+    if (mode === "restack") {
+      const r = await mergeTree(["--merge-base", e.parentSha, sim, e.sha]);
+      if (r.code === 1) throw new Error(`PR #${e.pr} cannot be restacked without resolving: ${conflicts(r.stdout)}`);
+      if (r.code !== 0) throw new Error(`git merge-tree failed for PR #${e.pr}`);
+      tree = r.stdout.trim();
+    }
+    e.mode = mode;
+    e.tree = tree;
+    sim = await ctx.sh`git commit-tree ${tree} -p ${sim} -m ${`fast-land simulation of #${e.pr}`}`.env({
+      GIT_AUTHOR_NAME: "fast-land",
+      GIT_AUTHOR_EMAIL: "fast-land@invalid",
+      GIT_COMMITTER_NAME: "fast-land",
+      GIT_COMMITTER_EMAIL: "fast-land@invalid",
+    }).text();
+  }
+}
+
+/** `git merge-tree --name-only` prints the tree, then the conflicted paths; returns the paths for a message. */
+function conflicts(stdout: string): string {
+  return stdout.trim().split("\n").slice(1).join(", ");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Landing one PR
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Edits the PR's base to the default branch. A 422 can mean GitHub already made the same retarget itself after deleting
+ * the merged parent's branch, so a failure only counts if the base is still wrong afterwards.
+ */
+async function retarget(ctx: Ctx, e: Entry) {
+  const r = await ctx.sh`gh api -X PATCH ${`repos/${ctx.repo}/pulls/${e.pr}`} -f ${`base=${ctx.defaultBranch}`} \
+    --jq .base.ref`.noThrow().quiet();
+  if (r.code === 0) return;
+  const base = (await ctx.pr(e.pr, "baseRefName")).baseRefName;
+  if (base !== ctx.defaultBranch) throw new Error(`could not retarget PR #${e.pr} to ${ctx.defaultBranch}`);
+}
+
+/**
+ * Rebases the entry (and with it every jj descendant) onto `tip`, the verified default-branch commit, and pushes only
+ * its bookmark.
+ *
+ * Pushing only the PR about to merge is deliberate. Pushing the whole suffix on every cycle makes a landing quadratic
+ * in branch updates, and nobody reviews the PRs above while the landing runs; each gets pushed on its own turn. The
+ * push never names a landed bookmark, so a branch GitHub auto-deleted is never recreated.
+ */
+async function restack(ctx: Ctx, e: Entry, tip: string) {
+  await ctx.fetch(true);
+  await ctx.sh`jj rebase -s ${e.changeId} -d ${tip}`;
+  const [row] = parseStack(await ctx.sh`jj log --no-graph -r ${e.changeId} -T ${STACK_TEMPLATE}`.text());
+  if (row.conflict) throw new Error(`rebased PR #${e.pr} has conflicts the simulation did not predict`);
+  if (!row.bookmarks.includes(e.bookmark)) throw new Error(`bookmark ${e.bookmark} did not follow the rebase`);
+  const tree = await ctx.treeOf(row.sha);
+  if (tree !== e.tree) {
+    throw new Error(
+      `rebased PR #${e.pr} has tree ${tree}, predicted ${e.tree}: the local commit is not the change ` +
+        `GitHub shows (unpushed local edits?); nothing was pushed for it`,
+    );
+  }
+  await ctx.sh`jj git push --remote ${ctx.remote} --bookmark ${"exact:" + e.bookmark}`;
+  e.sha = row.sha;
+  // GitHub's view of the head lags a push by a second or two, and mergeability read in that window describes the old
+  // head. Nothing downstream may read PR state until GitHub shows the commit just pushed.
+  const head = await pollUntil(60, async () => (await ctx.pr(e.pr, "headRefOid")).headRefOid, (h) => h === e.sha);
+  if (head !== e.sha) throw new Error(`PR #${e.pr} head stayed ${head} after pushing ${e.sha}`);
+}
+
+/**
+ * Squash-merges one PR under the full guard. Returns the squash commit SHA, or `mergeable=<state>` when GitHub's
+ * mergeability verdict is not MERGEABLE, so the caller can decide whether a conflict means "restack" or "stop".
+ *
+ * The guard is re-read on every attempt: state OPEN, base is the default branch, head is the expected bookmark at the
+ * expected SHA, the default branch is still at `tip`, and `--match-head-commit` pins the head at merge time. Only
+ * GitHub's known transient rejections are retried, and only while the default branch has not moved: "Base branch was
+ * modified" after someone else's push must stop the landing, not be retried onto a base nobody predicted. `gh pr ready` comes right before the merge because GitHub refuses to merge drafts; it is not a request for
+ * CI, and any run it starts is moot seconds later. A PR that stops before this point stays a draft.
+ */
+async function guardedMerge(ctx: Ctx, e: Entry, tip: string): Promise<string> {
+  const meta = await ctx.pr(e.pr, "title,body");
+  const bodyFile = await Deno.makeTempFile();
+  try {
+    await Deno.writeTextFile(bodyFile, String(meta.body ?? ""));
+    for (let attempt = 1;; attempt++) {
+      const m = String(
+        await pollUntil(60, async () => (await ctx.pr(e.pr, "mergeable")).mergeable, (v) => v !== "UNKNOWN"),
+      );
+      if (m !== "MERGEABLE") return `mergeable=${m}`;
+      const p = await ctx.pr(e.pr, "state,baseRefName,headRefName,headRefOid");
+      if (p.state !== "OPEN") throw new Error(`PR #${e.pr} is ${p.state}, not OPEN`);
+      if (p.baseRefName !== ctx.defaultBranch) throw new Error(`PR #${e.pr} base is '${p.baseRefName}'`);
+      if (p.headRefName !== e.bookmark) throw new Error(`PR #${e.pr} head is '${p.headRefName}', not ${e.bookmark}`);
+      if (p.headRefOid !== e.sha) throw new Error(`PR #${e.pr} head moved from ${e.sha} to ${p.headRefOid}`);
+      const now = await ctx.remoteTip();
+      if (now !== tip) throw new Error(`${ctx.defaultBranch} moved to ${now} outside this landing; expected ${tip}`);
+      if (e.isDraft) {
+        await ctx.sh`gh pr ready ${e.pr} -R ${ctx.repo}`;
+        e.isDraft = false;
+      }
+      e.attempted = true;
+      const r = await ctx.sh`gh pr merge ${e.pr} -R ${ctx.repo} --squash --match-head-commit ${e.sha} \
+        --subject ${`${meta.title} (#${e.pr})`} --body-file ${bodyFile}`.noThrow().captureCombined();
+      if (r.code === 0) break;
+      // "Base branch policy" and "not mergeable" follow a ready transition or base edit while GitHub recomputes
+      // policy and mergeability. "Base branch was modified" can follow this landing's own previous squash. The next
+      // attempt re-reads every guard, including the default-branch tip, so a retry merges the same head onto the
+      // same base or not at all.
+      const transient = /base branch policy prohibits the merge|Base branch was modified|not mergeable/i;
+      if (!transient.test(r.combined) || attempt === 5) throw new Error(`merge of PR #${e.pr} failed: ${r.combined}`);
+      console.log(`PR #${e.pr}: GitHub has not converged (${r.combined.trim()}); retrying`);
+      await $.sleep(3000);
+    }
+  } finally {
+    await Deno.remove(bodyFile);
+  }
+  // Merge queues and auto-merge make `gh pr merge` exit 0 without landing anything.
+  const after = await ctx.pr(e.pr, "state,mergeCommit");
+  if (after.state !== "MERGED") throw new Error(`PR #${e.pr} did not reach MERGED (merge queue or auto-merge?)`);
+  e.landedSha = e.sha;
+  return (after.mergeCommit as { oid: string }).oid;
+}
+
+/**
+ * Lands entry `i` on top of `tip`, the default-branch commit the previous squash produced, and returns the new squash.
+ *
+ * GitHub's default branch must still be at `tip` before anything happens: a push from elsewhere mid-landing would make
+ * every later prediction stale, and stopping before the merge keeps unpredicted content off the default branch. If
+ * GitHub reports a conflict the simulation did not predict, this PR and everything above it switch to restack mode.
+ * The squash is then checked against the simulation. That is the only defense against a push that lands between the
+ * last tip check and GitHub executing the merge: such a race can still put one unpredicted squash on the default
+ * branch, and the landing stops right after it.
+ */
+async function landOne(ctx: Ctx, entries: Entry[], i: number, tip: string): Promise<string> {
+  const e = entries[i];
+  const remoteTip = await ctx.remoteTip();
+  if (remoteTip !== tip) {
+    throw new Error(`${ctx.defaultBranch} moved to ${remoteTip} outside this landing; expected ${tip}`);
+  }
+  if (i > 0 || e.mode === "restack") await retarget(ctx, e);
+  if (e.mode === "restack") await restack(ctx, e, tip);
+  let result = await guardedMerge(ctx, e, tip);
+  if (result === "mergeable=CONFLICTING" && e.mode === "github" && i > 0) {
+    console.log(`PR #${e.pr}: GitHub reports a conflict the simulation missed; restacking from here`);
+    await ctx.fetch(true);
+    await simulate(ctx, entries, i, tip, i);
+    await restack(ctx, e, tip);
+    result = await guardedMerge(ctx, e, tip);
+  }
+  if (result.startsWith("mergeable=")) throw new Error(`PR #${e.pr} ${result}; refusing to merge`);
+  const tree = await ctx.sh`gh api ${`repos/${ctx.repo}/git/commits/${result}`} --jq .tree.sha`.text();
+  console.log(`JJSTACK_LANDED pr=${e.pr} bookmark=${e.bookmark} head=${e.landedSha} commit=${result} mode=${e.mode}`);
+  if (tree !== e.tree) {
+    throw new Error(
+      `squash of PR #${e.pr} has tree ${tree}, predicted ${e.tree}: ${ctx.defaultBranch} changed ` +
+        `outside this landing or GitHub merged differently`,
+    );
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Cleanup
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Moves work that sat on top of the stack onto the landed default branch, deletes landed branches, and hides landed
+ * local commits, keeping anything whose evidence does not line up.
+ *
+ * A branch is deleted only if its PR is MERGED from this repo into the default branch at exactly the landed head, no
+ * open PR still uses it as base or head, and the remote ref (when it still exists) is still at the landed head when
+ * the delete executes. Repos with automatic head-branch deletion answer most reads with 404, the one read failure that
+ * proves absence. Landed local commits are abandoned rather than left as stray heads in `jj log`: their content is on
+ * the default branch now, and abandoning also drops a local bookmark still pointing at them.
+ */
+async function cleanup(ctx: Ctx, landed: Entry[], carry: string[]) {
+  await ctx.fetch(true);
+  for (const c of carry) await ctx.sh`jj rebase -s ${c} -d ${ctx.defaultRev}`;
+  // When the working copy was itself a landed PR's commit, give it a fresh one on the landed default branch first.
+  // Otherwise abandoning that commit (here or by jj's fetch) recreates the working copy on the stack's old base.
+  const landedChanges = landed.map((e) => e.landedSha).join(" | ");
+  if (await ctx.sh`jj log --no-graph -r ${`@ & (${landedChanges})`} -T commit_id`.text() !== "") {
+    await ctx.sh`jj new ${ctx.defaultRev}`;
+  }
+
+  const open = await ctx.openPrs();
+  const abandon: string[] = [];
+  for (const e of landed) {
+    const keep = (why: string) => console.log(`JJSTACK_KEPT pr=${e.pr} bookmark=${e.bookmark} reason=${why}`);
+    const p = await ctx.pr(e.pr, "state,baseRefName,headRefName,headRefOid,isCrossRepository");
+    if (p.state !== "MERGED" || p.baseRefName !== ctx.defaultBranch || p.headRefName !== e.bookmark) {
+      keep("pr-state-changed");
+      continue;
+    }
+    if (p.headRefOid !== e.landedSha || p.isCrossRepository) {
+      keep("pr-head-mismatch");
+      continue;
+    }
+    if (open.some((o) => o.baseRefName === e.bookmark || (o.headRefName === e.bookmark && !o.isCrossRepository))) {
+      keep("open-pr-references-branch");
+      continue;
+    }
+    const ref = await ctx.sh`gh api ${`repos/${ctx.repo}/git/ref/heads/${e.bookmark}`} --jq .object.sha`.noThrow()
+      .stdout("piped").stderr("piped");
+    if (ref.code === 0) {
+      if (ref.stdout.trim() !== e.landedSha) {
+        keep("remote-moved");
+        continue;
+      }
+      // GitHub's ref DELETE takes no expected SHA, so a push to the branch between the read above and the DELETE
+      // would lose that work. A Git push with an explicit lease deletes the ref only if it is still at the landed head.
+      const del = await ctx.sh`git push ${ctx.remote} ${`--force-with-lease=refs/heads/${e.bookmark}:${e.landedSha}`} \
+        ${`:refs/heads/${e.bookmark}`}`.noThrow().captureCombined();
+      if (del.code !== 0) {
+        console.log(del.combined.trim());
+        keep("delete-refused");
+        continue;
+      }
+    } else if (!/HTTP 404/.test(ref.stderr)) {
+      throw new Error(`could not read remote ref ${e.bookmark}: ${ref.stderr.trim()}`);
+    }
+    // Abandoning a commit deletes every local bookmark on it, so a commit that is also an open PR's head stays.
+    const bookmarks = await ctx.sh`jj log --no-graph -r ${e
+      .landedSha!} -T ${'local_bookmarks.map(|b| b.name()).join(",")'}`
+      .text();
+    if (bookmarks.split(",").some((b) => open.some((o) => o.headRefName === b && !o.isCrossRepository))) {
+      console.log(`keeping landed commit ${e.landedSha} of PR #${e.pr}: an open PR's bookmark points at it`);
+      continue;
+    }
+    abandon.push(e.landedSha!);
+  }
+
+  // A full fetch now imports the deletions, dropping local bookmarks that never moved locally.
+  await ctx.fetch();
+  if (abandon.length === 0) return;
+  // A landed commit that other local work still builds on (side work outside the stack) stays, so that work keeps
+  // the content it was written against. Everything else is a duplicate of the default branch now.
+  const set = `(${abandon.join(" | ")})`;
+  const doomed = await ctx.sh`jj log --no-graph -r ${`${set} ~ ::(descendants(${set}) ~ ${set})`} \
+    -T ${'commit_id ++ "\\n"'}`.lines();
+  const kept = abandon.filter((c) => !doomed.includes(c));
+  if (kept.length > 0) console.log(`keeping landed commits that other local work builds on: ${kept.join(" ")}`);
+  if (doomed.filter(Boolean).length > 0) await ctx.sh`jj abandon ${doomed.filter(Boolean)}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------------------------------------------------
+
+async function main() {
+  const args = parseArgs(Deno.args, {
+    string: ["dir", "repo", "remote", "top", "expect"],
+    boolean: ["plan-only", "no-cleanup", "resume"],
+    default: { dir: ".", remote: "origin", top: "@" },
+  });
+  const dir = args.dir;
+  const repo = args.repo ?? await $`gh repo view --json nameWithOwner --jq .nameWithOwner`.cwd(dir).text();
+  const defaultBranch = await $`gh repo view ${repo} --json defaultBranchRef --jq .defaultBranchRef.name`.text();
+  if (!defaultBranch) throw new Error(`could not resolve the default branch of ${repo}`);
+  const ctx = new Ctx(dir, repo, args.remote, defaultBranch);
+
+  const urls = [
+    ...await ctx.sh`git remote get-url --all ${ctx.remote}`.lines(),
+    ...await ctx.sh`git remote get-url --push --all ${ctx.remote}`.lines(),
+  ].filter(Boolean);
+  if (!remoteNamesRepo(urls, repo)) {
+    throw new Error(`remote ${ctx.remote} (${urls.join(", ")}) does not fetch from and push to ${repo} alone`);
+  }
+  await ctx.fetch();
+  const range = `${ctx.defaultRev}..(${args.top})`;
+  const rows = parseStack(await ctx.sh`jj log --no-graph --reversed -r ${range} -T ${STACK_TEMPLATE}`.text());
+
+  // A resumed landing may start with a prefix an earlier run already squashed: local commits whose exact SHA is the
+  // head of a PR merged into the default branch. Their content is on the default branch, so they leave the plan and
+  // only come back for cleanup. The prefix can be empty (the run stopped after restacking a PR, which moves the
+  // pending commits off the landed ones, or before its first merge) and so can the remainder (it stopped after the
+  // last merge, in its tree check or cleanup).
+  const landedBefore: Entry[] = [];
+  const merged = args.resume ? await ctx.mergedPrs() : [];
+  const open = await ctx.openPrs();
+  while (args.resume && landedBefore.length < rows.length) {
+    const r = rows[landedBefore.length];
+    const m = landedAs(r, merged, open);
+    if (!m) break;
+    landedBefore.push({
+      pr: m.number,
+      bookmark: m.headRefName,
+      changeId: r.changeId,
+      sha: r.sha,
+      parentSha: r.parents[0],
+      isDraft: false,
+      mode: "github",
+      tree: "",
+      landedSha: r.sha,
+    });
+  }
+  let entries: Entry[] = [];
+  try {
+    const rest = rows.slice(landedBefore.length);
+    // While resuming, the lowest pending PR may still be based on a landed PR's branch.
+    const resumeBases = args.resume ? merged.map((m) => m.headRefName) : undefined;
+    if (!args.resume || rest.some((r) => r.bookmarks.length > 0 || !r.empty)) {
+      entries = matchPrs(reviewUnits(rest), open, defaultBranch, resumeBases);
+    } else if (landedBefore.length === 0) throw new Error("--resume found nothing landed and nothing to land");
+  } catch (err) {
+    if (args.resume || !/open PR with head .* got 0|has no bookmark/.test(String(err))) throw err;
+    throw new Error(`${(err as Error).message} (if an earlier fast-land run stopped partway, rerun with --resume)`);
+  }
+  if (args.resume) {
+    for (const e of entries) e.parentSha = await ctx.sh`git rev-parse ${e.sha + "^"}`.text();
+  }
+  const planned = entries.map((e) => e.pr).join(",");
+  if (args.expect !== undefined && args.expect !== planned) {
+    throw new Error(`planned PRs ${planned} differ from --expect ${args.expect}; nothing was merged`);
+  }
+  const start = await ctx.commitOf(ctx.defaultRev);
+  await simulate(ctx, entries, 0, start, args.resume ? 0 : Infinity);
+  // Whatever sits directly on the top PR (normally the empty working copy) follows the landing onto the default
+  // branch. Recorded by change ID because restacking rewrites the commits.
+  const top = [...landedBefore, ...entries].at(-1)!;
+  const carry = (await ctx.sh`jj log --no-graph -r ${`children(${top.changeId})`} -T ${'change_id ++ "\\n"'}`.text())
+    .split("\n").filter(Boolean);
+
+  console.log(`landing ${repo} into ${defaultBranch} at ${start.slice(0, 12)}, bottom-up:`);
+  for (const e of entries) console.log(`  #${e.pr} ${e.bookmark} ${e.sha.slice(0, 12)} ${e.mode}`);
+  console.log(`JJSTACK_PLAN repo=${repo} default=${defaultBranch} prs=${planned}`);
+  if (args["plan-only"]) return;
+
+  let tip = start;
+  for (const [i, e] of entries.entries()) {
+    try {
+      tip = await landOne(ctx, entries, i, tip);
+    } catch (err) {
+      // A merge whose outcome was never confirmed is neither landed nor pending: the call may have succeeded with the
+      // confirming read failing, or failed after GitHub executed it.
+      const list = (f: (x: Entry) => boolean) => [...landedBefore, ...entries].filter(f).map((x) => x.pr).join(",");
+      console.log(
+        `JJSTACK_STOPPED at=${e.pr} landed=${list((x) => !!x.landedSha) || "none"} ` +
+          `unknown=${list((x) => !x.landedSha && !!x.attempted) || "none"} ` +
+          `pending=${list((x) => !x.landedSha && !x.attempted) || "none"}`,
+      );
+      throw err;
+    }
+  }
+  if (!args["no-cleanup"]) await cleanup(ctx, [...landedBefore, ...entries], carry);
+  console.log(
+    `landed ${entries.length} PRs; ${defaultBranch} is at ${(await ctx.commitOf(ctx.defaultRev)).slice(0, 12)}`,
+  );
+}
+
+if (import.meta.main) await main();
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------------------------------------------------
+
+const row = (sha: string, over: Partial<StackRow> = {}): StackRow => ({
+  sha,
+  changeId: `c${sha}`,
+  empty: false,
+  conflict: false,
+  parents: ["p"],
+  bookmarks: [`b${sha}`],
+  ...over,
+});
+
+/** The parser is the boundary between jj's template output and every guard after it; a shifted field breaks all. */
+Deno.test("parseStack reads every field, including empty bookmark and multi-parent lists", () => {
+  const out = "s1 c1 nonempty ok p0 pr/a\ns2 c2 empty ok s1 \ns3 c3 nonempty conflict s2,x pr/b,pr/c\n";
+  assertEquals(parseStack(out), [
+    { sha: "s1", changeId: "c1", empty: false, conflict: false, parents: ["p0"], bookmarks: ["pr/a"] },
+    { sha: "s2", changeId: "c2", empty: true, conflict: false, parents: ["s1"], bookmarks: [] },
+    { sha: "s3", changeId: "c3", empty: false, conflict: true, parents: ["s2", "x"], bookmarks: ["pr/b", "pr/c"] },
+  ]);
+});
+
+/** Each refusal guards a way the squash-per-PR landing would land something other than the reviewed units. */
+Deno.test("reviewUnits skips the empty working copy and refuses shapes that are not one bookmark per commit", () => {
+  assertEquals(reviewUnits([row("1"), row("2", { empty: true, bookmarks: [] })]).map((u) => u.bookmark), ["b1"]);
+  assertThrows(() => reviewUnits([row("1", { bookmarks: [] })]), Error, "folded");
+  assertThrows(() => reviewUnits([row("1", { bookmarks: ["a", "b"] })]), Error, "several");
+  assertThrows(() => reviewUnits([row("1", { parents: ["a", "b"] })]), Error, "2 parents");
+  assertThrows(() => reviewUnits([row("1", { conflict: true })]), Error, "conflicts");
+  assertThrows(() => reviewUnits([row("1", { empty: true, bookmarks: [] })]), Error, "no bookmarked");
+});
+
+/** The base chain and head checks are what stop a landing through a stack GitHub sees differently from jj. */
+Deno.test("matchPrs requires one same-repo PR per bookmark, a matching base chain, and matching heads", () => {
+  const units = reviewUnits([row("1"), row("2")]);
+  const pr = (n: number, head: string, base: string, oid: string, fork = false): OpenPr => ({
+    number: n,
+    headRefName: head,
+    baseRefName: base,
+    headRefOid: oid,
+    isCrossRepository: fork,
+    isDraft: true,
+  });
+  const ok = [pr(10, "b1", "main", "1"), pr(11, "b2", "b1", "2"), pr(99, "b2", "main", "x", true)];
+  assertEquals(matchPrs(units, ok, "main").map((e) => e.pr), [10, 11]);
+  assertThrows(() => matchPrs(units, [ok[0], pr(11, "b2", "main", "2")], "main"), Error, "expected 'b1'");
+  assertThrows(() => matchPrs(units, [ok[0], pr(11, "b2", "b1", "old")], "main"), Error, "push or fetch");
+  assertThrows(() => matchPrs(units, [ok[0]], "main"), Error, "got 0");
+});
+
+/** A wrong answer here makes `--resume` skip a PR that still needs landing, or clean up one that does. */
+Deno.test("landedAs matches by branch identity, not by head SHA alone", () => {
+  const merged: MergedPr[] = [{ number: 2, headRefName: "tmp/one", headRefOid: "h" }];
+  const openPr = (head: string): OpenPr => ({
+    number: 1,
+    headRefName: head,
+    baseRefName: "main",
+    headRefOid: "h",
+    isCrossRepository: false,
+    isDraft: true,
+  });
+  assertEquals(landedAs(row("h", { bookmarks: ["tmp/one"] }), merged, [])?.number, 2);
+  assertEquals(landedAs(row("h", { bookmarks: [] }), merged, [])?.number, 2);
+  assertEquals(landedAs(row("h", { bookmarks: ["pr/one"] }), merged, []), undefined);
+  assertEquals(landedAs(row("h", { bookmarks: ["tmp/one"] }), merged, [openPr("tmp/one")]), undefined);
+  const twice = [...merged, { number: 3, headRefName: "tmp/two", headRefOid: "h" }];
+  assertEquals(landedAs(row("h", { bookmarks: [] }), twice, []), undefined);
+});
+
+/** A false positive here is what would let a branch deletion land in a repository the guards never looked at. */
+Deno.test("remoteNamesRepo accepts the usual URL forms of one repo and rejects a mismatched push URL", () => {
+  const repo = "scode/repotesting";
+  assertEquals(remoteNamesRepo(["https://github.com/scode/repotesting.git"], repo), true);
+  assertEquals(
+    remoteNamesRepo(["git@github.com:Scode/RepoTesting", "ssh://git@github.com/scode/repotesting/"], repo),
+    true,
+  );
+  assertEquals(
+    remoteNamesRepo(["https://github.com/scode/repotesting", "git@github.com:fork/repotesting.git"], repo),
+    false,
+  );
+  assertEquals(remoteNamesRepo(["https://github.com/scode/repotesting-old"], repo), false);
+  assertEquals(remoteNamesRepo([], repo), false);
+});
+
+/**
+ * The simulation decides whether the landing may start at all, so it is tested against real git: the postmortem's
+ * shape (a later PR appending to a file an earlier PR created) must switch to restack at that PR and predict the
+ * top-of-stack tree, and a PR whose own diff collides with the default branch must be refused before anything merges.
+ */
+Deno.test("simulate predicts the restack switch point and refuses unlandable stacks", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const g = (args: string[]) => $`git ${args}`.cwd(dir).env({ GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t" });
+    await g(["init", "-q", "-b", "main"]);
+    await g(["config", "user.email", "t@t"]);
+    const commit = async (files: Record<string, string>) => {
+      for (const [p, c] of Object.entries(files)) await Deno.writeTextFile(`${dir}/${p}`, c);
+      await g(["add", "-A"]);
+      await g(["commit", "-q", "-m", "x"]);
+      return await g(["rev-parse", "HEAD"]).text();
+    };
+    const base = await commit({ "readme": "r\n" });
+    const c1 = await commit({ "a": "a\n" });
+    const c2 = await commit({ "log": "1\n" });
+    const c3 = await commit({ "log": "1\n3\n" });
+    const c4 = await commit({ "b": "b\n" });
+    const ctx = new Ctx(dir, "o/r", "origin", "main");
+    const mk = (pr: number, sha: string, parentSha: string): Entry => ({
+      pr,
+      bookmark: `b${pr}`,
+      changeId: "",
+      sha,
+      parentSha,
+      isDraft: true,
+      mode: "github",
+      tree: "",
+    });
+    const entries = [mk(1, c1, base), mk(2, c2, c1), mk(3, c3, c2), mk(4, c4, c3)];
+    await simulate(ctx, entries, 0, base);
+    assertEquals(entries.map((e) => e.mode), ["github", "github", "restack", "restack"]);
+    assertEquals(entries[3].tree, await ctx.treeOf(c4));
+
+    // The default branch rewrote the line PR 3 appends after, so neither GitHub's merge nor a rebase can be clean.
+    await g(["checkout", "-q", base]);
+    const moved = await commit({ "readme": "r\n", "log": "other\n" });
+    const fresh = [mk(1, c1, base), mk(2, c2, c1)];
+    await assertRejects(() => simulate(ctx, fresh, 0, moved), Error, "cannot be restacked");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

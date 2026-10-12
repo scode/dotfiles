@@ -109,9 +109,11 @@ environment already guarantees those operations work inside it.
   need an explicit user request. Default to squash merge unless the user explicitly asks for a different merge strategy,
   and do not use `--delete-branch` automatically for a non-top stacked PR.
 - "fast path merge the stack", "fast-path merge", or "merge it, fast path" Land the whole stack with one squash commit
-  on the default branch per PR, skipping the rebase/push/CI cycle between merges entirely. See "Fast path merge". The
-  words "fast path" are a one-shot instruction for that single merge request. Never carry them forward: the next merge
-  request in the same session, however it is phrased, gets the normal landing flow unless it says "fast path" again.
+  on the default branch per PR without waiting for CI on any of them, using the bundled `fast-land` script. See "Fast
+  path merge". A landing request that explicitly says not to wait for CI ("land the stack, don't wait on CI", "skip CI
+  and merge it") is the same request. Either wording is a one-shot instruction for that single merge request. Never
+  carry it forward: the next merge request in the same session, however it is phrased, gets the normal landing flow
+  unless it says "fast path" or "don't wait for CI" again.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -693,14 +695,14 @@ matter which section routed you here. Whether to wait for an answer is the narro
 PR" bullet under Expected user commands: wait when the landing set is wider than the request, and otherwise just state
 the plan and go. Restacking is an after-every-merge obligation, not just preparation for the next merge: when the named
 PR has landed and open descendants remain above it, rebase them onto the landed result, retarget the lowest remaining
-PR's base to the default branch, then push every descendant bookmark the rebase moved — not just the lowest. Finish the
-landing by deleting landed bookmarks after no open PR depends on them. The base guards in the snippets below are this
-rule in executable form; keep them — including the per-guard `|| exit` failure paths, which exist because `set -e` is
-silently inert under agent shell wrappers (see the errexit NOTE in "Fast path for the common case") and a guard without
-its own exit fails open. Derive the default branch once per landing instead of hardcoding `main` — a repo whose default
-is `master` can even contain a stack branch literally named `main`, which would turn a hardcoded guard into an
-authorization for the wrong-way merge. Note that `gh repo view` takes the repository as a positional argument, not via
-`-R`:
+PR's base to the default branch, then push every descendant bookmark the rebase moved — not just the lowest, and never a
+landed one (see "The push set" below). Finish the landing by deleting landed bookmarks after no open PR depends on them.
+The base guards in the snippets below are this rule in executable form; keep them — including the per-guard `|| exit`
+failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the errexit NOTE in "Fast
+path for the common case") and a guard without its own exit fails open. Derive the default branch once per landing
+instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named `main`,
+which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that `gh repo view` takes the
+repository as a positional argument, not via `-R`:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
@@ -805,6 +807,8 @@ test -n "$default_branch" || { echo "could not resolve default branch for $repo"
 # stale branch-policy state after the preceding base edit, ready transition, or
 # descendant push. Refresh every guard before retrying; never reuse a head or
 # base read from the failed attempt.
+# jj is the source of truth for which commit should land.
+expected_sha=$(jj log -r "$parent_bookmark" --no-graph -T commit_id) || exit 1
 merged=no
 for attempt in 1 2 3 4 5; do
   read -r state base head head_sha mergeable merge_status <<EOF
@@ -818,6 +822,15 @@ EOF
   test "$head" = "$parent_bookmark" \
     || { echo "PR #$parent_pr head is '$head', expected '$parent_bookmark'" >&2; exit 1; }
   test -n "$head_sha" || { echo "no head sha for PR #$parent_pr" >&2; exit 1; }
+
+  # GitHub's headRefOid lags a push by a second or two, and mergeable read in
+  # that window describes the old head. Wait for the pushed commit first.
+  if test "$head_sha" != "$expected_sha"; then
+    test "$attempt" -lt 5 \
+      || { echo "PR #$parent_pr head is $head_sha, local $parent_bookmark is $expected_sha" >&2; exit 1; }
+    sleep 3
+    continue
+  fi
 
   # A non-CLEAN merge state is a real gate or unresolved GitHub state, not
   # evidence that the stack is blocked by the transient policy race. The
@@ -853,11 +866,18 @@ The generic `base branch policy prohibits the merge` response is not enough evid
 retry, re-read the state, default-branch base, head branch, exact head SHA, `mergeable`, `mergeStateStatus`, and status
 contexts. Retry only while the exact guards still match, mergeability is converging, and no check is pending or failed.
 This does not wait for CI, start another workflow, rebase, push, or use `--admin`. If a required check is pending or
-failed, or the guards change, stop and report that actual condition. Record the first rejected attempt in the landing
-ledger as a transient GitHub-policy rejection; do not mark the stack blocked unless the bounded retry is exhausted or a
+failed, or the guards change, stop and report that actual condition. Record the first rejected attempt in your landing
+notes as a transient GitHub-policy rejection; do not mark the stack blocked unless the bounded retry is exhausted or a
 real guard/check failure remains. This behavior was observed during a 19-PR landing where GitHub returned that exact
 policy error immediately after a base retarget and push, then reported `CLEAN`, `MERGEABLE`, and a successful required
 check seconds later. See the incident note: https://gist.github.com/scode/33ba018851f1e1acfc8dde4e302a86fb
+
+The same loop waits for GitHub's `headRefOid` to equal the commit the local bookmark points at. Right after a push,
+GitHub can report the previous head for a second or two; a 32-PR landing on 2026-10-11 hit exactly that (`4fa48fa` shown
+while the branch was already `7a7e9f9`). Mergeability read in that window describes the old head, so the head has to
+converge before `mergeable` means anything. A mismatch that outlasts the retries is real: unpushed local work, or
+someone else pushed the branch. The block assumes the bookmark exists locally, which holds for any stack this skill
+built; for an inherited stack, fetch and track its bookmarks first.
 
 For the two-PR shortcut below, use the same retryable verify-and-merge block rather than the one-shot `gh pr merge`
 command. The shortcut may omit repeated stack discovery, but it must not omit the convergence retry after the child base
@@ -975,10 +995,16 @@ test -z "$open_heads" \
 If either query returns a PR, do not delete the branch. Fix or finish the remaining stack relationship first; branches
 whose own PRs are still open are never cleanup targets.
 
-After the guards pass, delete both names:
+After the guards pass, delete both names. Delete the remote branch with a lease pinned to the landed head rather than
+through GitHub's ref DELETE endpoint, which takes no expected SHA: a push to the branch between the guard's read and the
+DELETE would otherwise be deleted along with it. Run this from the colocated checkout; a rejected lease means the branch
+moved, so keep it and report that. The guards above read `$repo` through `gh`, while the push goes wherever `origin`
+pushes, so first confirm with `git remote get-url --push --all origin` that every push URL names `$repo`; a separate
+push URL or a mirror would otherwise delete a branch in a repository nothing checked:
 
 ```bash
-gh api -X DELETE "repos/$repo/git/refs/heads/$merged_bookmark" || exit 1
+git push origin "--force-with-lease=refs/heads/$merged_bookmark:$merged_head_sha" ":refs/heads/$merged_bookmark" \
+  || exit 1
 jj bookmark delete "$merged_bookmark" || exit 1
 ```
 
@@ -1015,7 +1041,8 @@ per the paragraph above; that wait is the reason the first merge cannot be batch
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
 test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
 merge_one() {
-  local pr="$1" bookmark="$2" merged=no
+  local pr="$1" bookmark="$2" merged=no expected_sha
+  expected_sha=$(jj log -r "$bookmark" --no-graph -T commit_id) || return 1
   for attempt in 1 2 3 4 5; do
     read -r state base head head_sha mergeable merge_status <<EOF
 $(gh pr view "$pr" -R "$repo" \
@@ -1028,6 +1055,11 @@ EOF
     test "$head" = "$bookmark" \
       || { echo "PR #$pr head is '$head', expected '$bookmark'" >&2; return 1; }
     test -n "$head_sha" || { echo "no head sha for PR #$pr" >&2; return 1; }
+    if test "$head_sha" != "$expected_sha"; then
+      test "$attempt" -lt 5 || { echo "PR #$pr head is $head_sha, local $bookmark is $expected_sha" >&2; return 1; }
+      sleep 3
+      continue
+    fi
     if test "$mergeable" = UNKNOWN || test "$merge_status" = UNKNOWN; then
       test "$attempt" -lt 5 || { echo "PR #$pr mergeability stayed UNKNOWN" >&2; return 1; }
       sleep 3
@@ -1085,327 +1117,150 @@ checks; the PRs above it stay drafts. Descendants should keep their bases on the
 that parent changed. Do not rediscover the child PR with `gh pr list` on every iteration when the mapping is already in
 hand, but do verify the state, base, and head of the specific PR before merging it.
 
+The push set is the bookmarks of PRs that are still open, and nothing else. A fixed list of the stack's bookmarks
+written down at the start of the landing still contains the landed ones, and pushing a landed bookmark on a repo with
+automatic head-branch deletion recreates the branch GitHub just deleted. That it usually does not happen is luck: `jj
+git fetch` tends to have dropped those local bookmarks already. Drop each bookmark from the push set the moment its PR
+reaches `MERGED`.
+
+This flow pushes the whole remaining suffix after every merge so that the PRs above stay reviewable with correct diffs
+while the landing is under way. For a long stack that is quadratic in branch updates (about 465 for 30 PRs, at roughly
+25 seconds per PR in one observed landing). If the user does not want to wait for CI either, that is a fast-path
+request; use "Fast path merge", which pushes only the PR about to merge.
+
 ## Fast path merge
 
-NOTE: Only use this section when the current merge request literally says "fast path" (or "fast-path"). It is a one-shot
-instruction scoped to that one request. It does not become a session preference, it does not apply to the next "merge
-the stack", and a user who said "fast path" an hour ago has not said it now. When the request does not say it, land per
-"Landing stacked PRs safely" and do not offer the fast path as a shortcut.
+NOTE: Only use this section when the current merge request literally says "fast path" (or "fast-path"), or explicitly
+says not to wait for CI. It is a one-shot instruction scoped to that one request. It does not become a session
+preference, it does not apply to the next "merge the stack", and a user who said "fast path" an hour ago has not said it
+now. When the request says neither, land per "Landing stacked PRs safely" and do not offer the fast path as a shortcut.
 
-The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, without touching the
-local stack between merges: no `jj rebase`, no bookmark pushes, no base-retarget-then-wait-for-CI round trips. The
-entire landing is GitHub-side, and the only per-PR mutations are the REST base edit to `<default>` (for every PR but the
-bottom one, and only after its parent is already `MERGED`), then `gh pr ready`, then immediately `gh pr merge --squash`.
-Measured on a three-PR stack this takes about 30 seconds end to end, versus minutes per PR for the CI-gated flow.
+The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, and never waits for CI.
+It runs as a script, `scripts/fast-land` in this skill's directory (for Claude Code, the "Base directory for this skill"
+shown when the skill loads; for Codex, `${CODEX_HOME:-$HOME/.codex}/skills/jjstack`). Run the script rather than
+composing the steps by hand. It needs `deno` and Git 2.40 or later. If `deno` is missing, say so and ask whether to
+install it or to land with the normal CI-gated flow instead; do not transcribe the script into shell commands.
 
-The `gh pr ready` in that sequence is a mechanical prerequisite of the merge, not a request for CI. The fast path skips
-the CI cycle by definition, so it never marks a PR ready in order to get a verdict; but GitHub refuses to merge a draft
-PR, so each PR is un-drafted immediately before its own merge and nowhere else. The run that the ready event starts is
-moot once the PR merges seconds later (a concurrency group with cancellation, where the repo has one, cancels it). Do
-not mark the whole stack ready up front: a PR that hits the conflict fallback below gets rebased and pushed, and that
-push should land on a draft.
+Measured on scode/repotesting on 2026-10-11: about 10 seconds per PR that GitHub can squash as-is and about 15 seconds
+per PR that needs a restack, so a 30-PR stack takes roughly 5 to 8 minutes. The CI-gated flow takes minutes per PR.
 
-Skipping the restack is an attempted optimization, not a proof that the next merge will be clean. After the parent
-squash-merges, the child's head still contains the parent's original commit. Retargeting the child makes GitHub compare
-that history with the squash commit on the default branch. This is usually clean when the child leaves the parent's
-hunks alone, but it can conflict when the child edits a hunk introduced or changed by the parent: the merge base still
-predates both copies of the parent patch, and Git does not infer that the two copies were once equivalent. GitHub's
-post-retarget `mergeable` result is therefore a guard on the optimization. The retarget is not the collapse the landing
-rules forbid because every ancestor has already landed; the rule against retargeting still applies while any parent is
-unmerged.
+### What the script does
 
-Two GitHub quirks shape the snippet below. First, the child PR's diff after retargeting spans two commits (the parent's
-original and its own), so GitHub's default squash message would be the PR title plus a list of both commit messages.
-Pass `--subject "<PR title> (#N)"` and `--body-file` with the PR body explicitly so each landed commit reads as one
-change. Second, `mergeable` goes `UNKNOWN` for a few seconds after a base edit while GitHub recomputes it, and `gh pr
-merge` during that window fails. Poll `mergeable` until it leaves `UNKNOWN` (measured 1–4 seconds; cap the wait at about
-a minute) before merging.
+Each PR lands in one of two modes, and the switch from the first to the second is one-way for the rest of the landing:
 
-What the fast path does not do: it does not wait for checks. It also does not bypass branch protection. If `gh pr merge`
-is rejected because required checks or reviews are missing, stop and report that; `--admin` needs its own explicit
-request from the user, and "fast path" is not that request. Unprotected repos, which is where this is meant to be used,
-never hit this.
+- `github`: once the parent is `MERGED`, edit the PR's base to the default branch, mark it ready, and squash it as it
+  is. No rebase and no push.
+- `restack`: rebase the PR onto the landed default branch with jj, push only that one bookmark, wait until GitHub's
+  `headRefOid` shows the pushed commit, mark it ready, and squash it.
 
-### Plan
+GitHub-only retargeting stops working sooner than it looks. A squash commit is never an ancestor of the next PR's head,
+so for the whole landing the merge base GitHub uses stays at the default branch's tip from before the stack. Relative to
+that base, any file an earlier PR created exists on both sides with different content, an add/add conflict, and any hunk
+an earlier PR changed is changed on both sides. So a PR conflicts in `github` mode whenever it edits a file or hunk that
+any earlier PR in the stack created or changed, not just its parent. A stack whose PRs all append to one log file
+switches to `restack` at the second PR that touches the log. A restack never needs conflict resolution in that case: the
+squash commit's tree equals the parent PR's tree, so rebasing onto it reproduces the PR's own change exactly.
 
-The request covers the whole stack, so the plan is an announcement, not a question: state the bottom-up PR list and go.
-Derive the stack from jj ancestry when the working copy sits on it, then map each bookmark to its open PR and confirm
-GitHub's base chain matches (bottom PR based on the default branch, each other PR based on the bookmark below it). If
-the working copy is not on the stack, ask which PR is the top and walk the chain using the discovery loop in "Landing
-stacked PRs safely" instead.
+Before merging anything, the script simulates the whole landing with `git merge-tree` and prints the mode each PR will
+use, so the plan announces where the switch to `restack` happens. If any PR would need a manual conflict resolution, the
+script refuses to start. While landing, it checks every step against that simulation:
 
-Keep a landing ledger outside the shell snippets. For each PR, record its PR number, bookmark, stable jj change ID,
-current expected head SHA, landed head SHA (initially empty), and `pending`/`merged` state. Also record the landing
-mode, initially `fast`. PR numbers, bookmarks, and change IDs survive a rebase; expected SHAs do not. After any restack,
-replace the expected SHA for every pending entry from current jj and GitHub state. Once a guarded merge succeeds, copy
-that exact head into the landed-head field and never rewrite it. Cleanup uses landed heads, not the original plan. Treat
-the mode as part of this ledger rather than as a shell-local variable so it survives separate tool calls and context
-summaries.
+- GitHub's default branch must still be at the commit the previous squash produced, checked before each PR starts and
+  again before every merge attempt, and each squash commit's tree must equal the predicted tree. Both catch a push to
+  the default branch from elsewhere mid-landing. The tip check stops before the merge. The tree check is the only
+  defense against a push that lands between the last tip check and GitHub executing the merge, so such a race can still
+  put one unpredicted squash on the default branch before the landing stops.
+- In `restack` mode the rebased commit's tree must equal the prediction before anything is pushed.
+- Every merge is guarded on state `OPEN`, base equal to the default branch, head equal to the expected bookmark, and
+  `--match-head-commit` pinned to the exact head. GitHub's transient "base branch policy prohibits the merge", "Base
+  branch was modified", and "not mergeable" rejections are retried with every guard re-read, the default-branch tip
+  included, so a retry never merges onto a base the plan did not predict.
+- `gh pr ready` runs only immediately before each PR's own merge, because GitHub refuses to merge drafts. It is not a
+  request for CI, and the run it may start is moot seconds later. A PR the script never reaches stays a draft.
+- A PR is `MERGED` before the script moves on, because merge queues and auto-merge make `gh pr merge` exit 0 without
+  landing anything.
 
-"The stack" means the ancestry chain between `trunk()` and the working copy: the bookmarks `trunk()..@` passes through.
-It is not every local bookmark, not every open PR in the repo, and not every PR the user authored. A checkout routinely
-holds other stacks and stray bookmarks that branch off `trunk()` separately; those are not ancestors of `@`, the user
-did not ask for them, and landing them is the over-merge this paragraph exists to prevent. When `jj bookmark list` or
-`gh pr list` shows bookmarks or PRs outside the chain, name them in the announcement as excluded rather than folding
-them in.
+In `restack` mode the push set is the one PR about to merge. The PRs above it keep stale GitHub heads until their own
+turn, which costs nothing while nobody reviews mid-landing, and avoids the quadratic pushes of re-pushing the whole
+suffix every cycle. A landed bookmark is never pushed again, so a branch GitHub auto-deleted is never recreated.
 
-```bash
-repo=owner/repo
-default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name) || exit 1
-test -n "$default_branch" || { echo "could not resolve default branch for $repo" >&2; exit 1; }
+The simulation is what makes skipping CI defensible: apart from that one race, every tree that lands on the default
+branch is one the plan predicted from the PRs as they were when the landing started.
 
-# Every commit between the remote default branch and the working copy, bottom-up, one line each:
-# "<commit_id> <change_id> <empty|nonempty> <parent count> <bookmarks joined by ,>". Listing all commits rather
-# than only bookmarked ones matters: a non-empty commit without a bookmark is not a review unit of its
-# own, and GitHub's squash of the next PR up would silently fold it in.
-# Anchor on "$default_branch@origin" rather than trunk(): trunk() silently resolves to root() when the
-# default branch is not named main/master/trunk, which would make the whole history look like a stack.
-stack=$(jj log --no-graph --reversed -r "$default_branch@origin..@" \
-  -T 'commit_id ++ " " ++ change_id ++ " " ++ if(empty, "empty", "nonempty") ++ " " ++ parents.len() ++ " " ++ local_bookmarks.map(|b| b.name()).join(",") ++ "\n"') || exit 1
-test -n "$stack" || { echo "no commits between $default_branch@origin and @" >&2; exit 1; }
+After the last merge the script cleans up. Whatever sat directly on the top PR, normally the empty working copy, moves
+onto the landed default branch. Each landed branch is deleted after the guards from "Clean up landed stack branches"
+pass (PR `MERGED` into the default branch from this repo at exactly the landed head, no open PR using the branch as base
+or head, 404 accepted as already deleted). The delete itself is a `git push` with `--force-with-lease` pinned to the
+landed head, because GitHub's ref DELETE takes no expected SHA and would remove work pushed to the branch a moment
+earlier. The landed local commits are abandoned so they do not linger as stray heads in `jj log`, except any that other
+local work outside the stack still builds on. The working copy ends up on the landed default branch, so there is no need
+to run "After merging a PR" afterwards.
 
-# jj's bookmark grammar rejects ':', ',', '#', whitespace, and a leading '-', so the
-# pr:bookmark:change-id:sha entries below parse unambiguously and the ',' join cannot collide with a
-# name. jj does allow '*', hence noglob around the unquoted word splits. Change IDs contain no ':'.
-set -f
-plan=""
-expected_base=$default_branch
-while read -r sha change_id kind nparents bm; do
-  test "$nparents" = 1 || { echo "commit $sha has $nparents parents; merge commits are not stackable" >&2; exit 1; }
-  if test -z "$bm"; then
-    # The only unbookmarked commit a clean stack contains is the empty working copy on top.
-    test "$kind" = empty \
-      || { echo "non-empty commit $sha has no bookmark and would be folded into the PR above it" >&2; exit 1; }
-    continue
-  fi
-  case $bm in *,*) echo "commit $sha carries several bookmarks ($bm); one bookmark per PR is the stack invariant" >&2; exit 1 ;; esac
-  prs=$(gh pr list -R "$repo" --state open --head "$bm" --json number,baseRefName,headRefOid,isCrossRepository \
-    --jq '[.[] | select(.isCrossRepository | not) | "\(.number):\(.baseRefName):\(.headRefOid)"] | join(" ")') || exit 1
-  set -- $prs
-  test $# -eq 1 || { echo "expected exactly one open PR with head $bm, got: '$prs'" >&2; exit 1; }
-  pr=${1%%:*}; rest=${1#*:}; base=${rest%%:*}; gh_sha=${rest#*:}
-  test "$base" = "$expected_base" \
-    || { echo "PR #$pr ($bm) is based on '$base', expected '$expected_base'" >&2; exit 1; }
-  # jj is the source of truth; GitHub must be showing exactly the commit the local bookmark names.
-  # A mismatch means unpushed local work or a stale checkout, and either way landing the GitHub copy
-  # would merge something other than what the user is looking at.
-  test "$gh_sha" = "$sha" \
-    || { echo "PR #$pr head is $gh_sha but local $bm is $sha; push or fetch before landing" >&2; exit 1; }
-  plan="$plan $pr:$bm:$change_id:$sha"
-  expected_base=$bm
-done <<EOF
-$stack
-EOF
-set +f
-test -n "$plan" || { echo "no bookmarked commits between $default_branch@origin and @" >&2; exit 1; }
-printf 'JJSTACK_MODE=fast repo=%s default_branch=%s landing order (bottom-up), pr:bookmark:change-id:sha:%s\n' \
-  "$repo" "$default_branch" "$plan"
-```
+Every fetch the script runs passes `--config git.abandon-unreachable-commits=false`. By default, `jj git fetch` abandons
+commits that only a now-deleted remote branch kept reachable and rebases their descendants away, even when the working
+copy or side work sits on top. In testing on jj 0.46 that moved the working copy onto an older default-branch commit,
+and side work built on a landed commit silently lost that commit's content. Keep that in mind for manual fetches after a
+landing on a repo with automatic head-branch deletion, too.
 
-The Merge and Clean up snippets below consume `$repo`, `$default_branch`, and `$plan`. Each snippet runs in its own
-shell invocation, so shell variables do not survive between them: start each later snippet by assigning those three from
-the printed plan output, as literal values, before its first guard runs.
+The fast path does not bypass branch protection. If `gh pr merge` is rejected because required checks or reviews are
+missing, the script stops; `--admin` needs its own explicit request from the user, and "fast path" is not that request.
+It is meant for repos without a merge queue or required checks.
 
-Any failure during planning means the stack is not the clean shape the fast path assumes (a partially landed stack, a PR
-retargeted by someone else, a missing PR). Stop and show the user what you found; do not fall through to the normal
-landing flow on your own. This rule is about discrepancies found before the first merge. A `mergeable=CONFLICTING`
-result after a parent has landed is different: it is an expected miss of the attempted optimization, and the merge
-request already authorizes the one-way normal fallback described below.
+### Running it
 
-### Merge
+"The stack" means the ancestry chain between the remote default branch and the working copy, which is the only thing the
+script plans. Other stacks and stray bookmarks in the checkout are not ancestors of `@` and are never included. If the
+working copy is not on top of the stack, pass the top bookmark as `--top <bookmark>`, or ask which PR is the top.
 
-Run the loop in one invocation. Each iteration guards the specific PR it is about to merge, and the `|| exit 1` on every
-step is load-bearing (`set -e` is inert under agent shell wrappers; see the errexit NOTE in "Fast path for the common
-case"):
+Plan first. This fetches but changes nothing else:
 
 ```bash
-# Each snippet runs in its own shell invocation, so re-validate what the Plan step produced. An empty
-# $plan would otherwise make this loop exit 0 having landed nothing.
-test -n "$repo" && test -n "$default_branch" && test -n "$plan" \
-  || { echo "missing repo/default_branch/plan; rerun the Plan step" >&2; exit 1; }
-set -f
-prev=""
-for entry in $plan; do
-  pr=${entry%%:*}; rest=${entry#*:}; bm=${rest%%:*}; rest=${rest#*:}
-  change_id=${rest%%:*}; plan_sha=${rest#*:}
-  if test -n "$prev"; then
-    # The retarget may 422 if GitHub already moved this PR to $default_branch itself after
-    # deleting the merged parent branch; see "Editing PR metadata". Same end state, so accept it.
-    gh api -X PATCH "repos/$repo/pulls/$pr" -f "base=$default_branch" --jq .base.ref \
-      || test "$(gh pr view "$pr" -R "$repo" --json baseRefName --jq .baseRefName)" = "$default_branch" \
-      || exit 1
-  fi
-  title=$(gh pr view "$pr" -R "$repo" --json title --jq .title) || exit 1
-  body_file=$(mktemp) || exit 1
-  gh pr view "$pr" -R "$repo" --json body --jq .body >"$body_file" || { rm -f "$body_file"; exit 1; }
-  merged=no
-  for attempt in 1 2 3 4 5; do
-    # Poll mergeability out of UNKNOWN (GitHub recomputes it asynchronously after a base edit).
-    mergeable=UNKNOWN
-    for _ in $(seq 1 30); do
-      mergeable=$(gh pr view "$pr" -R "$repo" --json mergeable --jq .mergeable) || { rm -f "$body_file"; exit 1; }
-      test "$mergeable" != UNKNOWN && break
-      sleep 2
-    done
-    case "$mergeable" in
-      MERGEABLE) ;;
-      CONFLICTING)
-        test -n "$prev" \
-          || { echo "bottom PR #$pr conflicts with $default_branch before any merge; stop and show the user" >&2; rm -f "$body_file"; exit 1; }
-        # Exit 42 is the fast-to-normal mode switch, not a hard failure; see the fallback below.
-        echo "JJSTACK_MODE=normal fallback=$pr:$bm:$change_id:$plan_sha" >&2
-        rm -f "$body_file"
-        exit 42
-        ;;
-      *) echo "PR #$pr mergeable=$mergeable; refusing to merge" >&2; rm -f "$body_file"; exit 1 ;;
-    esac
-    # Re-read and re-guard on every attempt, not just the first: a retry after "Base branch was
-    # modified" must not trust a base or head observed before the failure.
-    read -r state base head head_sha <<EOF
-$(gh pr view "$pr" -R "$repo" --json state,baseRefName,headRefName,headRefOid \
-  --jq '[.state, .baseRefName, .headRefName, .headRefOid] | @tsv')
-EOF
-    test "$state" = OPEN || { echo "PR #$pr is ${state:-unreadable}, not OPEN" >&2; rm -f "$body_file"; exit 1; }
-    test "$base" = "$default_branch" \
-      || { echo "PR #$pr base is '$base', expected '$default_branch'" >&2; rm -f "$body_file"; exit 1; }
-    test "$head" = "$bm" || { echo "PR #$pr head is '$head', expected '$bm'" >&2; rm -f "$body_file"; exit 1; }
-    test "$head_sha" = "$plan_sha" \
-      || { echo "PR #$pr head moved from $plan_sha to '$head_sha' since planning" >&2; rm -f "$body_file"; exit 1; }
-    # Un-draft only now, after mergeability and the guard above both passed: GitHub will not merge a
-    # draft, and a PR that took the CONFLICTING exit or failed a guard stays a draft for the normal-flow
-    # rebase and push. This is not a CI request; the merge on the next line makes any run it starts
-    # moot. Idempotent on retry.
-    gh pr ready "$pr" -R "$repo" || { rm -f "$body_file"; exit 1; }
-    merge_err=$(gh pr merge "$pr" -R "$repo" --squash --match-head-commit "$head_sha" \
-      --subject "$title (#$pr)" --body-file "$body_file" 2>&1) && { merged=yes; break; }
-    case $merge_err in
-      *"base branch policy prohibits the merge"*|*"Base branch was modified"*)
-        echo "PR #$pr: GitHub policy state has not converged, retrying ($attempt)" >&2
-        sleep 3
-        ;;
-      *) echo "$merge_err" >&2; break ;;
-    esac
-  done
-  rm -f "$body_file"
-  test "$merged" = yes || { echo "PR #$pr merge failed" >&2; exit 1; }
-  test "$(gh pr view "$pr" -R "$repo" --json state --jq .state)" = MERGED \
-    || { echo "PR #$pr did not reach MERGED (merge queue or auto-merge?)" >&2; exit 1; }
-  echo "JJSTACK_LANDED pr=$pr bookmark=$bm head=$head_sha"
-  prev=$bm
-done
-set +f
+<skill-dir>/scripts/fast-land --dir <checkout> --plan-only
 ```
 
-The merge retry covers two GitHub responses: `base branch policy prohibits the merge` and `Base branch was modified`.
-The first can occur briefly after a PR becomes ready or after a base/head update while GitHub recomputes branch-policy
-state. The second occurs when the default branch moves between mergeability computation and the merge call. The head SHA
-is pinned by `--match-head-commit`, and the state, base, head, and mergeability are re-read before each attempt, so the
-retry merges the same change into the same base or not at all. Any other error is not retried.
-
-The `MERGED` check after the merge is there because `gh pr merge` exits 0 on a merge-queue repo after merely enqueueing
-the PR, and can similarly leave auto-merge armed. When the check fails, the PR may still land later on its own; say so
-explicitly in the report rather than describing the PR as not merged, and do not continue up the stack until it has
-either landed or been dequeued. The fast path is meant for repos without a merge queue or required checks; a repo with
-either should use the normal landing flow.
-
-If an iteration fails with anything other than the `CONFLICTING` mode switch below, the PRs before it have landed and
-the rest have not. Preserve every preceding `JJSTACK_LANDED` entry in the ledger and diagnose the failed PR; do not
-rerun from the top. If anything already landed, fast mode is over even though this is not the automatic conflict
-fallback: record `mode: stopped`, show the user the failure, and wait for direction. A general "continue" resumes from
-the failed PR in normal mode. Returning to the fast loop requires a new explicit fast-path request and a fresh
-preflight.
-
-#### One-way fallback to normal landing
-
-`JJSTACK_MODE=normal` is a state transition for the rest of this landing, not a diagnostic attached only to the
-conflicting PR. Before the next tool call, update the landing ledger to `mode: normal`, mark every preceding
-`JJSTACK_LANDED` entry merged with the exact head it reports, and keep the failed PR plus every descendant pending. Do
-not run the fast merge loop again, and do not try the GitHub-only retarget optimization on a later child. A general
-"continue" means continue in normal mode. Only a new explicit request to use the fast path for the remaining suffix can
-change that mode again, and it requires a new preflight. Re-running the Plan snippet never resets an in-progress
-landing's mode; while its ledger says `normal`, any newly printed `JJSTACK_MODE=fast` line is void.
-
-Transfer the pending suffix into "Landing stacked PRs safely" as follows:
-
-1. Fetch the landed default branch and move its local bookmark to the remote result.
-2. Resolve the failed PR by its stable jj change ID, then rebase it and all pending descendants onto the landed default
-   branch. Resolve any local conflicts before proceeding; stop if they cannot be resolved confidently.
-3. Verify that the failed PR is the lowest pending PR and is based on the default branch. The fast loop already
-   retargeted it there; do not repeat that edit. Then push every bookmark the rebase moved in one serialized `jj git
-   push`.
-4. Rebuild the expected-head field for every pending ledger entry from the local bookmark and GitHub `headRefOid`.
-   Require those SHAs to match, and verify that the already merged prefix is still `MERGED` while every pending PR keeps
-   the intended head and base chain.
-5. Mark the failed PR ready (it is normally still a draft, because the fast loop un-drafts only after mergeability is
-   confirmed and this PR never got that far; if the user published earlier, `gh pr ready` is a no-op), then merge it
-   with the normal flow's state/base/head guard, exact-head pin, required-check wait, and post-merge `MERGED` check.
-   Record the guarded head as its immutable landed head.
-6. After that merge, stay in normal mode: fetch the new default branch, rebase the entire remaining suffix, retarget the
-   next lowest PR before pushing all moved bookmarks, mark that PR ready, refresh every pending expected SHA, wait for
-   its checks, and merge it with the normal guard. Repeat this full cycle after every later squash merge.
-
-Continue from the failed PR, not from the bottom of the original plan. The original expected SHAs remain evidence for
-the already merged prefix only. They are stale for every rebased descendant and must never be fed back into
-`--match-head-commit` or cleanup.
-
-### Clean up
-
-After the last merge, no open PR uses any stack bookmark as base or head, so every landed branch can go. Sync local
-state first, move the working copy onto the landed result, then delete the remote branches and local bookmarks. This is
-a lighter guard than "Clean up landed stack branches" because every PR was verified `MERGED` by the loop above, but it
-keeps the two checks that still matter across invocations: no open PR references the branch, and both the remote ref and
-the local bookmark still point at the exact commit the plan landed. A ref that moved since then is someone's new work
-under a reused name, not cleanup material.
-
-Use this lighter snippet only when the whole stack completed in fast mode, so each original plan SHA is also its landed
-head. If the landing switched to normal mode, use the full guarded cleanup in "Clean up landed stack branches" with the
-landing ledger's actual landed head for each PR. Do not clean rebased PRs against their original fast-plan SHAs.
+The request covers the whole stack, so the printed plan is an announcement, not a question: tell the user the bottom-up
+PR list and where the switch to `restack` happens, then land. Pass the planned PR list back as `--expect` so the run
+refuses to start if the stack changed between the two calls:
 
 ```bash
-test -n "$repo" && test -n "$default_branch" && test -n "$plan" \
-  || { echo "missing repo/default_branch/plan; nothing to clean up" >&2; exit 1; }
-set -f
-ref_err=$(mktemp) || exit 1
-jj git fetch --remote origin || { rm -f "$ref_err"; exit 1; }
-jj bookmark set "$default_branch" -r "$default_branch@origin" || { rm -f "$ref_err"; exit 1; }
-jj rebase -s @ -d "$default_branch" || { rm -f "$ref_err"; exit 1; }
-for entry in $plan; do
-  rest=${entry#*:}; bm=${rest%%:*}; rest=${rest#*:}
-  change_id=${rest%%:*}; plan_sha=${rest#*:}
-  open_bases=$(gh pr list -R "$repo" --state open --base "$bm" --json number \
-    --jq 'map(.number) | join(" ")') || { rm -f "$ref_err"; exit 1; }
-  open_heads=$(gh pr list -R "$repo" --state open --head "$bm" --limit 1000 --json number,isCrossRepository \
-    --jq '[.[] | select(.isCrossRepository | not) | .number] | join(" ")') || { rm -f "$ref_err"; exit 1; }
-  test -z "$open_bases$open_heads" \
-    || { echo "open PRs still reference '$bm' (base: '$open_bases', head: '$open_heads'); keeping it" >&2; continue; }
-  # Repos with "automatically delete head branches" have already removed the remote ref; GitHub answers
-  # the read with 404 in that case. Anything else (auth, rate limit, network) is not proof of absence.
-  if remote_sha=$(gh api "repos/$repo/git/ref/heads/$bm" --jq .object.sha 2>"$ref_err"); then
-    test "$remote_sha" = "$plan_sha" \
-      || { echo "remote '$bm' moved to $remote_sha after landing $plan_sha; keeping it" >&2; continue; }
-    gh api -X DELETE "repos/$repo/git/refs/heads/$bm" || { rm -f "$ref_err"; exit 1; }
-  elif grep -q 'HTTP 404' "$ref_err"; then
-    echo "remote '$bm' already gone; deleting only the local bookmark" >&2
-  else
-    cat "$ref_err" >&2; rm -f "$ref_err"; exit 1
-  fi
-  # The fetch above may already have dropped the local bookmark when the remote was auto-deleted.
-  local_sha=$(jj log -r "$bm" --no-graph -T 'commit_id' 2>/dev/null) || local_sha=""
-  if test -n "$local_sha"; then
-    test "$local_sha" = "$plan_sha" \
-      || { echo "local '$bm' moved to $local_sha after landing $plan_sha; keeping it" >&2; continue; }
-    jj bookmark delete "$bm" || { rm -f "$ref_err"; exit 1; }
-  fi
-done
-rm -f "$ref_err"
-set +f
-# jj keeps "(deleted)" tombstones for the remote refs until it sees them gone; a fetch clears them so a
-# later `jj git push --deleted` has nothing stale to act on.
-jj git fetch --remote origin || exit 1
+<skill-dir>/scripts/fast-land --dir <checkout> --expect 175,176,177
 ```
 
-Report the landed PRs and their squash commits on the default branch, then stop. Do not say or imply that later merges
-will also use the fast path.
+Give the call a timeout of at least a minute per PR, or run it in the background and wait for it to exit. Other options:
+`--repo owner/name` when `gh` cannot infer the repository from the checkout, `--remote <name>` for a remote other than
+`origin`, and `--no-cleanup` when the user asked to keep the branches.
+
+Lines starting with `JJSTACK_` are the ledger. `JJSTACK_PLAN` lists the planned PRs. `JJSTACK_LANDED` names each landed
+PR with its exact landed head and squash commit. `JJSTACK_KEPT` names a branch cleanup kept and why. `JJSTACK_STOPPED`
+names the PR the run stopped at and splits the stack into `landed=`, `unknown=`, and `pending=`. Report the landed PRs
+and their squash commits from these lines, then stop. Do not say or imply that later merges will also use the fast path.
+
+### When it stops
+
+A refusal during planning means the stack is not in the shape the fast path assumes: a local bookmark that differs from
+its PR's head, a broken base chain, a missing PR, a commit with no bookmark, or a PR that cannot land without resolving
+conflicts. Nothing was merged. Show the user what the script reported; do not fall back to the normal landing flow on
+your own.
+
+A `JJSTACK_STOPPED` line means the PRs in `landed=` are merged and the PRs in `pending=` are not. A PR in `unknown=` had
+`gh pr merge` run for it without the outcome being confirmed: the merge may have gone through with the confirming read
+failing, or it may sit in a merge queue or auto-merge. Check its state with `gh pr view` and tell the user what you
+found; never describe it as not merged without checking. Show the user the failure and wait for direction. Once the
+cause is fixed, a general "continue" means rerunning with `--resume`:
+
+```bash
+<skill-dir>/scripts/fast-land --dir <checkout> --resume
+```
+
+`--resume` recognizes already landed commits at the bottom of the stack by matching them to the heads of merged PRs,
+puts every pending PR in `restack` mode, and predicts each from the head GitHub shows. Rebasing the local commit must
+reproduce that prediction, so a local edit that never reached GitHub stops the run before anything is pushed. It also
+handles a run that stopped before its first merge, after restacking a PR (which moves the pending commits off the landed
+ones), or after its last merge (cleanup only). It has no record of the earlier run beyond what jj and GitHub show, so
+landed commits that are no longer ancestors of the working copy are not part of its cleanup; with automatic head-branch
+deletion that only leaves their local commits visible in `jj log`, and without it their branches too. Resuming continues
+the fast path the user already asked for, so it does not need a new fast-path request. Switching to the CI-gated flow
+instead is the user's call.
 
 ## After merging a PR
 
