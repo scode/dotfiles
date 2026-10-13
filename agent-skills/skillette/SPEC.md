@@ -125,6 +125,36 @@ directory.
 Changes to `SKILL.md` itself, the table format, or this spec are changes to the `skillette` skill and go through the
 same `change` skillette as everything else.
 
+## The `codex-wake-on-exit` skillette
+
+This skillette is intentionally Codex-specific, overriding the normal harness-neutral default for this one entry. Its
+explicit trigger is `skillette-codex-wake-on-exit`; its natural-language trigger is "use Codex wake-on-exit". Discussion
+and edits do not arm watchers. The wording narrows activation to Codex, but the shared table does not provide
+deterministic harness filtering.
+
+It teaches idle monitoring through a detached, owned condition watcher whose exit queues a message to the existing Codex
+thread, then has the agent end its turn. The watcher may poll its data source; the model must not poll the watcher's
+status or wake periodically to collect it. Active plan work continues until the flow next becomes idle. The existing
+flow's watcher arguments, baseline, role, lifetime, and terminal exit rules are preserved.
+
+The bundled Deno helper captures the actual current thread, confirms local queue support, and acknowledges detached
+startup before returning. Linux and macOS ordinary Codex sessions are supported; unloaded native spawned subagents
+cannot receive direct queued input and are not completion-wake targets. Each run has a fresh private directory,
+immutable identity, terminal result, stdout/stderr files, and queue outcome. Nonzero exits still trigger a callback.
+Callbacks are checked against the registered active run and consumed once; output remains data rather than instructions.
+Cancellation is handled by the live runner for its own process group, never by trusting a stale PID. Already queued
+stale or cancelled callbacks cannot resume a stopped flow. Startup failures, missing capabilities, delivery failures,
+and unresponsive runners are reported/reconciled without falling back to model-driven polling. There is no automatic
+enqueue retry or promise of restart recovery.
+
+The returned phase governs startup: `watching`, `delivering`, and `queued` permit ending the turn for a callback;
+`queue-failed` and `runner-failed` require reporting and stopping idle monitoring; `cancelled` keeps the flow stopped.
+CLI exit code 0 alone is not evidence of an armed watcher.
+
+Supporting scripts are installed through the existing directory symlink, so no installer registration changes are
+needed. The optional maintenance evals exercise both discovery and real watcher use; ordinary use does not read the eval
+instructions or automatically launch evaluators.
+
 ## The `lore` skillette
 
 `lore` stores frozen historical entries under the repository's `lore/` directory. Its setup procedure owns the canonical
