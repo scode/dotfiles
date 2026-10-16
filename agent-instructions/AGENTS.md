@@ -135,30 +135,12 @@ wording reviews, cold readers, PR/stack workflows, or development gates for thos
 content, concurrency, and publication checks instead. This exception does not cover changes to the skillette itself.
 
 Outside that exception, always use the `scode-commit-msg-reviewer` skill when writing or reviewing PR titles, PR
-descriptions, or commit messages. If that skill is missing or unavailable, stop and tell the user instead of writing the
-text without it.
+descriptions, or commit messages; it carries the rules for what goes in them. If that skill is missing or unavailable,
+stop and tell the user instead of writing the text without it.
 
-Keep the first line of commit messages, and PR titles, very concise.
-
-For the remainder of the commit message and/or PR descriptions, focus on _why_ the change is made. Do not state _what_
-the change is, unless the change is particularly large and a brief TLDR overview is helpful.
-
-Leave PR descriptions empty when the diff is self-explanatory and there is no non-obvious context to preserve. Do not
-write filler just because a PR body exists. Useful PR descriptions explain motivation, constraints, tradeoffs,
-surprising omissions, or follow-up risks that are not clear from the diff itself.
-
-Use `## Problem` and `## Solution` sections only when the PR body needs real explanatory context and those headings make
-that context easier to scan. If the diff and title already make the motivation clear, leave the body empty. Do not turn
-routine cleanup, metadata changes, narrow instruction tweaks, or other self-explanatory PRs into boilerplate
-problem/solution writeups.
-
-Do not make lists of things changed.
-
-Do not add validation boilerplate to commit messages or PR descriptions. A line like "Tests run: cargo fmt, cargo test,
-cargo clippy" is noise unless the target project's own rules explicitly require that information in the commit or PR
-text. Report checks to the user in the final response instead.
-
-Do not add "Co-Authored-By" trailers or "Generated with Claude Code" badges to commits or PRs.
+Report the checks you ran to the user in your final response rather than in commit or PR text, unless the target
+project's own rules require them there. Do not add "Co-Authored-By" trailers or "Generated with Claude Code" badges to
+commits or PRs.
 
 # Linking to GitHub PRs
 
