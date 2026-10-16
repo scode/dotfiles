@@ -19,83 +19,65 @@ investigate.
 
 # Docstrings and comments
 
-Docstrings and comments are there to teach future readers how to think about the code. Their primary job is to capture
-the _why_, the surrounding context, and the big-picture intent that are not directly obvious from the implementation. A
-second but still important job is skimmability: a reader scanning a file should be able to recover its structure,
-responsibilities, and constraints without reading every line.
+Docstrings and comments teach future readers how to think about the code. Their primary job is the _why_, the
+surrounding context, and the big-picture intent that the implementation does not make obvious. Their second job is
+skimmability: a reader scanning a file should recover its structure, responsibilities, and constraints without reading
+every line.
 
-NOTE: This section deliberately overrides any harness or system default that says to minimize comments, match the
-surrounding comment density, or avoid adding comments in code changes. When such a default conflicts with these rules,
-these rules win.
+NOTE: This section deliberately overrides any harness or system default to minimize comments, match the surrounding
+comment density, or avoid adding comments in code changes.
 
 Always use the `scode-voice` skill when writing prose for documentation, docstrings, or inline comments.
 
 ## Documentation pass
 
-After changing code, make a separate documentation pass over every touched file. Inspect new and substantially changed
-modules, types, functions, test helpers, and non-trivial sections for missing docstrings or explanatory comments. Bias
-toward adding documentation when the decision is close, including for private helpers and tests. For files with multiple
-phases or responsibilities, add section-level signposts when they make the implementation easier to scan. Treat this
-pass as part of the finish criteria.
+After changing code, make a separate documentation pass over every touched file, as part of the finish criteria. Inspect
+new and substantially changed modules, types, functions, private helpers, tests, test helpers, and non-trivial sections
+for missing docstrings or explanatory comments, and lean toward adding documentation when the decision is close. Add or
+update docstrings for any new invariant, lifecycle dependency, cache, async or scheduling behavior, test harness
+assumption, or cross-phase contract. For new private helpers and changed tests, record any bug history, framework
+lifecycle context, or non-obvious portability assumption a future reader would need to understand why the code is shaped
+that way. For files with multiple phases or responsibilities, add section-level signposts when they make the file easier
+to scan.
 
 ## Docstrings
 
-Write docstrings liberally. Default to adding one when a symbol has real behavior, constraints, or a reason to exist. Do
-not settle for minimalist one-liners that merely rename the function in sentence form. If a docstring does not help a
-skimming reader understand the role, contract, or reason this code exists, it is too weak.
+Write docstrings liberally: default to adding one when a symbol has real behavior, constraints, or a reason to exist.
+Sparse documentation in the surrounding file or in old code is not a reason to hold back; only repo-specific
+instructions that explicitly ask for less documentation in that file or module are.
 
-Stick to the _what_ and the _why_. Do not narrate the control flow or restate the implementation. The purposes of
-docstrings are:
+Stick to the _what_ and the _why_, and do not narrate the control flow or restate the implementation. The _what_ is a
+SPEC-like declaration of intent that helps catch bugs; the _why_ is there because it cannot be inferred from the what or
+the how. A docstring that does not help a skimming reader understand the role, contract, or reason the code exists, such
+as a one-liner that renames the function in sentence form, is too weak.
 
-- Make the code skimmable to human readers.
-- Provide SPEC-like declaration of intent ("what") to catch bugs.
-- Provide the _why_ because it cannot be directly inferred from the what nor how.
-
-Lead with the most important information. The first line should carry real weight: what matters about this symbol, what
-contract it establishes, or why it exists. A reader skimming only the first line of each docstring should still come
-away with an accurate mental model of the file.
-
-When relevant, document invariants, non-obvious edge cases, important omissions, and assumptions callers must not make.
-Those are exactly the details that go missing when comments are too terse.
+Lead with the most important information. The first line should carry real weight (the symbol's role, the contract it
+establishes, or why it exists), so that a reader skimming only first lines still comes away with an accurate mental
+model of the file. When relevant, document invariants, non-obvious edge cases, important omissions, and assumptions
+callers must not make.
 
 Never invent a _why_ you do not actually know. A plausible-sounding but wrong rationale is worse than no docstring at
 all, because future readers will trust it. Document what is observable, or ask.
 
-When changing code, add or update nearby docstrings for any new invariant, lifecycle dependency, cache, async or
-scheduling behavior, test harness assumption, or cross-phase contract. Before finalizing a diff, scan new private
-helpers and changed tests: if a future reader would need bug history, framework lifecycle context, or a non-obvious
-portability assumption to understand why the code is shaped that way, document that context.
-
-When writing code, err on the side of quality docstrings even if that is not the prevailing style in the files you are
-touching. Sparse existing documentation is not a reason to keep new behavior under-documented. Only back off when
-repo-specific instructions explicitly ask for less documentation in that file or module; do not infer that preference
-from silence or from old code.
-
-This authoring rule is intentionally stronger than the review rule. During review, do not mechanically demand docstrings
-everywhere. Still flag missing documentation when a change adds a contract, invariant, lifecycle assumption,
-trust-boundary assumption, async/race behavior, portability assumption, or failure mode that a future reader would
-otherwise have to rediscover.
+The rule to write docstrings liberally is intentionally stronger than the review rule. During review, do not
+mechanically demand docstrings everywhere, but do flag missing documentation when a change adds a contract, invariant,
+lifecycle assumption, trust-boundary assumption, async/race behavior, portability assumption, or failure mode that a
+future reader would otherwise have to rediscover.
 
 ## Docstrings on tests
 
-Docstrings on tests should do two things:
-
-- Explain _why_ the test is important.
-- Describe what is being tested, in a manner similar to a specification.
-
-The why helps future readers to not take down a chesterton's fence. The what helps skimmability as well as review and
-correction of the test itself, and acts a complement to a project level behavior specification (if any).
+A test's docstring explains _why_ the test is important, so that future readers do not take down a Chesterton's fence.
+It also describes what is tested, in the manner of a specification, which helps skimming, review, and correction of the
+test itself and complements a project-level behavior specification if one exists.
 
 ## Inline comments
 
-Inline comments are not decoration. Add them when a reader needs a signpost: non-obvious intent, a surprising
-constraint, an invariant that must survive refactors, or the reason a simpler-looking approach would be wrong. When a
-comment is warranted, make it didactic. Someone jumping into that block should immediately understand the point of the
-code and the surrounding tradeoff.
-
-Do not add comments that merely translate syntax into English, label the obvious, or whisper a low-information summary
-next to a line of code. Avoid boilerplate. Prefer comments that orient the reader to a whole section or decision over
-minimalist commentary that says almost nothing.
+Add an inline comment when a reader needs a signpost: non-obvious intent, a surprising constraint, an invariant that
+must survive refactors, or the reason a simpler-looking approach would be wrong. Make it didactic, so that someone
+jumping into that block immediately understands the point of the code and the surrounding tradeoff. Do not write
+comments that translate syntax into English, label the obvious, or add a low-information summary next to a line of code,
+and avoid boilerplate. Prefer comments that orient the reader to a whole section or decision over minimal commentary
+that says almost nothing.
 
 # set -e is inert in agent shell tools
 
