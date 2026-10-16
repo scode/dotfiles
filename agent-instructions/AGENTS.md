@@ -81,23 +81,20 @@ that says almost nothing.
 
 # set -e is inert in agent shell tools
 
-Do not rely on `set -e` in commands run through an agent's shell tool. Agent harnesses commonly wrap the command in an
-`eval` placed in a non-final position of an `&&` list, and bash ignores errexit there — both for the `eval` itself and
-for everything it executes. The flag still shows as enabled in `$-` and `SHELLOPTS`, so every diagnostic says the script
-is guarded while every failed guard falls through to the next command. Guard-then-mutate scripts fail open; this has
-caused a real unguarded `gh pr merge`. Give each command its own failure path instead: chain with `&&`, or append `||
-exit 1` (an explicit `exit` does propagate out of the wrapper). Standalone script files executed via their own shebang
-get a fresh shell and are unaffected.
+Do not rely on `set -e` in commands run through an agent's shell tool. Harnesses commonly wrap the command in an `eval`
+in a non-final position of an `&&` list, where bash ignores errexit for everything the `eval` runs, while `$-` and
+`SHELLOPTS` still show it enabled. Guard-then-mutate scripts fail open; this has caused a real unguarded `gh pr merge`.
+Give each command its own failure path: chain with `&&`, or append `|| exit 1` (an explicit `exit` does propagate out of
+the wrapper). Script files run via their own shebang get a fresh shell and are unaffected.
 
 # Watching a background process: never `pgrep -f` for liveness
 
-If you are Claude Code: when a monitor or watchdog loop checks whether a detached job is still running, do not use
-`pgrep -f <name>` or `ps | grep <name>`. The watcher's own shell carries the pattern in its command line, so the check
-matches the watcher itself and reports "still running" forever after the job dies. This turned a 4-minute failure into a
-43-minute silent stall while landing a PR stack. Have the job write a pidfile (`echo $$ > job.pid`) and test it with
-`kill -0 "$(cat job.pid)"`, or run the job itself with the Bash tool's `run_in_background` and rely on its completion
-notification instead of a separate watcher. Whatever the mechanism, prove it once before trusting it: kill a throwaway
-job and confirm the watcher fires.
+If you are Claude Code: a monitor or watchdog loop must not check a detached job's liveness with `pgrep -f <name>` or
+`ps | grep <name>`. The watcher's own shell carries the pattern in its command line, so the check matches itself and
+reports "still running" forever; this turned a 4-minute failure into a 43-minute silent stall. Have the job write a
+pidfile (`echo $$ > job.pid`) and test it with `kill -0 "$(cat job.pid)"`, or run the job with the Bash tool's
+`run_in_background` and rely on its completion notification. Either way, prove the mechanism once before trusting it:
+kill a throwaway job and confirm the watcher fires.
 
 # Claude Code shell commands: no globs, no expansions
 
