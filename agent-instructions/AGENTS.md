@@ -5,11 +5,8 @@ user appears to be wrong.
 
 # Review shorthand
 
-Treat these as requests to have a separate agent perform an adversarial review of the current work:
-
-- `advrev sol`: use `gpt-6.1-sol` with high reasoning effort.
-- `advrev opus`: use `opus` with high reasoning effort.
-- `advrev astra`: use `gpt-6-astra` with high reasoning effort.
+`advrev sol`, `advrev opus`, and `advrev astra` ask for an adversarial review of the current work by a separate agent on
+`gpt-6.1-sol`, `opus`, or `gpt-6-astra` respectively, with high reasoning effort.
 
 # Skillette
 
