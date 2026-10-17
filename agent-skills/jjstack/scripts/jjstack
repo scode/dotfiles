@@ -1258,6 +1258,7 @@ async function cleanup(ctx: Ctx, landed: Entry[], carry: string[]) {
 
   const open = await ctx.openPrs("E_CLEANUP_LIST_OPEN");
   const abandon: string[] = [];
+  const landedChangeIds: string[] = [];
   for (const e of landed) {
     const keep = (why: string) => console.log(`JJSTACK_KEPT pr=${e.pr} bookmark=${e.bookmark} reason=${why}`);
     const p = await ctx.pr("E_CLEANUP_READ_PR", e.pr, "state,baseRefName,headRefName,headRefOid,isCrossRepository");
@@ -1305,10 +1306,23 @@ async function cleanup(ctx: Ctx, landed: Entry[], carry: string[]) {
       continue;
     }
     abandon.push(e.landedSha!);
+    if (e.changeId) landedChangeIds.push(e.changeId);
   }
 
   // A full fetch now imports the deletions, dropping local bookmarks that never moved locally.
   await ctx.fetch("E_CLEANUP_FETCH_ALL");
+  // Other visible versions of a landed change are leftovers too: a reworded or rebased copy that stays visible because
+  // a remote branch once pointed at it, and that the no-abandon setting on every jj call (see `JJ_SAFE`) keeps
+  // around after the branch is gone. They go through the same descendants check below, so nothing built on one is lost.
+  if (landedChangeIds.length > 0) {
+    const copies = (await exec(
+      "E_CLEANUP_COPIES",
+      ctx.sh`jj ${JJ_SAFE} log --no-graph -r ${`(${
+        landedChangeIds.map((c) => `change_id(${c})`).join(" | ")
+      }) ~ ::${ctx.defaultRev}`} -T ${'commit_id ++ "\n"'}`,
+    )).split("\n").filter(Boolean);
+    for (const c of copies) if (!abandon.includes(c)) abandon.push(c);
+  }
   if (abandon.length === 0) return;
   // A landed commit that other local work still builds on (side work outside the stack) stays, so that work keeps
   // the content it was written against. Everything else is a duplicate of the default branch now.
