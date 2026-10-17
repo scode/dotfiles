@@ -313,6 +313,75 @@ Deno.test("stop is honored during a check wait, and fast-land --resume lands the
   });
 });
 
+/** How many times the script read PR `pr`'s check rollup, from the fake's call log. */
+async function checkReads(w: World, pr: number): Promise<number> {
+  return (await events(w)).filter((l) => l.startsWith(`gh pr view ${pr} `) && l.includes("statusCheckRollup")).length;
+}
+
+/**
+ * With `--allow-no-checks` the caller has said the repo runs no PR checks, so a PR with none attached must merge at
+ * once. It used to wait out the two-minute grace period first, which turned a CI-less landing of nine PRs into 18
+ * minutes of sleeping. The world runs at a tenth of real time here, so the old wait would be 12 seconds of polling.
+ */
+Deno.test("land --allow-no-checks merges a PR with no checks without waiting out the grace period", async () => {
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.1";
+    await stackOf(w, 1);
+    await editState(w, (s) => {
+      s.defaultChecks = [];
+    });
+    const r = await jjstack(w, ["land", "--expect", "1", "--allow-no-checks"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals((await readState(w)).prs[0].state, "MERGED");
+    // One read in the wait, one in the guard right before the merge.
+    assertEquals(await checkReads(w, 1), 2);
+  });
+});
+
+/**
+ * `--allow-no-checks` skips the wait only when a PR has no checks at all. A check skipped while the PR was still a
+ * draft is the trap the draft-skip rule exists for (marking the PR ready may start the real run a little later), so it
+ * still gets the grace period, here six seconds at this world's time scale, before the landing proceeds without it.
+ */
+Deno.test("land --allow-no-checks still gives a draft-time skipped check the grace period", async () => {
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.05";
+    await stackOf(w, 1);
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    await editState(w, (s) => {
+      s.defaultChecks = [{ name: "test", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo }];
+    });
+    const started = Date.now();
+    const r = await jjstack(w, ["land", "--expect", "1", "--allow-no-checks"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals((await readState(w)).prs[0].state, "MERGED");
+    assert(Date.now() - started >= 6000, "merged on a draft-time skip without waiting out the grace period");
+  });
+});
+
+/**
+ * The settle period guards against a workflow that attaches a few seconds after a push or ready event, so it runs
+ * from the latest such event, not from the first passing read. A PR that left draft and got its checks an hour ago
+ * merges on the first read; a PR this landing just marked ready still waits for stragglers.
+ */
+Deno.test("land skips the settle period for checks that passed long ago but not for a PR it just marked ready", async () => {
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.1";
+    await stackOf(w, 2);
+    const sha = (await $`git --git-dir ${w.remote} rev-parse pr1`.env(w.env).text()).trim();
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    await editState(w, (s) => {
+      s.prs[0].isDraft = false;
+      s.prs[0].readyAt = [hourAgo];
+      s.suiteCreatedAt[sha] = hourAgo;
+    });
+    const r = await jjstack(w, ["land", "--expect", "1,2"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals(await checkReads(w, 1), 2);
+    assert((await checkReads(w, 2)) >= 3, "PR #2 merged without waiting out the settle period");
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // fast-land
 // ---------------------------------------------------------------------------------------------------------------------
