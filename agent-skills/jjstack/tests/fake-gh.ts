@@ -59,6 +59,8 @@ export type State = {
    * appears, and the script measures its settle period from it, so the fake records the first read and keeps it.
    */
   suiteCreatedAt: Record<string, string>;
+  /** The id of the last workflow run a dispatch created; runs are numbered from 1001. */
+  nextRunId?: number;
 };
 
 /** A fresh state for repo `o/r` on github.com with green checks, for the tests to adjust. */
@@ -366,6 +368,27 @@ async function api(s: State, remote: string, args: string[]): Promise<string> {
   if ((m = rest.match(/^git\/commits\/([0-9a-f]+)$/)) && method === "GET") {
     const tree = git(remote, ["rev-parse", `${m[1]}^{tree}`]).out;
     return await emit({ sha: m[1], tree: { sha: tree } }, jq);
+  }
+  if ((m = rest.match(/^actions\/workflows\/([^/]+)\/dispatches$/)) && method === "POST") {
+    // GitHub finds the workflow by its file on the default branch (404 without it), then runs the file as it is on the
+    // dispatched ref: 422 for a ref that does not exist or whose version of the file lacks the trigger. With
+    // return_run_details it answers 200 with the new run, otherwise 204 with no body (all observed on github.com,
+    // 2026-10).
+    const f = { ...fieldsOf("-f"), ...fieldsOf("-F") };
+    const path = `.github/workflows/${m[1]}`;
+    if (git(remote, ["show", `${s.defaultBranch}:${path}`], [0, 128]).code !== 0) {
+      throw new GhError("gh: Not Found (HTTP 404)");
+    }
+    if (!f.ref || !refSha(remote, f.ref)) throw new GhError(`gh: No ref found for: ${f.ref ?? ""} (HTTP 422)`);
+    const atRef = git(remote, ["show", `refs/heads/${f.ref}:${path}`], [0, 128]);
+    if (atRef.code !== 0 || !/\bworkflow_dispatch\b/.test(atRef.out)) {
+      throw new GhError("gh: Workflow does not have 'workflow_dispatch' trigger (HTTP 422)");
+    }
+    s.nextRunId = (s.nextRunId ?? 1000) + 1;
+    event(`dispatched ${m[1]} ref=${f.ref} run=${s.nextRunId}`);
+    if (f.return_run_details !== "true") return "";
+    const html = `https://github.com/${s.repo}/actions/runs/${s.nextRunId}`;
+    return await emit({ workflow_run_id: s.nextRunId, run_url: html, html_url: html }, jq);
   }
   if ((m = rest.match(/^issues\/(\d+)\/events$/)) && method === "GET") {
     const pr = findPr(s, m[1]);
