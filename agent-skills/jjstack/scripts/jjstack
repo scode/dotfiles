@@ -26,9 +26,9 @@
  * snapshot the working copy), 4 when it had already started writing to jj, Git, or GitHub, 2 for a usage error, and 1
  * for an unexpected crash (a bug; the stack trace follows). The skill tells the agent to read the code around the
  * raising line before improvising a recovery, so messages say what was checked and what was found rather than what to
- * do. Every run also keeps a log of each command it executed, in memory; when it stops on an error it writes that log
- * to a file and the report names it, for when the error and the ledger do not explain what happened. A run that
- * succeeds writes nothing.
+ * do. Every run also writes a timestamped log of each command it executes to `.jj/jjstack-logs`, announced by a
+ * `JJSTACK_LOG` line at startup and named again in the error report. Nobody has to read it; it is there for checking on
+ * a long landing in progress, and for the stops the error and the ledger do not explain.
  *
  * Lines starting with `JJSTACK_` on stdout are the machine-readable ledger; everything else is narration.
  */
@@ -83,22 +83,231 @@ let phase = "startup";
 const kill = new KillController();
 
 /**
- * Every command this run executed, oldest first, with its exit status and duration, and its output when it failed or
- * wrote something. Kept in memory and written out only by `report`, so a successful run leaves nothing behind and a
- * failed one leaves exactly what an agent needs to reconstruct it. Capped, because a long CI wait polls GitHub every
- * few seconds; the oldest entries go first, and the file says how many were dropped.
+ * The run log: every command this run executes, oldest first, with its call-site code, exit status, and duration, and
+ * its output when it failed or changed state, interleaved with the ledger and narration lines, each line timestamped.
+ * Writes and fetches also get a line when they start, so a tail shows a slow push or fetch in flight, not only the step
+ * before it.
+ *
+ * Once `openCtx` has found the checkout, the log streams to a file of its own under `.jj/jjstack-logs`, and the path is
+ * printed as a `JJSTACK_LOG` line. That is what makes a landing running in the background observable: an agent asked
+ * how it is going reads the tail of the file, and nobody has to read it otherwise. Lines from before that point wait in
+ * `early` and are written first; a run that stops before it found the checkout writes them to a temporary file, so
+ * every failure still has a log.
+ *
+ * Logging must never break a run, so nothing here throws. If appending fails midway (a full disk, say), the log moves
+ * to a temporary file whose first line names the original, and a new `JJSTACK_LOG` line announces the move. The file is
+ * capped at `LOG_CAP_BYTES`; past that, one line says so and the rest is dropped.
  */
-const trail: string[] = [];
-let trailDropped = 0;
+const early: string[] = [];
+let earlyDropped = 0;
+let logPath: string | undefined;
+let logBroken = false;
+let logBytes = 0;
+const LOG_CAP_BYTES = 20 * 1024 * 1024;
+/** The phase the last log line was written under; a phase change ends any run of compacted polls. */
+let notedPhase = "";
+/** Set while `flushRepeats` writes, so its own lines do not trigger another flush. */
+let flushing = false;
 
-/** Where `report` writes the log: the checkout's `.jj` once `openCtx` found it, else the system temp directory. */
-let logDir: string | undefined;
+function stampLine(line: string): string {
+  return `${new Date().toISOString()} [${phase}] ${line}`;
+}
 
 function note(line: string) {
-  trail.push(`${new Date().toISOString()} [${phase}] ${line}`);
-  if (trail.length > 5000) {
-    trail.splice(0, 1000);
-    trailDropped += 1000;
+  if (phase !== notedPhase && !flushing) {
+    notedPhase = phase;
+    flushRepeats();
+  }
+  const stamped = stampLine(line) + "\n";
+  if (logPath !== undefined && !logBroken) {
+    if (logBytes >= LOG_CAP_BYTES) return;
+    try {
+      const capped = logBytes + stamped.length >= LOG_CAP_BYTES;
+      const text = capped ? stampLine(`(log reached ${LOG_CAP_BYTES} bytes; later lines are dropped)`) + "\n" : stamped;
+      Deno.writeTextFileSync(logPath, text, { append: true });
+      logBytes = capped ? LOG_CAP_BYTES : logBytes + text.length;
+      return;
+    } catch (err) {
+      moveLog(err);
+      if (logPath !== undefined && !logBroken) {
+        try {
+          Deno.writeTextFileSync(logPath, stamped, { append: true });
+          logBytes += stamped.length;
+          return;
+        } catch {
+          logBroken = true;
+        }
+      }
+    }
+  }
+  early.push(stamped.trimEnd());
+  if (early.length > 5000) {
+    early.splice(0, 1000);
+    earlyDropped += 1000;
+  }
+}
+
+/** The log file that stopped accepting appends, kept so the error report can name both halves of the timeline. */
+let logMovedFrom: string | undefined;
+
+/** Moves the log to a temporary file after an append failure; on failure of that too, falls back to memory. */
+function moveLog(err: unknown) {
+  const from = logPath;
+  logPath = undefined;
+  try {
+    const to = Deno.makeTempFileSync({ prefix: "jjstack-", suffix: ".log" });
+    const why = err instanceof Error ? err.message : String(err);
+    Deno.writeTextFileSync(to, stampLine(`(continued from ${from}, where appending failed: ${why})`) + "\n");
+    logPath = to;
+    logBytes = 0;
+    logMovedFrom = from;
+    console.log(`JJSTACK_LOG path=${to} previous=${from}`);
+  } catch {
+    logBroken = true;
+    logMovedFrom = from;
+  }
+}
+
+/**
+ * Starts streaming the log to a new file in `dir` and writes what was noted so far. The name carries a random part
+ * and is created exclusively, so two runs starting in the same millisecond cannot share or truncate a file. Old logs
+ * are pruned best-effort afterwards, keeping the 20 newest and anything modified in the last hour: a landing that has
+ * been running for a while must not lose its log because other commands ran meanwhile. Returns the path, or undefined
+ * if the file cannot be created (the run goes on, logging to memory).
+ */
+function openLog(dir: string, command: string): string | undefined {
+  let path: string;
+  try {
+    Deno.mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    path = `${dir}/${stamp}-${command || "jjstack"}-${crypto.randomUUID().slice(0, 8)}.log`;
+    const head = earlyDropped > 0 ? [`(${earlyDropped} older entries dropped)`] : [];
+    const text = [...head, ...early].map((l) => l + "\n").join("");
+    Deno.writeTextFileSync(path, text, { createNew: true });
+    logBytes = text.length;
+  } catch {
+    return undefined;
+  }
+  early.length = 0;
+  earlyDropped = 0;
+  logPath = path;
+  try {
+    const hourAgo = Date.now() - 60 * 60 * 1000;
+    const logs = [...Deno.readDirSync(dir)].filter((f) => f.isFile && f.name.endsWith(".log")).map((f) => f.name)
+      .sort();
+    for (const name of logs.slice(0, -20)) {
+      try {
+        if ((Deno.statSync(`${dir}/${name}`).mtime?.getTime() ?? 0) < hourAgo) Deno.removeSync(`${dir}/${name}`);
+      } catch {
+        // Another run pruned it first, or it is not ours to remove; either way, retention is best-effort.
+      }
+    }
+  } catch {
+    // Same: a failed prune never costs the run its log.
+  }
+  return path;
+}
+
+/**
+ * For `report`: the log to name, after flushing pending repeat counts. That is the streamed log when it is healthy,
+ * else the lines held in memory written to a temporary file whose first line names the file that holds the earlier
+ * part of the timeline.
+ */
+function finalLog(): string | undefined {
+  flushRepeats();
+  if (logPath !== undefined && !logBroken) return logPath;
+  if (early.length === 0) return logMovedFrom;
+  try {
+    const path = Deno.makeTempFileSync({ prefix: "jjstack-", suffix: ".log" });
+    const head = [
+      ...(logMovedFrom ? [`(earlier lines of this run are in ${logMovedFrom})`] : []),
+      ...(earlyDropped > 0 ? [`(${earlyDropped} older entries dropped)`] : []),
+    ];
+    Deno.writeTextFileSync(path, [...head, ...early].map((l) => l + "\n").join(""));
+    return path;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Polling would drown the log: a half-hour CI wait reads GitHub every few seconds. A read marked `poll` whose result
+ * is the same as the previous run of the same call is not logged again; the log says how often it repeated, and when,
+ * once the result changes or the sequence ends, and gets a heartbeat line every five minutes while it does not change,
+ * so a tail shows the wait is alive. Only polls compact: a fetch or any other command is always logged. A sequence
+ * ends at a failure, at any write, and at a phase change, so a summary never spans one of those. Holds a fingerprint
+ * of each result, not the result, for at most `MAX_POLLS` distinct calls.
+ */
+const lastReads = new Map<
+  string,
+  { fp: string; repeats: number; first: number; last: number; beat: number; phase: string }
+>();
+const HEARTBEAT_MS = 5 * 60 * 1000;
+const MAX_POLLS = 200;
+
+/** A short fingerprint of a command result (FNV-1a over the text plus its length); collisions only cost a log line. */
+function fingerprint(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return `${h.toString(16)}:${text.length}`;
+}
+
+/** Writes the pending repeat count of one poll sequence, with the time span it covers. */
+function summarize(key: string, e: { repeats: number; first: number; last: number; phase: string }) {
+  if (e.repeats === 0) return;
+  const span = `${new Date(e.first).toISOString()} to ${new Date(e.last).toISOString()}`;
+  note(`${key} (repeated ${e.repeats} more times with the same result, ${span}, during ${JSON.stringify(e.phase)})`);
+}
+
+/** Ends every poll sequence, writing their pending counts. */
+function flushRepeats() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    for (const [key, e] of lastReads) summarize(key, e);
+    lastReads.clear();
+  } finally {
+    flushing = false;
+  }
+}
+
+/** Logs one finished command, compacting repeated polls; see `lastReads`. */
+function noteCommand(
+  code: string,
+  text: string,
+  r: CommandResult,
+  ms: number,
+  opts: { write?: boolean; combined?: boolean; poll?: boolean },
+) {
+  const key = `${code} ${text}`;
+  if (opts.poll && r.code === 0) {
+    const now = Date.now();
+    const fp = fingerprint(`${r.stdout}\0${r.stderr}`);
+    const prev = lastReads.get(key);
+    if (prev && prev.fp === fp) {
+      if (prev.repeats === 0) prev.first = now;
+      prev.repeats++;
+      prev.last = now;
+      if (now - prev.beat >= HEARTBEAT_MS) {
+        note(`${code} unchanged, ${prev.repeats} repeats since ${new Date(prev.first).toISOString()}: ${text}`);
+        prev.beat = now;
+      }
+      return;
+    }
+    if (prev) summarize(key, prev);
+    lastReads.delete(key);
+    lastReads.set(key, { fp, repeats: 0, first: now, last: now, beat: now, phase });
+    if (lastReads.size > MAX_POLLS) {
+      const [oldest, e] = lastReads.entries().next().value!;
+      summarize(oldest, e);
+      lastReads.delete(oldest);
+    }
+  } else if (r.code !== 0 || opts.write) flushRepeats();
+  note(`${code} exit=${r.code} ${ms}ms${opts.write ? " write" : ""}: ${text}`);
+  if (r.code !== 0 || opts.write) {
+    const clip = (t: string) => t.length > 4000 ? `${t.slice(0, 4000)}... (${t.length - 4000} more chars)` : t;
+    const out = opts.combined ? r.combined : [r.stdout, r.stderr].filter((t) => t.trim() !== "").join("\n--- stderr\n");
+    if (out.trim() !== "") note(`  output: ${clip(out.trim()).replaceAll("\n", "\n    ")}`);
   }
 }
 
@@ -135,28 +344,6 @@ function shellIn(dir: string) {
   };
 }
 
-/**
- * Writes the log for a run that stopped on an error and returns the path, keeping the 20 newest logs. Never throws: a
- * log that cannot be written must not hide the error it was meant to explain.
- */
-function writeTrail(dir: string | undefined, command: string): string | undefined {
-  if (trail.length === 0) return undefined;
-  try {
-    const target = dir ?? Deno.makeTempDirSync({ prefix: "jjstack-log-" });
-    Deno.mkdirSync(target, { recursive: true });
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const path = `${target}/${stamp}-${command || "jjstack"}.log`;
-    const head = trailDropped > 0 ? [`(${trailDropped} older entries dropped)`] : [];
-    Deno.writeTextFileSync(path, [...head, ...trail].join("\n") + "\n");
-    const old = [...Deno.readDirSync(target)].filter((f) => f.isFile && f.name.endsWith(".log")).map((f) => f.name)
-      .sort().slice(0, -20);
-    for (const f of old) Deno.removeSync(`${target}/${f}`);
-    return path;
-  } catch {
-    return undefined;
-  }
-}
-
 /** The command being run, for naming the log file. */
 let commandName = "";
 
@@ -181,26 +368,29 @@ const TRANSIENT_GH = /HTTP 5\d\d|HTTP 429|timed out|timeout|connection reset|une
 async function run(
   code: string,
   cmd: CommandBuilder,
-  opts: { write?: boolean; input?: string; combined?: boolean } = {},
+  opts: { write?: boolean; input?: string; combined?: boolean; poll?: boolean; announce?: boolean } = {},
 ): Promise<CommandResult> {
   if (opts.write) markWrite();
   const text = commandText.get(cmd) ?? "(command text not recorded)";
   const withInput = opts.input === undefined ? cmd.stdin("null") : cmd.stdinText(opts.input);
   const piped = opts.combined ? withInput.captureCombined() : withInput.stdout("piped").stderr("piped");
   const started = Date.now();
+  if (opts.write || opts.announce) note(`${code} start${opts.write ? " write" : ""}: ${text}`);
+  // A command the log did not announce gets a line once it has run for 30 s, so a tail shows a slow read in flight.
+  const slow = opts.write || opts.announce
+    ? undefined
+    : setTimeout(() => note(`${code} still running after 30s: ${text}`), 30_000);
+  let r: CommandResult;
   try {
-    const r = await piped.noThrow().signal(kill.signal);
-    note(`${code} exit=${r.code} ${Date.now() - started}ms${opts.write ? " write" : ""}: ${text}`);
-    if (r.code !== 0 || opts.write) {
-      const cut = (t: string) => t.length > 4000 ? `${t.slice(0, 4000)}... (${t.length - 4000} more chars)` : t;
-      const out = opts.combined
-        ? r.combined
-        : [r.stdout, r.stderr].filter((t) => t.trim() !== "").join("\n--- stderr\n");
-      if (out.trim() !== "") note(`  output: ${cut(out.trim()).replaceAll("\n", "\n    ")}`);
-    }
-    return r;
+    r = await piped.noThrow().signal(kill.signal);
   } catch (err) {
-    note(`${code} did not run (${err instanceof Error ? err.message : String(err)}): ${text}`);
+    clearTimeout(slow);
+    const why = err instanceof Error ? err.message : String(err);
+    note(
+      kill.signal.aborted
+        ? `${code} aborted by a signal mid-run (${why}): ${text}`
+        : `${code} did not run (${why}): ${text}`,
+    );
     // A signal to this script aborts the running child through `kill`; that is not a failure to start it.
     if (kill.signal.aborted) {
       fail(
@@ -209,8 +399,20 @@ async function run(
           `taken effect. For a clean stop at a safe point, use \`jjstack stop\` instead of a signal`,
       );
     }
-    fail(code, `could not start the command: ${err instanceof Error ? err.message : String(err)}`);
+    fail(code, `could not start the command: ${why}`);
   }
+  clearTimeout(slow);
+  // Logging must never turn a finished command into a reported failure, so a bug in it is noted and swallowed.
+  try {
+    noteCommand(code, text, r, Date.now() - started, opts);
+  } catch (err) {
+    try {
+      note(`(could not log ${code}: ${err instanceof Error ? err.message : String(err)})`);
+    } catch {
+      // Nothing left to do.
+    }
+  }
+  return r;
 }
 
 /**
@@ -221,7 +423,7 @@ async function run(
 async function exec(
   code: string,
   cmd: CommandBuilder,
-  opts: { write?: boolean; input?: string; retry?: boolean } = {},
+  opts: { write?: boolean; input?: string; retry?: boolean; poll?: boolean; announce?: boolean } = {},
 ): Promise<string> {
   for (let attempt = 1;; attempt++) {
     const r = await run(code, cmd, opts);
@@ -237,7 +439,11 @@ async function exec(
 }
 
 /** `exec` for commands that print JSON; unparsable output is its own failure under the same code. */
-async function execJson<T>(code: string, cmd: CommandBuilder, opts: { retry?: boolean } = {}): Promise<T> {
+async function execJson<T>(
+  code: string,
+  cmd: CommandBuilder,
+  opts: { retry?: boolean; poll?: boolean } = {},
+): Promise<T> {
   const out = await exec(code, cmd, opts);
   try {
     return JSON.parse(out) as T;
@@ -269,7 +475,7 @@ function report(err: unknown): never {
   const self = new URL(import.meta.url).pathname;
   const code = err instanceof JjstackError ? err.code : "E_UNEXPECTED";
   note(`stopped: ${code}: ${err instanceof Error ? err.message : String(err)}`);
-  const log = writeTrail(logDir, commandName);
+  const log = finalLog();
   const logLine = log
     ? `log: ${log} (every command this run executed; read it if the lines above do not explain what happened)`
     : "";
@@ -543,8 +749,9 @@ class Ctx {
   async treeOf(code: string, sha: string): Promise<string> {
     return await exec(code, this.sh`git rev-parse ${sha + "^{tree}"}`);
   }
-  async pr(code: string, n: number, fields: string): Promise<Record<string, unknown>> {
-    return await execJson(code, this.sh`gh pr view ${n} -R ${this.repo} --json ${fields}`, { retry: true });
+  /** One PR read; `poll` marks reads repeated in a loop, which the run log compacts (see `lastReads`). */
+  async pr(code: string, n: number, fields: string, poll = false): Promise<Record<string, unknown>> {
+    return await execJson(code, this.sh`gh pr view ${n} -R ${this.repo} --json ${fields}`, { retry: true, poll });
   }
   /** The stack rows from the remote default branch to `top`, bottom-up. */
   async stack(code: string, top: string): Promise<StackRow[]> {
@@ -589,7 +796,10 @@ class Ctx {
   async fetch(code: string, defaultOnly = false) {
     markSync();
     const only = defaultOnly ? ["--branch", exactPattern(this.defaultBranch)] : [];
-    await exec(code, this.sh`jj ${JJ_SAFE} git fetch --remote ${this.remotePattern} ${only}`, { retry: true });
+    await exec(code, this.sh`jj ${JJ_SAFE} git fetch --remote ${this.remotePattern} ${only}`, {
+      retry: true,
+      announce: true,
+    });
   }
   /** The default branch's current commit as GitHub reports it, without going through a fetch. */
   async remoteTip(code: string): Promise<string> {
@@ -620,7 +830,9 @@ async function openCtx(args: { dir: string; repo?: string; remote: string }): Pr
   if (!stat.isDirectory) usage("E_USAGE_DIR_NOT_DIR", `--dir ${dir} is not a directory`);
   const sh = shellIn(dir);
   const root = await exec("E_JJ_NOT_A_REPO", sh`jj ${JJ_SAFE} root`);
-  logDir = `${root}/.jj/jjstack-logs`;
+  const log = openLog(`${root}/.jj/jjstack-logs`, commandName);
+  if (log !== undefined) console.log(`JJSTACK_LOG path=${log}`);
+  else console.log(`no run log file: cannot create one under ${root}/.jj/jjstack-logs; logging to memory only`);
   markSync();
   const jjGit = await exec("E_JJ_GIT_ROOT", sh`jj ${JJ_SAFE} git root`);
   const gitDir = await exec("E_GIT_DIR", sh`git rev-parse --absolute-git-dir`);
@@ -715,7 +927,11 @@ async function pushBookmark(ctx: Ctx, code: string, bookmark: string, sha: strin
     { write: true },
   );
   if (pr === undefined) return;
-  const head = await pollUntil(60, async () => (await ctx.pr(code, pr, "headRefOid")).headRefOid, (h) => h === sha);
+  const head = await pollUntil(
+    60,
+    async () => (await ctx.pr(code, pr, "headRefOid", true)).headRefOid,
+    (h) => h === sha,
+  );
   if (head !== sha) fail(code, `pushed ${bookmark} at ${sha}, but PR #${pr} head stayed ${head}`);
 }
 
@@ -743,7 +959,7 @@ async function guardedMerge(
       const m = String(
         await pollUntil(
           60,
-          async () => (await ctx.pr("E_MERGE_READ_MERGEABLE", e.pr, "mergeable")).mergeable,
+          async () => (await ctx.pr("E_MERGE_READ_MERGEABLE", e.pr, "mergeable", true)).mergeable,
           (v) => v !== "UNKNOWN",
         ),
       );
@@ -1346,7 +1562,7 @@ async function createDraft(ctx: Ctx, s: SubmitStep): Promise<number> {
   const pr = Number(m[1]);
   const p = await pollUntil(
     60,
-    async () => await ctx.pr("E_CREATE_VERIFY_READ", pr, "headRefName,baseRefName,isDraft,headRefOid"),
+    async () => await ctx.pr("E_CREATE_VERIFY_READ", pr, "headRefName,baseRefName,isDraft,headRefOid", true),
     (v) => v.headRefOid === s.unit.sha,
   );
   if (
@@ -1555,7 +1771,7 @@ async function readyEventTime(ctx: Ctx, code: string, pr: number): Promise<numbe
     code,
     ctx.sh`gh api --paginate ${`repos/${ctx.repo}/issues/${pr}/events?per_page=100`} \
       --jq ${'.[] | select(.event == "ready_for_review") | .created_at'}`,
-    { retry: true },
+    { retry: true, poll: true },
   );
   const times = out.split("\n").filter(Boolean).map((t) => Date.parse(t)).filter((t) => !Number.isNaN(t));
   return times.length > 0 ? Math.max(...times) : undefined;
@@ -1571,7 +1787,7 @@ async function readSuites(ctx: Ctx, code: string, sha: string, readyAt: number |
     code,
     ctx.sh`gh api --paginate ${`repos/${ctx.repo}/commits/${sha}/check-suites?per_page=100`} \
       --jq ${'.check_suites[] | [.app.slug // "app", .status, (.latest_check_runs_count | tostring), .created_at] | @tsv'}`,
-    { retry: true },
+    { retry: true, poll: true },
   );
   const rows = out.split("\n").filter(Boolean).map((l) => l.split("\t"));
   const running = rows.filter(([app, status, runs]) =>
@@ -1595,7 +1811,7 @@ async function readVerdict(
   graceOver: boolean,
   ignore: string[],
 ) {
-  const p = await ctx.pr(code, e.pr, "headRefOid,statusCheckRollup");
+  const p = await ctx.pr(code, e.pr, "headRefOid,statusCheckRollup", true);
   if (p.headRefOid !== e.sha) fail(code, `PR #${e.pr} head moved to ${p.headRefOid} while landing ${e.sha}`);
   const suites = await readSuites(ctx, code, e.sha, readyAt);
   const rollup = (p.statusCheckRollup ?? []) as Check[];
@@ -1618,6 +1834,7 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
   const start = Date.now();
   const readyAt = await readyEventTime(ctx, "E_LAND_READ_READY_EVENT", e.pr);
   let last = "";
+  let lastPrinted = 0;
   let passSince: { at: number; names: string } | undefined;
   for (;;) {
     await honorStop(ctx, `while waiting for checks on PR #${e.pr}, which is pushed and ready but not merged`);
@@ -1651,7 +1868,12 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
       fail("E_LAND_CHECKS_TIMEOUT", `PR #${e.pr} checks still not done after ${opts.timeoutSec}s (${detail})`);
     }
     const shown = v === "passed" ? `passing, settling (${detail})` : detail;
-    if (shown !== last) console.log(`PR #${e.pr}: waiting for checks (${shown})`);
+    // A changed verdict is always printed; an unchanged one every five minutes, so the output shows the wait is alive.
+    if (shown !== last || Date.now() - lastPrinted >= HEARTBEAT_MS) {
+      const mins = Math.floor((Date.now() - start) / 60000);
+      console.log(`PR #${e.pr}: waiting for checks (${shown})${shown === last ? `, ${mins}m so far` : ""}`);
+      lastPrinted = Date.now();
+    }
     last = shown;
     await $.sleep(10000);
   }
@@ -2045,6 +2267,7 @@ async function main() {
   for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => kill.kill());
   const { command, args } = parseCli(Deno.args);
   commandName = command;
+  note(`jjstack pid=${Deno.pid} argv=${Deno.args.map(quoteArg).join(" ")}`);
   // Ledger and narration lines go into the log too, so it reads as one timeline.
   const print = console.log;
   console.log = (...a: unknown[]) => {
@@ -2112,7 +2335,13 @@ function parseCli(argv: string[]) {
   return { command: command as string, args: args as Record<string, unknown> };
 }
 
-if (import.meta.main) await main().catch(report);
+// A successful run ends its log with a closing line, so a reader can tell a finished run from a stuck one.
+if (import.meta.main) {
+  await main().then(() => {
+    flushRepeats();
+    note("finished ok");
+  }).catch(report);
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Tests
@@ -2276,23 +2505,113 @@ Deno.test("renderCommand shows interpolated values as shell words, quoting only 
   assertEquals(commandText.get(b), `gh pr merge 12 --subject 'feat: x (#12)' --squash 'a'\\''b'`);
 });
 
+/** Resets the run log's module state, so each log test starts from nothing and leaves nothing behind. */
+function resetLog() {
+  flushRepeats();
+  early.length = 0;
+  earlyDropped = 0;
+  logPath = undefined;
+  logBroken = false;
+  logBytes = 0;
+  logMovedFrom = undefined;
+  lastReads.clear();
+}
+
 /**
- * The log is written only on failure, so it must not throw or fill the disk: it keeps the 20 newest files in its
- * directory and says when old entries were dropped from memory.
+ * The run log is how an agent watches a long landing: it must stream from the first line, keep earlier lines, and stay
+ * readable during long waits, so identical polls collapse into a count, with when they happened, once the result
+ * changes.
  */
-Deno.test("writeTrail writes the log, prunes to the newest 20, and never throws", async () => {
+Deno.test("the run log streams and compacts repeated polls into a count", async () => {
+  resetLog();
   const dir = await Deno.makeTempDir();
   try {
-    for (let i = 0; i < 25; i++) await Deno.writeTextFile(`${dir}/2000-01-01-${String(i).padStart(2, "0")}.log`, "x");
-    note("test entry");
-    const path = writeTrail(dir, "land")!;
-    assertEquals((await Deno.readTextFile(path)).includes("test entry"), true);
-    const left = [...Deno.readDirSync(dir)].filter((f) => f.name.endsWith(".log"));
-    assertEquals(left.length, 20);
-    assertEquals(left.some((f) => f.name === path.split("/").at(-1)), true);
-    assertEquals(writeTrail("/proc/forbidden/jjstack", "land"), undefined);
+    note("before the file exists");
+    const path = openLog(dir, "land")!;
+    const file = `${dir}/state`;
+    const sh = shellIn(dir);
+    const poll = async () => await run(TEST_CODE, sh`cat ${file}`, { poll: true });
+    await Deno.writeTextFile(file, "pending\n");
+    for (let i = 0; i < 4; i++) await poll();
+    await Deno.writeTextFile(file, "passed\n");
+    await poll();
+    const lines = (await Deno.readTextFile(path)).trim().split("\n");
+    assertEquals(lines[0].endsWith("before the file exists"), true);
+    const polls = lines.filter((l) => l.includes(`cat ${file}`));
+    // The first poll, a count for the three identical ones after it, then the changed one.
+    assertEquals(polls.length, 3);
+    assertEquals(/repeated 3 more times .* to .*, during/.test(polls[1]), true);
+    assertEquals(finalLog(), path);
   } finally {
-    trail.length = 0;
+    resetLog();
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+/**
+ * Compaction must never hide a change of state: only reads marked as polls compact, and a write or a failure ends a
+ * poll sequence so the next read after it is logged in full, with any pending count flushed first.
+ */
+Deno.test("only polls compact, and writes, failures, and stops end a poll sequence", async () => {
+  resetLog();
+  const dir = await Deno.makeTempDir();
+  try {
+    const path = openLog(dir, "land")!;
+    const sh = shellIn(dir);
+    await Deno.writeTextFile(`${dir}/state`, "x\n");
+    const read = async (poll: boolean) => await run(TEST_CODE, sh`cat ${`${dir}/state`}`, { poll });
+    await read(false);
+    await read(false);
+    await read(true);
+    await read(true);
+    await run(TEST_CODE, sh`cat ${`${dir}/missing`}`, { poll: true });
+    await read(true);
+    await read(true);
+    flushRepeats();
+    const text = await Deno.readTextFile(path);
+    const full = text.split("\n").filter((l) => /exit=0 .*cat .*state/.test(l));
+    // Two plain reads, the first poll, and the first poll after the failure are logged in full.
+    assertEquals(full.length, 4);
+    assertEquals((text.match(/repeated 1 more times/g) ?? []).length, 2);
+    assertEquals(/exit=1 .*cat .*missing/.test(text), true);
+  } finally {
+    resetLog();
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+/**
+ * Concurrent runs in one checkout must not share, truncate, or delete each other's logs: names are unique even within
+ * a millisecond, and pruning keeps any log modified in the last hour on top of the 20 newest. An unwritable directory
+ * costs the file log, never the run.
+ */
+Deno.test("log files are unique, live logs survive pruning, and an unwritable directory is not fatal", async () => {
+  resetLog();
+  const dir = await Deno.makeTempDir();
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    for (let i = 0; i < 25; i++) {
+      const f = `${dir}/2000-01-01-${String(i).padStart(2, "0")}.log`;
+      await Deno.writeTextFile(f, "old");
+      await Deno.utime(f, twoHoursAgo, twoHoursAgo);
+    }
+    // The oldest name, but still being written: a landing that started long before the others.
+    await Deno.writeTextFile(`${dir}/1999-12-31-live.log`, "live");
+    const a = openLog(dir, "status")!;
+    resetLog();
+    const b = openLog(dir, "status")!;
+    assertEquals(a !== b, true);
+    const names = [...Deno.readDirSync(dir)].map((f) => f.name);
+    assertEquals(names.includes("1999-12-31-live.log"), true);
+    assertEquals(names.filter((n) => n.startsWith("2000-")).length, 18);
+    resetLog();
+    assertEquals(openLog("/proc/forbidden/jjstack", "land"), undefined);
+    note("kept in memory");
+    const fallback = finalLog()!;
+    assertEquals((await Deno.readTextFile(fallback)).includes("kept in memory"), true);
+    await Deno.remove(fallback);
+  } finally {
+    resetLog();
     await Deno.remove(dir, { recursive: true });
   }
 });
