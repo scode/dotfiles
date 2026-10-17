@@ -39,3 +39,25 @@ CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
   the resume from inside that tree (`cd <tree> && claude -p ...`). Claude Code keeps session state per project
   directory, so a `--resume` from a different directory is expected to fail to find the session rather than run in the
   wrong tree — expected, not verified; either way the fix is the same `cd`.
+
+## Inspecting delivered tool results
+
+When the caller needs the tool conversation, retain `--output-format stream-json --verbose` stdout for every turn,
+including resumes, rather than only the final response. Correlate each assistant `message.content` block of type
+`tool_use` by its `id` with the user message's `tool_result.tool_use_id`. Inspect the result's complete content and
+`is_error` flag, plus any structured `tool_use_result` metadata. A tool call without a successful result is not a
+successful read. Confirm each stream's `session_id` matches the recorded session; message IDs identify messages, not
+sessions.
+
+Claude Code 2.1.302 was checked with a deliberately clipped Read and a same-session resume. The user message's
+`tool_result.content` held only the returned lines. `tool_use_result.file` supplied `filePath`, `startLine`, `numLines`,
+`totalLines` and `truncatedByTokenCap: true`. The content had no literal omission marker, so inspecting only text for
+"truncated" would miss the omitted tail. A later bounded Read returned the complete requested range. These observations
+establish that Read representation, not every tool's output or every CLI version. Bash output and other tools need
+inspection of their actual result shapes before treating a stream as delivered-content evidence.
+
+Inspect bounded groups of calls/results with their raw-stream line numbers. Keep all result content blocks and metadata;
+a summary of how many tools ran loses the delivered material. A full-output artifact named in a shortened result is
+available for a later read, not evidence that the agent already received its full contents. The checked Read did not
+automatically retrieve missing content. Native children need their own identifiable tool-result history; parent-side
+Agent/Task summaries alone do not contain that history.

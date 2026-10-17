@@ -96,6 +96,7 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "jjstack",
+    "persistent-review",
     "scode-agent-delegation",
     "pre-pr-review-swarm",
     "repo-swarm",
@@ -517,6 +518,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
         .condition(PathExists::new("~/.claude"))
         .build();
     g.add(
+        "claude-skill-persistent-review",
+        PayloadSymlink::new(
+            "agent-skills/persistent-review",
+            "~/.claude/skills/persistent-review",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-pre-pr-review-swarm",
         PayloadSymlink::new(
             "agent-skills/pre-pr-review-swarm",
@@ -787,6 +797,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
         .add("codex-skills-dir", ManagedDirectory::new("~/.codex/skills"))
         .condition(PathExists::new("~/.codex"))
         .build();
+    g.add(
+        "codex-skill-persistent-review",
+        PayloadSymlink::new(
+            "agent-skills/persistent-review",
+            "~/.codex/skills/persistent-review",
+        ),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
     g.add(
         "codex-skill-pre-pr-review-swarm",
         PayloadSymlink::new(

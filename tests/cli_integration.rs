@@ -292,6 +292,7 @@ fn test_install_creates_symlinks() {
 
     // Verify every harness gets the same repo-owned skill symlinks.
     for skill in [
+        "persistent-review",
         "pre-pr-review-swarm",
         "scode-dist-rust-setup",
         "scode-modernize",

@@ -34,6 +34,9 @@ fix the skill or change this file in the same change, never leave them apart.
   shell-out mechanics to apply to a native delegation.
 - Launch commands live only in the harness files. `SKILL.md` carries no launch line, so that every launch goes through
   the file that carries the observed-behavior notes for that harness.
+- Codex and Claude harness files describe access to the recorded tool conversation when the caller needs it. Distinguish
+  raw command output from the result delivered to the agent, preserve session identity across resumes, and state the
+  tool/version limits of observed output representations. The caller decides how to use those records.
 - Multiple concurrent orchestrators must not conflict through anything this skill puts on disk. Every scratch file,
   prompt, result file, event log, and stderr log it prescribes is named by the run id the caller supplies, in scratch
   space private to the session; nothing uses a fixed path.

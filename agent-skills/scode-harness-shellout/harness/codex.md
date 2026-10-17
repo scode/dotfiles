@@ -61,3 +61,28 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-6.1-sol -o <scratch-file
   use a foreground timeout only when it is shorter than the monitoring interval. `codex exec` streams a transcript while
   working, so a log that keeps growing is a liveness signal, and one stuck at `Reading additional input from stdin...`
   is the startup hang above.
+
+## Inspecting delivered tool results
+
+When a caller needs evidence of what the agent received, keep the persisted session as well as the `--json` event
+stream. Do not launch with `--ephemeral`. The JSON stream's completed command output can contain the entire stdout even
+when the agent received a shortened result. `-o` contains only the final message.
+
+For a local CLI session, locate the rollout whose filename ends in the exact `thread_id` from `thread.started`, under
+the launch's effective Codex home (`CODEX_HOME`, or `~/.codex` when unset), in `sessions/`. List matching paths before
+reading any content, and confirm its `session_meta` ID and working directory. A thread ID mentioned inside some other
+session is not identity evidence. Keep the exact rollout path with the recorded handle. A remote backend or an ephemeral
+session may not expose a local rollout; do not assume local history exists for every native child.
+
+Codex CLI 0.163.0 was checked with a deliberately shortened command result and a same-thread resume. The rollout's
+`response_item` records with payload type `custom_tool_call_output` held the delivered result as an array of
+`input_text` blocks; `call_id` joined it to the `custom_tool_call` input. Its text included a truncation warning and
+omission marker. The matching `event_msg` completed `CommandExecution.aggregated_output` retained the full stdout. Other
+tools may use different result records. Inspect the actual representation before extracting it; these observations do
+not establish all versions, providers or tools.
+
+Extract the matching call and result with their rollout line numbers and complete content, in bounded batches that the
+caller can actually inspect. Read all content blocks. If a result contains another tool's JSON as text, inspect that
+inner result and its truncation metadata too. Do not substitute the raw command event or a saved full-output file for
+the delivered result. Reading that file in a later tool call produces separate evidence. Keep each resume's event log
+and confirm it identifies the original thread; resumes append to the same persisted rollout in the checked version.
