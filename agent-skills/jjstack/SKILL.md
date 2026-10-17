@@ -70,10 +70,12 @@ environment already guarantees those operations work inside it.
 - "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with `jj
   new --insert-after ...`, resolve any descendant conflicts, bookmark it, and `submit`, which creates the new PR,
   retargets the PR above it, and pushes every rewritten descendant.
-- "publish the PRs" or "mark the PRs ready" Run `gh pr ready <n>` for each named or implied PR, bottom-up, and report
-  which PRs were marked ready. A named subset ("publish 329 and up") means exactly those PRs and no others; an
-  unqualified request means the current stack. A request to publish is not a request to merge, and it does not change
-  how later PRs get created: the next "make a PR" is still a draft.
+- "publish the PRs" or "mark the PRs ready" Run the script's `publish`, with `--prs <list>` (comma-separated PR numbers)
+  for a named subset, and report which PRs it marked ready (its `JJSTACK_PUBLISHED` lines). A named subset ("publish 329
+  and up") means exactly those PRs and no others; an unqualified request means the current stack, which is what
+  `publish` without `--prs` covers. It refuses PRs GitHub does not show as they are locally (the selected ones and every
+  PR below them), since publishing starts CI on draft-gated repos; run `submit` first. A request to publish is not a
+  request to merge, and it does not change how later PRs get created: the next "make a PR" is still a draft.
 - "run CI on the stack", "run CI on PR N", "kick off CI", or "make sure CI passes" Trigger one run per named or implied
   PR without changing any PR's draft state: `gh workflow run <workflow> --ref <bookmark>` on a repo whose workflow
   allows `workflow_dispatch`, and report the run URLs. This is a one-off. Marking the PR ready would also start a run,
@@ -284,6 +286,11 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   optionally rewords it, and submits; see "Building and updating the stack".
 - `sync`: brings the stack along after PRs merged outside the script or the default branch moved, and submits; see
   "Building and updating the stack".
+- `publish [--prs <list>]`: marks the stack's PRs, or the listed ones, ready for review, bottom-up, and prints a
+  `JJSTACK_PUBLISHED` line per PR (`action=ready` or `action=already-ready`). Before marking any PR ready, it refuses a
+  listed PR that is not in the stack, and any PR, up to the topmost listed one, whose head or base on GitHub is not the
+  local one or that has no PR yet. Run from the middle of a stack, it stops on the PRs above; pass the top bookmark as
+  `--top` there.
 - `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
   prints a `JJSTACK_SUBMITTED` line per PR naming what it did. It runs every check before its first write. Within one PR
   it retargets before pushing, because the push starts CI for the new head and a base-dependent check has to see the
