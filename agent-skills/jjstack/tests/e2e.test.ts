@@ -1,7 +1,7 @@
 /**
- * End-to-end tests for the jjstack script: whole commands (`submit`, `land`, `fast-land`, `stop`) run as subprocesses
- * against a real jj checkout, a real bare Git repository playing GitHub's copy of the repo, and `fake-gh.ts` standing
- * in for the `gh` CLI. Run them with `deno test -A agent-skills/jjstack/tests/` (see `../AGENTS.md`).
+ * End-to-end tests for the jjstack script: each of its commands run whole, as a subprocess, against a real jj checkout,
+ * a real bare Git repository playing GitHub's copy of the repo, and `fake-gh.ts` standing in for the `gh` CLI. Run them
+ * with `deno test -A agent-skills/jjstack/tests/` (see `../AGENTS.md`).
  *
  * The unit tests inside the script cover its decision logic; these cover the sequences around it that only show up
  * when the pieces run together: retarget-before-push ordering, pushing only the PR a landing is merging, retries of
@@ -146,6 +146,140 @@ async function stackOf(w: World, n: number): Promise<string[]> {
   const r = await jjstack(w, ["submit"]);
   assertEquals(r.code, 0, r.err);
   return names;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// init
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Clones the world's remote with plain Git (no jj) into a new directory and returns its path: the checkout an agent
+ * finds when a repository has never been used with jj.
+ */
+async function plainClone(w: World, name: string): Promise<string> {
+  const dir = `${w.root}/${name}`;
+  await $`git clone -q ssh://git@github.com/o/r.git ${dir}`.env(w.env).stdin("null").quiet();
+  return dir;
+}
+
+/** Runs the jjstack script against `dir` instead of the world's jj checkout. */
+async function jjstackIn(w: World, dir: string, args: string[]) {
+  const r = await $`${SCRIPT} ${args} --dir ${dir} --repo o/r`.env(w.env).stdin("null").noThrow()
+    .stdout("piped").stderr("piped");
+  return { code: r.code, out: r.stdout, err: r.stderr };
+}
+
+/**
+ * `init` is the one call an agent makes at the start of a session, so in a plain Git checkout whose jj has no identity
+ * it must do the whole bootstrap: create a colocated jj repo, copy Git's identity into it, and fix the author of the
+ * working-copy commit `jj git init` made. Before it, the other commands refuse and point to it. Run again, it changes
+ * nothing. Its bootstrap commands, which run before the run log exists, still end up in the log.
+ */
+Deno.test("init bootstraps a plain Git checkout with Git's identity and is a no-op the second time", async () => {
+  await withWorld(async (w) => {
+    await Deno.writeTextFile(`${w.root}/jj-empty.toml`, "");
+    w.env.JJ_CONFIG = `${w.root}/jj-empty.toml`;
+    const dir = await plainClone(w, "plain");
+    const before = await jjstackIn(w, dir, ["status"]);
+    assertEquals(before.code, 3, before.err);
+    assertStringIncludes(before.err, "code=E_JJ_NOT_A_REPO");
+    assertStringIncludes(before.err, "jjstack init");
+
+    let r = await jjstackIn(w, dir, ["init"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(
+      r.out,
+      "JJSTACK_INIT repo=o/r default=main jj=created identity=copied:user.name,user.email author=fixed",
+    );
+    const sh = $.build$({ commandBuilder: (b) => b.cwd(dir).env(w.env).stdin("null").quiet() });
+    assertEquals((await sh`jj log --no-graph -r @ -T ${"author.email()"}`.text()).trim(), "test@example.com");
+    assertEquals((await sh`jj config get user.name`.text()).trim(), "Test");
+    assertEquals((await sh`git rev-parse --absolute-git-dir`.text()).trim(), `${dir}/.git`);
+    const log = r.out.match(/^JJSTACK_LOG path=(.*)$/m)?.[1] ?? "";
+    assertStringIncludes(await Deno.readTextFile(log), "git init --colocate");
+
+    r = await jjstackIn(w, dir, ["init"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_INIT repo=o/r default=main jj=existing identity=ok author=ok");
+  });
+});
+
+/**
+ * Run from a subdirectory, `jj git init --colocate` would create a new, empty Git repository in that subdirectory
+ * instead of using the enclosing one (jj 0.46). `init` must set up the checkout at its top level.
+ */
+Deno.test("init from a subdirectory sets up jj at the Git top level", async () => {
+  await withWorld(async (w) => {
+    const dir = await plainClone(w, "plain");
+    await Deno.mkdir(`${dir}/sub/deeper`, { recursive: true });
+    const r = await jjstackIn(w, `${dir}/sub/deeper`, ["init"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "jj=created");
+    assert((await Deno.stat(`${dir}/.jj`)).isDirectory);
+    await assertRejectsNotFound(`${dir}/sub/deeper/.jj`);
+    await assertRejectsNotFound(`${dir}/sub/deeper/.git`);
+  });
+});
+
+/**
+ * The identity belongs to the user: with none in jj or Git, `init` refuses rather than inventing one, and it decides
+ * that before writing anything, so the refusal leaves the checkout as it was (exit 3, no jj repo created).
+ */
+Deno.test("init refuses when neither jj nor Git has an identity, before writing anything", async () => {
+  await withWorld(async (w) => {
+    const dir = await plainClone(w, "plain");
+    await Deno.writeTextFile(`${w.root}/jj-empty.toml`, "");
+    await Deno.writeTextFile(`${w.root}/gitconfig-empty`, "");
+    w.env.JJ_CONFIG = `${w.root}/jj-empty.toml`;
+    w.env.GIT_CONFIG_GLOBAL = `${w.root}/gitconfig-empty`;
+    const r = await jjstackIn(w, dir, ["init"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_INIT_NO_IDENTITY");
+    await assertRejectsNotFound(`${dir}/.jj`);
+  });
+});
+
+/**
+ * A checkout someone set up with `jj git init` before jj had an identity, and gave one later, still has a working-copy
+ * commit with an empty author, which jj will not push once it is committed. `init` repairs it in an existing repo too,
+ * not only right after creating one.
+ */
+Deno.test("init fixes an empty working-copy author in an existing jj checkout", async () => {
+  await withWorld(async (w) => {
+    const dir = await plainClone(w, "plain");
+    await Deno.writeTextFile(`${w.root}/jj-empty.toml`, "");
+    const configured = w.env.JJ_CONFIG;
+    w.env.JJ_CONFIG = `${w.root}/jj-empty.toml`;
+    await $`jj git init --colocate`.cwd(dir).env(w.env).stdin("null").quiet();
+    w.env.JJ_CONFIG = configured;
+    const r = await jjstackIn(w, dir, ["init"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "jj=existing identity=ok author=fixed");
+    const email = await $`jj log --no-graph -r @ -T ${"author.email()"}`.cwd(dir).env(w.env).stdin("null").text();
+    assertEquals(email.trim(), "test@example.com");
+  });
+});
+
+/** `init` sets up Git checkouts only; a directory that is neither jj nor Git is refused, not turned into a new repo. */
+Deno.test("init refuses a directory that is not a Git checkout", async () => {
+  await withWorld(async (w) => {
+    await Deno.mkdir(`${w.root}/empty`);
+    const r = await jjstackIn(w, `${w.root}/empty`, ["init"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_INIT_NOT_GIT");
+    await assertRejectsNotFound(`${w.root}/empty/.jj`);
+  });
+});
+
+/** Asserts that `path` does not exist. */
+async function assertRejectsNotFound(path: string) {
+  try {
+    await Deno.stat(path);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return;
+    throw err;
+  }
+  throw new Error(`${path} exists`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

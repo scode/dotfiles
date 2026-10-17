@@ -13,8 +13,8 @@ manages changes and bookmarks.
 
 If the user explicitly asks to use `jj`, `Jujutsu`, or `$jjstack`, treat that as direction to use this workflow even in
 a plain Git checkout. Do not silently fall back to a Git-only flow just because the repo has not been bootstrapped yet.
-Initialize `jj` in place first unless the user explicitly says not to. This preference lasts for the rest of the
-session, or until the user explicitly says to stop using jjstack.
+Set the checkout up with the bundled script's `init` command first (see "Preconditions"). This preference lasts for the
+rest of the session, or until the user explicitly says to stop using jjstack.
 
 If a `jj` or `gh` command is blocked by sandboxing, approval policy, missing escalation, or any similar execution
 permission issue, stop and ask the user how to proceed. Do not downgrade to a Git-only, manual, or otherwise different
@@ -45,9 +45,8 @@ for the full rule.
 This skill should treat a few natural-language requests as specific workflow intents.
 
 An explicit request to use `jj`, `Jujutsu`, or `$jjstack` is itself a workflow instruction. If the current checkout is
-not already bootstrapped for `jj`, the default behavior is to run `jj git init --git-repo .` from the repo root and
-continue with the `jj` workflow. Only stop to ask instead of initializing when doing so would be risky in context or the
-user explicitly asked you not to modify repo setup.
+not already set up for `jj`, run the script's `init`, which initializes jj in place, and continue with the `jj`
+workflow. Do not stop to ask first.
 
 When an agent is driving this workflow from a sandboxed environment, prefer running the actual `jj` and `gh` workflow
 commands outside the sandbox by default. In practice `jj` often needs to lock Git metadata such as `packed-refs`, and
@@ -121,28 +120,33 @@ or wrong, while "update" means revise the existing PR.
 
 ## Preconditions
 
-Confirm these once per repo and session, not before every command:
+Run the bundled script's `init` once per session in each checkout, before any other jjstack work there
+(`<skill-dir>/scripts/jjstack init --dir <checkout>`; see "The bundled `jjstack` script"). It is the only setup call: do
+not check tool versions, `gh auth status`, or the jj identity separately. In a checkout that is already set up it
+changes nothing, and otherwise:
 
-- `jj --version`, `deno --version`, and `gh auth status` work. The bundled script needs `deno` and Git 2.40 or later.
-- `jj config get user.name` and `jj config get user.email` are set.
+- in a plain Git checkout it runs `jj git init --colocate` at the top level, without asking first;
+- when jj has no `user.name` or `user.email`, it copies Git's into the repository's jj config;
+- when the working-copy commit has an empty author, it runs `jj metaedit --update-author @`, because jj refuses to push
+  a commit without one;
+- then it runs the checks every command shares: the repository and its default branch resolve on GitHub (which needs
+  `gh` to be logged in), the remote points at that repository, and the checkout is colocated.
 
-If `jj` is missing, use the official install instructions; on a system with a working Rust toolchain, `cargo install
---locked --bin jj jj-cli` is a reasonable fallback. If `deno` is missing, say so and ask whether to install it.
+It prints a `JJSTACK_INIT` line saying what it changed. When it stops, the usual rules apply (see "When the script
+stops"). A refusal with `E_INIT_NO_IDENTITY` means neither jj nor Git has an identity; ask the user for one. If `jj`
+itself is missing, use the official install instructions; on a system with a working Rust toolchain, `cargo install
+--locked --bin jj jj-cli` is a reasonable fallback. If `deno` is missing, the script cannot run at all: say so and ask
+whether to install it. The script also needs Git 2.40 or later, for `git merge-tree --merge-base`; on an older Git a
+landing stops at its first `merge-tree` call.
 
-If the jj identity is missing, copy the Git one: read `git config user.name` and `git config user.email`, then run `jj
-config set --repo user.name '<name>'` and `jj config set --repo user.email '<email>'` with those values. If the
-working-copy commit already exists with the empty identity, also run `jj metaedit --update-author @`; otherwise the
-first commit inherits the broken identity and will not push in a normal GitHub workflow. If Git has no identity either,
-ask the user for one.
-
-Treat the preconditions as good until a command fails in a way that points at auth or config, or you switch checkouts.
+Treat the setup as good until a command fails in a way that points at auth or config, or you switch checkouts.
 
 ## Bootstrapping a repo into jj
 
-For a fresh clone, prefer `jj git clone --colocate <repo-url> <directory>`. For an existing plain Git checkout, run `jj
-git init --git-repo .` from the repo root. When the user explicitly asked for `jj`, initializing is the default, not a
-suggestion: the mistake to avoid is noticing a plain Git checkout and drifting into a Git-only PR flow. Then start from
-`trunk()` if jj defined it, or from the tracked default bookmark you actually have (usually `main@origin`).
+For a fresh clone, prefer `jj git clone --colocate <repo-url> <directory>`, then `init`. For an existing plain Git
+checkout, `init` does the bootstrap. The mistake to avoid is noticing a plain Git checkout and drifting into a Git-only
+PR flow. Then start from `trunk()` if jj defined it, or from the tracked default bookmark you actually have (usually
+`main@origin`).
 
 Use a colocated repo; the script works only in one. Detached Git HEAD is normal in this workflow and not a sign the
 checkout is broken: the jj graph and the bookmark names are the source of truth. For `gh` commands you run yourself,
@@ -230,10 +234,11 @@ Code, the "Base directory for this skill" shown when the skill loads; for Codex,
 transcribe the script into shell commands. Every command takes `--dir <checkout>` and runs everything there, so it works
 from any working directory; `--repo owner/name` when `gh` cannot infer the repository from the checkout; `--remote
 <name>` for a remote other than `origin`; and `--top <rev>` for the top of the stack (default `@`). "The stack" is
-always the ancestry chain from the remote default branch to `--top`. Before anything else, every command checks that the
-remote fetches from and pushes to that repository alone, on the same host. A remote URL that uses an ssh host alias from
-`~/.ssh/config` does not name the host and is refused; use the real host name in the remote URL.
+always the ancestry chain from the remote default branch to `--top`. Before it reads or changes the stack, every command
+checks that the remote fetches from and pushes to that repository alone, on the same host. A remote URL that uses an ssh
+host alias from `~/.ssh/config` does not name the host and is refused; use the real host name in the remote URL.
 
+- `init`: sets the checkout up for the other commands and runs their shared checks; see "Preconditions".
 - `status`: prints, for each PR bottom-up, what `submit` would do, and a `JJSTACK_STATUS` line per PR. It fetches but
   changes nothing else.
 - `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
@@ -256,13 +261,14 @@ remote fetches from and pushes to that repository alone, on the same host. A rem
 ### The run log
 
 Every command except `stop` writes a timestamped log of its run to a file of its own under `.jj/jjstack-logs/` in the
-checkout and prints the path as `JJSTACK_LOG path=...`, the first line of its output. The log opens with the process id
-and arguments and, on success, ends with `finished ok`. In between it has every command the run executes, with its
-call-site code, exit status, and duration, the output of every command that failed or wrote something, and the ledger
-lines. Writes and fetches also get a line when they start, and any other command one once it has run for 30 seconds, so
-a tail shows a slow step in flight. Repeated identical status polls (the check wait, head convergence, mergeability) are
-logged once and then as a count with the time span they cover, and an unchanged wait gets a heartbeat line every five
-minutes. Old logs are pruned to the 20 newest, but never one modified in the last hour.
+checkout (an `init` that stops before the checkout is set up writes it to a temporary file, named on the `log:` line)
+and prints the path as `JJSTACK_LOG path=...`, the first line of its output. The log opens with the process id and
+arguments and, on success, ends with `finished ok`. In between it has every command the run executes, with its call-site
+code, exit status, and duration, the output of every command that failed or wrote something, and the ledger lines.
+Writes and fetches also get a line when they start, and any other command one once it has run for 30 seconds, so a tail
+shows a slow step in flight. Repeated identical status polls (the check wait, head convergence, mergeability) are logged
+once and then as a count with the time span they cover, and an unchanged wait gets a heartbeat line every five minutes.
+Old logs are pruned to the 20 newest, but never one modified in the last hour.
 
 Nothing requires reading it. It is there for checking on a long run while it goes, and for explaining a stop that the
 report and the ledger lines do not. When the user asks how a running landing is going, read the last 20 or so lines
