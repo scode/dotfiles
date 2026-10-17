@@ -17,6 +17,8 @@
  *   "Bringing the stack along".
  * - `publish [--prs 12,13]`: mark the stack's PRs (or the listed ones) ready for review. See "Publishing PRs".
  * - `goto --pr <n>`: put the working copy on top of PR n's commit. See "Going to a PR".
+ * - `ci [--prs 12,13] [--workflow <file>]`: dispatch one CI run per PR without changing draft state. See "Dispatching
+ *   CI".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -2085,6 +2087,96 @@ async function goto(ctx: Ctx, pr: number) {
   console.log(`JJSTACK_GOTO pr=${pr} bookmark=${bookmark} commit=${sha} github_head=${p.headRefOid}`);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Dispatching CI (`ci`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The one workflow on the default branch that can be dispatched, by file name. GitHub finds a workflow by its file on
+ * the default branch, so that is where to look; a plain text match for `workflow_dispatch` is enough to choose, because
+ * GitHub's 422 for a workflow without the trigger stays the authority. None, or more than one, is a refusal: which
+ * workflow is "the CI" is the user's call. (GitHub itself only needs the trigger in the dispatched branch's copy, which
+ * `ci` checks separately; observed on github.com, 2026-10.)
+ */
+async function dispatchableWorkflow(ctx: Ctx, tip: string): Promise<string> {
+  // `--full-tree` because the path is otherwise relative to `--dir`, which may be a subdirectory; `-z` so a name with
+  // unusual characters comes back as is rather than quoted.
+  const listing = await exec(
+    "E_CI_LIST_WORKFLOWS",
+    ctx.sh`git ls-tree --full-tree --name-only -z ${tip} .github/workflows/`,
+  );
+  const found: string[] = [];
+  for (const path of listing.split("\0").filter((f) => /\.ya?ml$/.test(f))) {
+    const text = await exec("E_CI_READ_WORKFLOW", ctx.sh`git show ${`${tip}:${path}`}`);
+    if (/\bworkflow_dispatch\b/.test(text)) found.push(path.slice(path.lastIndexOf("/") + 1));
+  }
+  if (found.length === 0) {
+    fail("E_CI_NO_DISPATCH", `no workflow in .github/workflows/ on ${ctx.defaultBranch} allows workflow_dispatch`);
+  }
+  if (found.length > 1) {
+    fail("E_CI_AMBIGUOUS", `several workflows allow workflow_dispatch (${found.join(", ")}); pass --workflow`);
+  }
+  return found[0];
+}
+
+/**
+ * `jjstack ci`: dispatches one run of a `workflow_dispatch` workflow per PR in the stack (or per PR `prs` lists), on
+ * that PR's branch, and prints a `JJSTACK_CI` line per PR with the run's URL. It never changes a PR's draft state: a
+ * request for CI is a one-off run, while marking a PR ready would start CI again on every later push.
+ *
+ * Refused before anything is dispatched: a listed PR that is not in the stack, any PR up to the topmost selected one
+ * that GitHub shows with another head or base than the local stack (the run would test code the local stack no longer
+ * has), no single dispatchable workflow when `workflow` is not given, a workflow file that is not on the default branch,
+ * and a selected PR whose own commit lacks the workflow or its trigger. GitHub runs the workflow file as it is on the dispatched branch and answers 422 when that
+ * version has no `workflow_dispatch` (observed on github.com, 2026-10), which is what a stack based on a default branch
+ * from before the workflow was added hits; `sync` brings it up to date. The dispatch goes through `gh api` (not
+ * `gh workflow run`, which is outside the `gh` surface the script keeps to) with `return_run_details`, so GitHub
+ * answers with the new run's URL instead of an empty 204; a GitHub that does not send it gets `run=unknown`.
+ */
+async function ci(ctx: Ctx, top: string, prs: string | undefined, workflow: string | undefined) {
+  const { steps } = await planSubmit(ctx, top, false, false);
+  const chosen = selectSynced(
+    { list: "E_USAGE_CI_PRS", missing: "E_CI_NOT_IN_STACK", unsynced: "E_CI_UNSYNCED" },
+    steps,
+    prs,
+  );
+  const tip = await ctx.resolve("E_CI_TIP", ctx.defaultRev);
+  const file = workflow ?? await dispatchableWorkflow(ctx, tip);
+  // GitHub finds the workflow by its file on the default branch and answers 404 otherwise, which is what a workflow
+  // still being added by a PR in the stack would get.
+  const onDefault = await run(
+    "E_CI_READ_DEFAULT_WORKFLOW",
+    ctx.sh`git cat-file -e ${`${tip}:.github/workflows/${file}`}`,
+  );
+  if (onDefault.code !== 0) {
+    fail(
+      "E_CI_NOT_ON_DEFAULT",
+      `${file} is not in .github/workflows/ on ${ctx.defaultBranch}, so GitHub cannot find it`,
+    );
+  }
+  for (const st of chosen) {
+    const own = await run("E_CI_READ_BRANCH_WORKFLOW", ctx.sh`git show ${`${st.unit.sha}:.github/workflows/${file}`}`);
+    if (own.code !== 0 || !/\bworkflow_dispatch\b/.test(own.stdout)) {
+      fail(
+        "E_CI_NOT_ON_BRANCH",
+        `PR #${st.pr!.number} (${st.unit.bookmark}) has no ${file} with a workflow_dispatch trigger in its own commit`,
+      );
+    }
+  }
+  for (const st of chosen) {
+    phase = `ci #${st.pr!.number}`;
+    const url = await exec(
+      "E_CI_DISPATCH",
+      ctx
+        .sh`gh api -X POST ${`repos/${ctx.repo}/actions/workflows/${file}/dispatches`} -f ${`ref=${st.unit.bookmark}`} \
+        -F return_run_details=true --jq ${".html_url // empty"}`,
+      { write: true },
+    );
+    console.log(`JJSTACK_CI pr=${st.pr!.number} bookmark=${st.unit.bookmark} workflow=${file} run=${url || "unknown"}`);
+  }
+  phase = "done";
+}
+
 /**
  * Opens a draft PR for a just-pushed bookmark and confirms GitHub recorded the intended head commit, base, and draft
  * state. Always a draft: ready is the user's switch (or a landing's, right before a merge), because on repos that gate
@@ -2874,6 +2966,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["sync",      { strings: [],                                                     booleans: [] }],
   ["publish",   { strings: ["prs"],                                                booleans: [] }],
   ["goto",      { strings: ["pr"],                                                 booleans: [] }],
+  ["ci",        { strings: ["prs", "workflow"],                                    booleans: [] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2914,6 +3007,12 @@ async function main() {
     const pr = String(args.pr ?? "");
     if (!/^[1-9][0-9]*$/.test(pr)) usage("E_USAGE_GOTO_PR", `goto needs --pr <number>, got '${pr}'`);
     await goto(ctx, Number(pr));
+  } else if (command === "ci") {
+    const workflow = args.workflow === undefined ? undefined : String(args.workflow);
+    if (workflow !== undefined && !/^[A-Za-z0-9._-]+\.ya?ml$/.test(workflow)) {
+      usage("E_USAGE_CI_WORKFLOW", `--workflow takes a workflow file name such as ci.yml, got '${workflow}'`);
+    }
+    await ci(ctx, top, args.prs as string | undefined, workflow);
   } else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
