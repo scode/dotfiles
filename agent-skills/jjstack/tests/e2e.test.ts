@@ -697,6 +697,46 @@ Deno.test("sync refuses when the stack continues above --top", async () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// publish
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * `publish` marks PRs ready bottom-up: a named subset means exactly those PRs and no others, and a bare `publish` means
+ * the whole stack, reporting the ones that already were ready instead of failing on them. Publishing a PR GitHub shows
+ * stale would start CI on code that was never pushed, so a stack that needs a `submit` is refused, as is a PR number
+ * that is not in the stack.
+ */
+Deno.test("publish marks the named PRs or the whole stack ready, and refuses an unsynced stack", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 3);
+    const drafts = async () => (await readState(w)).prs.map((p) => p.isDraft);
+    // Refusals come before any PR is marked ready, so a refused run leaves every PR a draft.
+    let r = await jjstack(w, ["publish", "--prs", "1,9"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_PUBLISH_NOT_IN_STACK");
+    await inWork(w)`jj describe -r pr2 -m ${"feat: add pr2, reworded locally\n\nWhy."}`;
+    r = await jjstack(w, ["publish"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_PUBLISH_UNSYNCED");
+    assertEquals(await drafts(), [true, true, true]);
+    assertEquals((await jjstack(w, ["submit"])).code, 0);
+
+    r = await jjstack(w, ["publish", "--prs", "2,3"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals(await drafts(), [true, false, false]);
+    r = await jjstack(w, ["publish"]);
+    assertEquals(r.code, 0, r.err);
+    const lines = r.out.split("\n").filter((l) => l.startsWith("JJSTACK_PUBLISHED "));
+    assertEquals(lines, [
+      "JJSTACK_PUBLISHED pr=1 bookmark=pr1 action=ready",
+      "JJSTACK_PUBLISHED pr=2 bookmark=pr2 action=already-ready",
+      "JJSTACK_PUBLISHED pr=3 bookmark=pr3 action=already-ready",
+    ]);
+    assertEquals(await drafts(), [false, false, false]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 

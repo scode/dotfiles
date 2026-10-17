@@ -15,6 +15,7 @@
  *   commit, optionally reword it, and submit. See "Updating a PR".
  * - `sync`: bring the stack along after PRs merged outside the script or the default branch moved, and submit. See
  *   "Bringing the stack along".
+ * - `publish [--prs 12,13]`: mark the stack's PRs (or the listed ones) ready for review. See "Publishing PRs".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -1992,6 +1993,66 @@ async function sync(ctx: Ctx, top: string) {
   else console.log("nothing left to submit");
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Publishing PRs (`publish`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The submit-plan steps a command acts on, bottom-up: every step, or only those whose PR numbers `prs` lists (a list
+ * naming a PR that is not in the stack is refused). Every step up to the topmost selected one must already be a PR that
+ * GitHub shows with the local head and base, because acting on a PR GitHub shows stale (publishing it, which starts CI
+ * on draft-gated repos, or dispatching CI for it) would run CI on a version of the code the local stack no longer has.
+ * The PRs below a selected one count too, since a PR's diff and CI on GitHub build on the branches below it. `submit`
+ * brings GitHub in line first. Pure, so it is tested.
+ */
+function selectSynced(
+  codes: { list: string; missing: string; unsynced: string },
+  steps: SubmitStep[],
+  prs: string | undefined,
+): SubmitStep[] {
+  const want = prs === undefined ? undefined : parsePrList(codes.list, prs);
+  const inStack = steps.flatMap((st) => st.pr === undefined ? [] : [st.pr.number]);
+  const missing = (want ?? []).filter((n) => !inStack.includes(n));
+  if (missing.length > 0) fail(codes.missing, `PR(s) ${missing.map((n) => `#${n}`).join(", ")} are not in the stack`);
+  const chosen = want === undefined ? steps : steps.filter((st) => st.pr !== undefined && want.includes(st.pr.number));
+  const checked = steps.slice(0, steps.indexOf(chosen.at(-1)!) + 1);
+  const stale = checked.filter((st) =>
+    st.pr === undefined || st.push || st.retarget || st.pr.headRefOid !== st.unit.sha
+  );
+  if (stale.length > 0) {
+    fail(
+      codes.unsynced,
+      `GitHub does not show the local stack for ${stale.map((st) => st.unit.bookmark).join(", ")}; run submit first`,
+    );
+  }
+  return chosen;
+}
+
+/**
+ * `jjstack publish`: marks the stack's PRs, or only those `prs` lists, ready for review, bottom-up, with a
+ * `JJSTACK_PUBLISHED` line per PR saying whether it was marked ready or already was. It changes nothing else: a PR
+ * stays where it is, and later PRs are still created as drafts.
+ */
+async function publish(ctx: Ctx, top: string, prs: string | undefined) {
+  const { steps } = await planSubmit(ctx, top, false, false);
+  const chosen = selectSynced(
+    { list: "E_USAGE_PUBLISH_PRS", missing: "E_PUBLISH_NOT_IN_STACK", unsynced: "E_PUBLISH_UNSYNCED" },
+    steps,
+    prs,
+  );
+  for (const st of chosen) {
+    const pr = st.pr!;
+    phase = `publish #${pr.number}`;
+    let action = "already-ready";
+    if (pr.isDraft) {
+      await exec("E_PUBLISH_READY", ctx.sh`gh pr ready ${pr.number} -R ${ctx.repo}`, { write: true });
+      action = "ready";
+    }
+    console.log(`JJSTACK_PUBLISHED pr=${pr.number} bookmark=${st.unit.bookmark} action=${action}`);
+  }
+  phase = "done";
+}
+
 /**
  * Opens a draft PR for a just-pushed bookmark and confirms GitHub recorded the intended head commit, base, and draft
  * state. Always a draft: ready is the user's switch (or a landing's, right before a merge), because on repos that gate
@@ -2779,6 +2840,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["new-pr",    { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["amend",     { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["sync",      { strings: [],                                                     booleans: [] }],
+  ["publish",   { strings: ["prs"],                                                booleans: [] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2813,6 +2875,7 @@ async function main() {
     const messageFile = args["message-file"] === undefined ? undefined : String(args["message-file"]);
     await amend(ctx, String(args.bookmark), messageFile, args._ as string[]);
   } else if (command === "sync") await sync(ctx, top);
+  else if (command === "publish") await publish(ctx, top, args.prs as string | undefined);
   else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
@@ -3034,6 +3097,43 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   const pr = parseCli(["new-pr", "--bookmark", "b", "--message-file", "/m", "src/a.ts", "007", "1e3"]);
   assertEquals([pr.args.bookmark, pr.args["message-file"], pr.args._], ["b", "/m", ["src/a.ts", "007", "1e3"]]);
   assertEquals(parseCli(["new-pr", "--bookmark", "b"]).args._, []);
+});
+
+/**
+ * `publish` and `ci` act only on PRs GitHub shows as the local stack has them, so this selection decides whether CI can
+ * start on code nobody has locally. A PR below the selected ones counts too, a PR GitHub still shows at an old head
+ * counts even when the remote branch already moved, and a list naming a PR outside the stack is refused.
+ */
+Deno.test("selectSynced picks listed or all PRs bottom-up and refuses stale ones up to the topmost selected", () => {
+  const step = (n: number, stale: Partial<SubmitStep> = {}, ghHead = `sha${n}`): SubmitStep => ({
+    unit: { sha: `sha${n}`, changeId: `c${n}`, parentSha: `sha${n - 1}`, bookmark: `b${n}` },
+    base: n === 1 ? "main" : `b${n - 1}`,
+    pr: {
+      number: n,
+      headRefName: `b${n}`,
+      baseRefName: n === 1 ? "main" : `b${n - 1}`,
+      headRefOid: ghHead,
+      isCrossRepository: false,
+      isDraft: true,
+    },
+    title: "t",
+    body: "",
+    retarget: false,
+    push: false,
+    create: false,
+    retext: false,
+    ...stale,
+  });
+  const codes = { list: "E_TEST_SELECT_LIST", missing: "E_TEST_SELECT_MISSING", unsynced: "E_TEST_SELECT_UNSYNCED" };
+  const pick = (steps: SubmitStep[], prs?: string) => selectSynced(codes, steps, prs).map((st) => st.pr!.number);
+  assertEquals(pick([step(1), step(2), step(3)]), [1, 2, 3]);
+  assertEquals(pick([step(1), step(2), step(3)], "3,1"), [1, 3]);
+  // Stale above the topmost selected PR does not matter; stale at or below it does.
+  assertEquals(pick([step(1), step(2), step(3, { push: true })], "2"), [2]);
+  assertThrows(() => pick([step(1, { retarget: true }), step(2)], "2"), JjstackError, "run submit first");
+  assertThrows(() => pick([step(1), step(2, {}, "old")], "2"), JjstackError, "run submit first");
+  assertThrows(() => pick([step(1), step(2, { pr: undefined, create: true })]), JjstackError, "run submit first");
+  assertThrows(() => pick([step(1)], "1,9"), JjstackError, "#9");
 });
 
 /** The log is only as useful as its command lines are readable and copy-pasteable. */
