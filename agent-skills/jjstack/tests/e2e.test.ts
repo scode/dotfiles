@@ -450,6 +450,116 @@ Deno.test("new-pr refuses bad names, used names, a bookmarked working copy, and 
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// amend
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** The content of `file` on the bare repo's branch `branch`, without its final newline. */
+async function remoteFile(w: World, branch: string, file: string): Promise<string> {
+  return await $`git --git-dir ${w.remote} show ${`${branch}:${file}`}`.env(w.env).text();
+}
+
+/**
+ * `amend` is the one call for "update the PR": from the top of the stack it folds the named working-copy changes into a
+ * lower PR's commit, rewords it from a message file, and submits, so the amended PR's branch, title, and body change
+ * and the PR above it is pushed rebased onto the new commit. Changes outside the paths stay in the working copy.
+ */
+Deno.test("amend folds working-copy changes into a lower PR, rewords it, and pushes the PRs above", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await Deno.writeTextFile(`${w.work}/pr1.txt`, "pr1 fixed\n");
+    await Deno.writeTextFile(`${w.work}/later.txt`, "not yet\n");
+    const m = await messageFile(w, "m", "feat: add pr1, fixed\n\nWhy, revised.\n");
+    const r = await jjstack(w, ["amend", "--bookmark", "pr1", "--message-file", m, "pr1.txt"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_AMENDED bookmark=pr1 ");
+    assertStringIncludes(r.out, "JJSTACK_SUBMITTED pr=1 bookmark=pr1 base=main actions=pushed,retexted");
+    assertStringIncludes(r.out, "JJSTACK_SUBMITTED pr=2 bookmark=pr2 base=pr1 actions=pushed");
+    assertEquals(await remoteFile(w, "pr1", "pr1.txt"), "pr1 fixed");
+    assertEquals(await remoteFile(w, "pr2", "pr1.txt"), "pr1 fixed");
+    const s = await readState(w);
+    assertEquals([s.prs[0].title, s.prs[0].body], ["feat: add pr1, fixed", "Why, revised."]);
+    assertEquals((await inWork(w)`jj diff --name-only -r @`.text()).trim(), "later.txt");
+  });
+});
+
+/**
+ * The other way to edit a PR, against its own tree: `jj new <bookmark>`, edit, then `amend` from there, which folds the
+ * working copy into its parent and pushes the rewritten PRs above it even though the working copy is not on top.
+ */
+Deno.test("amend from a working copy on the PR's own commit pushes the PRs above it", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await inWork(w)`jj new pr1`;
+    await Deno.writeTextFile(`${w.work}/pr1.txt`, "pr1 fixed\n");
+    const r = await jjstack(w, ["amend", "--bookmark", "pr1"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals(await remoteFile(w, "pr2", "pr1.txt"), "pr1 fixed");
+    assertEquals((await readState(w)).prs[0].title, "feat: add pr1");
+  });
+});
+
+/**
+ * What `amend` refuses before writing anything (exit 3): a bookmark that does not exist, one above the working copy
+ * (its commit is not below `@`), and nothing to fold in without a new message. An amend that conflicts a commit above
+ * is not refused up front: it happens, and `submit` then stops at the conflicted commit after the write (exit 4), which
+ * is the normal cost of changing a lower layer.
+ */
+Deno.test("amend refuses a missing or higher bookmark and an empty amend, and stops on conflicts above", async () => {
+  await withWorld(async (w) => {
+    await commit(w, "f.txt", "a\n", "feat: add f", "pr1");
+    await commit(w, "f.txt", "b\n", "feat: change f", "pr2");
+    assertEquals((await jjstack(w, ["submit"])).code, 0);
+    const refused = async (args: string[], code: string) => {
+      const r = await jjstack(w, ["amend", ...args]);
+      assertEquals(r.code, 3, r.err);
+      assertStringIncludes(r.err, `code=${code}`);
+    };
+    await refused(["--bookmark", "nope"], "E_AMEND_NO_BOOKMARK");
+    await refused(["--bookmark", "pr1"], "E_AMEND_NOTHING");
+    await inWork(w)`jj new pr1`;
+    await refused(["--bookmark", "pr2"], "E_AMEND_NOT_BELOW");
+    await Deno.writeTextFile(`${w.work}/f.txt`, "c\n");
+    const r = await jjstack(w, ["amend", "--bookmark", "pr1"]);
+    assertEquals(r.code, 4, r.err);
+    assertStringIncludes(r.out, "JJSTACK_AMENDED bookmark=pr1 ");
+    assertStringIncludes(r.err, "code=E_STACK_CONFLICTED");
+  });
+});
+
+/**
+ * The working-copy states `amend` must refuse before folding anything: a working copy that is itself a PR's commit
+ * (after `jj edit pr2`, folding it would move all of pr2 into pr1 and abandon pr2's commit), one with conflicts (they
+ * would move into the PR), and bookmarks above the amended commit that fork, where there is no single stack to submit.
+ */
+Deno.test("amend refuses a bookmarked or conflicted working copy and a forked stack above", async () => {
+  await withWorld(async (w) => {
+    await commit(w, "f.txt", "a\n", "feat: add f", "pr1");
+    await commit(w, "f.txt", "b\n", "feat: change f", "pr2");
+    assertEquals((await jjstack(w, ["submit"])).code, 0);
+    const refused = async (code: string) => {
+      const r = await jjstack(w, ["amend", "--bookmark", "pr1"]);
+      assertEquals(r.code, 3, r.err);
+      assertStringIncludes(r.err, `code=${code}`);
+    };
+    await inWork(w)`jj edit pr2`;
+    await refused("E_AMEND_WC_BOOKMARKED");
+
+    // A working copy edited against pr1's tree and then moved on top of pr2 conflicts with pr2's change to f.txt.
+    await inWork(w)`jj new pr1`;
+    await Deno.writeTextFile(`${w.work}/f.txt`, "c\n");
+    await inWork(w)`jj rebase -r @ -d pr2`;
+    await refused("E_AMEND_WC_CONFLICTED");
+
+    await inWork(w)`jj new pr1 -m ${"side"}`;
+    await Deno.writeTextFile(`${w.work}/side.txt`, "side\n");
+    await inWork(w)`jj bookmark set side -r @`;
+    await inWork(w)`jj new side`;
+    await Deno.writeTextFile(`${w.work}/f.txt`, "d\n");
+    await refused("E_AMEND_FORKED");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 

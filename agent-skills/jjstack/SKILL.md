@@ -61,8 +61,8 @@ environment already guarantees those operations work inside it.
   reviewable work on top of it, default to "make the next PR" rather than pushing back. In this workflow that is a very
   common meaning of "make a PR": turn the new top-of-stack work into its own PR with `new-pr`.
 - "update the PR" Update the existing PR for the current bookmark. Do not create a new bookmark or a new PR unless the
-  user explicitly asks for that. Rewrite or extend the current change and `submit`, which pushes the same bookmark again
-  and keeps the same PR number.
+  user explicitly asks for that. Make the edit and fold it into the PR's commit with the script's `amend` (see "Building
+  and updating the stack"), which pushes the same bookmark again and keeps the same PR number.
 - "rewrite the PR cleanly" Treat this as "update the PR by rewriting commits instead of adding a follow-up fixup
   commit".
 - "make the next PR" Create a new reviewable commit on top of the current stack with a new stable bookmark and its own
@@ -204,9 +204,11 @@ jj commit <paths> -m 'wip'
 jj describe -r @- --stdin < <message-file>
 ```
 
-To bring an existing PR's title and body in line with a reworded commit, run `submit --update-text`. Rewording a commit
-rewrites the commits above it too, so `submit` pushes those as well, which starts CI for them on repos that run CI for
-drafts.
+To reword a PR, pass the new message to `amend --bookmark <name> --message-file <file>`, which rewords its commit and
+updates the PR's title and body in the same call. Like `submit --update-text`, it resets the title and body of every PR
+in the stack from its commit message, so edits made to PR text on GitHub are overwritten. To bring a PR's title and body
+in line with a commit you reworded some other way, run `submit --update-text`. Rewording a commit rewrites the commits
+above it too, so `submit` pushes those as well, which starts CI for them on repos that run CI for drafts.
 
 ## Building and updating the stack
 
@@ -226,17 +228,25 @@ the working copy on top of the stack, or pass the top bookmark as `--top`; it re
   conflict, a working copy that is not on top of the stack, and anything `submit` would refuse about the stack below.
   Once it prints `JJSTACK_COMMITTED`, the commit and bookmark exist: if it stops after that, fix the cause and run
   `submit`, not `new-pr` again.
-- Update a PR: `jj new <bookmark>`, make the edit, `jj squash` to fold it into the bookmarked commit, then `jj new
-  <top-bookmark>` to put the working copy back on top, and `submit`. jj rebases everything above the edit, and `submit`
-  pushes all of it. Each PR is exactly one commit: a follow-up commit with the bookmark moved onto it leaves the
+- Update a PR: make the edit in the working copy and run `amend --bookmark <name> [--message-file <file>] [paths...]`.
+  It folds the working copy's changes (only the given paths, when there are any) into that PR's commit, rewords the
+  commit when given a message file, and submits; jj rebases everything above the edit, and the submit pushes all of it.
+  Run it from the top of the stack, or, when the edit touches lines that PRs higher up also change, from the PR's own
+  commit: `jj new <bookmark>`, edit, `amend --bookmark <bookmark>`, then `jj new <top-bookmark>` to put the working copy
+  back on top. It refuses, before changing anything, a bookmark that is not in the stack below the working copy, an
+  amend with no changes and no message, and a working copy that has conflicts or carries a bookmark of its own (it is
+  then a PR's commit, which `jj edit` leaves you on; use `jj new <bookmark>` instead). Once it prints `JJSTACK_AMENDED`,
+  the amend is done: if the submit after it stops, fix the cause and run `submit`, with `--update-text` when the amend
+  reworded the commit. Each PR is exactly one commit: a follow-up commit with the bookmark moved onto it leaves the
   original commit unbookmarked, and `submit` refuses that rather than let GitHub fold it in silently.
 - Insert a PR into the stack: `jj new --insert-after <bookmark-below>`, make the change, describe it, `jj bookmark set
   <name> -r @`, then `jj new <top-bookmark>` and `submit`. It creates the inserted PR and retargets the PR above it.
 - Restack, reorder, or drop a commit: do it with `jj rebase` or `jj abandon`, then `submit`.
 
 Rewriting a lower commit can leave the commits above it conflicted. That is a normal part of changing lower layers, not
-a surprise. `submit` refuses to push a conflicted commit, so resolve them bottom-up: `jj new <conflicted-bookmark>`,
-resolve the markers (or use `jj resolve`), `jj squash`, and repeat, then `submit`.
+a surprise. `submit` refuses to push a conflicted commit, and an `amend` that conflicts the amended commit or those
+above it stops the same way after printing `JJSTACK_AMENDED` (the amend itself is done), so resolve them bottom-up: `jj
+new <conflicted-bookmark>`, resolve the markers (or use `jj resolve`), `jj squash`, and repeat, then `submit`.
 
 `status` shows the same plan without acting on it. To see what changed since a bookmark was last pushed, use `jj
 interdiff --from <bookmark>@origin --to <bookmark>`.
@@ -258,6 +268,8 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   changes nothing else.
 - `new-pr --bookmark <name> --message-file <file> [paths...]`: commits working-copy changes as the next PR, bookmarks
   the commit, and submits; see "Building and updating the stack".
+- `amend --bookmark <name> [--message-file <file>] [paths...]`: folds working-copy changes into an existing PR's commit,
+  optionally rewords it, and submits; see "Building and updating the stack".
 - `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
   prints a `JJSTACK_SUBMITTED` line per PR naming what it did. It runs every check before its first write. Within one PR
   it retargets before pushing, because the push starts CI for the new head and a base-dependent check has to see the
@@ -419,9 +431,9 @@ or it may sit in a merge queue. Check it with `gh pr view` and tell the user wha
 merged without checking. Show the user the failure and wait for direction. Once the cause is fixed (a failing check
 fixed with a new commit and `submit`, say), a general "continue" means rerunning the same command, `--expect` and
 `--through` included, with `--resume`. A failure caused by the PR text, such as a missing tag a check looks for, is
-fixed in the commit description (`jj describe -r <bookmark> --stdin < <file>`) followed by `submit --update-text`; the
-reworded commit is a new head, so its checks run again. The PR the run stopped at stays ready rather than draft, since
-`land` had already marked it ready to get its checks.
+fixed by rewording the commit with `amend --bookmark <bookmark> --message-file <file>`; the reworded commit is a new
+head, so its checks run again. The PR the run stopped at stays ready rather than draft, since `land` had already marked
+it ready to get its checks.
 
 Resuming recognizes the landed PRs at the bottom of the stack by matching local commits to the heads of merged PRs. A
 stopped run has usually rebased the next PR off the one it just landed, which takes the landed one out of the stack, so
