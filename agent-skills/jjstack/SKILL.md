@@ -109,11 +109,11 @@ environment already guarantees those operations work inside it.
   need an explicit user request. Default to squash merge unless the user explicitly asks for a different merge strategy,
   and do not use `--delete-branch` automatically for a non-top stacked PR.
 - "fast path merge the stack", "fast-path merge", or "merge it, fast path" Land the whole stack with one squash commit
-  on the default branch per PR without waiting for CI on any of them, using the bundled `fast-land` script. See "Fast
-  path merge". A landing request that explicitly says not to wait for CI ("land the stack, don't wait on CI", "skip CI
-  and merge it") is the same request. Either wording is a one-shot instruction for that single merge request. Never
-  carry it forward: the next merge request in the same session, however it is phrased, gets the normal landing flow
-  unless it says "fast path" or "don't wait for CI" again.
+  on the default branch per PR without waiting for CI on any of them, using the bundled script's `fast-land` command.
+  See "Fast path merge". A landing request that explicitly says not to wait for CI ("land the stack, don't wait on CI",
+  "skip CI and merge it") is the same request. Either wording is a one-shot instruction for that single merge request.
+  Never carry it forward: the next merge request in the same session, however it is phrased, gets the normal landing
+  flow unless it says "fast path" or "don't wait for CI" again.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -1128,6 +1128,45 @@ while the landing is under way. For a long stack that is quadratic in branch upd
 25 seconds per PR in one observed landing). If the user does not want to wait for CI either, that is a fast-path
 request; use "Fast path merge", which pushes only the PR about to merge.
 
+## The bundled `jjstack` script
+
+Parts of this workflow run as a Deno script, `scripts/jjstack` in this skill's directory (for Claude Code, the "Base
+directory for this skill" shown when the skill loads; for Codex, `${CODEX_HOME:-$HOME/.codex}/skills/jjstack`). Run its
+commands rather than composing their steps by hand. It needs `deno` and Git 2.40 or later. Every command takes `--dir
+<checkout>` and runs everything there, so it works from any working directory; `--repo owner/name` when `gh` cannot
+infer the repository from the checkout, and `--remote <name>` for a remote other than `origin`. Before doing anything
+else, every command checks that the remote fetches from and pushes to that repository alone, on the same host. A remote
+URL that uses an ssh host alias from `~/.ssh/config` does not name the host and is refused; use the real host name in
+the remote URL.
+
+### When the script stops
+
+Every way the script can stop prints the same three lines to stderr:
+
+```
+JJSTACK_ERROR code=E_MATCH_HEAD_DIFFERS phase="plan" mutated=sync
+error: PR #175 head is 4fa48fa... but local pr/foo is 7a7e9f9...; GitHub does not show the local commit
+raised at: grep -n '"E_MATCH_HEAD_DIFFERS"' /path/to/scripts/jjstack
+```
+
+Each code appears exactly once in the script, so the `raised at:` grep lands on the one line that stopped the run;
+shared helpers take their caller's code, so that line is the call site. `mutated=` says how far the run got: `no` means
+nothing ran, `sync` means it only fetched or let jj snapshot the working copy (a fetch can move or delete local
+bookmarks that track the remote, but the script itself wrote nothing), and `yes` means it had started writing to jj,
+Git, or GitHub. The exit status follows: 3 is a refusal with nothing written, 4 is a stop after writes began, 2 is a
+usage error, and 1 is a crash (`code=E_UNEXPECTED`) before any write, which is a bug in the script and comes with a
+stack trace. A crash after writes began exits 4. Reads from GitHub are retried a couple of times on server and network
+errors, so a stop on one means the failure persisted.
+
+When the script stops, read the script around the raising line before deciding what to do. The check there, and the
+docstring of the function it sits in, say which invariant failed and why it matters; the messages say what was checked
+and what was found, not what to do about it. Then fix the cause and rerun the same command, or tell the user what you
+found. After exit 4, work out what already changed before rerunning anything: the `JJSTACK_` ledger lines on stdout say
+what completed, and `jj log` and `gh pr view` show the rest. Do not get past a refusal by doing its step by hand. Most
+refusals guard against pushing, merging, or deleting something nobody reviewed, and doing the step by hand removes the
+guard along with the obstacle. If the script itself looks wrong for the situation, a crash or a check that is clearly
+mistaken, say so and propose a fix to the script instead of routing around it.
+
 ## Fast path merge
 
 NOTE: Only use this section when the current merge request literally says "fast path" (or "fast-path"), or explicitly
@@ -1136,10 +1175,9 @@ preference, it does not apply to the next "merge the stack", and a user who said
 now. When the request says neither, land per "Landing stacked PRs safely" and do not offer the fast path as a shortcut.
 
 The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, and never waits for CI.
-It runs as a script, `scripts/fast-land` in this skill's directory (for Claude Code, the "Base directory for this skill"
-shown when the skill loads; for Codex, `${CODEX_HOME:-$HOME/.codex}/skills/jjstack`). Run the script rather than
-composing the steps by hand. It needs `deno` and Git 2.40 or later. If `deno` is missing, say so and ask whether to
-install it or to land with the normal CI-gated flow instead; do not transcribe the script into shell commands.
+It runs as the `fast-land` command of the bundled script (see "The bundled `jjstack` script"). If `deno` is missing, say
+so and ask whether to install it or to land with the normal CI-gated flow instead; do not transcribe the script into
+shell commands.
 
 Measured on scode/repotesting on 2026-10-11: about 10 seconds per PR that GitHub can squash as-is and about 15 seconds
 per PR that needs a restack, so a 30-PR stack takes roughly 5 to 8 minutes. The CI-gated flow takes minutes per PR.
@@ -1215,7 +1253,7 @@ working copy is not on top of the stack, pass the top bookmark as `--top <bookma
 Plan first. This fetches but changes nothing else:
 
 ```bash
-<skill-dir>/scripts/fast-land --dir <checkout> --plan-only
+<skill-dir>/scripts/jjstack fast-land --dir <checkout> --plan-only
 ```
 
 The request covers the whole stack, so the printed plan is an announcement, not a question: tell the user the bottom-up
@@ -1223,7 +1261,7 @@ PR list and where the switch to `restack` happens, then land. Pass the planned P
 refuses to start if the stack changed between the two calls:
 
 ```bash
-<skill-dir>/scripts/fast-land --dir <checkout> --expect 175,176,177
+<skill-dir>/scripts/jjstack fast-land --dir <checkout> --expect 175,176,177
 ```
 
 Give the call a timeout of at least a minute per PR, or run it in the background and wait for it to exit. Other options:
@@ -1249,7 +1287,7 @@ found; never describe it as not merged without checking. Show the user the failu
 cause is fixed, a general "continue" means rerunning with `--resume`:
 
 ```bash
-<skill-dir>/scripts/fast-land --dir <checkout> --resume
+<skill-dir>/scripts/jjstack fast-land --dir <checkout> --resume
 ```
 
 `--resume` recognizes already landed commits at the bottom of the stack by matching them to the heads of merged PRs,
