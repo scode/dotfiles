@@ -790,6 +790,94 @@ Deno.test("goto puts the working copy on the PR's commit and refuses forks and u
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// ci
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Puts `files` (name to content) into `.github/workflows/` on the remote default branch, as someone else's commit. */
+async function addWorkflows(w: World, files: Record<string, string>) {
+  const other = await plainClone(w, `workflows-${Object.keys(files).join("-")}`);
+  await Deno.mkdir(`${other}/.github/workflows`, { recursive: true });
+  const git = $.build$({ commandBuilder: (b) => b.cwd(other).env(w.env).stdin("null").quiet() });
+  for (const [name, content] of Object.entries(files)) {
+    await Deno.writeTextFile(`${other}/.github/workflows/${name}`, content);
+    await git`git add ${`.github/workflows/${name}`}`;
+  }
+  await git`git commit -q -m ${"add workflows"}`;
+  await git`git push -q origin main`;
+}
+
+const DISPATCH_WORKFLOW = "on:\n  workflow_dispatch:\njobs: {}\n";
+const PR_WORKFLOW = "on:\n  pull_request:\njobs: {}\n";
+
+/**
+ * A request for CI is a one-off run per PR that leaves every PR a draft: `ci` finds the one dispatchable workflow on the
+ * default branch, dispatches it on each selected PR's branch, and reports the run. Which workflow counts as "the CI" is
+ * the user's call, so none or several dispatchable workflows are refused unless `--workflow` names one, and a PR whose
+ * branch predates the workflow is refused before anything is dispatched, since GitHub would reject that dispatch.
+ */
+Deno.test("ci dispatches the one dispatchable workflow per PR and leaves draft state alone", async () => {
+  await withWorld(async (w) => {
+    await addWorkflows(w, { "pr.yml": PR_WORKFLOW });
+    await stackOf(w, 2);
+    let r = await jjstack(w, ["ci"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_CI_NO_DISPATCH");
+
+    // GitHub runs the branch's own copy of the workflow, so a stack from before it was added is refused until synced.
+    await addWorkflows(w, { "ci.yml": DISPATCH_WORKFLOW });
+    r = await jjstack(w, ["ci", "--prs", "2"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_CI_NOT_ON_BRANCH");
+    assertEquals((await jjstack(w, ["sync"])).code, 0);
+    r = await jjstack(w, ["ci", "--prs", "2"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(
+      r.out,
+      "JJSTACK_CI pr=2 bookmark=pr2 workflow=ci.yml run=https://github.com/o/r/actions/runs/",
+    );
+    assertEquals((await events(w)).filter((l) => l.startsWith("dispatched ")).map((l) => l.split(" ")[2]), ["ref=pr2"]);
+    assertEquals((await readState(w)).prs.map((p) => p.isDraft), [true, true]);
+
+    await addWorkflows(w, { "nightly.yml": DISPATCH_WORKFLOW });
+    assertEquals((await jjstack(w, ["sync"])).code, 0);
+    r = await jjstack(w, ["ci"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_CI_AMBIGUOUS");
+    r = await jjstack(w, ["ci", "--workflow", "nightly.yml"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals((r.out.match(/^JJSTACK_CI .* workflow=nightly\.yml /gm) ?? []).length, 2);
+    r = await jjstack(w, ["ci", "--workflow", "new.yml"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_CI_NOT_ON_DEFAULT");
+  });
+});
+
+/**
+ * Every check runs before the first dispatch, so a refusal never leaves some PRs with a run and others without: here
+ * only the upper PR's commit has dropped the workflow, and nothing at all is dispatched. Run from a subdirectory of the
+ * checkout, which must not change where the workflows are looked up.
+ */
+Deno.test("ci checks every selected PR before dispatching any, also from a subdirectory", async () => {
+  await withWorld(async (w) => {
+    await addWorkflows(w, { "ci.yml": DISPATCH_WORKFLOW });
+    await inWork(w)`jj git fetch`;
+    await inWork(w)`jj new main@origin`;
+    await commit(w, "pr1.txt", "pr1\n", "feat: add pr1", "pr1");
+    await Deno.remove(`${w.work}/.github/workflows/ci.yml`);
+    await Deno.writeTextFile(`${w.work}/pr2.txt`, "pr2\n");
+    await inWork(w)`jj commit pr2.txt .github/workflows/ci.yml -m ${"feat: drop the workflow\n\nWhy."}`;
+    await inWork(w)`jj bookmark set pr2 -r @-`;
+    assertEquals((await jjstack(w, ["submit"])).code, 0);
+    await Deno.mkdir(`${w.work}/sub`);
+    const r = await $`${SCRIPT} ci --dir ${`${w.work}/sub`} --repo o/r`.env(w.env).stdin("null").noThrow()
+      .stdout("piped").stderr("piped");
+    assertEquals(r.code, 3, r.stderr);
+    assertStringIncludes(r.stderr, "code=E_CI_NOT_ON_BRANCH");
+    assertEquals((await events(w)).filter((l) => l.startsWith("dispatched ")), []);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 

@@ -77,11 +77,13 @@ environment already guarantees those operations work inside it.
   PR below them), since publishing starts CI on draft-gated repos; run `submit` first. A request to publish is not a
   request to merge, and it does not change how later PRs get created: the next "make a PR" is still a draft.
 - "run CI on the stack", "run CI on PR N", "kick off CI", or "make sure CI passes" Trigger one run per named or implied
-  PR without changing any PR's draft state: `gh workflow run <workflow> --ref <bookmark>` on a repo whose workflow
-  allows `workflow_dispatch`, and report the run URLs. This is a one-off. Marking the PR ready would also start a run,
-  but it changes future behavior too: every later rebase and push of a ready PR starts CI again, which is the cost the
-  draft default exists to avoid. A request for CI is not a request to publish. If no workflow can be dispatched, say so
-  and ask; do not mark the PR ready to get the run.
+  PR without changing any PR's draft state: run the script's `ci` (with `--prs <list>` for named PRs), and report the
+  run URLs from its `JJSTACK_CI` lines. It dispatches the one workflow on the default branch that allows
+  `workflow_dispatch`; when there are several, it refuses and names them, and choosing one (`--workflow <file>`) is the
+  user's call. Like `publish`, it refuses PRs GitHub does not show as they are locally; run `submit` first. This is a
+  one-off. Marking the PR ready would also start a run, but it changes future behavior too: every later rebase and push
+  of a ready PR starts CI again, which is the cost the draft default exists to avoid. A request for CI is not a request
+  to publish. If no workflow can be dispatched, say so and ask; do not mark the PR ready to get the run.
 - "unpublish", "back to draft", or "convert to draft" Run `gh pr ready --undo <n>`. Rarely needed, and only ever on
   request; the skill never converts a ready PR back to a draft on its own.
 - "restack the stack" Use `jj` to rewrite or rebase the local stack, then `submit`, which fixes any PR base the new
@@ -287,6 +289,12 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   optionally rewords it, and submits; see "Building and updating the stack".
 - `sync`: brings the stack along after PRs merged outside the script or the default branch moved, and submits; see
   "Building and updating the stack".
+- `ci [--prs <list>] [--workflow <file>]`: dispatches one run of the repo's `workflow_dispatch` workflow per PR, or per
+  listed PR, without changing draft state, and prints a `JJSTACK_CI` line per PR with the run's URL. Before dispatching
+  anything it refuses a listed PR not in the stack, PRs GitHub does not show as they are locally (up to the topmost
+  selected one), a default branch with no dispatchable workflow or several (unless `--workflow` names one), a workflow
+  file that is not on the default branch yet (GitHub cannot find it there), and a PR whose own commit lacks that
+  workflow (GitHub runs the branch's copy; `sync` brings an older stack up to date); see "Expected user commands".
 - `goto --pr <n>`: puts a new working copy on top of PR n's commit and prints a `JJSTACK_GOTO` line with the commit and
   the head GitHub shows for the PR (they differ when the bookmark has unpushed work); see "Expected user commands".
 - `publish [--prs <list>]`: marks the stack's PRs, or the listed ones, ready for review, bottom-up, and prints a
@@ -440,8 +448,8 @@ would pass for a verdict. When `land` stops with `E_LAND_NO_CHECKS`, read `.gith
 If the repo really runs no PR checks, rerun with `--allow-no-checks`, and say you did, since it is a fact about the repo
 rather than a shortcut. With it, a PR with no checks at all merges as soon as it is ready; checks that are attached
 still have to pass, and a check skipped while the PR was a draft still gets the two minutes to be replaced by a real
-run. Otherwise tell the user what the workflows do; triggering a run (`gh workflow run <workflow> --ref <bookmark>`,
-where the workflow allows `workflow_dispatch`) and rerunning is their call.
+run. Otherwise tell the user what the workflows do; triggering a run (the script's `ci`, where a workflow allows
+`workflow_dispatch`) and rerunning is their call.
 
 Lines starting with `JJSTACK_` are the ledger. `JJSTACK_PLAN` lists what will land and what will be restacked.
 `JJSTACK_LANDED` names each landed PR with its exact landed head and squash commit. `JJSTACK_SUBMITTED` lines report the
