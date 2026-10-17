@@ -12,6 +12,8 @@
  *   landing".
  * - `fast-land [--expect 12,13,14] [--plan-only] [--no-cleanup] [--resume]`: landing without waiting for CI. See "Fast
  *   landing".
+ * - `stop`: ask a running `land` or `fast-land` in the same checkout to stop at its next safe point. See "Stop
+ *   requests".
  *
  * Every command runs in `--dir`, a colocated jj checkout, so the caller's working directory does not matter. "The
  * stack" is always the linear ancestry chain from the remote default branch to `--top` (default `@`).
@@ -107,6 +109,14 @@ async function run(
   try {
     return await piped.noThrow().signal(kill.signal);
   } catch (err) {
+    // A signal to this script aborts the running child through `kill`; that is not a failure to start it.
+    if (kill.signal.aborted) {
+      fail(
+        "E_KILLED",
+        `interrupted by a signal while running a command (call site ${code}); that command may or may not have ` +
+          `taken effect. For a clean stop at a safe point, use \`jjstack stop\` instead of a signal`,
+      );
+    }
     fail(code, `could not start the command: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
@@ -400,7 +410,13 @@ class Ctx {
   /** dax `$` whose commands all run in the checkout, so no command depends on the caller's working directory. */
   readonly sh: typeof $;
 
-  constructor(readonly dir: string, readonly repo: string, readonly remote: string, readonly defaultBranch: string) {
+  constructor(
+    readonly dir: string,
+    readonly repo: string,
+    readonly remote: string,
+    readonly defaultBranch: string,
+    readonly stopPath = "",
+  ) {
     this.sh = $.build$({ commandBuilder: (b) => b.cwd(dir) });
   }
 
@@ -502,7 +518,7 @@ async function openCtx(args: { dir: string; repo?: string; remote: string }): Pr
     usage("E_USAGE_DIR_MISSING", `--dir ${dir} does not exist`);
   }
   if (!stat.isDirectory) usage("E_USAGE_DIR_NOT_DIR", `--dir ${dir} is not a directory`);
-  await exec("E_JJ_NOT_A_REPO", $`jj ${JJ_SAFE} root`.cwd(dir));
+  const root = await exec("E_JJ_NOT_A_REPO", $`jj ${JJ_SAFE} root`.cwd(dir));
   markSync();
   const jjGit = await exec("E_JJ_GIT_ROOT", $`jj ${JJ_SAFE} git root`.cwd(dir));
   const gitDir = await exec("E_GIT_DIR", $`git rev-parse --absolute-git-dir`.cwd(dir));
@@ -521,7 +537,7 @@ async function openCtx(args: { dir: string; repo?: string; remote: string }): Pr
   if (!defaultBranch) fail("E_GH_NO_DEFAULT_BRANCH", `GitHub reports no default branch for ${repo}`);
   const host = info.url.match(/^https?:\/\/([^/]+)\//)?.[1];
   if (!host) fail("E_GH_REPO_HOST", `cannot read the host of ${repo} from its URL ${info.url}`);
-  const ctx = new Ctx(dir, repo, args.remote, defaultBranch);
+  const ctx = new Ctx(dir, repo, args.remote, defaultBranch, stopPathOf(root));
   const urls = [
     ...(await exec("E_GIT_REMOTE_URL", ctx.sh`git remote get-url --all ${ctx.remote}`)).split("\n"),
     ...(await exec("E_GIT_REMOTE_PUSH_URL", ctx.sh`git remote get-url --push --all ${ctx.remote}`)).split("\n"),
@@ -827,6 +843,68 @@ function printStopped(at: Entry, all: Entry[]) {
 
 function planOf(entries: Entry[]): string {
   return entries.map((e) => e.pr).join(",") || "none";
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Stop requests (`stop`)
+// ---------------------------------------------------------------------------------------------------------------------
+//
+// A landing can run for many minutes, and the user often changes course while it waits on CI: stop waiting for CI for
+// the rest, or slip a PR in below the next merge. Killing the process works but stops it wherever it happens to be,
+// possibly mid-command. `jjstack stop` instead leaves a request file the running landing checks at its safe points:
+// before it starts each PR, and between polls while it waits on checks. Neither point is inside a merge. The landing
+// then stops with `E_STOP_REQUESTED` and a `JJSTACK_STOPPED` line, and `--resume` (of either landing command) continues
+// from there. The file lives in `.jj`, which neither jj nor Git tracks.
+
+/** The stop-request file of the checkout whose jj workspace root is `root`. */
+function stopPathOf(root: string): string {
+  return `${root}/.jj/jjstack-stop`;
+}
+
+async function stopRequested(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false;
+    fail(
+      "E_STOP_STAT",
+      `could not check the stop request ${path}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
+ * Clears a stop request left over from before this landing started. A request only means something to the landing
+ * that was running when it was made; a stale one would stop a new landing at its first safe point.
+ */
+async function clearStaleStop(ctx: Ctx) {
+  if (!(await stopRequested(ctx.stopPath))) return;
+  await Deno.remove(ctx.stopPath).catch(() => {});
+  console.log(`cleared a stop request left over from an earlier run (${ctx.stopPath})`);
+}
+
+/** Stops the landing here if a stop was requested, consuming the request. `where` says what state the stop leaves. */
+async function honorStop(ctx: Ctx, where: string) {
+  if (!(await stopRequested(ctx.stopPath))) return;
+  await Deno.remove(ctx.stopPath).catch(() => {});
+  fail("E_STOP_REQUESTED", `stopped on request (jjstack stop) ${where}; rerun with --resume to continue`);
+}
+
+/** `jjstack stop`: leaves the request for a running landing in this checkout, and nothing else. */
+async function requestStop(dir: string) {
+  const root = await exec("E_STOP_JJ_ROOT", $`jj ${JJ_SAFE} root`.cwd(dir));
+  const path = stopPathOf(root);
+  try {
+    await Deno.writeTextFile(path, `${new Date().toISOString()}\n`);
+  } catch (err) {
+    fail(
+      "E_STOP_WRITE",
+      `could not write the stop request ${path}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  console.log(`JJSTACK_STOP_REQUESTED path=${path}`);
+  console.log("a running land or fast-land in this checkout stops at its next safe point and exits E_STOP_REQUESTED");
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1440,6 +1518,7 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
   let last = "";
   let passSince: { at: number; names: string } | undefined;
   for (;;) {
+    await honorStop(ctx, `while waiting for checks on PR #${e.pr}, which is pushed and ready but not merged`);
     const elapsed = (Date.now() - start) / 1000;
     const graceOver = elapsed >= opts.graceSec;
     const { v, detail, names } = await readVerdict(ctx, "E_LAND_READ_CHECKS", e, readyAt, graceOver, opts.ignore);
@@ -1568,6 +1647,7 @@ async function ciLand(
   },
 ) {
   const { landedBefore, entries, carry, topChange } = await planLanding(ctx, args.top, args.resume);
+  if (!args.plan) await clearStaleStop(ctx);
   // `--through` may name a PR the stopped run already landed; then nothing more lands, and the rerun only finishes
   // the restack and cleanup the original command was supposed to do.
   let k = entries.length;
@@ -1613,6 +1693,7 @@ async function ciLand(
     e.mode = "ci";
     phase = `land #${e.pr}`;
     try {
+      await honorStop(ctx, `before starting PR #${e.pr}`);
       await ciLandOne(ctx, e, {
         timeoutSec: args.timeoutSec,
         graceSec: 120,
@@ -1810,6 +1891,7 @@ async function fastLand(
   args: { top: string; expect?: string; plan: boolean; cleanup: boolean; resume: boolean },
 ) {
   const { landedBefore, entries, carry } = await planLanding(ctx, args.top, args.resume);
+  if (!args.plan) await clearStaleStop(ctx);
   const landedElsewhere = await resolveExpect(
     ctx,
     { mismatch: "E_FAST_EXPECT_MISMATCH", prefix: "E_FAST_EXPECT_PREFIX" },
@@ -1834,6 +1916,7 @@ async function fastLand(
   for (const [i, e] of entries.entries()) {
     phase = `land #${e.pr}`;
     try {
+      await honorStop(ctx, `before starting PR #${e.pr}`);
       tip = await fastLandOne(ctx, entries, i, tip);
     } catch (err) {
       printStopped(e, [...landedElsewhere, ...landedBefore, ...entries]);
@@ -1857,11 +1940,14 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[] }>([
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
+  ["stop",      { strings: [],                                                     booleans: [] }],
 ]);
 
 async function main() {
   for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => kill.kill());
   const { command, args } = parseCli(Deno.args);
+  // `stop` must work while a landing holds the checkout and while GitHub is unreachable, so it skips every check.
+  if (command === "stop") return await requestStop(args.dir as string);
   const ctx = await openCtx(args as { dir: string; repo?: string; remote: string });
   const top = args.top as string;
   if (command === "status") await status(ctx, top);
@@ -2076,6 +2162,26 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
   assertThrows(() => parseCli(["nope"]), JjstackError, "unknown command");
   assertThrows(() => parseCli([]), JjstackError, "unknown command");
+});
+
+/**
+ * A stop request is only honored by the landing it was meant for: a leftover one is cleared at the start, a fresh one
+ * stops the landing at the next safe point exactly once.
+ */
+Deno.test("stop requests are cleared when stale and consumed when honored", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    const ctx = new Ctx(dir, "o/r", "origin", "main", `${dir}/jjstack-stop`);
+    await Deno.writeTextFile(ctx.stopPath, "old\n");
+    await clearStaleStop(ctx);
+    assertEquals(await stopRequested(ctx.stopPath), false);
+    await honorStop(ctx, "before starting PR #1");
+    await Deno.writeTextFile(ctx.stopPath, "new\n");
+    await assertRejects(() => honorStop(ctx, "before starting PR #2"), JjstackError, "stopped on request");
+    assertEquals(await stopRequested(ctx.stopPath), false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 /** `submit` decides what to push from this parse; a misread remote target means a skipped or needless push. */
