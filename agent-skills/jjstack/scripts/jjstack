@@ -26,7 +26,9 @@
  * snapshot the working copy), 4 when it had already started writing to jj, Git, or GitHub, 2 for a usage error, and 1
  * for an unexpected crash (a bug; the stack trace follows). The skill tells the agent to read the code around the
  * raising line before improvising a recovery, so messages say what was checked and what was found rather than what to
- * do.
+ * do. Every run also keeps a log of each command it executed, in memory; when it stops on an error it writes that log
+ * to a file and the report names it, for when the error and the ledger do not explain what happened. A run that
+ * succeeds writes nothing.
  *
  * Lines starting with `JJSTACK_` on stdout are the machine-readable ledger; everything else is narration.
  */
@@ -81,6 +83,84 @@ let phase = "startup";
 const kill = new KillController();
 
 /**
+ * Every command this run executed, oldest first, with its exit status and duration, and its output when it failed or
+ * wrote something. Kept in memory and written out only by `report`, so a successful run leaves nothing behind and a
+ * failed one leaves exactly what an agent needs to reconstruct it. Capped, because a long CI wait polls GitHub every
+ * few seconds; the oldest entries go first, and the file says how many were dropped.
+ */
+const trail: string[] = [];
+let trailDropped = 0;
+
+/** Where `report` writes the log: the checkout's `.jj` once `openCtx` found it, else the system temp directory. */
+let logDir: string | undefined;
+
+function note(line: string) {
+  trail.push(`${new Date().toISOString()} [${phase}] ${line}`);
+  if (trail.length > 5000) {
+    trail.splice(0, 1000);
+    trailDropped += 1000;
+  }
+}
+
+/** The text of every command a `shellIn` tag built, for the log; dax builders do not expose their command line. */
+const commandText = new WeakMap<CommandBuilder, string>();
+
+/** Quotes one argument the way a shell would need it, only when it has to. */
+function quoteArg(a: string): string {
+  return /^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Renders a dax template and its values as one readable command line. */
+function renderCommand(strings: TemplateStringsArray, vals: unknown[]): string {
+  let out = strings[0];
+  vals.forEach((v, i) => {
+    const parts = Array.isArray(v) ? v.map(String) : [String(v)];
+    out += parts.map(quoteArg).join(" ") + strings[i + 1];
+  });
+  return out.replace(/\\\n/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A dax `$` tag whose commands run in `dir` and are recorded for the log. All commands go through one of these, so no
+ * command depends on the caller's working directory and none is missing from the log.
+ */
+function shellIn(dir: string) {
+  const base = $.build$({ commandBuilder: (b) => b.cwd(dir) });
+  // dax types template values as its own `TemplateExpr`; they pass through unchanged, so `any` loses nothing here.
+  // deno-lint-ignore no-explicit-any
+  return (strings: TemplateStringsArray, ...vals: any[]): CommandBuilder => {
+    const b = base(strings, ...vals);
+    commandText.set(b, renderCommand(strings, vals));
+    return b;
+  };
+}
+
+/**
+ * Writes the log for a run that stopped on an error and returns the path, keeping the 20 newest logs. Never throws: a
+ * log that cannot be written must not hide the error it was meant to explain.
+ */
+function writeTrail(dir: string | undefined, command: string): string | undefined {
+  if (trail.length === 0) return undefined;
+  try {
+    const target = dir ?? Deno.makeTempDirSync({ prefix: "jjstack-log-" });
+    Deno.mkdirSync(target, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const path = `${target}/${stamp}-${command || "jjstack"}.log`;
+    const head = trailDropped > 0 ? [`(${trailDropped} older entries dropped)`] : [];
+    Deno.writeTextFileSync(path, [...head, ...trail].join("\n") + "\n");
+    const old = [...Deno.readDirSync(target)].filter((f) => f.isFile && f.name.endsWith(".log")).map((f) => f.name)
+      .sort().slice(0, -20);
+    for (const f of old) Deno.removeSync(`${target}/${f}`);
+    return path;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The command being run, for naming the log file. */
+let commandName = "";
+
+/**
  * Passed to every jj invocation. By default jj abandons commits that only a now-deleted remote branch kept reachable,
  * and rebases their descendants away, even when the working copy or side work sits on top. Observed on jj 0.46: the
  * working copy ended up on an older default-branch commit, and side work built on a landed commit silently lost that
@@ -104,11 +184,23 @@ async function run(
   opts: { write?: boolean; input?: string; combined?: boolean } = {},
 ): Promise<CommandResult> {
   if (opts.write) markWrite();
+  const text = commandText.get(cmd) ?? "(command text not recorded)";
   const withInput = opts.input === undefined ? cmd.stdin("null") : cmd.stdinText(opts.input);
   const piped = opts.combined ? withInput.captureCombined() : withInput.stdout("piped").stderr("piped");
+  const started = Date.now();
   try {
-    return await piped.noThrow().signal(kill.signal);
+    const r = await piped.noThrow().signal(kill.signal);
+    note(`${code} exit=${r.code} ${Date.now() - started}ms${opts.write ? " write" : ""}: ${text}`);
+    if (r.code !== 0 || opts.write) {
+      const cut = (t: string) => t.length > 4000 ? `${t.slice(0, 4000)}... (${t.length - 4000} more chars)` : t;
+      const out = opts.combined
+        ? r.combined
+        : [r.stdout, r.stderr].filter((t) => t.trim() !== "").join("\n--- stderr\n");
+      if (out.trim() !== "") note(`  output: ${cut(out.trim()).replaceAll("\n", "\n    ")}`);
+    }
+    return r;
   } catch (err) {
+    note(`${code} did not run (${err instanceof Error ? err.message : String(err)}): ${text}`);
     // A signal to this script aborts the running child through `kill`; that is not a failure to start it.
     if (kill.signal.aborted) {
       fail(
@@ -175,15 +267,23 @@ async function removeTemp(path: string) {
  */
 function report(err: unknown): never {
   const self = new URL(import.meta.url).pathname;
+  const code = err instanceof JjstackError ? err.code : "E_UNEXPECTED";
+  note(`stopped: ${code}: ${err instanceof Error ? err.message : String(err)}`);
+  const log = writeTrail(logDir, commandName);
+  const logLine = log
+    ? `log: ${log} (every command this run executed; read it if the lines above do not explain what happened)`
+    : "";
   if (err instanceof JjstackError) {
     console.error(`JJSTACK_ERROR code=${err.code} phase=${JSON.stringify(phase)} mutated=${mutated}`);
     console.error(`error: ${err.message}`);
     console.error(`raised at: grep -n '"${err.code}"' ${self}`);
+    if (logLine) console.error(logLine);
     Deno.exit(err.exitCode ?? (mutated === "yes" ? 4 : 3));
   }
   console.error(`JJSTACK_ERROR code=E_UNEXPECTED phase=${JSON.stringify(phase)} mutated=${mutated}`);
   console.error(err instanceof Error ? err.stack ?? err.message : String(err));
   console.error(`this is a bug in ${self}; read the stack trace above`);
+  if (logLine) console.error(logLine);
   Deno.exit(mutated === "yes" ? 4 : 1);
 }
 
@@ -407,8 +507,8 @@ function remoteNamesRepo(urls: string[], host: string, repo: string): boolean {
  * code of its call site, so a failure in a shared read still points at the caller.
  */
 class Ctx {
-  /** dax `$` whose commands all run in the checkout, so no command depends on the caller's working directory. */
-  readonly sh: typeof $;
+  /** Command tag for the checkout (see `shellIn`). */
+  readonly sh: ReturnType<typeof shellIn>;
 
   constructor(
     readonly dir: string,
@@ -417,7 +517,7 @@ class Ctx {
     readonly defaultBranch: string,
     readonly stopPath = "",
   ) {
-    this.sh = $.build$({ commandBuilder: (b) => b.cwd(dir) });
+    this.sh = shellIn(dir);
   }
 
   /** The remote default branch as a jj revset; quoted so unusual branch names stay one symbol. */
@@ -518,19 +618,21 @@ async function openCtx(args: { dir: string; repo?: string; remote: string }): Pr
     usage("E_USAGE_DIR_MISSING", `--dir ${dir} does not exist`);
   }
   if (!stat.isDirectory) usage("E_USAGE_DIR_NOT_DIR", `--dir ${dir} is not a directory`);
-  const root = await exec("E_JJ_NOT_A_REPO", $`jj ${JJ_SAFE} root`.cwd(dir));
+  const sh = shellIn(dir);
+  const root = await exec("E_JJ_NOT_A_REPO", sh`jj ${JJ_SAFE} root`);
+  logDir = `${root}/.jj/jjstack-logs`;
   markSync();
-  const jjGit = await exec("E_JJ_GIT_ROOT", $`jj ${JJ_SAFE} git root`.cwd(dir));
-  const gitDir = await exec("E_GIT_DIR", $`git rev-parse --absolute-git-dir`.cwd(dir));
+  const jjGit = await exec("E_JJ_GIT_ROOT", sh`jj ${JJ_SAFE} git root`);
+  const gitDir = await exec("E_GIT_DIR", sh`git rev-parse --absolute-git-dir`);
   const real = async (p: string) => await Deno.realPath(p).catch(() => p);
   if (await real(jjGit) !== await real(gitDir)) {
     fail("E_NOT_COLOCATED", `jj stores its Git repo at ${jjGit}, but git in ${dir} uses ${gitDir}; not colocated`);
   }
   const repo = args.repo ??
-    await exec("E_GH_INFER_REPO", $`gh repo view --json nameWithOwner --jq .nameWithOwner`.cwd(dir), { retry: true });
+    await exec("E_GH_INFER_REPO", sh`gh repo view --json nameWithOwner --jq .nameWithOwner`, { retry: true });
   const info = await execJson<{ url: string; defaultBranchRef: { name: string } | null }>(
     "E_GH_REPO_INFO",
-    $`gh repo view ${repo} --json url,defaultBranchRef`,
+    sh`gh repo view ${repo} --json url,defaultBranchRef`,
     { retry: true },
   );
   const defaultBranch = info.defaultBranchRef?.name ?? "";
@@ -893,7 +995,7 @@ async function honorStop(ctx: Ctx, where: string) {
 
 /** `jjstack stop`: leaves the request for a running landing in this checkout, and nothing else. */
 async function requestStop(dir: string) {
-  const root = await exec("E_STOP_JJ_ROOT", $`jj ${JJ_SAFE} root`.cwd(dir));
+  const root = await exec("E_STOP_JJ_ROOT", shellIn(dir)`jj ${JJ_SAFE} root`);
   const path = stopPathOf(root);
   try {
     await Deno.writeTextFile(path, `${new Date().toISOString()}\n`);
@@ -1793,12 +1895,8 @@ async function simulate(ctx: Ctx, entries: Entry[], from: number, tip: string, r
     e.tree = tree;
     sim = await exec(
       "E_SIM_COMMIT_TREE",
-      ctx.sh`git commit-tree ${tree} -p ${sim} -m ${`jjstack simulation of #${e.pr}`}`.env({
-        GIT_AUTHOR_NAME: "jjstack",
-        GIT_AUTHOR_EMAIL: "jjstack@invalid",
-        GIT_COMMITTER_NAME: "jjstack",
-        GIT_COMMITTER_EMAIL: "jjstack@invalid",
-      }),
+      ctx.sh`git -c user.name=jjstack -c user.email=jjstack@invalid commit-tree ${tree} -p ${sim} \
+        -m ${`jjstack simulation of #${e.pr}`}`,
     );
   }
 }
@@ -1946,6 +2044,13 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[] }>([
 async function main() {
   for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => kill.kill());
   const { command, args } = parseCli(Deno.args);
+  commandName = command;
+  // Ledger and narration lines go into the log too, so it reads as one timeline.
+  const print = console.log;
+  console.log = (...a: unknown[]) => {
+    note(`out: ${a.map(String).join(" ")}`);
+    print(...a);
+  };
   // `stop` must work while a landing holds the checkout and while GitHub is unreachable, so it skips every check.
   if (command === "stop") return await requestStop(args.dir as string);
   const ctx = await openCtx(args as { dir: string; repo?: string; remote: string });
@@ -2032,8 +2137,8 @@ Deno.test("every error code appears exactly once in the file", async () => {
 Deno.test("every jj command in the file passes JJ_SAFE", async () => {
   const src = await Deno.readTextFile(new URL(import.meta.url));
   const body = src.slice(0, src.lastIndexOf("// Tests\n"));
-  assertEquals([...body.matchAll(/(?:sh|\$)`jj \$\{JJ_SAFE\}/g)].length > 5, true);
-  const bare = [...body.matchAll(/(?:sh|\$)`jj (?!\$\{JJ_SAFE\})/g)].map((m) => body.slice(m.index, m.index + 40));
+  assertEquals([...body.matchAll(/(?:sh|\$|\))`jj \$\{JJ_SAFE\}/g)].length > 5, true);
+  const bare = [...body.matchAll(/(?:sh|\$|\))`jj (?!\$\{JJ_SAFE\})/g)].map((m) => body.slice(m.index, m.index + 40));
   assertEquals(bare, []);
 });
 
@@ -2162,6 +2267,34 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
   assertThrows(() => parseCli(["nope"]), JjstackError, "unknown command");
   assertThrows(() => parseCli([]), JjstackError, "unknown command");
+});
+
+/** The log is only as useful as its command lines are readable and copy-pasteable. */
+Deno.test("renderCommand shows interpolated values as shell words, quoting only where needed", () => {
+  const sh = shellIn("/tmp");
+  const b = sh`gh pr merge ${12} --subject ${"feat: x (#12)"} ${["--squash", "a'b"]}`;
+  assertEquals(commandText.get(b), `gh pr merge 12 --subject 'feat: x (#12)' --squash 'a'\\''b'`);
+});
+
+/**
+ * The log is written only on failure, so it must not throw or fill the disk: it keeps the 20 newest files in its
+ * directory and says when old entries were dropped from memory.
+ */
+Deno.test("writeTrail writes the log, prunes to the newest 20, and never throws", async () => {
+  const dir = await Deno.makeTempDir();
+  try {
+    for (let i = 0; i < 25; i++) await Deno.writeTextFile(`${dir}/2000-01-01-${String(i).padStart(2, "0")}.log`, "x");
+    note("test entry");
+    const path = writeTrail(dir, "land")!;
+    assertEquals((await Deno.readTextFile(path)).includes("test entry"), true);
+    const left = [...Deno.readDirSync(dir)].filter((f) => f.name.endsWith(".log"));
+    assertEquals(left.length, 20);
+    assertEquals(left.some((f) => f.name === path.split("/").at(-1)), true);
+    assertEquals(writeTrail("/proc/forbidden/jjstack", "land"), undefined);
+  } finally {
+    trail.length = 0;
+    await Deno.remove(dir, { recursive: true });
+  }
 });
 
 /**
