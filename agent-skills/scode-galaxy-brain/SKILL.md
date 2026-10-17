@@ -206,6 +206,11 @@ cross-family choice makes sense for the task's expected size — routing's one-l
 written to be quoted. One announcement may cover a homogeneous fan-out batch that shares the same profile, model,
 effort, and rationale.
 
+Keep transcript reading out of routine oversight: use logs for liveness, and judge work from the named deliverable, the
+diff, and the checks. Repeatedly reading delegate transcripts spends the orchestrator's context and tokens on work it
+delegated to save cost. Inspect relevant excerpts only to investigate a concrete problem or satisfy an explicit evidence
+requirement; do not read whole transcripts just to keep up with what a delegate is doing.
+
 ## Acting on a verdict
 
 The delegation skill's gate returns exactly one verdict per delegation; what happens next is yours. Give a primary model

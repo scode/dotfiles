@@ -133,14 +133,11 @@ the monitoring obligations below or any more frequent resource checks the caller
   with no version header after it, for example); when one matches, kill and relaunch with the corrected invocation,
   since more waiting cannot help.
 - Otherwise weigh the evidence by what the tool shows. Harnesses that stream a transcript or event log while working
-  give you something to compare against the last check's baseline; record the new observation for the next one. That is
-  the transcript's only role: it is a liveness signal, never the thing you judge. The caller judges artifacts — the
-  diff, the checks, the delegate's output file — not transcripts, and reading a transcript to find out what a delegate
-  did is a sign the prompt failed to name an artifact, not a monitoring technique. New output proves activity, not
-  necessarily useful progress; a log that has not grown across a full interval is a reason to inspect the run, not by
-  itself grounds to kill it — long reasoning stretches can be quiet. Harnesses that print only the final message tell
-  you nothing while silent; each harness file says which mode it is in and how to get a stream when a long run needs
-  one.
+  give you something to compare against the last check's baseline; record the new observation for the next one. New
+  output proves activity, not necessarily useful progress; a log that has not grown across a full interval is a reason
+  to inspect the run, not by itself grounds to kill it — long reasoning stretches can be quiet. Harnesses that print
+  only the final message tell you nothing while silent; each harness file says which mode it is in and how to get a
+  stream when a long run needs one.
 - Use the estimate and the deadline for different decisions. Crossing the expected duration triggers investigation, not
   a kill. Crossing the hard deadline means the run is over budget regardless of apparent liveness: kill it, capture the
   log, and report the result to the caller as inconclusive.
