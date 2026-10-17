@@ -34,7 +34,7 @@
  */
 import $, { type CommandBuilder, type CommandResult, KillController } from "jsr:@david/dax@0.50.1";
 import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
-import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Failure reporting and process plumbing
@@ -96,6 +96,18 @@ const TIME_SCALE = (() => {
 /** `ms` milliseconds, scaled by `TIME_SCALE`. */
 function scaled(ms: number): number {
   return ms * TIME_SCALE;
+}
+
+/** The pause, in seconds, before each successive poll or retry; the last entry repeats. */
+const BACKOFF_SEC = [1, 2, 3, 5, 7, 10, 15, 20, 30, 45, 60];
+
+/**
+ * The scaled pause before poll or retry number `n` (0 for the first). Every repeated read in this script waits on this
+ * schedule rather than a fixed interval: GitHub usually converges within a few seconds, so the first polls come quickly,
+ * and a state that is legitimately slow (a long CI run) is read at most once a minute instead of being hammered.
+ */
+function backoff(n: number): number {
+  return scaled(1000 * BACKOFF_SEC[Math.min(n, BACKOFF_SEC.length - 1)]);
 }
 
 /**
@@ -445,9 +457,9 @@ async function exec(
     const r = await run(code, cmd, opts);
     if (r.code === 0) return r.stdout.trim();
     const detail = [r.stderr.trim(), r.stdout.trim()].filter(Boolean).join("\n") || "(no output)";
-    if (opts.retry && attempt < 3 && TRANSIENT_GH.test(detail)) {
+    if (opts.retry && attempt < 6 && TRANSIENT_GH.test(detail)) {
       console.log(`transient failure (${detail.split("\n")[0]}); retrying`);
-      await $.sleep(scaled(3000 * attempt));
+      await $.sleep(backoff(attempt - 1));
       continue;
     }
     fail(code, `command exited ${r.code}:\n${detail}`);
@@ -509,12 +521,15 @@ function report(err: unknown): never {
   Deno.exit(mutated === "yes" ? 4 : 1);
 }
 
-/** Polls `read` until `done` accepts its value or `seconds` pass; returns the last value either way. */
+/**
+ * Polls `read` on the `backoff` schedule until `done` accepts its value or `seconds` pass; returns the last value
+ * either way.
+ */
 async function pollUntil<T>(seconds: number, read: () => Promise<T>, done: (v: T) => boolean): Promise<T> {
   const deadline = Date.now() + scaled(seconds * 1000);
   let v = await read();
-  while (!done(v) && Date.now() < deadline) {
-    await $.sleep(scaled(2000));
+  for (let n = 0; !done(v) && Date.now() < deadline; n++) {
+    await $.sleep(Math.max(0, Math.min(backoff(n), deadline - Date.now())));
     v = await read();
   }
   return v;
@@ -568,6 +583,11 @@ type Entry = {
   landedSha?: string;
   /** Set right before `gh pr merge` runs: from then on, until `landedSha` is set, the outcome is unknown, not pending. */
   attempted?: boolean;
+  /**
+   * Local time of this run's latest retarget, push, or ready call for the PR: each can start new check runs, and the
+   * CI wait's settle period never starts earlier than this. Unset when this run triggered nothing for the PR.
+   */
+  triggeredAt?: number;
 };
 
 /** A bookmarked commit of the stack: one review unit, before it is matched to its PR. */
@@ -1016,9 +1036,9 @@ async function guardedMerge(
       if (!transient.test(r.combined)) {
         fail("E_MERGE_REJECTED", `gh pr merge of PR #${e.pr} failed: ${r.combined.trim()}`);
       }
-      if (attempt === 5) fail("E_MERGE_RETRIES", `gh pr merge of PR #${e.pr} kept failing: ${r.combined.trim()}`);
+      if (attempt === 6) fail("E_MERGE_RETRIES", `gh pr merge of PR #${e.pr} kept failing: ${r.combined.trim()}`);
       console.log(`PR #${e.pr}: GitHub has not converged (${r.combined.trim()}); retrying`);
-      await $.sleep(scaled(3000));
+      await $.sleep(backoff(attempt - 1));
     }
   } finally {
     await removeTemp(bodyFile);
@@ -1719,7 +1739,39 @@ type Suites = {
   running: string[];
   /** Whether an Actions suite on the head was created after the PR last left draft. */
   postReady: boolean;
+  /** When the newest suite of any app on the head was created (GitHub's clock), if it has any. */
+  latestCreated?: number;
 };
+
+/**
+ * The latest event GitHub shows that can still attach new check runs to the head, or undefined when it shows none.
+ * Pure, so it is tested.
+ *
+ * Every workflow run gets a check suite of its own when GitHub starts it, and other apps get theirs when the head is
+ * pushed, so the newest suite marks the latest trigger GitHub has acted on; the PR leaving draft (`readyAt`) is the
+ * other. A trigger GitHub has not attached anything for yet is invisible here, and commit statuses create no suite at
+ * all, which is why `settleStart` also counts from this run's own pushes and ready calls. Both times are GitHub's, so a
+ * local clock running ahead of GitHub's shortens a window measured only from them.
+ */
+function lastTrigger(readyAt: number | undefined, suites: Suites): number | undefined {
+  const times = [readyAt, suites.latestCreated].filter((t): t is number => t !== undefined && !Number.isNaN(t));
+  return times.length > 0 ? Math.max(...times) : undefined;
+}
+
+/**
+ * Where the CI wait's settle period starts: the later of `lastTrigger` and this run's own last retarget, push, or ready
+ * call (`own`, local clock), or the start of the wait when neither is known. Pure, so it is tested.
+ *
+ * Measuring from the trigger rather than from the first passing read is what makes the settle period free in the
+ * usual case, since CI that ran longer than it is already past it. `own` keeps the period intact when GitHub shows no
+ * fresh trigger: right after this run's push, before any suite exists, the newest thing GitHub shows can be a ready
+ * event from days ago, and a fast commit status could otherwise pass before slower CI posts anything. A resumed run
+ * that triggered nothing itself relies on GitHub's times alone.
+ */
+function settleStart(github: number | undefined, own: number | undefined, waitStart: number): number {
+  const known = [github, own].filter((t): t is number => t !== undefined);
+  return known.length > 0 ? Math.max(...known) : waitStart;
+}
 
 /**
  * Classifies a PR's checks for its current head. Pure, so the edge cases are tested.
@@ -1826,12 +1878,13 @@ async function readSuites(ctx: Ctx, code: string, sha: string, readyAt: number |
     .map(([app, status]) => `${app}:${status}`);
   const postReady = readyAt === undefined ||
     rows.some(([app, , , created]) => app === "github-actions" && Date.parse(created) > readyAt);
-  return { running, postReady };
+  const created = rows.map(([, , , c]) => Date.parse(c)).filter((t) => !Number.isNaN(t));
+  return { running, postReady, latestCreated: created.length > 0 ? Math.max(...created) : undefined };
 }
 
 /**
  * Reads the PR's head and the check verdict on `e.sha` in one place, so the wait loop and the per-merge-attempt recheck
- * cannot disagree about what "passed" means.
+ * cannot disagree about what "passed" means. `trigger` is `lastTrigger` for the head, for the wait's settle period.
  */
 async function readVerdict(
   ctx: Ctx,
@@ -1847,44 +1900,50 @@ async function readVerdict(
   const rollup = (p.statusCheckRollup ?? []) as Check[];
   return {
     ...checkVerdict(rollup, suites, readyAt, graceOver, ignore, Date.now(), scaled(120_000) / 1000),
-    names: latestChecks(rollup).map(checkName).sort(),
+    trigger: lastTrigger(readyAt, suites),
   };
 }
 
 /**
  * Waits until the PR's checks on `e.sha` pass, refusing on a failure, a timeout, or no real verdict after the grace
- * period (unless `allowNoChecks`).
+ * period. Returns the verdict it proceeded on, which the merge guard then requires again.
  *
- * GitHub attaches runs a few seconds after a push, retarget, or ready event, and not all at once. So a pass only counts
- * once it has held, with the same set of checks, for `settleSec`. That applies even when this invocation triggered
- * nothing, because an earlier invocation that stopped right after a push or ready call may have. An empty rollup is
- * pending until the grace period ends, never an early pass.
+ * With `allowNoChecks`, a head with no checks at all proceeds at once: the caller has said the repo runs no PR checks,
+ * and holding every PR for the grace period made a CI-less landing of nine PRs take 18 minutes. Checks that are attached
+ * still have to pass, and a check skipped while the PR was a draft still gets the grace period to be replaced by a real
+ * run, since that skip is what the draft-skip rule exists to catch.
+ *
+ * GitHub attaches runs a few seconds after a push, retarget, or ready event, and not all at once, so a pass only counts
+ * once `settleSec` have gone by since `settleStart`. An empty rollup is pending until the grace period ends, never an
+ * early pass. Reads follow the `backoff` schedule, which starts over when the verdict changes (pending to passing, say),
+ * and the sleeps between them are sliced so a stop request is honored within a couple of seconds.
  */
-async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
+async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts): Promise<Verdict> {
   const start = Date.now();
   const readyAt = await readyEventTime(ctx, "E_LAND_READ_READY_EVENT", e.pr);
+  const where = `while waiting for checks on PR #${e.pr}, which is pushed and ready but not merged`;
   let last = "";
+  let lastVerdict: Verdict | undefined;
   let lastPrinted = 0;
-  let passSince: { at: number; names: string } | undefined;
+  let polls = 0;
   for (;;) {
-    await honorStop(ctx, `while waiting for checks on PR #${e.pr}, which is pushed and ready but not merged`);
+    await honorStop(ctx, where);
     const elapsed = (Date.now() - start) / 1000;
     const graceOver = elapsed >= opts.graceSec;
-    const { v, detail, names } = await readVerdict(ctx, "E_LAND_READ_CHECKS", e, readyAt, graceOver, opts.ignore);
+    const { v, detail, trigger } = await readVerdict(ctx, "E_LAND_READ_CHECKS", e, readyAt, graceOver, opts.ignore);
     if (v === "failed") fail("E_LAND_CHECKS_FAILED", `PR #${e.pr} checks failed on ${e.sha}: ${detail}`);
-    if (v === "passed") {
-      const key = names.join(",");
-      if (!passSince || passSince.names !== key) passSince = { at: Date.now(), names: key };
-      const held = (Date.now() - passSince.at) / 1000;
-      if (held >= opts.settleSec) {
-        console.log(`PR #${e.pr}: checks passed (${detail})`);
-        return;
-      }
-    } else passSince = undefined;
-    if ((v === "none" || v === "stale-skipped") && elapsed >= opts.graceSec) {
+    if (v === "passed" && Date.now() - settleStart(trigger, e.triggeredAt, start) >= opts.settleSec * 1000) {
+      console.log(`PR #${e.pr}: checks passed (${detail})`);
+      return v;
+    }
+    if (v === "none" && opts.allowNoChecks) {
+      console.log(`PR #${e.pr}: ${detail}; proceeding without a CI verdict (--allow-no-checks)`);
+      return v;
+    }
+    if ((v === "none" || v === "stale-skipped") && graceOver) {
       if (opts.allowNoChecks) {
         console.log(`PR #${e.pr}: ${detail}; proceeding without a CI verdict (--allow-no-checks)`);
-        return;
+        return v;
       }
       fail(
         "E_LAND_NO_CHECKS",
@@ -1904,8 +1963,24 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
       console.log(`PR #${e.pr}: waiting for checks (${shown})${shown === last ? `, ${mins}m so far` : ""}`);
       lastPrinted = Date.now();
     }
+    // Only a change of verdict restarts the backoff: the pending list shrinks with every finished job, and restarting
+    // on that would read a busy matrix every second or two.
+    if (v !== lastVerdict) polls = 0;
     last = shown;
-    await $.sleep(scaled(10000));
+    lastVerdict = v;
+    await sleepHonoringStop(ctx, backoff(polls++), where);
+  }
+}
+
+/**
+ * Sleeps `ms` in slices of at most two seconds, honoring a stop request between them, so that a backoff grown to a
+ * minute does not hold up `jjstack stop`. A stop request is a local file check, cheap enough to make often.
+ */
+async function sleepHonoringStop(ctx: Ctx, ms: number, where: string) {
+  const until = Date.now() + ms;
+  for (let left = ms; left > 0; left = until - Date.now()) {
+    await $.sleep(Math.min(left, scaled(2000)));
+    await honorStop(ctx, where);
   }
 }
 
@@ -1932,6 +2007,7 @@ async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
   // Retarget before any push, so the CI run the push starts sees the final base.
   if (gh.baseRefName !== ctx.defaultBranch) {
     await retarget(ctx, "E_LAND_RETARGET", e.pr, ctx.defaultBranch);
+    e.triggeredAt = Date.now();
   }
   let local = await ctx.resolve("E_LAND_RESOLVE_LOCAL", e.changeId);
   const parent = await exec("E_LAND_LOCAL_PARENT", ctx.sh`git rev-parse ${local + "^"}`);
@@ -1959,11 +2035,13 @@ async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
   await verifyContent(ctx, "E_LAND_CONTENT_CHANGED", e, local);
   if (local !== gh.headRefOid) {
     await pushBookmark(ctx, "E_LAND_PUSH", e.bookmark, local, e.pr);
+    e.triggeredAt = Date.now();
   }
   e.sha = local;
   if (e.isDraft) {
     await exec("E_LAND_READY", ctx.sh`gh pr ready ${e.pr} -R ${ctx.repo}`, { write: true });
     e.isDraft = false;
+    e.triggeredAt = Date.now();
     // The issue event the draft-skip rule reads lags the ready call slightly; wait for it so the rule sees it.
     const seen = await pollUntil(
       30,
@@ -1974,11 +2052,13 @@ async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
       fail("E_LAND_READY_EVENT_MISSING", `PR #${e.pr} was marked ready but GitHub shows no event`);
     }
   }
-  await waitForChecks(ctx, e, opts);
+  const accepted = await waitForChecks(ctx, e, opts);
   const readyAt = await readyEventTime(ctx, "E_LAND_READ_READY_RECHECK", e.pr);
   const result = await guardedMerge(ctx, e, undefined, async () => {
     const { v, detail } = await readVerdict(ctx, "E_LAND_RECHECK_READ", e, readyAt, true, opts.ignore);
-    const ok = v === "passed" || (opts.allowNoChecks && (v === "none" || v === "stale-skipped"));
+    // A pass, or the same lack of a verdict the wait already accepted under --allow-no-checks; anything else means the
+    // checks changed since the wait ended.
+    const ok = v === "passed" || v === accepted;
     if (!ok) fail("E_LAND_CHECKS_CHANGED", `PR #${e.pr} checks changed before the merge: ${v} (${detail})`);
   });
   if (result.startsWith("mergeable=")) fail("E_LAND_NOT_MERGEABLE", `PR #${e.pr} is ${result}; refusing to merge`);
@@ -2747,6 +2827,44 @@ Deno.test("checkVerdict separates pass, fail, pending, no verdict, and runs skip
   assertEquals(v([status("PENDING")]), "pending");
   assertEquals(v([status("ERROR")]), "failed");
   assertEquals(v([status("SUCCESS")]), "passed");
+});
+
+/**
+ * Every poll and retry waits on this schedule. Fixed intervals made fast states slow to notice and slow states (a long
+ * CI run) polled needlessly often; the schedule starts at one second and never polls more than once a minute.
+ */
+Deno.test("backoff starts at one second, grows, and caps at one poll a minute", () => {
+  assertEquals([0, 1, 2, 3, 4, 5].map((n) => backoff(n) / TIME_SCALE), [1000, 2000, 3000, 5000, 7000, 10000]);
+  const tail = [10, 11, 50, 1000].map((n) => backoff(n) / TIME_SCALE);
+  assertEquals(tail, [60000, 60000, 60000, 60000]);
+  for (let n = 1; n < 20; n++) assert(backoff(n) >= backoff(n - 1), `backoff(${n}) shrank`);
+});
+
+/**
+ * The settle period is measured from `lastTrigger`, so it must name the latest event that can attach new runs: a
+ * pass long after the last push or ready event then counts at once, and a fresh one still waits for stragglers.
+ */
+Deno.test("lastTrigger takes the later of the ready event and the newest check suite", () => {
+  const suites = (latestCreated?: number): Suites => ({ running: [], postReady: true, latestCreated });
+  assertEquals(lastTrigger(undefined, suites()), undefined);
+  assertEquals(lastTrigger(100, suites()), 100);
+  assertEquals(lastTrigger(undefined, suites(200)), 200);
+  assertEquals(lastTrigger(300, suites(200)), 300);
+  assertEquals(lastTrigger(100, suites(200)), 200);
+  assertEquals(lastTrigger(undefined, suites(NaN)), undefined);
+});
+
+/**
+ * The settle period must never start before this run's own push or ready call: right after a push, before GitHub has
+ * created a suite for the new head, the newest trigger GitHub shows can be a ready event from days ago, and measuring
+ * from it would let a fast commit status pass before slower CI posts anything.
+ */
+Deno.test("settleStart takes the later of GitHub's trigger and this run's own, else the start of the wait", () => {
+  assertEquals(settleStart(undefined, undefined, 50), 50);
+  assertEquals(settleStart(10, undefined, 50), 10);
+  assertEquals(settleStart(undefined, 40, 50), 40);
+  assertEquals(settleStart(10, 40, 50), 40);
+  assertEquals(settleStart(45, 40, 50), 45);
 });
 
 /**

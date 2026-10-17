@@ -17,7 +17,11 @@
  * so a test can assert ordering).
  */
 
-export type CheckFrame = { name: string; status: string; conclusion: string }[];
+/**
+ * One read of a PR's check rollup. `startedAt` pins when a run started (for a run left over from before the PR left
+ * draft, say); without it a run reads as started at the moment of the read.
+ */
+export type CheckFrame = { name: string; status: string; conclusion: string; startedAt?: string }[];
 
 export type Pr = {
   number: number;
@@ -48,6 +52,11 @@ export type State = {
   mergeFailures: Record<string, string[]>;
   /** After a PR merges, add this many commits to the default branch "from elsewhere" (someone else's merge). */
   externalPushAfterMerge: Record<string, number>;
+  /**
+   * When each head's check suite was created, keyed by commit SHA. GitHub fixes a suite's `created_at` when the suite
+   * appears, and the script measures its settle period from it, so the fake records the first read and keeps it.
+   */
+  suiteCreatedAt: Record<string, string>;
 };
 
 /** A fresh state for repo `o/r` on github.com with green checks, for the tests to adjust. */
@@ -63,6 +72,7 @@ export function initialState(): State {
     defaultChecks: [{ name: "test", status: "COMPLETED", conclusion: "SUCCESS" }],
     mergeFailures: {},
     externalPushAfterMerge: {},
+    suiteCreatedAt: {},
   };
 }
 
@@ -153,8 +163,8 @@ function rollup(s: State, pr: Pr): unknown[] {
     workflowName: "CI",
     status: c.status,
     conclusion: c.status === "COMPLETED" ? c.conclusion : "",
-    startedAt: t,
-    completedAt: c.status === "COMPLETED" ? t : null,
+    startedAt: c.startedAt ?? t,
+    completedAt: c.status === "COMPLETED" ? (c.startedAt ?? t) : null,
   }));
 }
 
@@ -368,7 +378,7 @@ async function api(s: State, remote: string, args: string[]): Promise<string> {
       app: { slug: "github-actions" },
       status: running ? "in_progress" : "completed",
       latest_check_runs_count: frame.length,
-      created_at: now(),
+      created_at: s.suiteCreatedAt[m![1]] ??= now(),
     }];
     return await emit({ total_count: suites.length, check_suites: suites }, jq);
   }

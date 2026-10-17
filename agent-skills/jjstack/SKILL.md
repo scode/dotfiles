@@ -287,8 +287,8 @@ nothing ran, `sync` means it only fetched or let jj snapshot the working copy (a
 bookmarks that track the remote, but the script itself wrote nothing), and `yes` means it had started writing to jj,
 Git, or GitHub. The exit status follows: 3 is a refusal with nothing written, 4 is a stop after writes began, 2 is a
 usage error, and 1 is a crash (`code=E_UNEXPECTED`) before any write, which is a bug in the script and comes with a
-stack trace. A crash after writes began exits 4. Reads from GitHub are retried a couple of times on server and network
-errors, so a stop on one means the failure persisted.
+stack trace. A crash after writes began exits 4. Reads from GitHub are retried up to five times, backing off, on server,
+rate-limit, and network errors, so a stop on one means the failure persisted.
 
 When the script stops, read the script around the raising line before deciding what to do. The check there, and the
 docstring of the function it sits in, say which invariant failed and why it matters; the messages say what was checked
@@ -349,7 +349,7 @@ For each PR, bottom-up, `land`:
 5. marks it ready, the one PR it un-drafts at that moment, because GitHub will not merge a draft and draft-gated CI
    would not run on one;
 6. waits for its checks on that exact head, refusing on a failed check, on a timeout (`--check-timeout <minutes>`,
-   default 30), and on no CI verdict after two minutes; and
+   default 30), and on no CI verdict after two minutes (with `--allow-no-checks`, no verdict proceeds at once); and
 7. squash-merges it, subject "<PR title> (#N)", guarded on state `OPEN`, base, head ref, `--match-head-commit`, and the
    check verdict re-read before every attempt, retrying only GitHub's known transient rejections, then confirms the PR
    reached `MERGED`, since merge queues and auto-merge make `gh pr merge` exit 0 without landing anything.
@@ -363,9 +363,11 @@ flake or a superseded draft-time run does not block forever; checks from other a
 rollup cannot tell two apps' same-named checks apart, so a superseded app run can block. It treats a check suite that is
 still running as pending, including a queued Actions suite with no jobs yet, because a job with `needs:` gets no check
 run until its dependencies finish and a workflow queued behind a concurrency group has none at all. A pass counts only
-once it has held with the same set of checks for 30 seconds, since workflows attach at different times. A run that ended
-cancelled counts as pending for two minutes, because GitHub cancels runs a newer event supersedes and the replacement
-can take a while to attach; a cancellation nothing replaced by then is a failure.
+once 30 seconds have gone by since the latest event that can attach new runs (the landing's own retarget, push, or ready
+call, the newest check suite on the head, or the PR leaving draft), since workflows attach at different times; checks
+that ran longer than that pass on the first read. A run that ended cancelled counts as pending for two minutes, because
+GitHub cancels runs a newer event supersedes and the replacement can take a while to attach; a cancellation nothing
+replaced by then is a failure. Every poll and retry backs off from one second to at most one read a minute.
 
 Every check blocks by default: the script cannot tell a required check from an optional one on a repo without branch
 protection. When a check fails that the user says is optional, rerun with `--ignore-check <name>` (comma-separated; a
@@ -377,8 +379,10 @@ the same rule as the run that marked it ready). That is a repo whose workflows s
 `ready_for_review` among their `pull_request` types, where marking a PR ready starts nothing and the draft-time skip
 would pass for a verdict. When `land` stops with `E_LAND_NO_CHECKS`, read `.github/workflows/` to tell the cases apart.
 If the repo really runs no PR checks, rerun with `--allow-no-checks`, and say you did, since it is a fact about the repo
-rather than a shortcut. Otherwise tell the user what the workflows do; triggering a run (`gh workflow run <workflow>
---ref <bookmark>`, where the workflow allows `workflow_dispatch`) and rerunning is their call.
+rather than a shortcut. With it, a PR with no checks at all merges as soon as it is ready; checks that are attached
+still have to pass, and a check skipped while the PR was a draft still gets the two minutes to be replaced by a real
+run. Otherwise tell the user what the workflows do; triggering a run (`gh workflow run <workflow> --ref <bookmark>`,
+where the workflow allows `workflow_dispatch`) and rerunning is their call.
 
 Lines starting with `JJSTACK_` are the ledger. `JJSTACK_PLAN` lists what will land and what will be restacked.
 `JJSTACK_LANDED` names each landed PR with its exact landed head and squash commit. `JJSTACK_SUBMITTED` lines report the
