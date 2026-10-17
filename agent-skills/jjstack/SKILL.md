@@ -55,18 +55,18 @@ the task is clearly "use `jj` to manage history and `gh` to manage the PR". Star
 environment already guarantees those operations work inside it.
 
 - "make a PR" or "create a PR" Create a new stacked PR, as a draft, for the current reviewable change. In practice that
-  means giving the change a stable bookmark and running `submit` (see "Building and updating the stack"), which opens a
-  PR based on the bookmark below it, or on the default branch for the bottom PR. If the current bookmark already has a
-  PR but the working copy contains new intended reviewable work on top of it, default to "make the next PR" rather than
-  pushing back. In this workflow that is a very common meaning of "make a PR": turn the new top-of-stack work into its
-  own commit, bookmark it, and submit.
+  means writing its message to a file and running the script's `new-pr` with a new bookmark name (see "Building and
+  updating the stack"), which commits the change, bookmarks it, and opens a PR based on the bookmark below it, or on the
+  default branch for the bottom PR. If the current bookmark already has a PR but the working copy contains new intended
+  reviewable work on top of it, default to "make the next PR" rather than pushing back. In this workflow that is a very
+  common meaning of "make a PR": turn the new top-of-stack work into its own PR with `new-pr`.
 - "update the PR" Update the existing PR for the current bookmark. Do not create a new bookmark or a new PR unless the
   user explicitly asks for that. Rewrite or extend the current change and `submit`, which pushes the same bookmark again
   and keeps the same PR number.
 - "rewrite the PR cleanly" Treat this as "update the PR by rewriting commits instead of adding a follow-up fixup
   commit".
-- "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, and
-  `submit`.
+- "make the next PR" Create a new reviewable commit on top of the current stack with a new stable bookmark and its own
+  PR: `new-pr`.
 - "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with `jj
   new --insert-after ...`, resolve any descendant conflicts, bookmark it, and `submit`, which creates the new PR,
   retargets the PR above it, and pushes every rewritten descendant.
@@ -162,8 +162,9 @@ pass explicit PR numbers and `-R owner/repo` rather than relying on Git branch i
   `jj bookmark list`, `jj diff`, `jj config get`): jj may import or export Git refs, or reset Git HEAD, as part of them.
   Keep `git`, repo-scoped `gh` commands, and the script sequential with them too. The one exception is the script's
   `stop` command, which exists to be run while a landing is in progress. Parallel plain file reads are fine.
-- Before committing, inspect `jj status` and commit only the intended paths (`jj commit <paths> ...`), leaving unrelated
-  files in the working copy.
+- Before committing, inspect `jj status` and commit only the intended paths, leaving unrelated files in the working
+  copy. For a new PR on top of the stack, pass those paths to `new-pr`, which commits and bookmarks in one call;
+  otherwise use `jj commit <paths> ...`.
 - After `jj commit`, the commit you just made is `@-`, and `@` is a new empty working copy. Run `jj bookmark set <name>
   -r @-` only after the commit has finished, never alongside it.
 - Keep one bookmark per reviewable commit, and keep its name once a PR exists: move the bookmark to new commits rather
@@ -188,10 +189,15 @@ pass explicit PR numbers and `-R owner/repo` rather than relying on Git branch i
 `submit` takes each new PR's title and body from its commit's description: the first line is the title, and everything
 after the first blank line is the body. The commit message is the PR text, so write it as such.
 
-`jj commit`, `jj squash`, and `jj describe` take `-m`, but none of them takes `-F` or `--file` (an agent reaching for
-the Git habit `jj commit -F msg.txt` gets `unexpected argument '-F' found`, observed on jj 0.44). A one-line message can
-go inline in single quotes. For anything longer, write the message to a file with your file-writing tool, then set it
-from stdin, which only `jj describe` reads:
+Write the message to a file with your file-writing tool and pass it to a script command that takes `--message-file` (see
+"Building and updating the stack"); the script sets it as the commit's description itself. Give the file as an absolute
+path: a relative one is read from the directory you run the script in, not from `--dir`. A message file without a title
+(an empty first line) is refused.
+
+Outside those commands, set a message with jj directly. `jj commit`, `jj squash`, and `jj describe` take `-m`, but none
+of them takes `-F` or `--file` (an agent reaching for the Git habit `jj commit -F msg.txt` gets `unexpected argument
+'-F' found`, observed on jj 0.44). A one-line message can go inline in single quotes. For anything longer, write the
+message to a file, then set it from stdin, which only `jj describe` reads:
 
 ```bash
 jj commit <paths> -m 'wip'
@@ -204,13 +210,22 @@ drafts.
 
 ## Building and updating the stack
 
-Every one of these ends with the script's `submit` command, which makes GitHub match the local stack: it pushes every
-bookmark that moved, opens a draft PR for every bookmark that has none, and bases each PR on the bookmark below it (the
-bottom one on the default branch). Run it with the working copy on top of the stack, or pass the top bookmark as
-`--top`; it refuses when the stack continues above `--top` with open PRs, since those would be left stale. Start a new
-stack from the default branch with `jj new 'trunk()'`.
+Every one of these ends with the script's `submit` command (the commands below that take `--message-file` run it
+themselves), which makes GitHub match the local stack: it pushes every bookmark that moved, opens a draft PR for every
+bookmark that has none, and bases each PR on the bookmark below it (the bottom one on the default branch). Run it with
+the working copy on top of the stack, or pass the top bookmark as `--top`; it refuses when the stack continues above
+`--top` with open PRs, since those would be left stale. Start a new stack from the default branch with `jj new
+'trunk()'`.
 
-- New PR on top: make the change, `jj commit <paths>` with its message, `jj bookmark set <name> -r @-`, then `submit`.
+- New PR on top: make the change, write its message to a file, and run `new-pr --bookmark <name> --message-file <file>
+  [paths...]`. It commits the working copy's changes (only the given paths, relative to `--dir`, when there are any)
+  with that message, bookmarks the commit, and submits; changes outside the paths stay in the working copy. Put `--`
+  before a path that starts with `-`. Pick a new bookmark name of letters, digits, `.`, `_`, `/`, and `-`, starting with
+  a letter or digit, that no local bookmark, remote branch, or earlier PR has used. Before committing anything, it
+  refuses a name that breaks those rules, nothing to commit, a working copy that already carries a bookmark or a
+  conflict, a working copy that is not on top of the stack, and anything `submit` would refuse about the stack below.
+  Once it prints `JJSTACK_COMMITTED`, the commit and bookmark exist: if it stops after that, fix the cause and run
+  `submit`, not `new-pr` again.
 - Update a PR: `jj new <bookmark>`, make the edit, `jj squash` to fold it into the bookmarked commit, then `jj new
   <top-bookmark>` to put the working copy back on top, and `submit`. jj rebases everything above the edit, and `submit`
   pushes all of it. Each PR is exactly one commit: a follow-up commit with the bookmark moved onto it leaves the
@@ -241,6 +256,8 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
 - `init`: sets the checkout up for the other commands and runs their shared checks; see "Preconditions".
 - `status`: prints, for each PR bottom-up, what `submit` would do, and a `JJSTACK_STATUS` line per PR. It fetches but
   changes nothing else.
+- `new-pr --bookmark <name> --message-file <file> [paths...]`: commits working-copy changes as the next PR, bookmarks
+  the commit, and submits; see "Building and updating the stack".
 - `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
   prints a `JJSTACK_SUBMITTED` line per PR naming what it did. It runs every check before its first write. Within one PR
   it retargets before pushing, because the push starts CI for the new head and a base-dependent check has to see the
