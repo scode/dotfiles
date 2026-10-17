@@ -250,6 +250,23 @@ remote fetches from and pushes to that repository alone, on the same host. A rem
   `E_STOP_REQUESTED` and a `JJSTACK_STOPPED` line. Use it rather than killing the process, which stops it wherever it is
   and reports `E_KILLED`.
 
+### The run log
+
+Every command except `stop` writes a timestamped log of its run to a file of its own under `.jj/jjstack-logs/` in the
+checkout and prints the path as `JJSTACK_LOG path=...`, the first line of its output. The log opens with the process id
+and arguments and, on success, ends with `finished ok`. In between it has every command the run executes, with its
+call-site code, exit status, and duration, the output of every command that failed or wrote something, and the ledger
+lines. Writes and fetches also get a line when they start, and any other command one once it has run for 30 seconds, so
+a tail shows a slow step in flight. Repeated identical status polls (the check wait, head convergence, mergeability) are
+logged once and then as a count with the time span they cover, and an unchanged wait gets a heartbeat line every five
+minutes. Old logs are pruned to the 20 newest, but never one modified in the last hour.
+
+Nothing requires reading it. It is there for checking on a long run while it goes, and for explaining a stop that the
+report and the ledger lines do not. When the user asks how a running landing is going, read the last 20 or so lines
+(`tail -n 20 <path>`) and answer from them instead of waiting for the run to finish. A newest line more than about six
+minutes old, with no command shown as started or still running, suggests the run is stuck; check the process before
+saying so.
+
 ### When the script stops
 
 Every way the script can stop prints the same lines to stderr:
@@ -276,11 +293,10 @@ and what was found, not what to do about it. Then fix the cause and rerun the sa
 found. After exit 4, work out what already changed before rerunning anything: the `JJSTACK_` ledger lines on stdout say
 what completed, and `jj log` and `gh pr view` show the rest. When those do not explain what happened, read the file the
 `log:` line names: every command the run executed, in order, with its call-site code, exit status, and duration, and the
-output of every command that failed or wrote something. The script writes it only when it stops on an error. Do not get
-past a refusal by doing its step by hand. Most refusals guard against pushing, merging, or deleting something nobody
-reviewed, and doing the step by hand removes the guard along with the obstacle. If the script itself looks wrong for the
-situation, a crash or a check that is clearly mistaken, say so and propose a fix to the script instead of routing around
-it.
+output of every command that failed or wrote something (see "The run log"). Do not get past a refusal by doing its step
+by hand. Most refusals guard against pushing, merging, or deleting something nobody reviewed, and doing the step by hand
+removes the guard along with the obstacle. If the script itself looks wrong for the situation, a crash or a check that
+is clearly mistaken, say so and propose a fix to the script instead of routing around it.
 
 ## Failure modes
 
@@ -313,7 +329,8 @@ Plan first, and tell the user the bottom-up list of PRs that will land and the P
 restacked. Then pass the planned list back as `--expect`, so the run refuses if the stack changed between the two calls.
 `--through` lands up to and including that PR and leaves the PRs above it open. The stack has to be in sync with GitHub
 first: `land` refuses when a PR's head is not the local commit, so run `submit` when `status` shows anything to do. Give
-the call a timeout of at least the repo's CI time per PR, or run it in the background and wait for it to exit.
+the call a timeout of at least the repo's CI time per PR, or run it in the background and wait for it to exit; its run
+log shows the progress meanwhile.
 
 For each PR, bottom-up, `land`:
 
