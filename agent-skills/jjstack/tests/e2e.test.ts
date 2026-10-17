@@ -335,6 +335,121 @@ Deno.test("submit refuses when the stack continues above --top", async () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// new-pr
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Writes a commit message file in the world and returns its path. */
+async function messageFile(w: World, name: string, text: string): Promise<string> {
+  const path = `${w.root}/${name}`;
+  await Deno.writeTextFile(path, text);
+  return path;
+}
+
+/**
+ * `new-pr` is the one call for "make a PR": it commits the working copy (or only the named paths, which are matched
+ * literally even when they contain fileset syntax such as parentheses), bookmarks the commit, and opens a draft PR on
+ * top of the stack, the first one based on the default branch and the next on the PR below. Changes left out of the
+ * paths stay in the working copy for later.
+ */
+Deno.test("new-pr commits, bookmarks, and opens a draft PR on top, leaving other changes in the working copy", async () => {
+  await withWorld(async (w) => {
+    await Deno.writeTextFile(`${w.work}/one.txt`, "one\n");
+    const m1 = await messageFile(w, "m1", "feat: add one\n\nWhy one.\n");
+    let r = await jjstack(w, ["new-pr", "--bookmark", "one", "--message-file", m1]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_COMMITTED bookmark=one ");
+    assertStringIncludes(r.out, "JJSTACK_SUBMITTED pr=1 bookmark=one base=main actions=pushed,created");
+
+    await Deno.writeTextFile(`${w.work}/notes (draft).txt`, "two\n");
+    await Deno.writeTextFile(`${w.work}/later.txt`, "not yet\n");
+    const m2 = await messageFile(w, "m2", "feat: add notes\n\nWhy notes.\n");
+    r = await jjstack(w, ["new-pr", "--bookmark", "two", "--message-file", m2, "notes (draft).txt"]);
+    assertEquals(r.code, 0, r.err);
+    const s = await readState(w);
+    assertEquals(s.prs.map((p) => [p.number, p.headRefName, p.baseRefName, p.isDraft, p.title, p.body]), [
+      [1, "one", "main", true, "feat: add one", "Why one."],
+      [2, "two", "one", true, "feat: add notes", "Why notes."],
+    ]);
+    const pushed = await $`git --git-dir ${w.remote} show --name-only --format= two`.env(w.env).text();
+    assertEquals(pushed.trim(), "notes (draft).txt");
+    const left = await inWork(w)`jj diff --name-only -r @`.text();
+    assertEquals(left.trim(), "later.txt");
+  });
+});
+
+/**
+ * Everything `new-pr` can refuse on its own is refused before it commits anything (exit 3), so a refusal never leaves
+ * a half-made PR behind: a bookmark name already in use, nothing to commit, a message without a title, and a working
+ * copy sitting below open PRs, where the new commit would land mid-stack.
+ */
+Deno.test("new-pr refuses a taken bookmark, nothing to commit, an empty title, and a working copy mid-stack", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    const m = await messageFile(w, "m", "feat: add three\n\nWhy three.\n");
+    const refused = async (args: string[], code: string) => {
+      const r = await jjstack(w, ["new-pr", ...args]);
+      assertEquals(r.code, 3, r.err);
+      assertStringIncludes(r.err, `code=${code}`);
+    };
+    await refused(["--bookmark", "three", "--message-file", m], "E_NEWPR_NOTHING");
+    await Deno.writeTextFile(`${w.work}/three.txt`, "three\n");
+    await refused(["--bookmark", "pr2", "--message-file", m], "E_NEWPR_BOOKMARK_EXISTS");
+    await refused(
+      ["--bookmark", "three", "--message-file", await messageFile(w, "empty", "\nbody only\n")],
+      "E_NEWPR_MESSAGE_EMPTY",
+    );
+    await inWork(w)`jj new pr1`;
+    await Deno.writeTextFile(`${w.work}/three.txt`, "three\n");
+    await refused(["--bookmark", "three", "--message-file", m], "E_NEWPR_NOT_ON_TOP");
+    const made = await inWork(w)`jj log --no-graph -r ${'description(substring:"feat: add three")'} -T ${"commit_id"}`
+      .text();
+    assertEquals(made.trim(), "", "new-pr committed before refusing");
+    assertEquals((await readState(w)).prs.length, 2);
+  });
+});
+
+/**
+ * The rest of what `new-pr` refuses before committing, each of which used to surface only in the submit phase or not
+ * at all: an unreadable message file, a name jj or Git would reject (jj parses it only at bookmark creation, after the
+ * commit), a name that exists only as a remote branch, a name an earlier, now landed PR used, a working-copy commit that
+ * already carries a bookmark (the commit would end up with two), and unbookmarked work below the working copy.
+ */
+Deno.test("new-pr refuses bad names, used names, a bookmarked working copy, and unbookmarked work below", async () => {
+  await withWorld(async (w) => {
+    await Deno.writeTextFile(`${w.work}/a.txt`, "a\n");
+    const m = await messageFile(w, "m", "feat: add a\n\nWhy a.\n");
+    const refused = async (args: string[], code: string) => {
+      const r = await jjstack(w, ["new-pr", ...args]);
+      assertEquals(r.code, 3, r.err);
+      assertStringIncludes(r.err, `code=${code}`);
+    };
+    await refused(["--bookmark", "a", "--message-file", `${w.root}/missing`], "E_NEWPR_MESSAGE_READ");
+    await refused(["--bookmark", "bad name", "--message-file", m], "E_NEWPR_BOOKMARK_NAME");
+    await $`git --git-dir ${w.remote} branch remote-only main`.env(w.env).quiet();
+    await refused(["--bookmark", "remote-only", "--message-file", m], "E_NEWPR_BOOKMARK_EXISTS");
+    await editState(w, (s) => {
+      s.prs.push({
+        number: 99,
+        headRefName: "landed",
+        baseRefName: "main",
+        state: "MERGED",
+        isDraft: false,
+        title: "old",
+        body: "",
+        readyAt: [],
+      });
+    });
+    await refused(["--bookmark", "landed", "--message-file", m], "E_NEWPR_NAME_USED");
+    await inWork(w)`jj bookmark set wip -r @`;
+    await refused(["--bookmark", "a", "--message-file", m], "E_NEWPR_WC_BOOKMARKED");
+    await inWork(w)`jj bookmark delete wip`;
+    await inWork(w)`jj commit -m ${"stray"}`;
+    await Deno.writeTextFile(`${w.work}/b.txt`, "b\n");
+    await refused(["--bookmark", "b", "--message-file", m], "E_NEWPR_UNBOOKMARKED_BELOW");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 
