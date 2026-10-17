@@ -80,10 +80,6 @@ reassessment review, for which the goal file names no model, runs at the executi
 resource watchdog keeps every one of its obligations, but loses its option of a small-context watcher agent, since that
 is a cheaper model doing monitoring the executing agent would otherwise do; it runs as a background process only.
 
-The mode exists because this override kept getting written into the goal text by hand ("orchestrating agent will do all
-the implementation, no use of sub agent for workhorse/mechanical"), where it had to be reconciled ad hoc with the goal
-file's standing requirement to delegate through galaxy-brain.
-
 The mode is on when the argument string asks for it: the word `no-workhorse` used as a switch, or a plain-language
 request that the executing or orchestrating agent do the work at its own model rather than handing workhorse or
 mechanical work to cheaper sub-agents. Unlike placement, this is read from the goal text on purpose, since how the
@@ -123,11 +119,6 @@ one line:
 - PR sizing: in this mode a PR defaults to one chunk (one coherent change with its tests). The user may instead keep the
   default bite-sized PRs, in which case a chunk spanning several PRs has its spec name the boundaries (file sets, or
   ordered stages each of which passes the checks) so the executing agent can split the result.
-
-The mode exists because delegating many small units to cheap models is the wrong shape when the bottleneck is wall-clock
-time and strong models are available: every unit costs a spec, two checkpoint stops, a gate, and an integration, and
-those round trips dominate small units. Bolting this onto galaxy-brain as overrides would have fought its cost-oriented
-routing, escalation, and design rules, so it is a separate orchestrator.
 
 The mode is on when the argument string asks for it: the word `powerhorse` used as a switch, or a plain-language request
 that the executing agent supervise large parallel chunks on strong models rather than delegating to cheaper ones. The
@@ -192,19 +183,6 @@ counter or a date) so the new pair is distinct, or, when the existing files real
 goal, ask the user whether to replace them. Replacing means moving both existing files aside under a dated suffix
 (`<name>.archive-YYYY-MM-DD.md`), never deleting them, and never leaving the old log in place: a leftover log would make
 the new goal's first run resume from the old attempt.
-
-Why the parent directory and not somewhere standardized: there is no standard. On 2026-09-06 each of Codex, Claude Code,
-Muse Code, and OpenCode was asked twice, from checkouts under two different parent directories, to keep a goal and a log
-out of the repo with no further hint. No two harnesses agreed, and no harness agreed with itself across the two runs.
-From `~/git` they reached for `~/.codex/task-state/<slug>/`, `~/.local/state/agent-goals/<repo>/`,
-`~/.local/share/<repo>/`, and `~/.local/state/<slug>/`; from a scratch directory Codex and OpenCode went to
-`~/.codex/tasks/<slug>/` and `/tmp/opencode/`, while Claude Code chose a sibling directory of the checkout and Muse Code
-chose the checkout's parent, which is this skill's convention. Two runs per harness cannot separate run-to-run variance
-from sensitivity to the location, so treat the specific paths as illustrative rather than stable. Asked once each, from
-`~/git`, with the out-of-repo constraint dropped, every harness put both files inside the repo, at the root or under
-`docs/` or a harness-specific hidden directory. A goal file that has to survive across harnesses and sessions cannot
-depend on any of that. The parent-of-checkout convention is harness-neutral, already how goal files have been kept next
-to repositories by hand on the machine this was developed on, and easy to explain in one sentence.
 
 ## Up-front questions
 
@@ -376,30 +354,30 @@ has none of this conversation's context. Include, at minimum:
   and polling usage. Give it only the monitoring context it needs; the parent must not have to poll it for alerts.
   Sending only alerts to the parent does not eliminate the watcher's own polling cost. This is mandatory, not a
   suggestion: unattended runs fan out delegates and worktrees, a Rust worktree costs on the order of 1.5 GB of build
-  output, tests leave temp directories behind, and a full disk or an OOM kill has ended real runs mid-implementation
-  with no signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the watchdog checks and how
-  often — free space on the filesystems holding the repository, any worktrees, the scratch directory, and `/tmp`, plus
-  available memory and swap, using whatever the platform provides (`df`, `free` or `/proc/meminfo` on Linux,
-  `vm_stat`/`sysctl` on macOS), sampled every minute or so — and the thresholds at which it alerts (a sensible default:
-  under 10% or under 5 GB free on any watched filesystem, or under 10% available memory, whichever comes first, with a
-  second alert when the number keeps falling). An alert is an instruction to act, not to note: the orchestrator stops
-  launching new delegates, removes gated worktrees and build caches it owns, waits for or kills the delegate most likely
-  responsible, and only resumes when the watchdog reports headroom. The goal file must also say that a watchdog that
-  dies is restarted, and that its running state is part of every handoff note so a resumed session reconciles the
-  existing monitor or restarts it. Record its handle, watched paths, status path, and delivery mechanism in the log, and
-  stop the owned monitor when the goal is done. Separate sampling from model wakeups: keep the minute-level samples in a
-  private heartbeat/status file and use supported notifications for alerts, worsening conditions, recovery, and monitor
-  failure. A file update alone is not a notification. Verify delivery with a harmless synthetic alert and verify failure
-  detection with a throwaway monitor before relying on the mechanism. Omitting periodic checks also requires independent
-  stale-heartbeat detection: stall a throwaway monitor without exiting it and verify that the caller is notified within
-  two sample intervals. A monitor cannot detect its own sampling loop hanging. If resource-alert, exit, or
-  stale-heartbeat notifications are unavailable or unverified, say so in the log and check status at least once a
-  minute. On every path, check heartbeat freshness before new workload launches, batching that check with other required
-  observations. A dead monitor or a heartbeat stale for two sample intervals pauses new launches until monitoring is
-  restored. Do not lengthen resource sampling intervals or assume that a process-completion notification delivers
-  intermediate alerts from a still-running watchdog merely to reduce model turns. In no-workhorse and powerhorse modes,
-  the goal file leaves out the watcher-agent option: the watchdog is a background process, and any status checks it
-  cannot deliver as notifications are the executing agent's own.
+  output, tests leave temp directories behind, and a full disk or an OOM kill ends a run mid-implementation with no
+  signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the watchdog checks and how often —
+  free space on the filesystems holding the repository, any worktrees, the scratch directory, and `/tmp`, plus available
+  memory and swap, using whatever the platform provides (`df`, `free` or `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on
+  macOS), sampled every minute or so — and the thresholds at which it alerts (a sensible default: under 10% or under 5
+  GB free on any watched filesystem, or under 10% available memory, whichever comes first, with a second alert when the
+  number keeps falling). An alert is an instruction to act, not to note: the orchestrator stops launching new delegates,
+  removes gated worktrees and build caches it owns, waits for or kills the delegate most likely responsible, and only
+  resumes when the watchdog reports headroom. The goal file must also say that a watchdog that dies is restarted, and
+  that its running state is part of every handoff note so a resumed session reconciles the existing monitor or restarts
+  it. Record its handle, watched paths, status path, and delivery mechanism in the log, and stop the owned monitor when
+  the goal is done. Separate sampling from model wakeups: keep the minute-level samples in a private heartbeat/status
+  file and use supported notifications for alerts, worsening conditions, recovery, and monitor failure. A file update
+  alone is not a notification. Verify delivery with a harmless synthetic alert and verify failure detection with a
+  throwaway monitor before relying on the mechanism. Omitting periodic checks also requires independent stale-heartbeat
+  detection: stall a throwaway monitor without exiting it and verify that the caller is notified within two sample
+  intervals. A monitor cannot detect its own sampling loop hanging. If resource-alert, exit, or stale-heartbeat
+  notifications are unavailable or unverified, say so in the log and check status at least once a minute. On every path,
+  check heartbeat freshness before new workload launches, batching that check with other required observations. A dead
+  monitor or a heartbeat stale for two sample intervals pauses new launches until monitoring is restored. Do not
+  lengthen resource sampling intervals or assume that a process-completion notification delivers intermediate alerts
+  from a still-running watchdog merely to reduce model turns. In no-workhorse and powerhorse modes, the goal file leaves
+  out the watcher-agent option: the watchdog is a background process, and any status checks it cannot deliver as
+  notifications are the executing agent's own.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.
