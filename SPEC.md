@@ -271,6 +271,19 @@ a `gh pr edit` primary path with a REST fallback: the failure sits in the middle
 primary path costs a stopped landing. The rest of the `gh pr` surface the skill uses (`create`, `view`, `ready`,
 `merge`, `list`) is verified working on 2.45.0 and stays as is.
 
+## jjstack's Fast Path Runs as a Bundled Script
+
+The `jjstack` fast path merge lives in `agent-skills/jjstack/scripts/fast-land`, a Deno script, not in shell snippets
+the agent transcribes. As prose snippets it was slow, easy to get subtly wrong, and impossible to run under agent rules
+that forbid `$` expansions in composed shell commands; one 32-PR landing on 2026-10-11 had to rebuild every snippet as a
+file. As a script it is also testable, and it was exercised against real stacks on `scode/repotesting`.
+
+The script must stay within the `gh` surface the REST section above allows (`gh pr view`, `list`, `ready`, `merge`, and
+`gh api`), so it works on `gh` 2.45.0. It needs `deno` and Git 2.40 or later (for `git merge-tree --merge-base`). A host
+without `deno` gets the normal CI-gated landing flow or a prompt to install it, never a hand transcription of the
+script. The skill keeps its explanation of what the script guarantees, so an agent can reason about its output and its
+failures without reading the source.
+
 ## Legacy `old/` Tree
 
 Code under `old/` is legacy reference material. Do not spend review effort on simplification, idiomaticity, style, or
