@@ -14,12 +14,12 @@ The first runs the unit tests inside the script: its parsers, stack rules, check
 stop requests, and run log, plus the contract checks that every error code appears exactly once and every jj call
 carries the no-abandon setting. It takes about a second.
 
-The second runs the end-to-end tests in `tests/e2e.test.ts`: whole commands (`submit`, `land`, `fast-land`, `stop`)
-against a real jj checkout and a real bare Git repository playing GitHub's copy of the repo, with `tests/fake-gh.ts`
-standing in for `gh`. They pin the sequencing the unit tests cannot see, such as retargeting before pushing, pushing
-only the PR a landing is merging, retrying GitHub's transient responses, stopping and resuming, and cleanup. They take
-about a minute and need `deno`, `jj`, Git 2.40 or later, and `jq` on `PATH`. A failing test keeps its temporary world
-and prints where, so the jj checkout, the bare repo, the fake's state, and the event log can be inspected.
+The second runs the end-to-end tests in `tests/e2e.test.ts`: every command run whole against a real jj checkout and a
+real bare Git repository playing GitHub's copy of the repo, with `tests/fake-gh.ts` standing in for `gh`. They pin the
+sequencing the unit tests cannot see, such as retargeting before pushing, pushing only the PR a landing is merging,
+retrying GitHub's transient responses, stopping and resuming, and cleanup. They take about a minute and need `deno`,
+`jj`, Git 2.40 or later, and `jq` on `PATH`. A failing test keeps its temporary world and prints where, so the jj
+checkout, the bare repo, the fake's state, and the event log can be inspected.
 
 Also run `deno fmt --line-width=120 --ext=ts`, `deno check`, and `deno lint` on the script (the extensionless script
 needs `--ext=ts` for `deno fmt`, and a `.ts` copy for `deno lint`), and the same without `--ext` on `tests/`.

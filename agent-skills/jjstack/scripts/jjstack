@@ -5,6 +5,8 @@
  *
  * Usage: `jjstack <command> [--dir <checkout>] [--repo owner/name] [--remote origin] [--top <rev>] [options]`
  *
+ * - `init`: set up a checkout for the other commands (jj, identity, author) and run their shared checks. See "Setting
+ *   up a checkout".
  * - `status`: print what `submit` would do for each PR, without doing it.
  * - `submit [--update-text] [--partial]`: make GitHub show the local stack. See "Syncing the stack to GitHub".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
@@ -15,8 +17,9 @@
  * - `stop`: ask a running `land` or `fast-land` in the same checkout to stop at its next safe point. See "Stop
  *   requests".
  *
- * Every command runs in `--dir`, a colocated jj checkout, so the caller's working directory does not matter. "The
- * stack" is always the linear ancestry chain from the remote default branch to `--top` (default `@`).
+ * Every command runs in `--dir`, a colocated jj checkout (for `init`, any Git checkout, which it sets up), so the
+ * caller's working directory does not matter. "The stack" is always the linear ancestry chain from the remote default
+ * branch to `--top` (default `@`).
  *
  * NOTE: Failure reporting is part of the interface, not decoration. Every way this script can stop has its own error
  * code, and each code appears exactly once in this file as a quoted literal (a test enforces that), so the `grep` the
@@ -857,15 +860,16 @@ class Ctx {
 async function openCtx(args: { dir: string; repo?: string; remote: string }): Promise<Ctx> {
   phase = "startup";
   const dir = args.dir;
-  let stat;
-  try {
-    stat = await Deno.stat(dir);
-  } catch {
-    usage("E_USAGE_DIR_MISSING", `--dir ${dir} does not exist`);
-  }
-  if (!stat.isDirectory) usage("E_USAGE_DIR_NOT_DIR", `--dir ${dir} is not a directory`);
+  await checkDir(dir);
   const sh = shellIn(dir);
-  const root = await exec("E_JJ_NOT_A_REPO", sh`jj ${JJ_SAFE} root`);
+  const rootRun = await run("E_JJ_ROOT", sh`jj ${JJ_SAFE} root`);
+  if (rootRun.code !== 0) {
+    fail(
+      "E_JJ_NOT_A_REPO",
+      `${dir} is not a jj checkout (jj root: ${rootRun.stderr.trim()}); \`jjstack init\` sets up a Git checkout`,
+    );
+  }
+  const root = rootRun.stdout.trim();
   const log = openLog(`${root}/.jj/jjstack-logs`, commandName);
   if (log !== undefined) console.log(`JJSTACK_LOG path=${log}`);
   else console.log(`no run log file: cannot create one under ${root}/.jj/jjstack-logs; logging to memory only`);
@@ -901,6 +905,17 @@ async function openCtx(args: { dir: string; repo?: string; remote: string }): Pr
   return ctx;
 }
 
+/** Refuses a `--dir` that does not exist or is not a directory, before any command tries to run in it. */
+async function checkDir(dir: string) {
+  let stat;
+  try {
+    stat = await Deno.stat(dir);
+  } catch {
+    usage("E_USAGE_DIR_MISSING", `--dir ${dir} does not exist`);
+  }
+  if (!stat.isDirectory) usage("E_USAGE_DIR_NOT_DIR", `--dir ${dir} is not a directory`);
+}
+
 /** A jj string pattern matching exactly `name`, quoted so no character in it is read as pattern syntax. */
 function exactPattern(name: string): string {
   return "exact:" + JSON.stringify(name);
@@ -927,6 +942,87 @@ async function openAbove(ctx: Ctx, code: string, bottomSha: string, top: string,
       -T ${'local_bookmarks.map(|b| b.name()).join("\\n") ++ "\\n"'}`,
   );
   return out.split("\n").filter(Boolean).filter((b) => open.some((p) => !p.isCrossRepository && p.headRefName === b));
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Setting up a checkout (`init`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * `jjstack init`: makes `dir` a checkout the other commands accept, runs their shared checks, and reports what it had
+ * to change in a `JJSTACK_INIT` line. Idempotent: in a checkout that is already set up it changes nothing, so the skill
+ * has agents run it once at the start of every session.
+ *
+ * - A plain Git checkout gets `jj git init --colocate`, always, without asking first; the user decided that setting up
+ *   jj is never worth a question. It runs at the Git top level, because in a subdirectory jj 0.46 creates a new, empty
+ *   Git repository there instead of using the enclosing one. A linked Git worktree needs nothing special: jj 0.46
+ *   colocates there (with a warning) and the colocation check passes.
+ * - A jj identity that is missing gets copied from Git into the repository's jj config. With neither set there is
+ *   nothing to copy, and that is a refusal, decided before anything is written: the identity belongs to the user.
+ * - A working-copy commit with an empty author, which includes the one `jj git init` just made when jj had no identity
+ *   yet, gets `jj metaedit --update-author @`. Otherwise the first commit made from it inherits the empty author, and
+ *   jj refuses to push a commit without one.
+ *
+ * Tool versions are not probed: a tool that cannot start fails at its first call with that call site's code, and
+ * `gh repo view` in the shared checks fails when gh is not authenticated.
+ */
+async function init(args: { dir: string; repo?: string; remote: string }) {
+  phase = "init";
+  await checkDir(args.dir);
+  const sh = shellIn(args.dir);
+  const root = await run("E_INIT_JJ_ROOT", sh`jj ${JJ_SAFE} root`);
+  let gitTop: string | undefined;
+  if (root.code !== 0) {
+    if (!/There is no jj repo/.test(root.stderr)) {
+      fail("E_INIT_JJ_ROOT_FAILED", `jj root failed in ${args.dir}: ${root.stderr.trim()}`);
+    }
+    const top = await run("E_INIT_GIT_TOP", sh`git rev-parse --show-toplevel`);
+    if (top.code !== 0) {
+      fail("E_INIT_NOT_GIT", `${args.dir} is neither a jj nor a Git checkout: ${top.stderr.trim()}`);
+    }
+    gitTop = top.stdout.trim();
+  }
+  // Every refusal is decided before the first write. `jj config get` works before the jj repo exists (it reads the
+  // user's config, and a repo created here would add nothing to it), so the identity is resolved up front.
+  const toCopy: [string, string][] = [];
+  for (const key of ["user.name", "user.email"]) {
+    const jjValue = await run("E_INIT_JJ_IDENTITY_READ", sh`jj ${JJ_SAFE} config get ${key}`);
+    if (jjValue.code === 0 && jjValue.stdout.trim() !== "") continue;
+    const gitValue = await run("E_INIT_GIT_IDENTITY_READ", sh`git config ${key}`);
+    const value = gitValue.code === 0 ? gitValue.stdout.trim() : "";
+    if (value === "") fail("E_INIT_NO_IDENTITY", `neither jj nor git has ${key} configured for ${args.dir}`);
+    toCopy.push([key, value]);
+  }
+  // Each change is narrated as it happens, so stdout records it even if the shared checks below then stop the run.
+  if (gitTop !== undefined) {
+    await exec("E_INIT_JJ_GIT_INIT", shellIn(gitTop)`jj ${JJ_SAFE} git init --colocate`, { write: true });
+    console.log(`created a colocated jj repo at ${gitTop}`);
+  }
+  for (const [key, value] of toCopy) {
+    // `jj config set` reads its value as a TOML expression; a JSON string is a valid TOML basic string, so a name
+    // that happens to parse as TOML (`true`, `"Bob"`) is still stored as the literal text Git had.
+    await exec("E_INIT_JJ_IDENTITY_SET", sh`jj ${JJ_SAFE} config set --repo ${key} ${JSON.stringify(value)}`, {
+      write: true,
+    });
+    console.log(`copied ${key} from git into the repository's jj config`);
+  }
+  markSync();
+  // Labelled fields, because `exec` trims its output and an empty name would otherwise shift the email into its place.
+  const author = await exec(
+    "E_INIT_AUTHOR_READ",
+    sh`jj ${JJ_SAFE} log --no-graph -r @ -T ${'"name=" ++ author.name() ++ "\\temail=" ++ author.email()'}`,
+  );
+  const fixAuthor = !/^name=\S/.test(author) || !/\temail=\S/.test(author);
+  if (fixAuthor) {
+    await exec("E_INIT_AUTHOR_FIX", sh`jj ${JJ_SAFE} metaedit --update-author @`, { write: true });
+    console.log("set the working-copy commit's author from the jj identity");
+  }
+  const ctx = await openCtx(args);
+  const copied = toCopy.map(([key]) => key);
+  console.log(
+    `JJSTACK_INIT repo=${ctx.repo} default=${ctx.defaultBranch} jj=${gitTop !== undefined ? "created" : "existing"} ` +
+      `identity=${copied.length > 0 ? `copied:${copied.join(",")}` : "ok"} author=${fixAuthor ? "fixed" : "ok"}`,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -2366,6 +2462,7 @@ async function fastLand(
 /** Each command and the options it accepts beyond the shared `--dir`, `--repo`, `--remote`, and `--top`. */
 // deno-fmt-ignore
 const COMMANDS = new Map<string, { strings: string[]; booleans: string[] }>([
+  ["init",      { strings: [],                                                     booleans: [] }],
   ["status",    { strings: [],                                                     booleans: [] }],
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
@@ -2386,6 +2483,7 @@ async function main() {
   };
   // `stop` must work while a landing holds the checkout and while GitHub is unreachable, so it skips every check.
   if (command === "stop") return await requestStop(args.dir as string);
+  if (command === "init") return await init(args as { dir: string; repo?: string; remote: string });
   const ctx = await openCtx(args as { dir: string; repo?: string; remote: string });
   const top = args.top as string;
   if (command === "status") await status(ctx, top);
