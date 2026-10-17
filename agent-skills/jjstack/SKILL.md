@@ -252,12 +252,13 @@ remote fetches from and pushes to that repository alone, on the same host. A rem
 
 ### When the script stops
 
-Every way the script can stop prints the same three lines to stderr:
+Every way the script can stop prints the same lines to stderr:
 
 ```
 JJSTACK_ERROR code=E_MATCH_HEAD_DIFFERS phase="plan" mutated=sync
 error: PR #175 head is 4fa48fa... but local pr/foo is 7a7e9f9...; GitHub does not show the local commit
 raised at: grep -n '"E_MATCH_HEAD_DIFFERS"' /path/to/scripts/jjstack
+log: /path/to/checkout/.jj/jjstack-logs/2026-10-17T03-55-57-266Z-land.log (every command this run executed; ...)
 ```
 
 Each code appears exactly once in the script, so the `raised at:` grep lands on the one line that stopped the run;
@@ -273,10 +274,13 @@ When the script stops, read the script around the raising line before deciding w
 docstring of the function it sits in, say which invariant failed and why it matters; the messages say what was checked
 and what was found, not what to do about it. Then fix the cause and rerun the same command, or tell the user what you
 found. After exit 4, work out what already changed before rerunning anything: the `JJSTACK_` ledger lines on stdout say
-what completed, and `jj log` and `gh pr view` show the rest. Do not get past a refusal by doing its step by hand. Most
-refusals guard against pushing, merging, or deleting something nobody reviewed, and doing the step by hand removes the
-guard along with the obstacle. If the script itself looks wrong for the situation, a crash or a check that is clearly
-mistaken, say so and propose a fix to the script instead of routing around it.
+what completed, and `jj log` and `gh pr view` show the rest. When those do not explain what happened, read the file the
+`log:` line names: every command the run executed, in order, with its call-site code, exit status, and duration, and the
+output of every command that failed or wrote something. The script writes it only when it stops on an error. Do not get
+past a refusal by doing its step by hand. Most refusals guard against pushing, merging, or deleting something nobody
+reviewed, and doing the step by hand removes the guard along with the obstacle. If the script itself looks wrong for the
+situation, a crash or a check that is clearly mistaken, say so and propose a fix to the script instead of routing around
+it.
 
 ## Failure modes
 
