@@ -74,17 +74,26 @@ whoever is judging whether a change kept the user-facing behavior intact.
 ## No-workhorse mode
 
 - The skill supports a no-workhorse mode, turned on by the word `no-workhorse` used as a switch in the argument string
-  or by a plain-language request that the executing agent do the implementation itself without workhorse or mechanical
-  sub-agents. A mention that is not a switch (quoted, negated, part of a path, or the subject of the goal) leaves the
-  mode off and stays in the goal text; only an occurrence consumed as the switch is removed. An unclear role, or a
-  request that only leans that way, is asked about, not guessed. The `in <dir>` clause and `help` rules are unchanged.
+  or by a plain-language request that the executing agent do the work at its own model rather than handing workhorse or
+  mechanical work to cheaper sub-agents. A mention that is not a switch (quoted, negated, part of a path, or the subject
+  of the goal) leaves the mode off and stays in the goal text; only an occurrence consumed as the switch is removed. An
+  unclear role, or a request that only leans that way, is asked about, not guessed. The `in <dir>` clause and `help`
+  rules are unchanged.
 - The up-front batch states which mode applies, standard or no-workhorse, so the user can correct it before anything is
   written.
-- In no-workhorse mode the goal file forbids the executing agent from delegating any unit of its own decomposition,
-  read-only or writing; it does that work itself. The resource watchdog keeps all its obligations but runs as a
-  background process only, without the small-context watcher-agent option. The mode changes nothing else:
-  `scode-galaxy-brain` is still required for the whole run, and the review gate and scope reassessment review are the
-  same as in the standard mode and still routed through galaxy-brain.
+- In no-workhorse mode the goal file forbids sending any unit of the executing agent's own decomposition to a weaker
+  model or a lower effort than its own (the review gate and scope reassessment review keep their demanded model and
+  effort), and forbids invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing`; if galaxy-brain is
+  already active, the goal file is the user's express instruction to stop it. Sub-agents at the executing agent's own
+  model and effort are explicitly fine, at its judgment, when they are likely to finish the work sooner without costing
+  quality; parallelism is encouraged as something to consider, never required. Concurrent agents that might otherwise
+  conflict may run in separate worktrees or jj workspaces whose results the executing agent merges back. A user request
+  that rules out sub-agents altogether overrides the allowance. The scope reassessment review runs at the executing
+  agent's own model and effort. The goal file does not carry galaxy-brain's concurrency rules. Native sub-agents are the
+  normal launch path, and `scode-harness-shellout` covers a model not available as a native sub-agent type.
+- The review gate and scope reassessment review are the same as in the standard mode, launched by the executing agent
+  itself the same way as any other sub-agent. The resource watchdog keeps all its obligations but runs as a background
+  process only, without the small-context watcher-agent option. The mode changes nothing else.
 
 ## Powerhorse mode
 
@@ -149,9 +158,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
 - Using `scode-galaxy-brain` for the entire run, activated right after the resume protocol and kept active through every
-  delegation. Reading it for mechanics does not satisfy this. In no-workhorse mode, the no-delegation demand described
-  under No-workhorse mode, stated as overriding galaxy-brain's own judgment of what is worth delegating. In powerhorse
-  mode, `scode-powerhorse` in place of galaxy-brain throughout, as described under Powerhorse mode.
+  delegation. Reading it for mechanics does not satisfy this. In no-workhorse mode, no orchestration skill at all, and
+  instead the demands and allowances described under No-workhorse mode. In powerhorse mode, `scode-powerhorse` in place
+  of galaxy-brain throughout, as described under Powerhorse mode.
 - A resource watchdog for memory and disk, started before the first delegation and without the watcher-agent option in
   the no-workhorse and powerhorse modes, restarted if it dies, and carried in every handoff note. Prefer a process
   monitor over a model watchdog to keep routine minute-level sampling out of model turns. A small-context model watcher
@@ -164,11 +173,11 @@ whoever is judging whether a change kept the user-facing behavior intact.
   the owned monitor. Reducing model wakeups must not reduce resource sampling or assume that status-file writes or
   process-completion notifications deliver intermediate resource alerts.
 - A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a fresh-context run, delegated
-  through the active orchestration skill, of the reviewer the user chose from the menu, stated in the goal file as an
-  explicit demand for its model, effort, and skill or charter. The prompt names the skill or carries the full charter,
-  the repo root, the range to review, and the findings file, with no launch command copied into the goal file. For every
-  non-swarm reviewer the goal file spells out the charter in full: general correctness, design, and idiomatic code,
-  findings to a named file, no edits, no VCS changes.
+  through the active orchestration skill (in no-workhorse mode, launched by the executing agent itself), of the reviewer
+  the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and skill or
+  charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the findings
+  file, with no launch command copied into the goal file. For every non-swarm reviewer the goal file spells out the
+  charter in full: general correctness, design, and idiomatic code, findings to a named file, no edits, no VCS changes.
 - The reviewed outline and requirement sources, including the user's relevant words and later decisions, survive into
   the goal. Before implementing substantial departures, or undertaking another repair round after repeated corrective
   reviews of a component, reassess necessity with a fresh-context review carrying the full planning charter, original
