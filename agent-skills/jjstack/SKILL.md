@@ -88,9 +88,10 @@ environment already guarantees those operations work inside it.
   ancestry changed.
 - "rebase onto main", "sync the stack", or "I merged the bottom PR" Run the script's `sync`, which moves the stack onto
   the current default branch, cleans up PRs at the bottom that were merged outside the script, and submits the rest.
-- "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
-  GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally: `gh pr view 45 -R
-  owner/repo --json headRefName`, then `jj new <bookmark>` or another explicit move to that change.
+- "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Run the script's
+  `goto --pr 45`, which looks up the PR's branch on GitHub and puts a new working copy on top of that bookmarked commit,
+  so the next edit lands on that PR (fold it in with `amend`). It refuses a PR that is not open, a PR from a fork, and a
+  branch whose local bookmark is missing or conflicted.
 - "merge the PR", "merge this PR", or a bare "merge it" In a stacked workflow, "merge" means "land this change on the
   default branch", not "run `gh pr merge` on whatever PR is in focus". Those are different operations when the PR's
   GitHub base is another stack bookmark: `gh pr merge` on such a PR folds it into its parent's branch, GitHub closes it
@@ -286,6 +287,8 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   optionally rewords it, and submits; see "Building and updating the stack".
 - `sync`: brings the stack along after PRs merged outside the script or the default branch moved, and submits; see
   "Building and updating the stack".
+- `goto --pr <n>`: puts a new working copy on top of PR n's commit and prints a `JJSTACK_GOTO` line with the commit and
+  the head GitHub shows for the PR (they differ when the bookmark has unpushed work); see "Expected user commands".
 - `publish [--prs <list>]`: marks the stack's PRs, or the listed ones, ready for review, bottom-up, and prints a
   `JJSTACK_PUBLISHED` line per PR (`action=ready` or `action=already-ready`). Before marking any PR ready, it refuses a
   listed PR that is not in the stack, and any PR, up to the topmost listed one, whose head or base on GitHub is not the

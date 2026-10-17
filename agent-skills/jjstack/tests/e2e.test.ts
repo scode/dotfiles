@@ -737,6 +737,59 @@ Deno.test("publish marks the named PRs or the whole stack ready, and refuses an 
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// goto
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * "Go to PR 2" means a new working copy on that PR's commit, found through GitHub because a PR number is not a jj
+ * revision. Refused: a PR GitHub does not have, a PR that already merged, a PR from a fork (its branch name says
+ * nothing about local bookmarks), and a PR whose branch has no local bookmark.
+ */
+Deno.test("goto puts the working copy on the PR's commit and refuses forks and unknown PRs", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 3);
+    let r = await jjstack(w, ["goto", "--pr", "2"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_GOTO pr=2 bookmark=pr2 ");
+    const parent = await inWork(w)`jj log --no-graph -r ${"@-"} -T ${"local_bookmarks"}`.text();
+    assertEquals(parent.trim(), "pr2");
+    assertEquals((await inWork(w)`jj diff --name-only -r @`.text()).trim(), "");
+
+    r = await jjstack(w, ["goto", "--pr", "9"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_GOTO_READ_PR");
+    await editState(w, (s) => {
+      s.prs[0].state = "MERGED";
+    });
+    r = await jjstack(w, ["goto", "--pr", "1"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_GOTO_NOT_OPEN");
+    await editState(w, (s) => {
+      s.prs[2].isCrossRepository = true;
+    });
+    r = await jjstack(w, ["goto", "--pr", "3"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_GOTO_FORK");
+    // A PR made from another clone: GitHub knows its branch, but no local bookmark has that name.
+    await editState(w, (s) => {
+      s.prs.push({
+        number: 50,
+        headRefName: "elsewhere",
+        baseRefName: "main",
+        state: "OPEN",
+        isDraft: true,
+        title: "t",
+        body: "",
+        readyAt: [],
+      });
+    });
+    r = await jjstack(w, ["goto", "--pr", "50"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_GOTO_RESOLVE");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 

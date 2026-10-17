@@ -16,6 +16,7 @@
  * - `sync`: bring the stack along after PRs merged outside the script or the default branch moved, and submit. See
  *   "Bringing the stack along".
  * - `publish [--prs 12,13]`: mark the stack's PRs (or the listed ones) ready for review. See "Publishing PRs".
+ * - `goto --pr <n>`: put the working copy on top of PR n's commit. See "Going to a PR".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -2053,6 +2054,37 @@ async function publish(ctx: Ctx, top: string, prs: string | undefined) {
   phase = "done";
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Going to a PR (`goto`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * `jjstack goto`: puts the working copy on a new, empty commit on top of PR `pr`'s commit, so the next edit lands on
+ * that PR (and `amend` folds it in). A PR number is not a jj revision, so the PR's branch is read from GitHub and
+ * resolved as the local bookmark of the same name, after a fetch so the bookmark is current.
+ *
+ * The working copy it leaves is not lost: jj keeps it as a commit, as `jj new` always does. Refused: a PR that is not
+ * open (a merged PR's commit is not on the default branch, so editing on top of it edits nothing that can still land);
+ * a PR from a fork, whose branch name says nothing about the bookmarks here; and a branch whose local bookmark does not
+ * resolve to exactly one commit (missing, or conflicted). The bookmark is matched by name, so the `JJSTACK_GOTO` line
+ * also gives the head GitHub shows for the PR: a differing local commit is either unpushed work or an unrelated
+ * bookmark of the same name.
+ */
+async function goto(ctx: Ctx, pr: number) {
+  phase = "plan";
+  const p = await ctx.pr("E_GOTO_READ_PR", pr, "headRefName,headRefOid,isCrossRepository,state");
+  const bookmark = String(p.headRefName);
+  if (p.state !== "OPEN") fail("E_GOTO_NOT_OPEN", `PR #${pr} is ${p.state}, not OPEN`);
+  if (p.isCrossRepository) {
+    fail("E_GOTO_FORK", `PR #${pr} comes from a fork, so its branch ${bookmark} does not name a bookmark here`);
+  }
+  await ctx.fetch("E_GOTO_FETCH");
+  const sha = await ctx.resolve("E_GOTO_RESOLVE", `bookmarks(${exactPattern(bookmark)})`);
+  phase = `goto #${pr}`;
+  await exec("E_GOTO_NEW", ctx.sh`jj ${JJ_SAFE} new ${sha}`, { write: true });
+  console.log(`JJSTACK_GOTO pr=${pr} bookmark=${bookmark} commit=${sha} github_head=${p.headRefOid}`);
+}
+
 /**
  * Opens a draft PR for a just-pushed bookmark and confirms GitHub recorded the intended head commit, base, and draft
  * state. Always a draft: ready is the user's switch (or a landing's, right before a merge), because on repos that gate
@@ -2841,6 +2873,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["amend",     { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["sync",      { strings: [],                                                     booleans: [] }],
   ["publish",   { strings: ["prs"],                                                booleans: [] }],
+  ["goto",      { strings: ["pr"],                                                 booleans: [] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2876,7 +2909,12 @@ async function main() {
     await amend(ctx, String(args.bookmark), messageFile, args._ as string[]);
   } else if (command === "sync") await sync(ctx, top);
   else if (command === "publish") await publish(ctx, top, args.prs as string | undefined);
-  else if (command === "land") {
+  else if (command === "goto") {
+    if (top !== "@") usage("E_USAGE_GOTO_TOP", "goto moves the working copy and takes no --top");
+    const pr = String(args.pr ?? "");
+    if (!/^[1-9][0-9]*$/.test(pr)) usage("E_USAGE_GOTO_PR", `goto needs --pr <number>, got '${pr}'`);
+    await goto(ctx, Number(pr));
+  } else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
     await ciLand(ctx, {
