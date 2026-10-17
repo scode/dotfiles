@@ -11,6 +11,8 @@
  * - `submit [--update-text] [--partial]`: make GitHub show the local stack. See "Syncing the stack to GitHub".
  * - `new-pr --bookmark <name> --message-file <file> [paths...]`: commit working-copy changes as the next PR and submit.
  *   See "Making a PR".
+ * - `amend --bookmark <name> [--message-file <file>] [paths...]`: fold working-copy changes into an existing PR's
+ *   commit, optionally reword it, and submit. See "Updating a PR".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -1811,6 +1813,98 @@ async function newPr(ctx: Ctx, bookmark: string, messageFile: string, paths: str
   await submit(ctx, change, false, false);
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Updating a PR (`amend`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * `jjstack amend`: folds working-copy changes (all of them, or only `paths`) into the commit an existing PR's bookmark
+ * points at, optionally rewords that commit from a message file, and submits the stack, which pushes the amended PR and
+ * every PR above it that the rewrite moved. A reword submits with `--update-text`, so every PR in the stack, not only
+ * the amended one, gets its title and body reset from its commit message, as `submit --update-text` always does.
+ *
+ * The working copy can sit anywhere above the bookmarked commit: on top of the stack, where an agent usually works, or
+ * directly on the commit after `jj new <bookmark>`, which is how to edit against the PR's own tree when the edit
+ * touches lines that PRs higher up also change. Either way the changes come from `@`, jj rebases everything above the
+ * amended commit, and the submit covers the stack up to its topmost bookmark.
+ *
+ * Refused before anything is written: an unreadable or untitled message file; a bookmark that does not exist locally,
+ * is conflicted, or does not point at a commit in the stack below the working copy; nothing to fold in and no new
+ * message; a working copy with conflicts (they would move into the PR) or with a bookmark of its own (then it is a PR's
+ * commit, and folding it would move that whole PR into this one); and bookmarks above the amended commit that fork
+ * into more than one head, where there is no single stack to submit.
+ *
+ * The amended commit, or commits above it, can come out conflicted. That is the normal cost of changing a lower layer,
+ * so it is not refused up front, and neither is anything else `submit` refuses about the stack (its conflict refusal
+ * would stop every amend made to resolve one). `submit` then stops after the amend was made, the `JJSTACK_AMENDED`
+ * line says the amend is done, and the way on is to fix the cause (for conflicts, resolve them bottom-up) and run
+ * `submit`, with `--update-text` when the amend reworded the commit, since that is what carries the new text to the PR.
+ */
+async function amend(ctx: Ctx, bookmark: string, messageFile: string | undefined, paths: string[]) {
+  phase = "plan";
+  const message = messageFile === undefined
+    ? undefined
+    : await readMessage("E_AMEND_MESSAGE_READ", "E_AMEND_MESSAGE_EMPTY", messageFile);
+  await ctx.fetch("E_AMEND_FETCH");
+  const ref = parseBookmarks(
+    await exec("E_AMEND_BOOKMARK_LIST", ctx.sh`jj ${JJ_SAFE} bookmark list --all-remotes -T ${BOOKMARK_TEMPLATE}`),
+    ctx.remote,
+  ).get(bookmark);
+  if (ref?.local === undefined) fail("E_AMEND_NO_BOOKMARK", `there is no local bookmark ${bookmark}`);
+  if (ref.conflict) fail("E_AMEND_BOOKMARK_CONFLICT", `bookmark ${bookmark} is conflicted locally or on the remote`);
+  const target = (await ctx.stack("E_AMEND_STACK", "@-")).find((r) => r.sha === ref.local);
+  if (!target) {
+    fail(
+      "E_AMEND_NOT_BELOW",
+      `bookmark ${bookmark} (${ref.local}) is not in the stack below the working copy, between ` +
+        `${ctx.defaultBranch} and @-`,
+    );
+  }
+  const filesets = pathFilesets(paths);
+  const changed = await exec("E_AMEND_DIFF", ctx.sh`jj ${JJ_SAFE} diff --name-only -r @ ${filesets}`);
+  if (changed === "" && message === undefined) {
+    fail(
+      "E_AMEND_NOTHING",
+      paths.length > 0
+        ? `no changes in the working copy under ${paths.join(" ")}, and no --message-file`
+        : "the working copy has no changes, and no --message-file",
+    );
+  }
+  // Labelled fields, because `exec` trims its output and an empty bookmark list would otherwise vanish.
+  const template =
+    '"bookmarks=" ++ local_bookmarks.map(|b| b.name()).join(",") ++ " " ++ if(conflict, "conflict", "ok")';
+  const wc = await exec("E_AMEND_WC", ctx.sh`jj ${JJ_SAFE} log --no-graph -r @ -T ${template}`);
+  const wcBookmarks = wc.match(/^bookmarks=(\S*) /)?.[1] ?? "";
+  if (wcBookmarks !== "") fail("E_AMEND_WC_BOOKMARKED", `the working-copy commit is bookmarked (${wcBookmarks})`);
+  if (wc.endsWith(" conflict")) fail("E_AMEND_WC_CONFLICTED", "the working-copy commit has unresolved conflicts");
+  // The stack to submit ends at the topmost bookmark above the amended commit; jj keeps change IDs across the rewrite.
+  const heads = (await exec(
+    "E_AMEND_HEADS",
+    ctx.sh`jj ${JJ_SAFE} log --no-graph -r ${`heads(descendants(${target.changeId}) & bookmarks())`} \
+      -T ${'change_id ++ "\\n"'}`,
+  )).split("\n").filter(Boolean);
+  if (heads.length !== 1) {
+    fail("E_AMEND_FORKED", `bookmarks above ${bookmark} fork into ${heads.length} heads: ${heads.join(", ")}`);
+  }
+  phase = `amend ${bookmark}`;
+  // One jj operation when there is something to fold in: the squash sets the new message itself when there is one.
+  if (changed !== "") {
+    const describe = message === undefined ? ["--use-destination-message"] : ["-m", message];
+    await exec(
+      "E_AMEND_SQUASH",
+      ctx.sh`jj ${JJ_SAFE} squash --from @ --into ${target.changeId} ${describe} ${filesets}`,
+      { write: true },
+    );
+  } else {
+    await exec("E_AMEND_DESCRIBE", ctx.sh`jj ${JJ_SAFE} describe -r ${target.changeId} -m ${message!}`, {
+      write: true,
+    });
+  }
+  const sha = await ctx.resolve("E_AMEND_RESOLVE", target.changeId);
+  console.log(`JJSTACK_AMENDED bookmark=${bookmark} change=${target.changeId} commit=${sha}`);
+  await submit(ctx, heads[0], message !== undefined, false);
+}
+
 /**
  * Opens a draft PR for a just-pushed bookmark and confirms GitHub recorded the intended head commit, base, and draft
  * state. Always a draft: ready is the user's switch (or a landing's, right before a merge), because on repos that gate
@@ -2596,6 +2690,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["status",    { strings: [],                                                     booleans: [] }],
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
   ["new-pr",    { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
+  ["amend",     { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2624,6 +2719,11 @@ async function main() {
     if (args["message-file"] === undefined) usage("E_USAGE_NEWPR_MESSAGE", "new-pr needs --message-file <file>");
     if (top !== "@") usage("E_USAGE_NEWPR_TOP", "new-pr builds on the working copy and takes no --top");
     await newPr(ctx, String(args.bookmark), String(args["message-file"]), args._ as string[]);
+  } else if (command === "amend") {
+    if (args.bookmark === undefined) usage("E_USAGE_AMEND_BOOKMARK", "amend needs --bookmark <name>");
+    if (top !== "@") usage("E_USAGE_AMEND_TOP", "amend takes its changes from the working copy and takes no --top");
+    const messageFile = args["message-file"] === undefined ? undefined : String(args["message-file"]);
+    await amend(ctx, String(args.bookmark), messageFile, args._ as string[]);
   } else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
