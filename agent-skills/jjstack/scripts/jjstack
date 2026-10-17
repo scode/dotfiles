@@ -83,6 +83,22 @@ let phase = "startup";
 const kill = new KillController();
 
 /**
+ * Multiplier for every wait in this script: poll intervals, grace and settle periods, heartbeats, retry backoff. It is 1
+ * in real use. The end-to-end tests (`tests/e2e.test.ts`) set `JJSTACK_TIME_SCALE` in the environment of the script's
+ * process, so a landing against their fake GitHub, whose checks finish instantly, takes seconds instead of minutes. Only
+ * values in (0, 1] count; anything else is ignored, so a stray setting can shorten waits but never stretch them.
+ */
+const TIME_SCALE = (() => {
+  const v = Number(Deno.env.get("JJSTACK_TIME_SCALE") ?? "1");
+  return Number.isFinite(v) && v > 0 && v <= 1 ? v : 1;
+})();
+
+/** `ms` milliseconds, scaled by `TIME_SCALE`. */
+function scaled(ms: number): number {
+  return ms * TIME_SCALE;
+}
+
+/**
  * The run log: every command this run executes, oldest first, with its call-site code, exit status, and duration, and
  * its output when it failed or changed state, interleaved with the ledger and narration lines, each line timestamped.
  * Writes and fetches also get a line when they start, so a tail shows a slow push or fetch in flight, not only the step
@@ -242,7 +258,7 @@ const lastReads = new Map<
   string,
   { fp: string; repeats: number; first: number; last: number; beat: number; phase: string }
 >();
-const HEARTBEAT_MS = 5 * 60 * 1000;
+const HEARTBEAT_MS = scaled(5 * 60 * 1000);
 const MAX_POLLS = 200;
 
 /** A short fingerprint of a command result (FNV-1a over the text plus its length); collisions only cost a log line. */
@@ -379,7 +395,7 @@ async function run(
   // A command the log did not announce gets a line once it has run for 30 s, so a tail shows a slow read in flight.
   const slow = opts.write || opts.announce
     ? undefined
-    : setTimeout(() => note(`${code} still running after 30s: ${text}`), 30_000);
+    : setTimeout(() => note(`${code} still running after 30s: ${text}`), scaled(30_000));
   let r: CommandResult;
   try {
     r = await piped.noThrow().signal(kill.signal);
@@ -431,7 +447,7 @@ async function exec(
     const detail = [r.stderr.trim(), r.stdout.trim()].filter(Boolean).join("\n") || "(no output)";
     if (opts.retry && attempt < 3 && TRANSIENT_GH.test(detail)) {
       console.log(`transient failure (${detail.split("\n")[0]}); retrying`);
-      await $.sleep(3000 * attempt);
+      await $.sleep(scaled(3000 * attempt));
       continue;
     }
     fail(code, `command exited ${r.code}:\n${detail}`);
@@ -495,10 +511,10 @@ function report(err: unknown): never {
 
 /** Polls `read` until `done` accepts its value or `seconds` pass; returns the last value either way. */
 async function pollUntil<T>(seconds: number, read: () => Promise<T>, done: (v: T) => boolean): Promise<T> {
-  const deadline = Date.now() + seconds * 1000;
+  const deadline = Date.now() + scaled(seconds * 1000);
   let v = await read();
   while (!done(v) && Date.now() < deadline) {
-    await $.sleep(2000);
+    await $.sleep(scaled(2000));
     v = await read();
   }
   return v;
@@ -1002,7 +1018,7 @@ async function guardedMerge(
       }
       if (attempt === 5) fail("E_MERGE_RETRIES", `gh pr merge of PR #${e.pr} kept failing: ${r.combined.trim()}`);
       console.log(`PR #${e.pr}: GitHub has not converged (${r.combined.trim()}); retrying`);
-      await $.sleep(3000);
+      await $.sleep(scaled(3000));
     }
   } finally {
     await removeTemp(bodyFile);
@@ -1830,7 +1846,7 @@ async function readVerdict(
   const suites = await readSuites(ctx, code, e.sha, readyAt);
   const rollup = (p.statusCheckRollup ?? []) as Check[];
   return {
-    ...checkVerdict(rollup, suites, readyAt, graceOver, ignore),
+    ...checkVerdict(rollup, suites, readyAt, graceOver, ignore, Date.now(), scaled(120_000) / 1000),
     names: latestChecks(rollup).map(checkName).sort(),
   };
 }
@@ -1889,7 +1905,7 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts) {
       lastPrinted = Date.now();
     }
     last = shown;
-    await $.sleep(10000);
+    await $.sleep(scaled(10000));
   }
 }
 
@@ -2034,8 +2050,8 @@ async function ciLand(
       await honorStop(ctx, `before starting PR #${e.pr}`);
       await ciLandOne(ctx, e, {
         timeoutSec: args.timeoutSec,
-        graceSec: 120,
-        settleSec: 30,
+        graceSec: scaled(120_000) / 1000,
+        settleSec: scaled(30_000) / 1000,
         allowNoChecks: args.allowNoChecks,
         ignore: args.ignore,
       });

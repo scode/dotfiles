@@ -113,6 +113,8 @@ The following must all pass before creating a PR or claiming work is done:
 - `cargo fmt --check`
 - `cargo test`
 - `cargo clippy -- -D warnings`
+- when anything under `agent-skills/jjstack/` changed, its unit and end-to-end tests (see
+  `agent-skills/jjstack/AGENTS.md`)
 
 ## Chores
 
