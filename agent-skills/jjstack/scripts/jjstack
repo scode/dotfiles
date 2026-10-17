@@ -13,6 +13,8 @@
  *   See "Making a PR".
  * - `amend --bookmark <name> [--message-file <file>] [paths...]`: fold working-copy changes into an existing PR's
  *   commit, optionally reword it, and submit. See "Updating a PR".
+ * - `sync`: bring the stack along after PRs merged outside the script or the default branch moved, and submit. See
+ *   "Bringing the stack along".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -1158,6 +1160,33 @@ async function guardedMerge(
 }
 
 /**
+ * The stack's bottom commits that already landed, as landed entries, stopping at the first that did not. A landed
+ * commit is one whose exact SHA is the head of a PR merged into the default branch (see `landedAs`); its content is on
+ * the default branch now, so it only needs cleaning up. Used by a resumed landing and by `sync`.
+ */
+function landedPrefix(rows: StackRow[], merged: MergedPr[], open: OpenPr[]): Entry[] {
+  const landed: Entry[] = [];
+  for (const r of rows) {
+    const m = landedAs(r, merged, open);
+    if (!m) break;
+    landed.push({
+      pr: m.number,
+      bookmark: m.headRefName,
+      changeId: r.changeId,
+      plannedSha: r.sha,
+      sha: r.sha,
+      localSha: r.sha,
+      parentSha: r.parents[0],
+      isDraft: false,
+      mode: "github",
+      tree: "",
+      landedSha: r.sha,
+    });
+  }
+  return landed;
+}
+
+/**
  * Plans a landing: the landed prefix (only with `resume`), the pending entries matched to their PRs, the change ID of
  * `--top`, and what sits directly on the top PR. Shared by both landing commands so they agree on what "the stack" and
  * "already landed" mean.
@@ -1176,27 +1205,9 @@ async function planLanding(ctx: Ctx, top: string, resume: boolean) {
   // only come back for cleanup. The prefix can be empty (the run stopped after rebasing a PR, which moves the pending
   // commits off the landed ones, or before its first merge) and so can the remainder (it stopped after the last merge,
   // in its tree check or cleanup).
-  const landedBefore: Entry[] = [];
   const merged = resume ? await ctx.mergedPrs("E_PLAN_LIST_MERGED") : [];
   const open = await ctx.openPrs("E_PLAN_LIST_OPEN");
-  while (resume && landedBefore.length < rows.length) {
-    const r = rows[landedBefore.length];
-    const m = landedAs(r, merged, open);
-    if (!m) break;
-    landedBefore.push({
-      pr: m.number,
-      bookmark: m.headRefName,
-      changeId: r.changeId,
-      plannedSha: r.sha,
-      sha: r.sha,
-      localSha: r.sha,
-      parentSha: r.parents[0],
-      isDraft: false,
-      mode: "github",
-      tree: "",
-      landedSha: r.sha,
-    });
-  }
+  const landedBefore = resume ? landedPrefix(rows, merged, open) : [];
   let entries: Entry[] = [];
   const rest = rows.slice(landedBefore.length);
   // While resuming, the lowest pending PR may still be based on a landed PR's branch.
@@ -1903,6 +1914,82 @@ async function amend(ctx: Ctx, bookmark: string, messageFile: string | undefined
   const sha = await ctx.resolve("E_AMEND_RESOLVE", target.changeId);
   console.log(`JJSTACK_AMENDED bookmark=${bookmark} change=${target.changeId} commit=${sha}`);
   await submit(ctx, heads[0], message !== undefined, false);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Bringing the stack along (`sync`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * `jjstack sync`: brings the local stack up to date after things happened outside the script, typically PRs at the
+ * bottom merged in the web UI, or the default branch moving under the stack, and submits the result.
+ *
+ * It fetches and recognizes the landed PRs at the bottom of the stack with the same matching a resumed landing uses
+ * (`landedPrefix`). When some landed, `cleanup` moves whatever sat on the last of them (the rest of the stack, or the
+ * working copy) onto the default branch, deletes their branches under its usual evidence checks, and abandons their
+ * local commits. When none landed, the stack's bottom is rebased onto the default branch if it is not already on its
+ * tip. Then `submit` retargets the new bottom PR to the default branch and pushes everything that moved.
+ *
+ * Unlike `land --resume`, it does not prove that the rebased commits still match what GitHub showed (`verifyContent`):
+ * bringing local work along, pushed or not, is the point, and the submit makes it the PRs' new heads.
+ *
+ * Refused before anything is written: an empty stack, open PRs above `--top`, which would be left on a rewritten base,
+ * and a remaining stack `submit` would refuse for its shape (an unbookmarked commit, typically uncommitted work in the
+ * working copy, which `--top <top-bookmark>` leaves out). Other `submit` refusals, and commits that come out of the
+ * rebase conflicted, stop the run in `submit` after the rebase; the way on is to fix the cause (resolve conflicts
+ * bottom-up) and run `submit`.
+ *
+ * A PR merged with a merge commit is not recognized as landed: its commit is already an ancestor of the default branch,
+ * so it is no longer in the stack, and its branch and bookmark are left for the user. The rest of the stack is still
+ * rebased and submitted.
+ */
+async function sync(ctx: Ctx, top: string) {
+  phase = "plan";
+  await ctx.fetch("E_SYNC_FETCH");
+  const topChange = await ctx.resolve("E_SYNC_RESOLVE_TOP", top, "change_id");
+  const rows = await ctx.stack("E_SYNC_STACK", topChange);
+  if (rows.length === 0) fail("E_SYNC_EMPTY", `there is nothing between ${ctx.defaultBranch} and --top (${top})`);
+  const open = await ctx.openPrs("E_SYNC_LIST_OPEN");
+  const above = await openAbove(ctx, "E_SYNC_ABOVE", rows[0].sha, topChange, open);
+  if (above.length > 0) {
+    fail("E_SYNC_STACK_ABOVE_TOP", `the stack continues above --top (${top}) with open PRs for ${above.join(", ")}`);
+  }
+  const landed = landedPrefix(rows, await ctx.mergedPrs("E_SYNC_LIST_MERGED"), open);
+  // The stack shape `submit` will need, checked before the first write rather than after the rebase: an unbookmarked,
+  // non-empty commit (uncommitted work in the working copy, with the default `--top @`) or a merge would otherwise stop
+  // the run only once the stack had been moved.
+  const rest = rows.slice(landed.length);
+  if (rest.some((r) => r.bookmarks.length > 0)) reviewUnits(rest);
+  let rebased = false;
+  if (landed.length > 0) {
+    // An open PR still based on a landed branch would make `cleanup` keep that branch and its commit (an open PR uses
+    // it), and on a repo that keeps merged branches nothing would ever clean them up: the next sync no longer sees the
+    // landed commit in the stack. So those PRs move to the default branch first, as a landing does before cleanup.
+    const landedBranches = landed.map((e) => e.bookmark);
+    const restBookmarks = rest.flatMap((r) => r.bookmarks);
+    for (const pr of open) {
+      if (pr.isCrossRepository || !restBookmarks.includes(pr.headRefName)) continue;
+      if (landedBranches.includes(pr.baseRefName)) await retarget(ctx, "E_SYNC_RETARGET", pr.number, ctx.defaultBranch);
+    }
+    // Whatever sits directly on the last landed commit follows it onto the default branch, recorded by change ID
+    // because the rebase rewrites it.
+    const carry = (await exec(
+      "E_SYNC_CARRY",
+      ctx.sh`jj ${JJ_SAFE} log --no-graph -r ${`children(${landed.at(-1)!.changeId})`} -T ${'change_id ++ "\\n"'}`,
+    )).split("\n").filter(Boolean);
+    await cleanup(ctx, landed, carry);
+    rebased = carry.length > 0;
+  } else {
+    const tip = await ctx.resolve("E_SYNC_TIP", ctx.defaultRev);
+    if (rows[0].parents[0] !== tip) {
+      phase = "rebase";
+      await exec("E_SYNC_REBASE", ctx.sh`jj ${JJ_SAFE} rebase -s ${rows[0].changeId} -d ${tip}`, { write: true });
+      rebased = true;
+    }
+  }
+  console.log(`JJSTACK_SYNCED landed=${planOf(landed)} rebased=${rebased ? "yes" : "no"}`);
+  if (rest.some((r) => r.bookmarks.length > 0)) await submit(ctx, topChange, false, false);
+  else console.log("nothing left to submit");
 }
 
 /**
@@ -2691,6 +2778,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
   ["new-pr",    { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["amend",     { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
+  ["sync",      { strings: [],                                                     booleans: [] }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2724,7 +2812,8 @@ async function main() {
     if (top !== "@") usage("E_USAGE_AMEND_TOP", "amend takes its changes from the working copy and takes no --top");
     const messageFile = args["message-file"] === undefined ? undefined : String(args["message-file"]);
     await amend(ctx, String(args.bookmark), messageFile, args._ as string[]);
-  } else if (command === "land") {
+  } else if (command === "sync") await sync(ctx, top);
+  else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
     await ciLand(ctx, {

@@ -560,6 +560,143 @@ Deno.test("amend refuses a bookmarked or conflicted working copy and a forked st
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
+// sync
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Squash-merges PR `n` the way a person in GitHub's web UI would, outside the script: ready it, then merge it. */
+async function mergeOutside(w: World, n: number) {
+  const body = await messageFile(w, `merge-body-${n}`, "");
+  await inWork(w)`gh pr ready ${n} -R o/r`;
+  await inWork(w)`gh pr merge ${n} -R o/r --squash --body-file ${body}`;
+}
+
+/**
+ * The common case `sync` exists for: the bottom PR was merged in GitHub's web UI. `sync` must recognize it as landed,
+ * move the rest of the stack onto the new default branch, push it with the next PR based on the default branch, and
+ * clean up the landed PR's commit, with the working copy following the stack.
+ */
+Deno.test("sync brings the stack along after its bottom PR merged outside the script", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await mergeOutside(w, 1);
+    const r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_SYNCED landed=1 rebased=yes");
+    assertStringIncludes(r.out, "JJSTACK_SUBMITTED pr=2 bookmark=pr2 base=main actions=pushed");
+    const main = (await $`git --git-dir ${w.remote} rev-parse main`.env(w.env).text()).trim();
+    const parent = (await $`git --git-dir ${w.remote} rev-parse ${"pr2^"}`.env(w.env).text()).trim();
+    assertEquals(parent, main);
+    const stack = await inWork(w)`jj log --no-graph -r ${"main@origin..@"} -T ${'description.first_line() ++ "\\n"'}`
+      .text();
+    assertEquals(stack.trim().split("\n").filter(Boolean), ["feat: add pr2"]);
+    assertEquals(await strayCopies(w, "feat: add pr1"), "");
+  });
+});
+
+/** Visible local commits titled `title` that are not part of the remote default branch: leftovers of a landed PR. */
+async function strayCopies(w: World, title: string): Promise<string> {
+  const revset = `description(substring:${JSON.stringify(title)}) ~ ::main@origin`;
+  return (await inWork(w)`jj log --no-graph -r ${revset} -T ${"commit_id"}`.text()).trim();
+}
+
+/**
+ * On a repo that keeps merged branches (GitHub's default), the PR above the merged one stays based on the merged branch,
+ * and cleanup keeps any branch an open PR still uses. `sync` must retarget that PR to the default branch first, so the
+ * merged branch is deleted and its local commit dropped; otherwise they would linger, and a later sync could no longer
+ * see them as part of the stack.
+ */
+Deno.test("sync cleans up a merged PR on a repo that keeps merged branches", async () => {
+  await withWorld(async (w) => {
+    await editState(w, (s) => {
+      s.autoDeleteBranches = false;
+    });
+    await stackOf(w, 2);
+    await mergeOutside(w, 1);
+    const r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_SYNCED landed=1 rebased=yes");
+    assertEquals((await readState(w)).prs[1].baseRefName, "main");
+    const heads = await $`git --git-dir ${w.remote} for-each-ref ${"--format=%(refname:short)"} refs/heads`.env(w.env)
+      .text();
+    assertEquals(heads.trim().split("\n").sort(), ["main", "pr2"]);
+    assertEquals(await strayCopies(w, "feat: add pr1"), "");
+  });
+});
+
+/**
+ * Uncommitted work in the working copy is an unbookmarked commit at the top of the default `--top @` range, which
+ * `submit` refuses. `sync` refuses it before moving anything (exit 3), and with `--top` naming the top PR it syncs the
+ * stack and carries the work along on top.
+ */
+Deno.test("sync refuses uncommitted work under --top @ before writing, and carries it with --top", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await mergeOutside(w, 1);
+    await Deno.writeTextFile(`${w.work}/wip.txt`, "wip\n");
+    let r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_STACK_UNBOOKMARKED");
+    r = await jjstack(w, ["sync", "--top", "pr2"]);
+    assertEquals(r.code, 0, r.err);
+    assertEquals((await inWork(w)`jj diff --name-only -r @`.text()).trim(), "wip.txt");
+    const parent = await inWork(w)`jj log --no-graph -r ${"@-"} -T ${"local_bookmarks"}`.text();
+    assertEquals(parent.trim(), "pr2");
+  });
+});
+
+/**
+ * With nothing landed but the default branch moved (someone else's merge), `sync` rebases the stack onto the new tip
+ * and pushes every PR, so each one shows its diff against current code.
+ */
+Deno.test("sync rebases the stack onto a default branch that moved and pushes it", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    const other = await plainClone(w, "other");
+    await Deno.writeTextFile(`${other}/other.txt`, "other\n");
+    const git = $.build$({ commandBuilder: (b) => b.cwd(other).env(w.env).stdin("null").quiet() });
+    await git`git add other.txt`;
+    await git`git commit -q -m ${"someone else's change"}`;
+    await git`git push -q origin main`;
+    const r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_SYNCED landed=none rebased=yes");
+    const main = (await $`git --git-dir ${w.remote} rev-parse main`.env(w.env).text()).trim();
+    assertEquals((await $`git --git-dir ${w.remote} rev-parse ${"pr1^"}`.env(w.env).text()).trim(), main);
+    assertEquals(await remoteFile(w, "pr2", "other.txt"), "other");
+  });
+});
+
+/**
+ * When every PR merged outside the script, `sync` has nothing to submit, but it still cleans up the landed commit and
+ * moves the working copy onto the landed default branch, so the checkout is ready for the next stack.
+ */
+Deno.test("sync after the whole stack merged outside the script leaves the working copy on the default branch", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 1);
+    await mergeOutside(w, 1);
+    const r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "JJSTACK_SYNCED landed=1 rebased=yes");
+    assertStringIncludes(r.out, "nothing left to submit");
+    const parent = await inWork(w)`jj log --no-graph -r ${"@-"} -T ${"commit_id"}`.text();
+    const main = await inWork(w)`jj log --no-graph -r ${"main@origin"} -T ${"commit_id"}`.text();
+    assertEquals(parent.trim(), main.trim());
+  });
+});
+
+/** Open PRs above `--top` would be left on a rewritten base, so `sync` refuses before it rebases or cleans anything. */
+Deno.test("sync refuses when the stack continues above --top", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await mergeOutside(w, 1);
+    await inWork(w)`jj new pr1`;
+    const r = await jjstack(w, ["sync"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_SYNC_STACK_ABOVE_TOP");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
 // land
 // ---------------------------------------------------------------------------------------------------------------------
 
