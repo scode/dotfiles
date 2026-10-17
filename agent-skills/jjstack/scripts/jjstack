@@ -5,6 +5,8 @@
  *
  * Usage: `jjstack <command> [--dir <checkout>] [--repo owner/name] [--remote origin] [--top <rev>] [options]`
  *
+ * - `status`: print what `submit` would do for each PR, without doing it.
+ * - `submit [--update-text] [--partial]`: make GitHub show the local stack. See "Syncing the stack to GitHub".
  * - `fast-land [--expect 12,13,14] [--plan-only] [--no-cleanup] [--resume]`: landing without waiting for CI. See "Fast
  *   landing".
  *
@@ -916,6 +918,276 @@ async function cleanup(ctx: Ctx, landed: Entry[], carry: string[]) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// Syncing the stack to GitHub (`submit`, `status`)
+// ---------------------------------------------------------------------------------------------------------------------
+//
+// `submit` makes GitHub show the local stack: every bookmark pushed, every review unit with an open draft PR, and every
+// PR based on the bookmark below it (the bottom one on the default branch). It is idempotent, so the same command
+// covers "make a PR", "make the next PR", "update the PR", inserting a PR mid-stack, and pushing after a restack.
+// `status` computes the same plan and prints it without acting.
+//
+// Everything that can refuse is checked before the first write, so a refusal never leaves a half-synced stack. Writes
+// then go bottom-up, and within one PR in this order: retarget, push, create. Retargeting before pushing matters
+// because the push starts CI for the new head, and a base-dependent check must see the final base; once a stale-base
+// run is attached to a head, rerunning it reuses the old event payload and cannot fix it. Bottom-up matters because a
+// PR can only be based on a branch that already exists on GitHub.
+
+/** One remote's view of a bookmark, from `jj bookmark list --all-remotes`. */
+type BookmarkRef = { local?: string; remote?: string; tracked: boolean; conflict: boolean };
+
+/** One line per (bookmark, remote) pair: name, remote or `-` for local, tracking, conflict, target or `-`. */
+const BOOKMARK_TEMPLATE = 'name ++ " " ++ if(remote, remote, "-") ++ " " ++ if(tracked, "tracked", "untracked") ++ ' +
+  '" " ++ if(conflict, "conflict", "ok") ++ " " ++ if(normal_target, normal_target.commit_id(), "-") ++ "\\n"';
+
+/** Parses `BOOKMARK_TEMPLATE` output into local and `remote` views per name; other remotes (such as `git`) are ignored. */
+function parseBookmarks(text: string, remote: string): Map<string, BookmarkRef> {
+  const refs = new Map<string, BookmarkRef>();
+  for (const line of text.split("\n").filter((l) => l.trim() !== "")) {
+    const fields = line.split(" ");
+    if (fields.length !== 5) fail("E_BOOKMARK_PARSE", `unexpected jj bookmark line: ${JSON.stringify(line)}`);
+    const [name, where, tracked, conflict, target] = fields;
+    const ref = refs.get(name) ?? { tracked: false, conflict: false };
+    const sha = target === "-" ? undefined : target;
+    if (where === "-") {
+      ref.local = sha;
+      ref.conflict = conflict === "conflict";
+    } else if (where === remote) {
+      ref.remote = sha;
+      ref.tracked = tracked === "tracked";
+      if (conflict === "conflict") ref.conflict = true;
+    } else continue;
+    refs.set(name, ref);
+  }
+  return refs;
+}
+
+/** Splits a commit description into a PR title (first line) and body (everything after the first blank line). */
+function splitDescription(text: string): { title: string; body: string } {
+  const lines = text.replace(/\s+$/, "").split("\n");
+  const title = lines[0].trim();
+  const rest = lines.slice(1);
+  while (rest.length > 0 && rest[0].trim() === "") rest.shift();
+  return { title, body: rest.join("\n") };
+}
+
+/** One review unit and everything `submit` will do for it, in execution order. */
+type SubmitStep = {
+  unit: Unit;
+  base: string;
+  pr?: OpenPr;
+  title: string;
+  body: string;
+  /** The PR exists but is based elsewhere; retarget before pushing. */
+  retarget: boolean;
+  /** The remote branch is missing or at another commit. */
+  push: boolean;
+  /** No open PR for this bookmark yet; create a draft after pushing. */
+  create: boolean;
+  /** `--update-text` and the PR's title or body differ from the commit description. */
+  retext: boolean;
+};
+
+/**
+ * Computes the submit plan, running every check that can refuse. Nothing here writes, so `status` can call it too.
+ *
+ * Refuses: a stack shape `reviewUnits` rejects; the stack continuing above `--top` with open PRs (unless `partial`); a
+ * conflicted bookmark; a bookmark with an untracked remote branch of the same name (jj would refuse the push midway); a
+ * bookmark with two open PRs; a bookmark whose only PRs are closed or merged, because creating a second PR for a landed
+ * or abandoned branch is almost never what was meant; and a commit with no description when its PR has to be created
+ * or retexted.
+ */
+async function planSubmit(ctx: Ctx, top: string, updateText: boolean, partial: boolean) {
+  phase = "plan";
+  await ctx.fetch("E_SUBMIT_FETCH");
+  const topChange = await ctx.resolve("E_SUBMIT_RESOLVE_TOP", top, "change_id");
+  const units = reviewUnits(await ctx.stack("E_SUBMIT_STACK", topChange));
+  const refs = parseBookmarks(
+    await exec("E_SUBMIT_BOOKMARK_LIST", ctx.sh`jj ${JJ_SAFE} bookmark list --all-remotes -T ${BOOKMARK_TEMPLATE}`),
+    ctx.remote,
+  );
+  const open = await ctx.openPrs("E_SUBMIT_LIST_OPEN");
+  // After a mid-stack edit jj has already rebased everything above it, so syncing only up to `--top` would leave
+  // those PRs showing heads that are no longer the local commits.
+  const above = await openAbove(ctx, "E_SUBMIT_ABOVE_QUERY", units[0].sha, topChange, open);
+  if (above.length > 0 && !partial) {
+    fail(
+      "E_SUBMIT_STACK_ABOVE_TOP",
+      `the stack continues above --top (${top}) with open PRs for ${above.join(", ")}; ` +
+        `pass the top bookmark as --top, or --partial to sync only up to ${top}`,
+    );
+  }
+  const steps: SubmitStep[] = [];
+  for (const [i, unit] of units.entries()) {
+    const ref = refs.get(unit.bookmark);
+    if (!ref || ref.local !== unit.sha) {
+      fail("E_SUBMIT_BOOKMARK_STATE", `bookmark ${unit.bookmark} does not resolve to ${unit.sha} in jj bookmark list`);
+    }
+    if (ref.conflict) {
+      fail("E_SUBMIT_BOOKMARK_CONFLICT", `bookmark ${unit.bookmark} is conflicted locally or on the remote`);
+    }
+    if (ref.remote !== undefined && !ref.tracked) {
+      fail(
+        "E_SUBMIT_UNTRACKED_REMOTE",
+        `${unit.bookmark}@${ctx.remote} exists but is not tracked, so jj would refuse to push ${unit.bookmark}`,
+      );
+    }
+    const prs = open.filter((p) => !p.isCrossRepository && p.headRefName === unit.bookmark);
+    if (prs.length > 1) {
+      fail(
+        "E_SUBMIT_PR_DUPLICATE",
+        `bookmark ${unit.bookmark} has ${prs.length} open PRs: ${prs.map((p) => p.number)}`,
+      );
+    }
+    const pr = prs[0];
+    if (!pr) {
+      const all = await execJson<{ number: number; state: string; isCrossRepository: boolean }[]>(
+        "E_SUBMIT_LIST_ALL_HEAD",
+        ctx.sh`gh pr list -R ${ctx.repo} --state all --head ${unit.bookmark} --json number,state,isCrossRepository`,
+        { retry: true },
+      );
+      const old = all.filter((p) => !p.isCrossRepository);
+      if (old.length > 0) {
+        fail(
+          "E_SUBMIT_PR_NOT_OPEN",
+          `bookmark ${unit.bookmark} already had PR(s) ${old.map((p) => `#${p.number} ${p.state}`).join(", ")}; ` +
+            `refusing to open another for the same branch`,
+        );
+      }
+    }
+    const base = i === 0 ? ctx.defaultBranch : units[i - 1].bookmark;
+    let title = "";
+    let body = "";
+    if (!pr || updateText) {
+      ({ title, body } = splitDescription(
+        await exec("E_SUBMIT_DESCRIPTION", ctx.sh`jj ${JJ_SAFE} log --no-graph -r ${unit.changeId} -T description`),
+      ));
+      if (title === "") fail("E_SUBMIT_NO_DESCRIPTION", `commit ${unit.sha} (${unit.bookmark}) has no description`);
+    }
+    let retext = false;
+    if (pr && updateText) {
+      const cur = await ctx.pr("E_SUBMIT_READ_TEXT", pr.number, "title,body");
+      retext = cur.title !== title || String(cur.body ?? "").trim() !== body.trim();
+    }
+    steps.push({
+      unit,
+      base,
+      pr,
+      title,
+      body,
+      retarget: !!pr && pr.baseRefName !== base,
+      push: ref.remote !== unit.sha,
+      create: !pr,
+      retext,
+    });
+  }
+  // PRs based on a stack bookmark whose head is not in the stack are left alone, but worth knowing about: a PR for a
+  // review unit that was dropped from the stack keeps showing a stale diff.
+  const inStack = new Set(units.map((u) => u.bookmark));
+  const warnings = open.filter((p) => inStack.has(p.baseRefName) && !inStack.has(p.headRefName));
+  return { steps, warnings };
+}
+
+/** Prints the plan, one line per PR, with what `submit` does (or would do) for it. */
+function printSubmitPlan(steps: SubmitStep[], warnings: OpenPr[], verb: "would" | "will") {
+  for (const s of steps) {
+    const what = [s.retarget && "retarget", s.push && "push", s.create && "create-draft", s.retext && "retext"]
+      .filter(Boolean).join(",") || "nothing";
+    const pr = s.pr ? `#${s.pr.number}` : "(new)";
+    const draft = s.pr ? (s.pr.isDraft ? " draft" : " ready") : "";
+    console.log(`  ${pr} ${s.unit.bookmark} ${s.unit.sha.slice(0, 12)} base=${s.base}${draft}: ${verb} ${what}`);
+  }
+  for (const w of warnings) {
+    console.log(
+      `JJSTACK_WARN pr=${w.number} head=${w.headRefName} base=${w.baseRefName} reason=based-on-stack-bookmark-outside-stack`,
+    );
+  }
+}
+
+async function status(ctx: Ctx, top: string) {
+  const { steps, warnings } = await planSubmit(ctx, top, false, true);
+  console.log(`stack of ${ctx.repo} onto ${ctx.defaultBranch}, bottom-up:`);
+  printSubmitPlan(steps, warnings, "would");
+  for (const s of steps) {
+    console.log(
+      `JJSTACK_STATUS bookmark=${s.unit.bookmark} pr=${s.pr?.number ?? "none"} base=${s.pr?.baseRefName ?? "none"} ` +
+        `expected_base=${s.base} draft=${s.pr ? (s.pr.isDraft ? "yes" : "no") : "none"} ` +
+        `pushed=${s.push ? "no" : "yes"} in_sync=${!s.retarget && !s.push && !s.create ? "yes" : "no"}`,
+    );
+  }
+}
+
+async function submit(ctx: Ctx, top: string, updateText: boolean, partial: boolean) {
+  const { steps, warnings } = await planSubmit(ctx, top, updateText, partial);
+  console.log(`submitting ${ctx.repo} onto ${ctx.defaultBranch}, bottom-up:`);
+  printSubmitPlan(steps, warnings, "will");
+  for (const s of steps) {
+    phase = `submit ${s.unit.bookmark}`;
+    let pr = s.pr?.number;
+    if (s.retarget) await retarget(ctx, "E_SUBMIT_RETARGET", pr!, s.base);
+    if (s.push) await pushBookmark(ctx, "E_SUBMIT_PUSH", s.unit.bookmark, s.unit.sha, pr);
+    if (s.create) pr = await createDraft(ctx, s);
+    if (s.retext) await retext(ctx, pr!, s.title, s.body);
+    const did = [s.retarget && "retargeted", s.push && "pushed", s.create && "created", s.retext && "retexted"]
+      .filter(Boolean).join(",") || "unchanged";
+    console.log(`JJSTACK_SUBMITTED pr=${pr} bookmark=${s.unit.bookmark} base=${s.base} actions=${did}`);
+  }
+  phase = "done";
+}
+
+/**
+ * Opens a draft PR for a just-pushed bookmark and confirms GitHub recorded the intended head commit, base, and draft
+ * state. Always a draft: ready is the user's switch (or a landing's, right before a merge), because on repos that gate
+ * CI on draft status every push of a ready PR starts a run.
+ */
+async function createDraft(ctx: Ctx, s: SubmitStep): Promise<number> {
+  const bodyFile = await writeTemp("E_CREATE_BODY_FILE", s.body);
+  let out;
+  try {
+    out = await exec(
+      "E_CREATE_PR",
+      ctx.sh`gh pr create -R ${ctx.repo} --draft --base ${s.base} --head ${s.unit.bookmark} --title ${s.title} \
+        --body-file ${bodyFile}`,
+      { write: true },
+    );
+  } finally {
+    await removeTemp(bodyFile);
+  }
+  const m = out.match(/\/pull\/(\d+)\s*$/);
+  if (!m) fail("E_CREATE_NO_URL", `gh pr create did not print a PR URL: ${out}`);
+  const pr = Number(m[1]);
+  const p = await pollUntil(
+    60,
+    async () => await ctx.pr("E_CREATE_VERIFY_READ", pr, "headRefName,baseRefName,isDraft,headRefOid"),
+    (v) => v.headRefOid === s.unit.sha,
+  );
+  if (
+    p.headRefName !== s.unit.bookmark || p.baseRefName !== s.base || p.isDraft !== true || p.headRefOid !== s.unit.sha
+  ) {
+    fail(
+      "E_CREATE_VERIFY",
+      `PR #${pr} was created as head=${p.headRefName}@${p.headRefOid} base=${p.baseRefName} draft=${p.isDraft}, ` +
+        `expected ${s.unit.bookmark}@${s.unit.sha} on ${s.base} as a draft`,
+    );
+  }
+  return pr;
+}
+
+/** Sets a PR's title and body from the commit description, through REST like every other PR edit (see SPEC.md). */
+async function retext(ctx: Ctx, pr: number, title: string, body: string) {
+  const bodyFile = await writeTemp("E_RETEXT_BODY_FILE", body);
+  try {
+    await exec(
+      "E_RETEXT",
+      ctx.sh`gh api -X PATCH ${`repos/${ctx.repo}/pulls/${pr}`} -f ${`title=${title}`} -F ${`body=@${bodyFile}`} \
+        --jq .number`,
+      { write: true },
+    );
+  } finally {
+    await removeTemp(bodyFile);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // Fast landing (`fast-land`)
 // ---------------------------------------------------------------------------------------------------------------------
 //
@@ -1115,21 +1387,27 @@ async function fastLand(
 /** Each command and the options it accepts beyond the shared `--dir`, `--repo`, `--remote`, and `--top`. */
 // deno-fmt-ignore
 const COMMANDS = new Map<string, { strings: string[]; booleans: string[] }>([
-  ["fast-land", { strings: ["expect"], booleans: ["plan-only", "no-cleanup", "resume"] }],
+  ["status",    { strings: [],                                                     booleans: [] }],
+  ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
+  ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
 ]);
 
 async function main() {
   for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => kill.kill());
-  const { args } = parseCli(Deno.args);
+  const { command, args } = parseCli(Deno.args);
   const ctx = await openCtx(args as { dir: string; repo?: string; remote: string });
   const top = args.top as string;
-  await fastLand(ctx, {
-    top,
-    expect: args.expect as string | undefined,
-    plan: !!args["plan-only"],
-    cleanup: !args["no-cleanup"],
-    resume: !!args.resume,
-  });
+  if (command === "status") await status(ctx, top);
+  else if (command === "submit") await submit(ctx, top, !!args["update-text"], !!args.partial);
+  else {
+    await fastLand(ctx, {
+      top,
+      expect: args.expect as string | undefined,
+      plan: !!args["plan-only"],
+      cleanup: !args["no-cleanup"],
+      resume: !!args.resume,
+    });
+  }
 }
 
 /**
@@ -1308,11 +1586,30 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
     "1,2",
   ]);
   assertEquals(parseCli(["fast-land"]).args["no-cleanup"], false);
-  assertThrows(() => parseCli(["fast-land", "--update-text"]), JjstackError, "unknown option");
-  assertThrows(() => parseCli(["fast-land", "extra"]), JjstackError, "unexpected arguments");
-  assertThrows(() => parseCli(["fast-land", "--top="]), JjstackError, "needs a value");
+  assertEquals(parseCli(["submit", "--update-text"]).args["update-text"], true);
+  assertThrows(() => parseCli(["submit", "--expect", "1"]), JjstackError, "unknown option");
+  assertThrows(() => parseCli(["status", "extra"]), JjstackError, "unexpected arguments");
+  assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
   assertThrows(() => parseCli(["nope"]), JjstackError, "unknown command");
   assertThrows(() => parseCli([]), JjstackError, "unknown command");
+});
+
+/** `submit` decides what to push from this parse; a misread remote target means a skipped or needless push. */
+Deno.test("parseBookmarks separates local and chosen-remote views and ignores other remotes", () => {
+  const out = "a - untracked ok 111\na git tracked ok 111\na origin tracked ok 222\n" +
+    "b - untracked conflict -\nc origin untracked ok 333\n";
+  const refs = parseBookmarks(out, "origin");
+  assertEquals(refs.get("a"), { local: "111", remote: "222", tracked: true, conflict: false });
+  assertEquals(refs.get("b"), { local: undefined, tracked: false, conflict: true });
+  assertEquals(refs.get("c"), { remote: "333", tracked: false, conflict: false });
+  assertThrows(() => parseBookmarks("a b\n", "origin"), JjstackError, "unexpected jj bookmark line");
+});
+
+/** PR text comes from commit descriptions; a body that keeps the title or loses paragraphs misstates the change. */
+Deno.test("splitDescription takes the first line as title and the rest after blank lines as body", () => {
+  assertEquals(splitDescription("feat: x\n\nwhy one\n\nwhy two\n"), { title: "feat: x", body: "why one\n\nwhy two" });
+  assertEquals(splitDescription("feat: x\n"), { title: "feat: x", body: "" });
+  assertEquals(splitDescription(""), { title: "", body: "" });
 });
 
 /**

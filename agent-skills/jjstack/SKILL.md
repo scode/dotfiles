@@ -56,22 +56,21 @@ the task is clearly "use `jj` to manage history and `gh` to manage the PR". Star
 environment already guarantees those operations work inside it.
 
 - "make a PR" or "create a PR" Create a new stacked PR, as a draft, for the current reviewable change. In practice that
-  usually means making sure the current change has a stable bookmark, pushing that bookmark, then creating a GitHub PR
-  whose base is the bookmark immediately below it in the stack, or `main`/`trunk()` if it is the bottom PR. If the
-  current bookmark already has a PR but the working copy contains new intended reviewable work on top of it, default to
-  "make the next PR" rather than pushing back. In this workflow that is a very common meaning of "make a PR": turn the
-  new top-of-stack work into its own commit, bookmark it, and open a new PR based on the existing one.
+  means giving the change a stable bookmark and running `submit` (see "Building and updating the stack"), which opens a
+  PR based on the bookmark below it, or on the default branch for the bottom PR. If the current bookmark already has a
+  PR but the working copy contains new intended reviewable work on top of it, default to "make the next PR" rather than
+  pushing back. In this workflow that is a very common meaning of "make a PR": turn the new top-of-stack work into its
+  own commit, bookmark it, and submit.
 - "update the PR" Update the existing PR for the current bookmark. Do not create a new bookmark or a new PR unless the
-  user explicitly asks for that. Rewrite or extend the current change, push the same bookmark again, and keep the same
-  PR number.
+  user explicitly asks for that. Rewrite or extend the current change and `submit`, which pushes the same bookmark again
+  and keeps the same PR number.
 - "rewrite the PR cleanly" Treat this as "update the PR by rewriting commits instead of adding a follow-up fixup
   commit".
-- "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, push
-  it, and create a new PR, as a draft, whose base is the bookmark below it.
+- "make the next PR" Create a new reviewable commit on top of the current stack, assign it a new stable bookmark, and
+  `submit`.
 - "insert a PR below this one" or "insert a PR into the stack" Create a new change in the middle of the stack with `jj
-  new --insert-after ...` or an equivalent rebase-based flow, resolve any descendant conflicts, push the inserted
-  bookmark, create the new PR as a draft, retarget the immediate downstream GitHub PR, then push every rewritten
-  descendant bookmark.
+  new --insert-after ...`, resolve any descendant conflicts, bookmark it, and `submit`, which creates the new PR,
+  retargets the PR above it, and pushes every rewritten descendant.
 - "publish the PRs" or "mark the PRs ready" Run `gh pr ready <n>` for each named or implied PR, bottom-up, and report
   which PRs were marked ready. A named subset ("publish 329 and up") means exactly those PRs and no others; an
   unqualified request means the current stack. A request to publish is not a request to merge, and it does not change
@@ -84,12 +83,11 @@ environment already guarantees those operations work inside it.
   and ask; do not mark the PR ready to get the run.
 - "unpublish", "back to draft", or "convert to draft" Run `gh pr ready --undo <n>`. Rarely needed, and only ever on
   request; the skill never converts a ready PR back to a draft on its own.
-- "restack the stack" Use `jj` to rewrite or rebase the local stack. If bookmark ancestry changes in a way GitHub cares
-  about, update the affected PR bases afterwards with the REST base edit from "Editing PR metadata".
+- "restack the stack" Use `jj` to rewrite or rebase the local stack, then `submit`, which fixes any PR base the new
+  ancestry changed.
 - "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
-  GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally. In practice, that
-  usually means using `gh pr view 45` to find the head ref, then using `jj new <bookmark>` or another explicit move to
-  that change.
+  GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally: `gh pr view 45 -R
+  owner/repo --json headRefName`, then `jj new <bookmark>` or another explicit move to that change.
 - "merge the PR", "merge this PR", or a bare "merge it" In a stacked workflow, "merge" means "land this change on the
   default branch", not "run `gh pr merge` on whatever PR is in focus". Those are different operations when the PR's
   GitHub base is another stack bookmark: `gh pr merge` on such a PR folds it into its parent's branch, GitHub closes it
@@ -123,563 +121,172 @@ or wrong, while "update" means revise the existing PR.
 
 ## Preconditions
 
-Before doing anything substantial:
+Confirm these once per repo and session, not before every command:
 
-- make sure `jj` is installed and `jj --version` works
-- make sure `gh auth status` works
-- make sure `jj config get user.name` and `jj config get user.email` are set
-- if the user explicitly asked for `jj` and this is still a plain Git checkout, bootstrap `jj` before doing the rest
-- if the agent is sandboxed, prefer unsandboxed execution for `jj` and `gh` commands that actually drive the workflow
+- `jj --version`, `deno --version`, and `gh auth status` work. The bundled script needs `deno` and Git 2.40 or later.
+- `jj config get user.name` and `jj config get user.email` are set.
 
-These are session preconditions, not a toll booth before every command. Once you have confirmed them for the current
-repo in the current thread, treat them as known good until something relevant changes: a command fails in a way that
-points at auth or config, the repo changes, `jj` is initialized after the check, or you switch to a different checkout.
+If `jj` is missing, use the official install instructions; on a system with a working Rust toolchain, `cargo install
+--locked --bin jj jj-cli` is a reasonable fallback. If `deno` is missing, say so and ask whether to install it.
 
-If `jj` is missing, use the official install instructions first. On systems with a working Rust toolchain, `cargo
-install --locked --bin jj jj-cli` is a reasonable generic fallback.
+If the jj identity is missing, copy the Git one: read `git config user.name` and `git config user.email`, then run `jj
+config set --repo user.name '<name>'` and `jj config set --repo user.email '<email>'` with those values. If the
+working-copy commit already exists with the empty identity, also run `jj metaedit --update-author @`; otherwise the
+first commit inherits the broken identity and will not push in a normal GitHub workflow. If Git has no identity either,
+ask the user for one.
 
-If `jj` `user.name` or `user.email` is missing, first try to copy the existing Git identity into repo-local `jj` config
-before making commits:
-
-```bash
-jj config set --repo user.name "$(git config user.name)"
-jj config set --repo user.email "$(git config user.email)"
-```
-
-If the current working-copy commit was already created with the empty identity, update that author too before
-committing:
-
-```bash
-jj metaedit --update-author @
-```
-
-If Git also does not have a usable identity configured, set `jj` explicitly before making commits:
-
-```bash
-jj config set --user user.name "Your Name"
-jj config set --user user.email "you@example.com"
-```
-
-If you do not do this, later commit-creating commands will use an empty identity and those commits will not be pushable
-in a normal GitHub workflow. If you need repo-local identity instead of a user-global one, use `--repo` instead of
-`--user`.
-
-After `jj git init` in an existing working tree, treat author repair as part of bootstrap, not as optional cleanup:
-
-1. copy the Git identity into repo-local `jj` config
-2. run `jj metaedit --update-author @` if the working-copy commit already exists with an empty author
-
-If you skip that, the first commit you create from the bootstrapped working copy may inherit a broken identity.
+Treat the preconditions as good until a command fails in a way that points at auth or config, or you switch checkouts.
 
 ## Bootstrapping a repo into jj
 
-For a fresh clone, prefer cloning with jj directly:
+For a fresh clone, prefer `jj git clone --colocate <repo-url> <directory>`. For an existing plain Git checkout, run `jj
+git init --git-repo .` from the repo root. When the user explicitly asked for `jj`, initializing is the default, not a
+suggestion: the mistake to avoid is noticing a plain Git checkout and drifting into a Git-only PR flow. Then start from
+`trunk()` if jj defined it, or from the tracked default bookmark you actually have (usually `main@origin`).
 
-```bash
-jj git clone --colocate <repo-url> <directory>
-```
-
-For an existing plain Git checkout, initialize jj in place from the repo root:
-
-```bash
-jj git init --git-repo .
-```
-
-When the user explicitly asked for `jj`, this initialization step is the default, not an optional suggestion. The
-mistake to avoid here is noticing that the repo is plain Git and then drifting into a Git-only PR flow. If `jj` is
-installed and the checkout is an ordinary Git repo, initialize `jj` and keep going.
-
-After bootstrapping, start from `trunk()` if jj defined it. That is the safest default because it follows the imported
-default branch instead of assuming a local `main` exists. If `trunk()` is not defined, inspect `jj bookmark list` and
-branch from the tracked default bookmark you actually have, which is usually `main`, `main@origin`, `master`, or
-`master@origin`.
-
-Prefer a colocated repo for GitHub work. If the repo is not colocated, `gh` may need `GIT_DIR=$(jj git root)` as
-described in the jj docs:
-
-- `https://docs.jj-vcs.dev/latest/github/`
-- `https://docs.jj-vcs.dev/latest/cli-reference/`
-
-Detached Git HEAD is normal in this workflow. Do not treat "not on any branch" as evidence that the checkout is broken.
-The jj graph and bookmark names are the source of truth. For `gh` commands, prefer explicit PR numbers, explicit
-`--head` values, and `-R owner/repo` rather than relying on Git branch inference.
+Use a colocated repo; the script works only in one. Detached Git HEAD is normal in this workflow and not a sign the
+checkout is broken: the jj graph and the bookmark names are the source of truth. For `gh` commands you run yourself,
+pass explicit PR numbers and `-R owner/repo` rather than relying on Git branch inference.
 
 ## Default rules
 
-- Prefer `jj` commands over `git` for history manipulation.
-- When the agent is sandboxed, prefer running real `jj` and `gh` workflow commands outside the sandbox by default.
-- Prefer `jj bookmark set` over create/move split-brain. `set` can create or move a bookmark by name.
-- Do not parallelize `jj` commands in a colocated repo. This includes apparent read-only commands such as `jj status`,
-  `jj log`, `jj bookmark list`, `jj diff`, and `jj config get`. jj may import or export Git refs, reset Git HEAD state,
-  or create per-repo config as part of commands that look like inspection. Run all `jj` invocations one at a time, and
-  do not put them in `multi_tool_use.parallel`.
-- Also keep Git and repo-scoped GitHub inspection commands sequential when they may inspect the same Git metadata jj is
-  managing. Examples include `git status`, `git show`, `git rev-parse`, `git branch`, and `gh pr view` from inside the
-  repo. Parallelizing ordinary file reads such as `sed`, `rg`, `ls`, `nl`, and `wc` is fine as long as no `jj` or Git
-  repo-state command is running at the same time.
-- Treat workflow mutations as ordered steps in one shared state machine. In particular, `jj commit`, `jj bookmark set`,
-  `jj git push`, `gh pr create`, and the REST PR edit are not independent chores you can fan out. Run them one at a
-  time. Re-read state between steps only when the next command depends on uncertain state; do not turn every successful
-  command into a separate inspection round trip.
-- Before creating a reviewable commit, inspect `jj status` and make sure unrelated working-copy junk is not about to get
-  swept in by accident. If needed, commit only the intended paths with `jj commit <paths> -m ...` and leave unrelated
+- Prefer `jj` over `git` for history manipulation.
+- When sandboxed, run the real `jj`, `gh`, and script commands outside the sandbox by default. `jj` needs to lock Git
+  metadata such as `packed-refs`, and `gh` needs the host credential store. Do not spend time proving the sandbox is
+  broken first.
+- Never run `jj` commands in parallel in a colocated repo, including ones that look read-only (`jj status`, `jj log`,
+  `jj bookmark list`, `jj diff`, `jj config get`): jj may import or export Git refs, or reset Git HEAD, as part of them.
+  Keep `git`, repo-scoped `gh` commands, and the script sequential with them too. Parallel plain file reads are fine.
+- Before committing, inspect `jj status` and commit only the intended paths (`jj commit <paths> ...`), leaving unrelated
   files in the working copy.
-- When the user asks to "make/create a PR" and the current bookmark already has an open PR, treat new intended
-  working-copy changes as a request to create the next stacked PR by default. Do not force the user to say "make the
-  next PR" unless there is genuine ambiguity about whether the working-copy changes are intended for a new review unit.
-- Push named bookmarks explicitly with `jj git push --bookmark <name>`. Do not use `--all` unless the user clearly wants
-  every local bookmark pushed. If the bookmark name contains `/` or you need exact matching instead of pattern matching,
-  use `jj git push --bookmark 'exact:<name>'`.
-- Do not pass `--allow-new` to `jj git push`. It was deprecated in jj 0.36 and removed in 0.42; on current jj it fails
-  immediately with `unexpected argument '--allow-new'`. Explicitly naming the bookmark with `--bookmark`/`exact:` is
-  sufficient to push a new bookmark on jj 0.36 and later. Only if `jj --version` reports 0.24–0.35 does a brand-new
-  untracked bookmark need `--allow-new` (or `jj bookmark track` on 0.35).
-- Draft and ready. Every `gh pr create` this skill issues passes `--draft`: a new stack, the next PR on top, a PR
-  inserted into the middle. There is no "small PR" exception and no per-repo detection; the rule is unconditional so
-  that repos whose CI gates on draft status get the saving without the agent having to notice. A PR leaves draft only
-  for two reasons: the user asked ("publish the PRs" under Expected user commands), or a landing flow is about to merge
-  it and needs it ready (see "Landing stacked PRs safely" and "Fast path merge", which each mark one PR ready at the
-  last responsible moment and leave the PRs above it as drafts). Never mark a PR ready on your own initiative: not
-  because CI would be useful, not because a review round finished, not because you are about to hand off. "Publish" in
-  this file means this flip and nothing else; pushing a bookmark is not publishing, and running CI is not publishing
-  either. Only "publish" or "mark ready" means `gh pr ready`. Any request for CI, from the user or from your own wish
-  for a verdict, is a one-off: run the workflow without changing the PR's state, because a ready PR keeps starting runs
-  on every later rebase and push. On a repo whose workflow supports `workflow_dispatch`, that looks like `gh workflow
-  run ci.yml --ref <bookmark>`; the workflow filename is the repo's, not necessarily `ci.yml`, so read
-  `.github/workflows/` to find the right one. If no workflow can be dispatched, say so and ask rather than publishing
-  the PR to get a run.
-- Never splice arbitrary PR text directly into a shell command. If a PR title or body came from the user, the model, a
-  commit message, or `gh pr view --json ...`, materialize it first and pass it to `gh` through a quoted variable for the
-  title and `--body-file` for the body. Do not improvise escaping for backticks, `$()`, quotes, or multi-line markdown.
-- Default to squash merging GitHub PRs unless the user explicitly asks for a different strategy. This avoids
-  repositories that reject merge commits, and it matches the common "one reviewable change lands as one commit on main"
-  shape this workflow is usually trying to preserve.
-- Before any `gh pr merge`, verify the PR's `baseRefName` is the default branch. Merging a PR whose base is another
-  stack bookmark does not land it — it folds the change into the parent PR's branch and closes the PR as "merged" while
-  `main` stays untouched. A merge request for such a PR means landing the stack bottom-up; see "Landing stacked PRs
-  safely". Do not retarget the PR's base to the default branch just to make this check pass — that squashes its unmerged
-  ancestors into one commit, which is the collapse the landing rules forbid. (Retargeting after the parent has reached
-  `MERGED`, as "Fast path merge" does, is a different situation: there is no unmerged ancestor left to swallow.)
-- Do not delete a merged stack branch while any open GitHub PR still names that branch as its base. GitHub PRs are
-  attached to base branch names, not jj ancestry, so a locally-correct jj graph does not protect child PRs from being
-  closed or misrepresented if their GitHub base branch disappears too early.
-- Remember that after `jj commit`, the real commit is usually `@-`. `@` is typically the new empty working-copy commit.
-- That means the sequence matters. If you need `jj bookmark set <name> -r @-`, run it only after `jj commit` has
-  finished. Do not start `jj commit` and `jj bookmark set -r @-` concurrently or you can race against the old graph and
-  pin the bookmark to the parent change instead of the new reviewable commit.
-- Keep bookmark names stable once a PR exists. Move the bookmark to new commits; do not invent a fresh branch name for
-  every revision.
-- After you change stack shape, update GitHub PR bases explicitly with the REST base edit from "Editing PR metadata".
-  GitHub will not infer jj ancestry changes from bookmark movement alone. Never use `gh pr edit` for this; it is broken
-  on the `gh` versions distros ship.
-- Do not let anything else mutate the same working copy while a `jj` command is running. That includes another `jj`
-  process, `git`, an editor auto-save doing broad rewrites, or another shell touching the same files. jj snapshots the
-  working copy at command boundaries, so concurrent mutation is an easy way to confuse yourself.
+- After `jj commit`, the commit you just made is `@-`, and `@` is a new empty working copy. Run `jj bookmark set <name>
+  -r @-` only after the commit has finished, never alongside it.
+- Keep one bookmark per reviewable commit, and keep its name once a PR exists: move the bookmark to new commits rather
+  than inventing a fresh name per revision, which would open a second PR.
+- Draft and ready. Every PR this workflow creates is a draft, and `submit` always creates them that way. A PR leaves
+  draft only when the user asks ("publish the PRs") or when a landing is about to merge it. Never mark a PR ready on
+  your own initiative: not because CI would be useful, not because a review round finished, not because you are about to
+  hand off. Repos increasingly gate CI on draft status, and a stack is rewritten and re-pushed many times before anyone
+  wants a verdict; one stack observed on 2026-09-02 produced 73 CI runs of about ten jobs each, mostly for commits
+  nobody looked at. A request for CI is a one-off run, not a reason to publish (see "Expected user commands").
+- Never edit a PR with `gh pr edit`. On every `gh` before 2.82.1, which is what distros ship (Ubuntu 24.04 has 2.45.0),
+  it fails with a `(repository.pullRequest.projectCards)` GraphQL error and writes nothing; do not retry it or stop to
+  upgrade `gh`. The script edits PRs through the REST endpoint. To edit one by hand, use `gh api -X PATCH
+  repos/<owner>/<repo>/pulls/<n> -f base=<branch> --jq .base.ref`, or `-f title=<title>` and `-F body=@<file>`.
+- Never put PR or commit text inline in a shell command beyond a one-line message in single quotes. Write it to a file
+  first (see "Writing commit messages").
+- Do not let anything else mutate the working copy while a `jj` command or the script runs: no other `jj` or `git`
+  process, no editor auto-save doing broad rewrites.
 
-## Fast path for the common case
+## Writing commit messages
 
-NOTE: This is a tool-call optimization, not permission to parallelize state mutations. `jj commit`, `jj bookmark set`,
-`jj git push`, `gh pr create`, `gh pr merge`, and the REST PR edit are still one ordered state machine. The faster path
-is to run the obvious ordered sequence in one shell invocation and let normal command failures stop the sequence,
-instead of spending separate tool calls re-reading state after every successful step.
+`submit` takes each new PR's title and body from its commit's description: the first line is the title, and everything
+after the first blank line is the body. The commit message is the PR text, so write it as such.
 
-For straightforward happy paths, batch ordered commands with `&&` chaining or a per-command `|| exit 1` in one shell
-invocation when the next command does not need the model to inspect fresh output. This is still sequential execution. It
-just avoids paying one tool call per command for state you already know.
-
-NOTE: Never rely on `set -e` to stop a batched sequence. Agent harnesses commonly run the tool command via `eval` in a
-non-final position of an `&&` list, and bash ignores errexit for any command in that position — including everything the
-`eval` executes. The result is the worst failure shape: `set -e` shows as enabled in `$-` and `SHELLOPTS`, yet a failed
-guard falls through and the mutation it was supposed to stop runs anyway. This fails open and has caused a real
-unguarded `gh pr merge`. Give every command in a batch its own failure path (`&&` chaining or `|| exit 1`); an explicit
-`exit` does propagate out of the wrapper correctly.
-
-Do not batch an inspection command with the mutation it is supposed to guard. If the working-copy scope is uncertain,
-inspect `jj status` first and let the model decide what to include. Once the intended paths are known, use path-limited
-commands such as `jj commit README.md -m ...` in the batched sequence.
-
-When a batched sequence uses shell variables to construct bookmark names, validate the variables before creating or
-pushing anything. A missing prefix can turn `"$prefix-1"` into a real remote branch named `-1`, and that is needless
-cleanup work. Print the exact bookmark names you are about to push, then push those exact names.
-
-Use this fast path when all of these are true:
-
-- the repo is already bootstrapped for `jj` and identity config is known good
-- the working copy changes are known and intentionally scoped, usually because you just made them
-- you are creating new bookmarks with names you chose for this stack
-- you know the base bookmark (`main`, `trunk()`, or the previous stack bookmark)
-- you have no reason to suspect stale remote state, existing PRs for the same bookmarks, conflicted descendants, or
-  unrelated local changes
-
-In that case, do not burn tool calls on `jj log`, `jj bookmark list`, `jj git push --dry-run`, `gh pr view`, or
-post-create PR inspection unless a command fails or the user specifically asked for that detail. Use the command output
-you already have: `jj commit` tells you where `@-` landed, `jj bookmark set` tells you what it moved, `jj git push`
-reports the pushed refs, and `gh pr create` prints the PR URL. The PR it prints is a draft, and it stays one until the
-user publishes it or a landing marks it ready; do not follow the create with a `gh pr ready`.
-
-One check is exempt from that skip-the-reads advice: the pre-merge `baseRefName` verification required by the Default
-rules. Never skip it before `gh pr merge`, no matter how well you think you know the stack. It can be batched into the
-same shell invocation as the merge, the way the landing snippets do, so it costs nothing extra.
-
-For a fresh two-PR stack where you just edited `README.md`, this is the intended shape:
+`jj commit`, `jj squash`, and `jj describe` take `-m`, but none of them takes `-F` or `--file` (an agent reaching for
+the Git habit `jj commit -F msg.txt` gets `unexpected argument '-F' found`, observed on jj 0.44). A one-line message can
+go inline in single quotes. For anything longer, write the message to a file with your file-writing tool, then set it
+from stdin, which only `jj describe` reads:
 
 ```bash
-jj status
+jj commit <paths> -m 'wip'
+jj describe -r @- --stdin < <message-file>
 ```
 
-If the status output only shows the intended paths:
+To bring an existing PR's title and body in line with a reworded commit, run `submit --update-text`.
 
-```bash
-jj commit README.md -m "Add first change" || exit 1
+## Building and updating the stack
 
-# edit README.md again
-jj commit README.md -m "Add second change" || exit 1
+Every one of these ends with the script's `submit` command, which makes GitHub match the local stack: it pushes every
+bookmark that moved, opens a draft PR for every bookmark that has none, and bases each PR on the bookmark below it (the
+bottom one on the default branch). Run it with the working copy on top of the stack, or pass the top bookmark as
+`--top`; it refuses when the stack continues above `--top` with open PRs, since those would be left stale. Start a new
+stack from the default branch with `jj new 'trunk()'`.
 
-first_bookmark=pr/first
-second_bookmark=pr/second
-test -n "$first_bookmark" || exit 1
-test -n "$second_bookmark" || exit 1
-printf 'pushing %s\n' "$first_bookmark" "$second_bookmark"
+- New PR on top: make the change, `jj commit <paths>` with its message, `jj bookmark set <name> -r @-`, then `submit`.
+- Update a PR: `jj new <bookmark>`, make the edit, `jj squash` to fold it into the bookmarked commit, then `jj new
+  <top-bookmark>` to put the working copy back on top, and `submit`. jj rebases everything above the edit, and `submit`
+  pushes all of it. Each PR is exactly one commit: a follow-up commit with the bookmark moved onto it leaves the
+  original commit unbookmarked, and `submit` refuses that rather than let GitHub fold it in silently.
+- Insert a PR into the stack: `jj new --insert-after <bookmark-below>`, make the change, describe it, `jj bookmark set
+  <name> -r @`, then `jj new <top-bookmark>` and `submit`. It creates the inserted PR and retargets the PR above it.
+- Restack, reorder, or drop a commit: do it with `jj rebase` or `jj abandon`, then `submit`.
 
-jj bookmark set "$first_bookmark" -r @-- || exit 1
-jj bookmark set "$second_bookmark" -r @- || exit 1
-jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark" || exit 1
-```
+Rewriting a lower commit can leave the commits above it conflicted. That is a normal part of changing lower layers, not
+a surprise. `submit` refuses to push a conflicted commit, so resolve them bottom-up: `jj new <conflicted-bookmark>`,
+resolve the markers (or use `jj resolve`), `jj squash`, and repeat, then `submit`.
 
-Then create the PRs in order, using the safe title/body-file pattern below. The second PR's base is the first PR's
-bookmark:
+`status` shows the same plan without acting on it. To see what changed since a bookmark was last pushed, use `jj
+interdiff --from <bookmark>@origin --to <bookmark>`.
 
-```bash
-gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
-gh pr create -R owner/repo --draft --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
-```
+## The bundled `jjstack` script
 
-If any command in the fast path fails, stop optimizing and switch to the diagnostic path: inspect `jj status`, `jj log
--r 'bookmarks() | @ | @-'`, `jj bookmark list`, and the relevant `gh pr view` or `gh pr list` output before trying to
-repair anything.
+The deterministic parts of this workflow run as a Deno script, `scripts/jjstack` in this skill's directory (for Claude
+Code, the "Base directory for this skill" shown when the skill loads; for Codex,
+`${CODEX_HOME:-$HOME/.codex}/skills/jjstack`). Run its commands rather than composing their steps by hand, and never
+transcribe the script into shell commands. Every command takes `--dir <checkout>` and runs everything there, so it works
+from any working directory; `--repo owner/name` when `gh` cannot infer the repository from the checkout; `--remote
+<name>` for a remote other than `origin`; and `--top <rev>` for the top of the stack (default `@`). "The stack" is
+always the ancestry chain from the remote default branch to `--top`. Before anything else, every command checks that the
+remote fetches from and pushes to that repository alone, on the same host. A remote URL that uses an ssh host alias from
+`~/.ssh/config` does not name the host and is refused; use the real host name in the remote URL.
 
-When a batched step fails, the steps before it have already mutated state. Resume from the failed step, not from the top
-of the batch. Rerunning the whole sequence would replay the earlier mutations: a second `jj commit` creates a spurious
-empty commit, and a replayed `jj bookmark set` can pin the bookmark to the wrong revision now that the graph has
-advanced.
+- `status`: prints, for each PR bottom-up, what `submit` would do, and a `JJSTACK_STATUS` line per PR. It fetches but
+  changes nothing else.
+- `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
+  prints a `JJSTACK_SUBMITTED` line per PR naming what it did. It runs every check before its first write. Within one PR
+  it retargets before pushing, because the push starts CI for the new head and a base-dependent check has to see the
+  final base. It refuses a range up to `--top` that is not one chain, a non-empty commit without a bookmark (GitHub
+  would fold it into the PR above), a commit with more than one bookmark, a conflicted commit or bookmark, open PRs on
+  commits that build on the stack but are not below `--top` (unless `--partial`), a commit without a description when
+  its PR has to be created, a bookmark that has two open PRs, and a bookmark whose earlier PR was closed or merged (it
+  will not open a second PR for the same branch). A `JJSTACK_WARN` line names an open PR based on a stack bookmark whose
+  own head is not in the stack.
+- `fast-land`: see "Fast path merge".
 
-## Passing PR text to gh safely
+### When the script stops
 
-This part is easy to get wrong and the failure mode is dumb: the shell eats markdown or code spans, and you silently
-publish a mangled PR title or body.
-
-Do not do this with real text:
-
-```bash
-gh pr create ... --title "some title with `code`" --body "multi-line body ..."
-```
-
-That style is only safe for toy placeholders. It is not a real workflow for arbitrary content.
-
-When you need to create or edit a PR with actual text, use this pattern instead:
-
-```bash
-title_file=$(mktemp)
-body_file=$(mktemp)
-
-cat >"$title_file" <<'EOF'
-feat: add first change
-EOF
-
-cat >"$body_file" <<'EOF'
-This explains why the change exists.
-
-It may contain `code`, "$vars", $(subshells), single quotes, double quotes, and blank lines.
-EOF
-
-title=$(tr -d '\n' <"$title_file")
-gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file"
-
-rm -f "$title_file" "$body_file"
-```
-
-Editing an existing PR uses the same files, but not `gh pr edit`. See "Editing PR metadata" below for why; the shape is:
-
-```bash
-title=$(tr -d '\n' <"$title_file")
-gh api -X PATCH "repos/owner/repo/pulls/<pr-number>" -f "title=$title" -F "body=@$body_file" --jq .number
-```
-
-The important parts are:
-
-- use a single-quoted heredoc delimiter like `<<'EOF'` when writing literal text
-- keep the title in a quoted variable, not inline in the command text
-- pass the body from a file: `--body-file` for `gh pr create`, `-F "body=@$body_file"` for the REST edit. The `@path`
-  form makes `gh api` read the file and send its contents as the field value, so the body never passes through shell
-  parsing
-- if you fetched existing text from GitHub and want to preserve it exactly, write it to files first and then reuse the
-  same file-based flow
-
-Do not ad-lib shell escaping here. Use the file-and-variable pattern every time.
-
-## Editing PR metadata
-
-Every edit to an existing PR's title, body, or base goes through the REST endpoint, never through `gh pr edit`:
-
-```bash
-# Retarget the base. --jq keeps the output to the one field you want to confirm.
-gh api -X PATCH "repos/$repo/pulls/$pr" -f "base=$new_base" --jq .base.ref
-
-# Reword. Title from a variable, body from a file (see "Passing PR text to gh safely").
-gh api -X PATCH "repos/$repo/pulls/$pr" -f "title=$title" -F "body=@$body_file" --jq .number
-```
-
-NOTE: This is a SPEC.md requirement of the dotfiles repo this skill ships from, not a style preference. `gh pr edit` is
-broken on every `gh` release before 2.82.1, with any flags: it reads the PR through GraphQL first, that query still asks
-for the classic-Projects `projectCards` field GitHub has removed, and the command exits 1 before writing anything.
-Distro packages sit on exactly those versions (Ubuntu 24.04 ships 2.45.0), and this skill has to work on such hosts
-without asking the user to install a newer `gh`. The REST call is the same operation without the GraphQL read, and it
-works on old and new `gh` alike. Do not "fix" this by upgrading `gh` or by retrying `gh pr edit`; the failure is
-deterministic. The error text to recognize, should `gh pr edit` sneak in anyway, is:
+Every way the script can stop prints the same three lines to stderr:
 
 ```
-GraphQL: Projects (classic) is being deprecated in favor of the new Projects experience, ...
-(repository.pullRequest.projectCards)
+JJSTACK_ERROR code=E_MATCH_HEAD_DIFFERS phase="plan" mutated=sync
+error: PR #175 head is 4fa48fa... but local pr/foo is 7a7e9f9...; GitHub does not show the local commit
+raised at: grep -n '"E_MATCH_HEAD_DIFFERS"' /path/to/scripts/jjstack
 ```
 
-Two things to know about the REST form. `gh api` prints the full PR object on success, so always pass `--jq` to keep the
-output small, and read the field back with `gh pr view --json baseRefName` (or `title`, `body`) when a later step
-depends on it, exactly as the landing flows below already do. A base change is rejected with HTTP 422 when the named
-branch does not exist on GitHub, which is the failure you get if you retarget before pushing the new parent bookmark.
+Each code appears exactly once in the script, so the `raised at:` grep lands on the one line that stopped the run;
+shared helpers take their caller's code, so that line is the call site. `mutated=` says how far the run got: `no` means
+nothing ran, `sync` means it only fetched or let jj snapshot the working copy (a fetch can move or delete local
+bookmarks that track the remote, but the script itself wrote nothing), and `yes` means it had started writing to jj,
+Git, or GitHub. The exit status follows: 3 is a refusal with nothing written, 4 is a stop after writes began, 2 is a
+usage error, and 1 is a crash (`code=E_UNEXPECTED`) before any write, which is a bug in the script and comes with a
+stack trace. A crash after writes began exits 4. Reads from GitHub are retried a couple of times on server and network
+errors, so a stop on one means the failure persisted.
 
-A base retarget can also 422 with `A pull request already exists for base '<default>' and head '<bookmark>'` when it
-races GitHub's own retarget. On a repo with "automatically delete head branches" on, merging the parent deletes its
-branch, and GitHub then moves every PR based on that branch to the parent's base on its own, asynchronously. Land the
-PATCH inside that window and GitHub reports the collision as an error even though the PR ends up exactly where you
-wanted it. (A plain no-op retarget, where the base already matches and nothing is in flight, returns 0.) So a failed
-retarget is not automatically fatal: re-read `baseRefName`, and if it already equals the target, carry on. The landing
-snippets below encode that as `|| test "$(gh pr view ... --jq .baseRefName)" = "$target" || exit 1`. Observed on
-2026-09-13 during a fast path landing on scode/repotesting.
-
-## Passing commit messages to jj safely
-
-The same problem exists on the `jj` side, with an extra trap: `jj commit`, `jj squash`, and `jj describe` take `-m`, but
-none of them takes `-F` or `--file`, and only `jj describe` has `--stdin`. An agent that reaches for the Git habit `jj
-commit -F msg.txt` gets `unexpected argument '-F' found` (observed on jj 0.44). The inline `-m "Add first change"`
-examples elsewhere in this file are fine for one-line placeholders; a real multi-paragraph message with backticks,
-quotes, or `$` goes through a file.
-
-Write the message with a single-quoted heredoc, then hand it to `-m` through command substitution. This works
-identically for all three commands, so there is one pattern to remember:
-
-```bash
-msg_file=$(mktemp)
-cat >"$msg_file" <<'EOF'
-feat: add first change
-
-This explains why the change exists. It may contain `code`, "$vars",
-$(subshells), single quotes, double quotes, and blank lines.
-EOF
-
-jj commit README.md -m "$(cat "$msg_file")" || exit 1
-rm -f "$msg_file"
-```
-
-`$(cat ...)` strips trailing newlines and nothing else, and the double quotes keep the rest intact. Use the same shape
-for `jj squash -m "$(cat "$msg_file")"` when rewriting a PR's commit and `jj describe -m "$(cat "$msg_file")"` when
-describing the working copy. `jj describe --stdin <"$msg_file"` is an equivalent for that one command; do not assume the
-other two accept it.
-
-The PR title and body usually come from the same text. Derive them from the message file rather than retyping: the first
-line is the title, and everything after the blank line is the body:
-
-```bash
-title=$(head -n 1 "$msg_file")
-body_file=$(mktemp)
-tail -n +3 "$msg_file" >"$body_file"
-```
-
-Then continue with the `gh pr create` pattern above.
-
-## Starting a new stack
-
-Start from the tracked default branch via `trunk()` unless you already know you need a different base:
-
-```bash
-jj new 'trunk()'
-```
-
-Make the first change, then commit it:
-
-```bash
-jj commit -m "Add first change"
-```
-
-Make the second change, then commit it:
-
-```bash
-jj commit -m "Add second change"
-```
-
-At that point the stack usually looks like:
-
-- `@` = new empty working copy
-- `@-` = top reviewable commit
-- `@--` = the commit below it
-
-Create stable bookmarks on the reviewable commits, not on the empty working copy, then push only those bookmarks:
-
-```bash
-first_bookmark=pr/first
-second_bookmark=pr/second
-test -n "$first_bookmark" || exit 1
-test -n "$second_bookmark" || exit 1
-printf 'pushing %s\n' "$first_bookmark" "$second_bookmark"
-jj bookmark set "$first_bookmark" -r @-- || exit 1
-jj bookmark set "$second_bookmark" -r @- || exit 1
-jj git push --bookmark "exact:$first_bookmark" --bookmark "exact:$second_bookmark" || exit 1
-```
-
-Create PRs in order:
-
-Prepare the correct `title` and `body_file` for each PR using the safe pattern above, then run:
-
-```bash
-gh pr create -R owner/repo --draft --base main --head pr/first --title "$title" --body-file "$body_file" || exit 1
-gh pr create -R owner/repo --draft --base pr/first --head pr/second --title "$title" --body-file "$body_file" || exit 1
-```
-
-The base branch of PR N should be the bookmark for PR N-1. Both PRs are drafts; leave them that way until the user asks
-to publish.
-
-## Updating the top PR
-
-If the project is okay with follow-up commits on the PR:
-
-```bash
-jj new pr/top
-# edit files
-jj commit -m "Address review comments"
-jj bookmark set pr/top -r @-
-jj git push --bookmark 'exact:pr/top'
-```
-
-Those are intentionally separate commands. Do not batch them into one parallel tool call. `jj bookmark set pr/top -r @-`
-is only correct after the commit has completed and the working-copy graph has advanced.
-
-If the project wants a clean rewritten commit instead:
-
-```bash
-jj new pr/top
-# edit files
-jj squash -m "Original commit title"
-jj git push --bookmark 'exact:pr/top'
-```
-
-That second flow rewrites the bookmarked commit instead of adding a new one.
-
-## Rewriting an older PR in the middle of the stack
-
-Pick the bookmark for the commit you want to rewrite:
-
-```bash
-jj new pr/middle
-# edit files
-jj squash -m "Original middle commit title"
-```
-
-What happens next matters:
-
-- `jj` rewrites the target commit
-- descendants get rebased automatically
-- descendant commits may become conflicted if they touched the same files
-
-Do not pretend those conflicts are surprising. They are a normal part of changing lower layers in a stack.
-
-If a descendant bookmark becomes conflicted, resolve it commit by commit:
-
-```bash
-jj new pr/descendant
-# resolve conflict markers or use jj resolve
-jj squash -m "Original descendant commit title"
-```
-
-Repeat until the stack is clean, then push every bookmark whose commit changed:
-
-```bash
-jj git push --bookmark 'exact:pr/middle' --bookmark 'exact:pr/descendant'
-```
-
-## Inserting a new PR into the middle of an existing stack
-
-This is the cleanest way to add a new review unit under existing PRs:
-
-```bash
-jj new --insert-after pr/previous
-# edit files
-jj describe -m "Add inserted change"
-jj bookmark set pr/inserted -r @
-```
-
-That inserts a new commit between `pr/previous` and its descendants, then rebases the descendants on top of the new
-commit.
-
-After that:
-
-1. resolve any descendant conflicts
-2. push the new bookmark
-3. create the new PR
-4. update the immediate downstream PR's base in GitHub
-5. push every descendant bookmark that moved
-
-Example:
-
-Assuming `title` and `body_file` were prepared with the safe pattern above:
-
-```bash
-jj git push --bookmark 'exact:pr/inserted'
-gh pr create -R owner/repo --draft --base pr/previous --head pr/inserted --title "$title" --body-file "$body_file"
-gh api -X PATCH "repos/owner/repo/pulls/<downstream-pr-number>" -f base=pr/inserted --jq .base.ref
-jj git push --bookmark 'exact:pr/downstream'
-```
-
-The base edit step is mandatory whenever GitHub's PR parent should change, and it must happen before pushing the
-rewritten downstream head. A base-dependent required check must see the final base when the push starts workflows for
-the new head commit.
-
-## Sanity checks
-
-Use these before and after push operations:
-
-```bash
-jj log -r 'bookmarks() | @ | @-'
-jj bookmark list
-jj git push --bookmark 'exact:pr/foo' --dry-run
-```
-
-If you need to see what has changed since the last pushed version of a bookmark, `jj interdiff` is often the right tool:
-
-```bash
-jj interdiff --from pr/foo@origin --to pr/foo
-```
+When the script stops, read the script around the raising line before deciding what to do. The check there, and the
+docstring of the function it sits in, say which invariant failed and why it matters; the messages say what was checked
+and what was found, not what to do about it. Then fix the cause and rerun the same command, or tell the user what you
+found. After exit 4, work out what already changed before rerunning anything: the `JJSTACK_` ledger lines on stdout say
+what completed, and `jj log` and `gh pr view` show the rest. Do not get past a refusal by doing its step by hand. Most
+refusals guard against pushing, merging, or deleting something nobody reviewed, and doing the step by hand removes the
+guard along with the obstacle. If the script itself looks wrong for the situation, a crash or a check that is clearly
+mistaken, say so and propose a fix to the script instead of routing around it.
 
 ## Failure modes
 
 Stop and surface the problem instead of improvising if:
 
-- a `jj` or `gh` workflow command is blocked by sandboxing, approval policy, missing escalation, or another execution
-  permission issue
-- `jj git push` reports a bookmark conflict or stale remote state and a fetch is clearly required
-- `gh` auth is missing or the repo path is wrong in a non-colocated workspace
+- a `jj`, `gh`, or script command is blocked by sandboxing, approval policy, or a similar permission issue
+- `jj git push` reports stale remote state or a bookmark conflict, and a fetch is clearly required
 - rewriting a lower commit causes conflicts you cannot resolve confidently
-- the requested GitHub PR shape does not match the bookmark ancestry anymore
-- you already ran commit/bookmark/push in parallel and are no longer sure which commit the bookmark points at. In that
-  case, stop, inspect `jj log` and `jj bookmark list`, repair the bookmark target explicitly, and only then push or
-  create/edit the PR.
-- any command fails with the `(repository.pullRequest.projectCards)` GraphQL error. That means a `gh pr edit` ran on a
-  pre-2.82.1 `gh`. Nothing was written. Redo the edit with the REST call from "Editing PR metadata"; do not retry the
-  same command and do not stop to upgrade `gh`.
+- the GitHub PR shape no longer matches the bookmark ancestry in a way `submit` refuses to repair
+- you ran commit, bookmark, and push steps in parallel and are no longer sure which commit a bookmark points at; inspect
+  `jj log` and `jj bookmark list` and repair the bookmark explicitly before anything else
 
 If a `jj` or `gh` command fails with `unexpected argument` or an unknown-flag error, treat it as version drift between
-the installed tool and whatever produced the flag — this skill's examples, or your own priors. Check `--help` for the
-installed version and drop or replace the flag, rather than retrying the same command or inventing a workaround. Do not
-assume the examples here match the installed version's CLI surface; jj in particular removes deprecated flags
-(`--allow-new` is the known case).
+the installed tool and whatever produced the flag. Check `--help` for the installed version and drop or replace the flag
+rather than retrying the same command. jj in particular removes deprecated flags: `jj git push --allow-new` was removed
+in jj 0.42, and naming the bookmark with `--bookmark` is enough to push a new one.
 
 ## Landing stacked PRs safely
 
@@ -698,11 +305,11 @@ PR has landed and open descendants remain above it, rebase them onto the landed 
 PR's base to the default branch, then push every descendant bookmark the rebase moved — not just the lowest, and never a
 landed one (see "The push set" below). Finish the landing by deleting landed bookmarks after no open PR depends on them.
 The base guards in the snippets below are this rule in executable form; keep them — including the per-guard `|| exit`
-failure paths, which exist because `set -e` is silently inert under agent shell wrappers (see the errexit NOTE in "Fast
-path for the common case") and a guard without its own exit fails open. Derive the default branch once per landing
-instead of hardcoding `main` — a repo whose default is `master` can even contain a stack branch literally named `main`,
-which would turn a hardcoded guard into an authorization for the wrong-way merge. Note that `gh repo view` takes the
-repository as a positional argument, not via `-R`:
+failure paths, which exist because `set -e` is silently inert under agent shell wrappers and a guard without its own
+exit fails open. Derive the default branch once per landing instead of hardcoding `main` — a repo whose default is
+`master` can even contain a stack branch literally named `main`, which would turn a hardcoded guard into an
+authorization for the wrong-way merge. Note that `gh repo view` takes the repository as a positional argument, not via
+`-R`:
 
 ```bash
 default_branch=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
@@ -924,9 +531,8 @@ the old base to the new head. Rerunning that job does not fix it because GitHub 
 
 If the wrong-order race has already happened, do not rerun the failed job. Set the correct base, inspect the workflow's
 event triggers, and fire a fresh event that the base-dependent workflow actually handles. If it handles `pull_request:
-edited`, a reversible PR body edit (the REST body edit from "Editing PR metadata") can create that evaluation; preserve
-and restore the exact body with the file-based safe-text procedure above. Do not assume every pull-request workflow
-handles body edits.
+edited`, a reversible PR body edit (the REST body edit under "Default rules") can create that evaluation; preserve and
+restore the exact body by saving it to a file first. Do not assume every pull-request workflow handles body edits.
 
 After creating a PR, pushing a bookmark, marking a PR ready, or editing a PR base, use `gh pr view --json
 state,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup` for CI and mergeability waits. GitHub can
@@ -1127,45 +733,6 @@ This flow pushes the whole remaining suffix after every merge so that the PRs ab
 while the landing is under way. For a long stack that is quadratic in branch updates (about 465 for 30 PRs, at roughly
 25 seconds per PR in one observed landing). If the user does not want to wait for CI either, that is a fast-path
 request; use "Fast path merge", which pushes only the PR about to merge.
-
-## The bundled `jjstack` script
-
-Parts of this workflow run as a Deno script, `scripts/jjstack` in this skill's directory (for Claude Code, the "Base
-directory for this skill" shown when the skill loads; for Codex, `${CODEX_HOME:-$HOME/.codex}/skills/jjstack`). Run its
-commands rather than composing their steps by hand. It needs `deno` and Git 2.40 or later. Every command takes `--dir
-<checkout>` and runs everything there, so it works from any working directory; `--repo owner/name` when `gh` cannot
-infer the repository from the checkout, and `--remote <name>` for a remote other than `origin`. Before doing anything
-else, every command checks that the remote fetches from and pushes to that repository alone, on the same host. A remote
-URL that uses an ssh host alias from `~/.ssh/config` does not name the host and is refused; use the real host name in
-the remote URL.
-
-### When the script stops
-
-Every way the script can stop prints the same three lines to stderr:
-
-```
-JJSTACK_ERROR code=E_MATCH_HEAD_DIFFERS phase="plan" mutated=sync
-error: PR #175 head is 4fa48fa... but local pr/foo is 7a7e9f9...; GitHub does not show the local commit
-raised at: grep -n '"E_MATCH_HEAD_DIFFERS"' /path/to/scripts/jjstack
-```
-
-Each code appears exactly once in the script, so the `raised at:` grep lands on the one line that stopped the run;
-shared helpers take their caller's code, so that line is the call site. `mutated=` says how far the run got: `no` means
-nothing ran, `sync` means it only fetched or let jj snapshot the working copy (a fetch can move or delete local
-bookmarks that track the remote, but the script itself wrote nothing), and `yes` means it had started writing to jj,
-Git, or GitHub. The exit status follows: 3 is a refusal with nothing written, 4 is a stop after writes began, 2 is a
-usage error, and 1 is a crash (`code=E_UNEXPECTED`) before any write, which is a bug in the script and comes with a
-stack trace. A crash after writes began exits 4. Reads from GitHub are retried a couple of times on server and network
-errors, so a stop on one means the failure persisted.
-
-When the script stops, read the script around the raising line before deciding what to do. The check there, and the
-docstring of the function it sits in, say which invariant failed and why it matters; the messages say what was checked
-and what was found, not what to do about it. Then fix the cause and rerun the same command, or tell the user what you
-found. After exit 4, work out what already changed before rerunning anything: the `JJSTACK_` ledger lines on stdout say
-what completed, and `jj log` and `gh pr view` show the rest. Do not get past a refusal by doing its step by hand. Most
-refusals guard against pushing, merging, or deleting something nobody reviewed, and doing the step by hand removes the
-guard along with the obstacle. If the script itself looks wrong for the situation, a crash or a check that is clearly
-mistaken, say so and propose a fix to the script instead of routing around it.
 
 ## Fast path merge
 
