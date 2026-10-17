@@ -276,8 +276,11 @@ primary path costs a stopped landing. The rest of the `gh pr` surface the skill 
 The deterministic parts of the `jjstack` skill live in `agent-skills/jjstack/scripts/jjstack`, a Deno script with one
 command per operation, not in shell snippets the agent transcribes. As prose snippets they were slow, easy to get subtly
 wrong, and impossible to run under agent rules that forbid `$` expansions in composed shell commands; one 32-PR landing
-on 2026-10-11 had to rebuild every snippet as a file. As a script they are also testable, and they are exercised against
-real stacks on `scode/repotesting`. The fast path merge is the script's `fast-land` command.
+on 2026-10-11 had to rebuild every snippet as a file. As a script they are also testable: unit tests inside the script
+cover its decision logic, end-to-end tests under `agent-skills/jjstack/tests/` run whole commands against a real jj
+checkout and a bare Git repository with a modelled `gh`, and changes to landing are also exercised against real stacks
+on `scode/repotesting`. The script's one test seam, `JJSTACK_TIME_SCALE`, may only shorten waits, never lengthen them or
+change what the script does. The fast path merge is the script's `fast-land` command.
 
 The script must stay within the `gh` surface the REST section above allows (`gh pr view`, `list`, `ready`, `merge`,
 `create`, and `gh api`), so it works on `gh` 2.45.0. It needs `deno` and Git 2.40 or later (for `git merge-tree
