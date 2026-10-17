@@ -106,6 +106,12 @@ environment already guarantees those operations work inside it.
   "skip CI and merge it") is the same request. Either wording is a one-shot instruction for that single merge request.
   Never carry it forward: the next merge request in the same session, however it is phrased, gets the normal landing
   flow unless it says "fast path" or "don't wait for CI" again.
+- "stop waiting for CI", "don't run more CI, just land", or similar while a CI-gated `land` is running. Switch the rest
+  of that landing to the fast path: run the script's `stop` command, wait for the running `land` to exit with
+  `E_STOP_REQUESTED`, then plan and land what is left with `fast-land --resume` (see "Fast path merge"). This is the
+  fast-path request for the rest of that landing only. Any other change of course mid-landing (editing a PR, slipping a
+  PR in below the next merge) starts the same way: `stop`, wait for the exit, make the change and `submit`, then rerun
+  the landing with `--resume`.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -239,6 +245,10 @@ remote fetches from and pushes to that repository alone, on the same host. A rem
 - `land [--through <PR-or-bookmark>] [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup] [--check-timeout
   <minutes>] [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing; see "Landing stacked PRs".
 - `fast-land [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup]`: landing without CI; see "Fast path merge".
+- `stop`: asks a running `land` or `fast-land` in the same checkout to stop at its next safe point, which is before it
+  starts the next PR or between polls while it waits on checks, never inside a merge. The landing exits with
+  `E_STOP_REQUESTED` and a `JJSTACK_STOPPED` line. Use it rather than killing the process, which stops it wherever it is
+  and reports `E_KILLED`.
 
 ### When the script stops
 
@@ -457,7 +467,9 @@ A refusal during planning means the stack is not in the shape the fast path assu
 what the script reported, and do not fall back to `land` on your own. A stop partway is handled as for `land`, except
 that resuming puts every pending PR in `restack` mode and predicts each from the head GitHub shows, so a local edit that
 never reached GitHub stops the run before anything is pushed. Resuming continues the fast path the user already asked
-for and needs no new fast-path request; switching to the CI-gated `land` instead is the user's call.
+for and needs no new fast-path request; switching to the CI-gated `land` instead is the user's call. The same `--resume`
+is how a stopped `land` continues without CI: the stopped run left the PRs above its last merge rebased locally but not
+pushed, which a fresh `fast-land` refuses as a stack GitHub does not show.
 
 ## Practical notes
 
