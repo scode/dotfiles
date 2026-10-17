@@ -34,6 +34,8 @@ export type Pr = {
   mergeCommit?: string;
   mergedHead?: string;
   readyAt: string[];
+  /** Whether the PR's head branch lives in a fork; tests set it, and PRs the script creates never do. */
+  isCrossRepository?: boolean;
 };
 
 /** Everything the fake knows, persisted between invocations. Tests write the scripting fields directly. */
@@ -127,7 +129,7 @@ function prJson(s: State, remote: string, pr: Pr, fields: string[]): Record<stri
     baseRefName: () => pr.baseRefName,
     headRefOid: () => head ?? "",
     isDraft: () => pr.isDraft,
-    isCrossRepository: () => false,
+    isCrossRepository: () => pr.isCrossRepository ?? false,
     title: () => pr.title,
     body: () => pr.body,
     mergeCommit: () => pr.mergeCommit ? { oid: pr.mergeCommit } : null,
