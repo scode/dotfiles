@@ -108,10 +108,10 @@ environment already guarantees those operations work inside it.
   flow unless it says "fast path" or "don't wait for CI" again.
 - "stop waiting for CI", "don't run more CI, just land", or similar while a CI-gated `land` is running. Switch the rest
   of that landing to the fast path: run the script's `stop` command, wait for the running `land` to exit with
-  `E_STOP_REQUESTED`, then plan and land what is left with `fast-land --resume` (see "Fast path merge"). This is the
-  fast-path request for the rest of that landing only. Any other change of course mid-landing (editing a PR, slipping a
-  PR in below the next merge) starts the same way: `stop`, wait for the exit, make the change and `submit`, then rerun
-  the landing with `--resume`.
+  `E_STOP_REQUESTED`, then plan and land what is left with `fast-land --resume`, passing the same `--expect` as the
+  stopped landing (see "Fast path merge"). This is the fast-path request for the rest of that landing only. Any other
+  change of course mid-landing (editing a PR, slipping a PR in below the next merge) starts the same way: `stop`, wait
+  for the exit, make the change and `submit`, then rerun the landing with `--resume`.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -156,7 +156,8 @@ pass explicit PR numbers and `-R owner/repo` rather than relying on Git branch i
   broken first.
 - Never run `jj` commands in parallel in a colocated repo, including ones that look read-only (`jj status`, `jj log`,
   `jj bookmark list`, `jj diff`, `jj config get`): jj may import or export Git refs, or reset Git HEAD, as part of them.
-  Keep `git`, repo-scoped `gh` commands, and the script sequential with them too. Parallel plain file reads are fine.
+  Keep `git`, repo-scoped `gh` commands, and the script sequential with them too. The one exception is the script's
+  `stop` command, which exists to be run while a landing is in progress. Parallel plain file reads are fine.
 - Before committing, inspect `jj status` and commit only the intended paths (`jj commit <paths> ...`), leaving unrelated
   files in the working copy.
 - After `jj commit`, the commit you just made is `@-`, and `@` is a new empty working copy. Run `jj bookmark set <name>
@@ -193,7 +194,9 @@ jj commit <paths> -m 'wip'
 jj describe -r @- --stdin < <message-file>
 ```
 
-To bring an existing PR's title and body in line with a reworded commit, run `submit --update-text`.
+To bring an existing PR's title and body in line with a reworded commit, run `submit --update-text`. Rewording a commit
+rewrites the commits above it too, so `submit` pushes those as well, which starts CI for them on repos that run CI for
+drafts.
 
 ## Building and updating the stack
 
@@ -400,6 +403,10 @@ default branch, and cleanup then covers its branch and stray local commit too. A
 means only the restack and cleanup are left to do. A PR the stopped run had rebased locally but not pushed goes through
 the same content proof, so an unreviewed local edit stops the run instead of landing. Without `--expect`, resuming only
 knows what jj and GitHub show, and landed commits that left the stack are not part of its cleanup.
+
+`E_MERGE_TIP_MOVED` or `E_FAST_TIP_MOVED` means the default branch moved outside the landing, usually someone else's
+merge. The guard stopped before merging onto a base the plan had not seen. Confirm with `gh pr view` that a PR listed in
+`unknown=` did not merge, then rerun the same command with `--resume`; the new plan starts from the moved branch.
 
 Two shortcuts are never part of a landing without an explicit request from the user, because each collapses review units
 the stack exists to keep separate: merging a PR into its parent bookmark (GitHub closes it as merged, the parent absorbs
