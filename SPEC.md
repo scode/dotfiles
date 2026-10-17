@@ -271,18 +271,29 @@ a `gh pr edit` primary path with a REST fallback: the failure sits in the middle
 primary path costs a stopped landing. The rest of the `gh pr` surface the skill uses (`create`, `view`, `ready`,
 `merge`, `list`) is verified working on 2.45.0 and stays as is.
 
-## jjstack's Fast Path Runs as a Bundled Script
+## jjstack Runs Its Mechanics as a Bundled Script
 
-The `jjstack` fast path merge lives in `agent-skills/jjstack/scripts/fast-land`, a Deno script, not in shell snippets
-the agent transcribes. As prose snippets it was slow, easy to get subtly wrong, and impossible to run under agent rules
-that forbid `$` expansions in composed shell commands; one 32-PR landing on 2026-10-11 had to rebuild every snippet as a
-file. As a script it is also testable, and it was exercised against real stacks on `scode/repotesting`.
+The deterministic parts of the `jjstack` skill live in `agent-skills/jjstack/scripts/jjstack`, a Deno script with one
+command per operation, not in shell snippets the agent transcribes. As prose snippets they were slow, easy to get subtly
+wrong, and impossible to run under agent rules that forbid `$` expansions in composed shell commands; one 32-PR landing
+on 2026-10-11 had to rebuild every snippet as a file. As a script they are also testable, and they are exercised against
+real stacks on `scode/repotesting`. The fast path merge is the script's `fast-land` command.
 
-The script must stay within the `gh` surface the REST section above allows (`gh pr view`, `list`, `ready`, `merge`, and
-`gh api`), so it works on `gh` 2.45.0. It needs `deno` and Git 2.40 or later (for `git merge-tree --merge-base`). A host
-without `deno` gets the normal CI-gated landing flow or a prompt to install it, never a hand transcription of the
-script. The skill keeps its explanation of what the script guarantees, so an agent can reason about its output and its
-failures without reading the source.
+The script must stay within the `gh` surface the REST section above allows (`gh pr view`, `list`, `ready`, `merge`,
+`create`, and `gh api`), so it works on `gh` 2.45.0. It needs `deno` and Git 2.40 or later (for `git merge-tree
+--merge-base`). A host without `deno` gets a prompt to install it, never a hand transcription of the script.
+
+Failure reporting is part of the script's interface. Every way it can stop raises its own error code, each code appears
+exactly once in the script (a test enforces this), and the report names the code, the phase, whether anything had been
+changed yet, and the `grep` that finds the raising line. "Changed" has three levels: nothing ran, the script only
+synchronized (a fetch, which can move or delete local bookmarks that track the remote, or a jj command that snapshotted
+the working copy), or it had started writing to jj, Git, or GitHub. The exit status separates a refusal that wrote
+nothing (3, including after a synchronization) from a stop after writes began (4), a usage error (2), and a crash before
+any write (1). A synchronization is not counted as a write because every command fetches before its first check, so
+counting it would make every refusal look like a partial run. The skill tells the agent to read the script at the
+raising line when it stops, so the code and its docstrings must explain the invariant each check protects. The skill
+keeps a summary of what each command guarantees, so an agent can plan around the commands without reading the source
+first.
 
 ## Legacy `old/` Tree
 
