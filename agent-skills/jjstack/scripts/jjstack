@@ -9,6 +9,8 @@
  *   up a checkout".
  * - `status`: print what `submit` would do for each PR, without doing it.
  * - `submit [--update-text] [--partial]`: make GitHub show the local stack. See "Syncing the stack to GitHub".
+ * - `new-pr --bookmark <name> --message-file <file> [paths...]`: commit working-copy changes as the next PR and submit.
+ *   See "Making a PR".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
  *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
  *   landing".
@@ -1539,7 +1541,8 @@ type SubmitStep = {
 };
 
 /**
- * Computes the submit plan, running every check that can refuse. Nothing here writes, so `status` can call it too.
+ * Computes the submit plan, running every check that can refuse. Nothing here writes, so `status` can call it too, and
+ * `new-pr` runs it on the existing stack before committing. `fetch` is false only for a caller that has just fetched.
  *
  * Refuses: a stack shape `reviewUnits` rejects; the stack continuing above `--top` with open PRs (unless `partial`); a
  * conflicted bookmark; a bookmark with an untracked remote branch of the same name (jj would refuse the push midway); a
@@ -1547,9 +1550,9 @@ type SubmitStep = {
  * or abandoned branch is almost never what was meant; and a commit with no description when its PR has to be created
  * or retexted.
  */
-async function planSubmit(ctx: Ctx, top: string, updateText: boolean, partial: boolean) {
+async function planSubmit(ctx: Ctx, top: string, updateText: boolean, partial: boolean, fetch = true) {
   phase = "plan";
-  await ctx.fetch("E_SUBMIT_FETCH");
+  if (fetch) await ctx.fetch("E_SUBMIT_FETCH");
   const topChange = await ctx.resolve("E_SUBMIT_RESOLVE_TOP", top, "change_id");
   const units = reviewUnits(await ctx.stack("E_SUBMIT_STACK", topChange));
   const refs = parseBookmarks(
@@ -1683,6 +1686,129 @@ async function submit(ctx: Ctx, top: string, updateText: boolean, partial: boole
     console.log(`JJSTACK_SUBMITTED pr=${pr} bookmark=${s.unit.bookmark} base=${s.base} actions=${did}`);
   }
   phase = "done";
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Making a PR (`new-pr`)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Reads a commit message from `file`, refusing one it cannot read (`code`) or one without a title (`emptyCode`). The
+ * message becomes a PR's title (its first line) and body through `submit`, so an empty first line would open a PR with
+ * no title.
+ */
+async function readMessage(code: string, emptyCode: string, file: string): Promise<string> {
+  let text;
+  try {
+    text = await Deno.readTextFile(file);
+  } catch (err) {
+    fail(code, `cannot read the message file ${file}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (splitDescription(text).title === "") fail(emptyCode, `the message file ${file} has no title (empty first line)`);
+  return text;
+}
+
+/** `paths` as jj filesets that each match exactly that file or directory, relative to `--dir`. */
+function pathFilesets(paths: string[]): string[] {
+  // A bare path is parsed as a fileset expression, so a name with `(`, `|`, or `~` in it would mean something else.
+  return paths.map((p) => `file:${JSON.stringify(p)}`);
+}
+
+/**
+ * `jjstack new-pr`: turns working-copy changes into the next PR on top of the stack, in one call. It commits them (all
+ * of them, or only `paths`) with the message file as the description, bookmarks the new commit, and runs `submit` up to
+ * it, which pushes it and opens a draft PR based on the PR below (or on the default branch for the first one). Changes
+ * left out of `paths` stay in the working copy.
+ *
+ * Everything that can refuse is checked before the commit, so a refusal leaves the working copy as it was:
+ *
+ * - a missing message file or one without a title;
+ * - a bookmark name that is not a valid branch name, that already exists locally or on the remote, or that an earlier
+ *   PR used (`submit` will not open a second PR for a branch, and landed branches are deleted, so a reused name is
+ *   only visible as an old PR);
+ * - nothing to commit, or a working copy that already carries a bookmark or a conflict (the commit would keep the
+ *   bookmark next to the new one, or carry the conflict into the PR);
+ * - open PRs above the working copy's parent, where the new commit would land mid-stack;
+ * - anything else `submit` would refuse about the stack below, by running its plan up to that parent first;
+ * - non-empty commits without a bookmark below the working copy when nothing below has one yet (the plan needs at least
+ *   one bookmark to run, and `submit` would refuse those commits).
+ *
+ * Only a failure while writing (a push or GitHub call failing) can stop the run after the commit. The
+ * `JJSTACK_COMMITTED` line says the commit and bookmark exist, and the way on is to run `submit`, not `new-pr` again,
+ * which would refuse the now-existing bookmark.
+ */
+async function newPr(ctx: Ctx, bookmark: string, messageFile: string, paths: string[]) {
+  phase = "plan";
+  const message = await readMessage("E_NEWPR_MESSAGE_READ", "E_NEWPR_MESSAGE_EMPTY", messageFile);
+  // jj parses the name only when the bookmark is created, after the commit, so a name it rejects is refused here. The
+  // character set is the one branch names on GitHub need in practice; Git's own rules cover the rest.
+  const nameOk = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(bookmark) &&
+    (await run("E_NEWPR_NAME_CHECK", ctx.sh`git check-ref-format --branch ${bookmark}`)).code === 0;
+  if (!nameOk) fail("E_NEWPR_BOOKMARK_NAME", `'${bookmark}' is not usable as a bookmark and branch name`);
+  await ctx.fetch("E_NEWPR_FETCH");
+  const refs = parseBookmarks(
+    await exec("E_NEWPR_BOOKMARK_LIST", ctx.sh`jj ${JJ_SAFE} bookmark list --all-remotes -T ${BOOKMARK_TEMPLATE}`),
+    ctx.remote,
+  );
+  const existing = refs.get(bookmark);
+  if (existing && (existing.local !== undefined || existing.remote !== undefined || existing.conflict)) {
+    fail("E_NEWPR_BOOKMARK_EXISTS", `bookmark ${bookmark} already exists locally or on ${ctx.remote}`);
+  }
+  const earlier = await execJson<{ number: number; state: string; isCrossRepository: boolean }[]>(
+    "E_NEWPR_LIST_ALL_HEAD",
+    ctx.sh`gh pr list -R ${ctx.repo} --state all --head ${bookmark} --json number,state,isCrossRepository`,
+    { retry: true },
+  );
+  const used = earlier.filter((p) => !p.isCrossRepository);
+  if (used.length > 0) {
+    fail(
+      "E_NEWPR_NAME_USED",
+      `branch ${bookmark} already had PR(s) ${used.map((p) => `#${p.number} ${p.state}`).join(", ")}`,
+    );
+  }
+  const filesets = pathFilesets(paths);
+  const changed = await exec("E_NEWPR_DIFF", ctx.sh`jj ${JJ_SAFE} diff --name-only -r @ ${filesets}`);
+  if (changed === "") {
+    fail(
+      "E_NEWPR_NOTHING",
+      paths.length > 0 ? `no changes in the working copy under ${paths.join(" ")}` : "the working copy has no changes",
+    );
+  }
+  // Labelled fields, because `exec` trims its output and an empty bookmark list would otherwise vanish.
+  const template =
+    '"bookmarks=" ++ local_bookmarks.map(|b| b.name()).join(",") ++ " " ++ if(conflict, "conflict", "ok")';
+  const wc = await exec("E_NEWPR_WC", ctx.sh`jj ${JJ_SAFE} log --no-graph -r @ -T ${template}`);
+  const wcBookmarks = wc.match(/^bookmarks=(\S*) /)?.[1] ?? "";
+  if (wcBookmarks !== "") fail("E_NEWPR_WC_BOOKMARKED", `the working-copy commit already carries ${wcBookmarks}`);
+  if (wc.endsWith(" conflict")) fail("E_NEWPR_WC_CONFLICTED", "the working-copy commit has unresolved conflicts");
+  const below = await ctx.stack("E_NEWPR_STACK", "@-");
+  if (below.some((r) => r.bookmarks.length > 0)) {
+    // Open PRs above `@-` mean the working copy is not on top: the new commit would land in the middle of the stack.
+    // Checked here rather than left to `planSubmit`, whose refusal for it suggests `--top` and `--partial`, which are
+    // the wrong way out for `new-pr`; the plan then runs with `partial` so it does not repeat the check.
+    const bottom = reviewUnits(below)[0].sha;
+    const above = await openAbove(ctx, "E_NEWPR_ABOVE", bottom, "@-", await ctx.openPrs("E_NEWPR_LIST_OPEN"));
+    if (above.length > 0) {
+      fail(
+        "E_NEWPR_NOT_ON_TOP",
+        `the working copy's parent is not the top of the stack: open PRs for ${above.join(", ")} sit above it`,
+      );
+    }
+    // Every other refusal `submit` would make about the existing stack, made now instead of after the commit.
+    await planSubmit(ctx, "@-", false, true, false);
+  } else if (below.some((r) => !r.empty)) {
+    fail(
+      "E_NEWPR_UNBOOKMARKED_BELOW",
+      `the working copy sits on unbookmarked, non-empty commits (${below.map((r) => r.changeId).join(", ")})`,
+    );
+  }
+  phase = `new-pr ${bookmark}`;
+  await exec("E_NEWPR_COMMIT", ctx.sh`jj ${JJ_SAFE} commit ${filesets} -m ${message}`, { write: true });
+  const change = await ctx.resolve("E_NEWPR_RESOLVE", "@-", "change_id");
+  await exec("E_NEWPR_BOOKMARK", ctx.sh`jj ${JJ_SAFE} bookmark create ${bookmark} -r ${change}`, { write: true });
+  const sha = await ctx.resolve("E_NEWPR_RESOLVE_SHA", change);
+  console.log(`JJSTACK_COMMITTED bookmark=${bookmark} change=${change} commit=${sha}`);
+  await submit(ctx, change, false, false);
 }
 
 /**
@@ -2459,12 +2585,17 @@ async function fastLand(
 // Main
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Each command and the options it accepts beyond the shared `--dir`, `--repo`, `--remote`, and `--top`. */
+/**
+ * Each command and the options it accepts beyond the shared `--dir`, `--repo`, `--remote`, and `--top`. `paths` marks a
+ * command that takes file paths as positional arguments; no other positional argument exists anywhere, so bookmarks and
+ * PR numbers are always named by flags.
+ */
 // deno-fmt-ignore
-const COMMANDS = new Map<string, { strings: string[]; booleans: string[] }>([
+const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?: boolean }>([
   ["init",      { strings: [],                                                     booleans: [] }],
   ["status",    { strings: [],                                                     booleans: [] }],
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
+  ["new-pr",    { strings: ["bookmark", "message-file"],                           booleans: [], paths: true }],
   ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
@@ -2488,7 +2619,12 @@ async function main() {
   const top = args.top as string;
   if (command === "status") await status(ctx, top);
   else if (command === "submit") await submit(ctx, top, !!args["update-text"], !!args.partial);
-  else if (command === "land") {
+  else if (command === "new-pr") {
+    if (args.bookmark === undefined) usage("E_USAGE_NEWPR_BOOKMARK", "new-pr needs --bookmark <name>");
+    if (args["message-file"] === undefined) usage("E_USAGE_NEWPR_MESSAGE", "new-pr needs --message-file <file>");
+    if (top !== "@") usage("E_USAGE_NEWPR_TOP", "new-pr builds on the working copy and takes no --top");
+    await newPr(ctx, String(args.bookmark), String(args["message-file"]), args._ as string[]);
+  } else if (command === "land") {
     const minutes = args["check-timeout"] === undefined ? 30 : Number(args["check-timeout"]);
     if (!Number.isFinite(minutes) || minutes <= 0) usage("E_USAGE_CHECK_TIMEOUT", "--check-timeout takes minutes > 0");
     await ciLand(ctx, {
@@ -2516,8 +2652,8 @@ async function main() {
 }
 
 /**
- * Parses the command line strictly: an unknown command, an option the command does not take, a stray positional, or
- * an empty value is a usage error, so a typo never silently runs with defaults.
+ * Parses the command line strictly: an unknown command, an option the command does not take, a positional argument
+ * for a command that takes no paths, or an empty value is a usage error, so a typo never silently runs with defaults.
  */
 function parseCli(argv: string[]) {
   const [command, ...rest] = argv;
@@ -2525,7 +2661,8 @@ function parseCli(argv: string[]) {
   if (!spec) usage("E_USAGE_COMMAND", `unknown command '${command ?? ""}'; expected one of: ${[...COMMANDS.keys()]}`);
   const strings = ["dir", "repo", "remote", "top", ...spec.strings];
   const args = parseArgs(rest, {
-    string: strings,
+    // `_` keeps positional paths as strings; otherwise `007` would come back as the number 7.
+    string: [...strings, "_"],
     boolean: spec.booleans,
     default: { dir: ".", remote: "origin", top: "@" },
     unknown: (flag) => {
@@ -2536,7 +2673,7 @@ function parseCli(argv: string[]) {
       usage("E_USAGE_FLAG", `unknown option ${flag} for ${command}`);
     },
   });
-  if (args._.length > 0) usage("E_USAGE_POSITIONAL", `unexpected arguments: ${args._.join(" ")}`);
+  if (args._.length > 0 && !spec.paths) usage("E_USAGE_POSITIONAL", `unexpected arguments: ${args._.join(" ")}`);
   for (const s of strings) {
     if (typeof args[s] === "string" && args[s] === "") usage("E_USAGE_EMPTY_VALUE", `--${s} needs a value`);
   }
@@ -2704,6 +2841,10 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
   assertThrows(() => parseCli(["nope"]), JjstackError, "unknown command");
   assertThrows(() => parseCli([]), JjstackError, "unknown command");
+  // Positional arguments are paths, and only commands that take paths accept them, as strings even when numeric.
+  const pr = parseCli(["new-pr", "--bookmark", "b", "--message-file", "/m", "src/a.ts", "007", "1e3"]);
+  assertEquals([pr.args.bookmark, pr.args["message-file"], pr.args._], ["b", "/m", ["src/a.ts", "007", "1e3"]]);
+  assertEquals(parseCli(["new-pr", "--bookmark", "b"]).args._, []);
 });
 
 /** The log is only as useful as its command lines are readable and copy-pasteable. */
