@@ -187,3 +187,8 @@ to the PR URL, so `https://github.com/scode/kd/pull/82/changes` rather than `htt
 
 DO NOT write, or accept during code review, tests that modify environment variables of the process running the test.
 Most likely there is a clean way of making the underlying code testable by dependency injection instead.
+
+# Writing skills
+
+Skill text contains only what agents need to operate the skill. Future plans, past skill behavior, and other meta
+commentary go in a README.md or similar, never in the skill text.
