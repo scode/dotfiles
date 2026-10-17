@@ -84,6 +84,8 @@ environment already guarantees those operations work inside it.
   request; the skill never converts a ready PR back to a draft on its own.
 - "restack the stack" Use `jj` to rewrite or rebase the local stack, then `submit`, which fixes any PR base the new
   ancestry changed.
+- "rebase onto main", "sync the stack", or "I merged the bottom PR" Run the script's `sync`, which moves the stack onto
+  the current default branch, cleans up PRs at the bottom that were merged outside the script, and submits the rest.
 - "go to PR 45" or "switch to PR 45" Do not interpret the PR number itself as a local jj revision. Look up PR 45 in
   GitHub, find its head branch or bookmark name, and then move to that bookmarked change locally: `gh pr view 45 -R
   owner/repo --json headRefName`, then `jj new <bookmark>` or another explicit move to that change.
@@ -242,6 +244,16 @@ the working copy on top of the stack, or pass the top bookmark as `--top`; it re
 - Insert a PR into the stack: `jj new --insert-after <bookmark-below>`, make the change, describe it, `jj bookmark set
   <name> -r @`, then `jj new <top-bookmark>` and `submit`. It creates the inserted PR and retargets the PR above it.
 - Restack, reorder, or drop a commit: do it with `jj rebase` or `jj abandon`, then `submit`.
+- Catch up with the default branch: `sync`. When the bottom PRs were merged outside the script (in the web UI, say), it
+  recognizes them by their exact heads, moves the rest of the stack and the working copy onto the default branch,
+  deletes the merged branches and drops their local commits, and submits, which retargets the new bottom PR to the
+  default branch. When nothing merged but the default branch moved, it rebases the stack onto it and submits. It prints
+  a `JJSTACK_SYNCED` line saying which PRs it found landed and whether it rebased. It refuses, before changing anything,
+  a stack that continues above `--top` with open PRs, and uncommitted work in the working copy under the default `--top
+  @`; pass the top PR's bookmark as `--top` to sync the stack and carry that work along on top. A rebase that leaves
+  conflicts stops in the submit; resolve them bottom-up and run `submit`. A PR merged with a merge commit rather than a
+  squash is not recognized as landed; the rest of the stack is still synced, but that PR's branch and bookmark are left
+  for you to delete.
 
 Rewriting a lower commit can leave the commits above it conflicted. That is a normal part of changing lower layers, not
 a surprise. `submit` refuses to push a conflicted commit, and an `amend` that conflicts the amended commit or those
@@ -270,6 +282,8 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   the commit, and submits; see "Building and updating the stack".
 - `amend --bookmark <name> [--message-file <file>] [paths...]`: folds working-copy changes into an existing PR's commit,
   optionally rewords it, and submits; see "Building and updating the stack".
+- `sync`: brings the stack along after PRs merged outside the script or the default branch moved, and submits; see
+  "Building and updating the stack".
 - `submit [--update-text] [--partial]`: syncs the stack to GitHub as described in "Building and updating the stack", and
   prints a `JJSTACK_SUBMITTED` line per PR naming what it did. It runs every check before its first write. Within one PR
   it retargets before pushing, because the push starts CI for the new head and a base-dependent check has to see the
@@ -485,10 +499,9 @@ copy or side work sits on top. On jj 0.46 that moved the working copy onto an ol
 built on a landed commit silently lost that commit's content. Pass the same option to manual fetches after a landing on
 a repo that deletes merged branches automatically.
 
-If a PR landed outside the script (the user merged it in the web UI, say), bring the rest of the stack along: `jj git
-fetch --config git.abandon-unreachable-commits=false`, `jj rebase -s <lowest-open-bookmark> -d 'trunk()'`, then
-`submit`, which retargets the new bottom PR and pushes what moved. With nothing left open, `jj new 'trunk()'` puts the
-working copy on the landed result.
+If a PR landed outside the script (the user merged it in the web UI, say), bring the rest of the stack along with `sync`
+(see "Building and updating the stack"). It also handles a stack whose PRs all landed that way: it moves the working
+copy onto the landed result and has nothing left to submit.
 
 ## Fast path merge
 
