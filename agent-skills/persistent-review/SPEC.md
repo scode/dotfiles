@@ -65,7 +65,8 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   private writable artifacts; shared input snapshots stay read-only. Reviewers cannot consume other groups on their own.
 - Every initial and continuation prompt instructs immediate recording: once a substantive finding is ready, append it
   before further analysis or reads, never waiting for a checkpoint, batch end, turn end, final report, or compaction.
-  Findings and progress artifacts are initialized before source reads. No finding quota is imposed.
+  Findings and progress artifacts are initialized before source reads. No finding quota is imposed. Recording a finding
+  does not end the assigned pass; reviewers continue that pass instead of stopping at a count.
 - Versioned finding events carry a stable local ID, open/withdrawn state, summary, original location and complete detail
   in the caller's format. Revisions/retractions append under the same ID and preserve history. Unresolved leads are
   saved as they arise and in boundary progress summaries, independently of immediate finding writes.
@@ -75,13 +76,14 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   semantic deduplication by underlying defect/location. Original reviewer IDs and evidence survive deduplication.
 - Group completion does not prove cross-group correctness. The orchestrator reconciles conflicts and sends concrete
   interface questions back to the relevant reviewers for synthesis. An incomplete group keeps the overall run
-  incomplete.
+  incomplete. New cross-group evidence or findings reopen discovery after their synthesis; an earlier empty pass does
+  not close later questions.
 
 ## Persistent execution
 
-- Each group's completion requires at least two actual reviewer turns with the same session identity. Between turns the
-  orchestrator receives a result, audits relevant evidence, and sends a concrete continuation. Multiple sweeps requested
-  within one turn do not satisfy this requirement.
+- Each group's completion requires an initial turn, later-turn synthesis after delivery, and a subsequent discovery
+  search on the same session identity: at least three actual turns. Between turns the orchestrator receives a result,
+  audits relevant evidence, and sends a concrete continuation. Multiple sweeps inside one turn do not satisfy this.
 - Findings never excuse missing scope, and an empty first result still requires continuation. Missing or uncertain
   ranges receive named, targeted same-session repairs independent of finding count. Large scopes create more groups.
 - Synthesis occurs later than the initial review and after required content delivery, revisiting interactions and
@@ -95,6 +97,29 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   canonical loading contract. Harness files own launch and evidence-access mechanics. Local deviations require
   verification of the relevant delivery semantics, not assumptions based on a harness name or JSON availability.
 
+## Productive discovery
+
+- Verified coverage and synthesis always lead to a separate same-reviewer search turn, even when no finding or concrete
+  unresolved lead exists. The reviewer reuses context, known findings, and durable artifacts, searches beyond earlier
+  issues under the original charter, records findings immediately, and may legitimately return empty.
+- The orchestrator verifies candidates against pinned source and applicable contracts and checks novelty across the
+  whole run. It accounts for retained, duplicate, rejected, and unresolved candidates without erasing source records.
+  New IDs, event counts, restatements, speculation, and scope drift do not establish discovery progress. No severity or
+  lens-specific gate is imported; actionability follows the caller's charter.
+- Missing premises or open substantive leads receive focused verification or same-reviewer clarification before the pass
+  is judged. They count as neither verified progress nor a completed empty search. Stuck investigations stop the group
+  incomplete with the uncertainty retained, not an endless sequence of new search passes.
+- A verified new credible, independently actionable finding requires another search continuation on that same session.
+  There is no default pass cap or elapsed-time limit. Searches across independent groups remain concurrent up to actual
+  capacity. Prompts explicitly allow no findings and do not require a quota or automatic scope expansion.
+- Discovery completes after a properly executed search explicitly reports no new findings, with a credible short work
+  summary and no unresolved substantive leads. Bare empty replies, refusals, blocked tools, duplicate-only outputs,
+  unproductive unsupported claims and drift cannot establish that condition. Stuck/repeating/drifting reviewers stop
+  incomplete with retained findings and the reason, rather than receiving pressure to increase their count.
+- Caller-imposed limits are honored; stopping before the final empty pass is disclosed as incomplete discovery. Group
+  progress retains search-pass counts, new verified finding IDs and empty-pass/failure evidence. An empty pass
+  establishes the operational stopping condition, not proof of exhaustive review.
+
 ## Stopping and reporting
 
 - The protocol imposes no elapsed-time limit or required time-budget question. Overall and per-turn deadlines must not
@@ -104,13 +129,14 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   make no verified coverage progress. Progress means delivery of previously missing mandatory content, not new findings.
   A successful repair resets the counter. Do not replace the reviewer identity to bypass a failed run. Termination uses
   the selected mechanism's facilities. These conditions apply per group; other progressing groups continue.
-- Optional searches after verified coverage and audited later-turn synthesis default to at most one additional turn for
-  a concrete unresolved lead; callers may choose another finite allowance. Optional-search limits never declare unread
-  mandatory scope complete or cap repairs independently of the no-progress rule.
+- Coverage repair and discovery have separate progress criteria: newly delivered required text and verified new
+  actionable findings, respectively. Neither criterion substitutes for the other. Empty searches or caller search limits
+  never establish delivery of unread scope.
 - Preserve findings on every stop. The result includes completion status and reason, stable scope, backend/model/effort,
   per-group session identities and actual turn counts, verified delivery references, exact missing or uncertain
   material, later-turn/cross-group synthesis status, raw and deduplicated finding counts, and original finding-log
-  references. Use an accompanying completion note when the caller's format requires it.
+  references. It also records discovery-pass counts, new verified findings per pass, and final empty-pass or incomplete
+  stop evidence. Use an accompanying completion note when the caller's format requires it.
 - Delivery proves neither attention nor understanding, correctness, or saturation. Hidden chain of thought is neither
   inspected nor required. Findings stay grounded in reviewed artifacts. No findings plus incomplete evidence is an
   incomplete review, never a clean completion.

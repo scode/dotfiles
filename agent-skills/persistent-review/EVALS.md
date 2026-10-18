@@ -18,12 +18,15 @@ a time budget, including when loading the shellout dependency.
 Inspect the outcome independently:
 
 - Which skill did the orchestrator load, and which mechanism did it choose from the actual observation capabilities?
-- Do per-group identities and actual initial/resume events establish at least two turns in each session?
+- Do per-group identities and actual initial/resume events establish initial review, later synthesis, and a subsequent
+  discovery search in the same session, with further passes while verified new findings appear?
 - Does the helper match actual delivered packets against immutable source text, keeping code out of the parent's compact
   report? Check raw events independently in the test, not by making the production parent reread every payload.
 - Did missing ranges cause concrete continuations even when the first result had no findings? Does the union of
   inspected delivered ranges cover the mandatory scope, with the right version and any diff sides?
 - Did a later turn synthesize interactions after the missing material arrived, and did the parent audit it afterwards?
+- After coverage/synthesis, did an explicit new search occur even when earlier findings were empty? Did a verified new
+  finding trigger another same-session search, with immediate persistence and explicit permission to return empty?
 - Does the completion record match the evidence, preserving findings and naming unresolved material on a stop?
 - Give an early planted defect and later source reads: was its finding appended before those later reads, rather than
   buffered to the turn boundary? Can the parent see the finding/count from artifacts while reviews are still running?
@@ -51,7 +54,15 @@ Use controlled transcript/result fixtures for absent evidence, an empty claimed-
 reads, a caller-supplied time limit with retained findings, and two repair turns with new findings but no new delivered
 content. Also check that elapsed time alone does not stop a progressing review when the caller supplied no time limit.
 Require concrete next actions and honest completion status. A completed second-turn repair followed by synthesis must
-not require an otherwise unnecessary third turn.
+not require another turn solely for coverage approval; the separate subsequent discovery search is still mandatory.
+
+Use controlled search results to exercise productive passes beyond three turns followed by an explicit empty search.
+Require each verified new actionable finding to trigger another pass without a default cap. Also exercise duplicate-only
+outputs, new IDs for old defects, unsupported or out-of-charter claims, empty replies without performed work, unresolved
+leads, unavailable continuation, and a caller limit reached before an empty pass. The orchestrator must verify novelty
+and actionability, retain original logs, and distinguish an actual final empty search from an incomplete stop. Reopen
+discovery after new cross-group evidence is synthesized. Check that a valid charter-relevant finding is not discarded
+solely for failing another workflow's severity threshold, and that finding progress cannot excuse missing delivery.
 
 Run `deno check` and `deno test -A` on `evidence.ts`. Cover both delivered-result schemas, false raw-stdout coverage,
 unknown records/blocks, wrong session/cwd, unpaired calls, malformed/trailing records, source drift, corrupt and clipped

@@ -26,12 +26,14 @@ Recover settled inputs from the caller's request and session context. Ask only f
 - Exact required scope: files, ranges, diff sides, or other text, including mandatory context.
 - Reviewer backend, model, and effort; preserve all three without substitution.
 - Result destination and any caller-required reporting format.
-- Any selected launch mechanism, caller-imposed constraints, or limit on optional further searching.
+- Any selected launch mechanism or explicit caller constraints on execution or further searching.
 
 Keep reviewed inputs read-only unless the caller separately authorizes edits; writing the requested result and private
 run artifacts is allowed. A finding is not permission to fix it. Give the reviewer a self-contained charter, scope,
 constraints, result destination, and the persistence requirements below. Give each reviewer its own findings log and
-progress file, with the immediate-recording instruction below copied into every initial and continuation prompt.
+progress file, with the immediate-recording instruction below copied into every initial and continuation prompt. Tell
+each reviewer to finish its assigned pass after recording a finding; finding an issue or reaching a particular count is
+not a reason to end the pass early.
 
 This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
 rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
@@ -73,11 +75,13 @@ serializing. Honor an explicitly requested concurrency restriction. Each group g
 identity, manifest, findings log, progress file, and transcript paths. Reviewers share stable inputs read-only and never
 write another reviewer's artifacts. A large scope creates more bounded groups, not one enormous first pass.
 
-The two-turn and coverage requirements apply independently to every group. Record queued, running, and audited group
-states. After group reviews, deduplicate equivalent findings by underlying defect and location, retaining all original
-reviewer IDs and evidence. Keep distinct defects separate. Reconcile conflicting claims and send concrete cross-group
-interface questions to the relevant existing reviewers for synthesis; do not assume isolated group completion proves
-integration correctness. Any incomplete group keeps the overall review incomplete.
+The persistence, coverage, and discovery requirements apply independently to every group. Record queued, running, and
+audited group states. After group reviews, deduplicate equivalent findings by underlying defect and location, retaining
+all original reviewer IDs and evidence. Keep distinct defects separate. Reconcile conflicting claims and send concrete
+cross-group interface questions to the relevant existing reviewers for synthesis; do not assume isolated group
+completion proves integration correctness. Resume the discovery cycle after synthesis of new cross-group evidence or
+findings; an earlier empty pass does not close questions introduced later. Any incomplete group keeps the overall review
+incomplete.
 
 ## Record findings immediately
 
@@ -147,9 +151,11 @@ fields, or ignore unknown blocks. Without permission, retain partial results and
 
 ## Review, audit, continue
 
-A completed group review requires at least two actual reviewer turns on its recorded session identity. The orchestrator
-must receive a result, audit its delivery evidence, and send a concrete continuation. Asking for several sweeps inside
-one prompt is still one turn. Neither a finding nor an empty first result skips the continuation.
+A completed group review requires an initial turn, later-turn synthesis after required delivery, and a subsequent
+discovery turn on the same recorded reviewer identity: at least three actual turns. Coverage repairs and productive
+discovery continuations can require more. The orchestrator receives results, audits evidence, and sends concrete
+continuations between turns. Several sweeps inside one prompt are still one turn. Neither a finding nor an empty first
+result skips these requirements.
 
 1. Start each reviewer with only its bounded functional group, the overall charter, interface context, and immediate
    findings instructions. Require small source reads through `evidence.ts read` and return after the assigned group; do
@@ -169,6 +175,8 @@ one prompt is still one turn. Neither a finding nor an empty first result skips 
    empty.
 5. Audit again after that turn. If gaps remain, resume for targeted repair and updated synthesis within the stopping
    limits. A synthesis claiming complete coverage never overrides missing evidence.
+6. Once delivery and later-turn synthesis are verified, run the discovery cycle below. Coverage alone never skips that
+   search, including when all findings so far are empty.
 
 An attempted read, successful exit, filename list, search hits, tool count, checksum, or reviewer receipt is not proof
 of delivery. Raw stdout is insufficient when the reviewer received a shortened result. Inspect truncation metadata as
@@ -181,6 +189,47 @@ The orchestrator judges the compact evidence and completion. The bundled tool ve
 quality. Do not extend it into a general transcript adapter framework or treat a complete coverage report as a completed
 review without findings persistence and later-turn synthesis.
 
+## Continue productive discovery
+
+After verified coverage and synthesis, require a separate search turn from each group's same reviewer. This is required
+even without a concrete unresolved lead. Reuse its context and durable findings/progress artifacts. Give it the known
+findings and relevant cross-group duplicates so it can distinguish a new defect from a restatement.
+
+Use a continuation with this substance, plus the immediate-recording instruction:
+
+> Your earlier findings are recorded. Reuse your existing context and review the assigned group again under the original
+> charter, looking beyond the issues already found. Report only new, independently actionable findings; do not repeat or
+> rephrase known findings, broaden the scope, or invent issues to keep producing. Record each completed finding
+> immediately before further analysis or reads. An empty result is valid. At the end, briefly identify what you checked
+> and any unresolved substantive leads; do not provide private reasoning.
+
+After each search turn, inspect the findings log and the short work/lead summary. Verify candidates against the pinned
+source and applicable contract, using focused source excerpts as needed. Check novelty against findings already known
+across the run, not merely that reviewer's local IDs. Record each candidate as retained, duplicate, rejected with a
+reason, or unresolved; preserve its original log and identity. New IDs, extra event records, restatements, speculative
+claims, and findings outside the charter do not count as discovery progress. Do not impose a severity threshold from
+another review workflow; actionability follows the caller's charter.
+
+Resolve a candidate's missing premise or an open substantive lead with focused source checks or a targeted clarification
+from the same reviewer before judging that pass. Do not count an unresolved claim as a verified finding or treat an
+unfinished investigation as an empty completed search. If the investigation is stuck, retain it as unresolved and stop
+the affected group incomplete rather than starting endless nominally new search passes.
+
+If at least one genuinely new, credible, independently actionable finding is verified, save it and send another search
+continuation to that same reviewer. Name the newly recorded findings and direct attention beyond them. Continue while
+these passes produce verified new findings; there is no default pass cap or elapsed-time limit. Independent groups'
+searches remain concurrent within actual capacity.
+
+Finish discovery only after a properly executed search pass explicitly reports no new findings, with a credible work
+summary and no unresolved substantive lead. A bare empty list, refusal, unreadable input, blocked tool, duplicate-only
+reply, or drift is not that stopping condition. If a reviewer is stuck, only repeating findings, producing unsupported
+claims without useful progress, or leaving its charter, stop the affected group incomplete and preserve the findings and
+reason. Do not keep demanding a higher count. A caller-imposed limit may also stop a run; if it prevents the final empty
+search pass, disclose that discovery ended before this condition was met.
+
+Keep search-pass counts, newly verified finding IDs, and the final empty-pass or failure reason in the group's progress
+notes. An observed empty pass establishes this stopping condition, not proof that every defect has been found.
+
 ## Stop and report
 
 Stop incomplete on loss of usable transcript access or same-session continuation, or after two consecutive repair turns
@@ -188,10 +237,9 @@ add no verified delivery of previously missing required material. A successful r
 does not. Retain the existing findings and last verified coverage. Do not start a replacement reviewer identity and
 describe it as the same persistent review. Apply this rule per group; keep other progressing groups running.
 
-Coverage repair and optional searching for more findings have separate limits. Once delivery is verified and the
-later-turn synthesis is audited, stop unless a concrete unresolved lead warrants further work. By default allow at most
-one optional additional reviewer turn; use another finite allowance if the caller supplied one. That allowance never
-caps mandatory coverage repair or turns unread scope into completed scope.
+Coverage repair and finding discovery have separate progress criteria. Delivery of previously missing required text
+advances coverage repair; verified new actionable findings advance discovery. Neither substitutes for the other. Do not
+turn a search limit, an empty search, or productive finding count into evidence that unread scope was covered.
 
 At the caller's result destination, preserve the findings in the requested format and include a compact completion
 record (or an accompanying note if the format cannot hold it):
@@ -201,7 +249,8 @@ record (or an accompanying note if the format cannot hold it):
 - Verified delivery with evidence references; exact missing or uncertain material on an incomplete run.
 - Whether later-turn synthesis occurred and which evidence supports the final audit.
 - Active and deduplicated findings counts, original findings-log references, and cross-group synthesis status.
+- Discovery pass counts, newly verified findings per pass, and evidence of the final empty search or incomplete stop.
 
-“Complete” means this protocol's delivery, persistence, and synthesis requirements were met. It does not certify the
-findings or prove attention, understanding, correctness, or saturation. An incomplete run with no findings is not a
-clean review; say both that it returned no findings and why it remains incomplete.
+“Complete” means this protocol's delivery, persistence, synthesis, and final empty-search requirements were met. It does
+not certify the findings or prove attention, understanding, correctness, or saturation. An incomplete run with no
+findings is not a clean review; say both that it returned no findings and why it remains incomplete.
