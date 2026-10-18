@@ -71,36 +71,49 @@ whoever is judging whether a change kept the user-facing behavior intact.
   exist or is not a writable directory is reported and asked about. The skill neither creates it nor silently falls back
   to the default placement.
 
-## No-workhorse mode
+## No-workhorse mode (default)
 
-- The skill supports a no-workhorse mode, turned on by the word `no-workhorse` used as a switch in the argument string
-  or by a plain-language request that the executing agent do the work at its own model rather than handing workhorse or
-  mechanical work to cheaper sub-agents. A mention that is not a switch (quoted, negated, part of a path, or the subject
-  of the goal) leaves the mode off and stays in the goal text; only an occurrence consumed as the switch is removed. An
-  unclear role, or a request that only leans that way, is asked about, not guessed. The `in <dir>` clause and `help`
-  rules are unchanged.
-- The up-front batch states which mode applies, standard or no-workhorse, so the user can correct it before anything is
-  written.
+- The skill defaults to no-workhorse mode. The existing `no-workhorse` switch or a plain-language request that the
+  executing agent do the work at its own model also selects it explicitly. A quoted, negated, path-embedded, or
+  subject-of-the-goal mention stays in the goal text; only an occurrence consumed as a switch is removed. An unclear
+  request about delegation is asked about, not guessed. The `in <dir>` clause and `help` rules are unchanged.
+- The up-front batch states which mode applies, no-workhorse, galaxy brain, or powerhorse, so the user can correct it
+  before anything is written.
+- When no-workhorse applies only by default, the batch states the fallback for a previously active galaxy-brain session:
+  the executor asks before dependent work. The user can explicitly choose no-workhorse to authorize stopping it, or
+  choose galaxy brain mode instead. The goal file records the settled fallback.
 - In no-workhorse mode the goal file forbids sending any unit of the executing agent's own decomposition to a weaker
-  model or a lower effort than its own (the review gate and scope reassessment review keep their demanded model and
-  effort), and forbids invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing`; if galaxy-brain is
-  already active, the goal file is the user's express instruction to stop it. Sub-agents at the executing agent's own
-  model and effort are explicitly fine, at its judgment, when they are likely to finish the work sooner without costing
-  quality; parallelism is encouraged as something to consider, never required. Concurrent agents that might otherwise
-  conflict may run in separate worktrees or jj workspaces whose results the executing agent merges back. A user request
-  that rules out sub-agents altogether overrides the allowance. The scope reassessment review runs at the executing
-  agent's own model and effort. The goal file does not carry galaxy-brain's concurrency rules. Native sub-agents are the
-  normal launch path, and `scode-harness-shellout` covers a model not available as a native sub-agent type.
-- The review gate and scope reassessment review are the same as in the standard mode, launched by the executing agent
+  model or a lower effort than its own (the review gate keeps its demanded model and effort; scope reassessment runs at
+  the executing agent's own model and effort), and forbids invoking, loading, or following `scode-galaxy-brain` or
+  `scode-model-routing`. If galaxy-brain is already active, an explicit no-workhorse choice in the invocation or
+  up-front answers instructs the executor to stop it; when no-workhorse was only the default, the executor asks how to
+  resolve the conflict before dependent work. Sub-agents at the executing agent's own model and effort are explicitly
+  fine, at its judgment, when they are likely to finish the work sooner without costing quality; parallelism is
+  encouraged as something to consider, never required. Concurrent agents that might otherwise conflict may run in
+  separate worktrees or jj workspaces whose results the executing agent merges back. A user request that rules out
+  sub-agents altogether overrides the allowance. The scope reassessment review runs at the executing agent's own model
+  and effort. The goal file does not carry galaxy-brain's concurrency rules. Native sub-agents are the normal launch
+  path, and `scode-harness-shellout` covers a model not available as a native sub-agent type.
+- The review gate and scope reassessment review are the same as in galaxy brain mode, launched by the executing agent
   itself the same way as any other sub-agent. The resource watchdog keeps all its obligations but runs as a background
   process only, without the small-context watcher-agent option. The mode changes nothing else.
+
+## Galaxy brain mode
+
+- The `galaxy-brain` switch or a plain-language request to delegate suitable units of work to cheaper models selects
+  galaxy brain mode. Quoted, negated, path-embedded, or subject-of-the-goal mentions leave no-workhorse as the default
+  and stay in the goal text. Only an occurrence consumed as a switch is removed.
+- In galaxy brain mode, the goal file requires `scode-galaxy-brain` for the entire run, activated right after the resume
+  protocol and kept active through every delegation. Reading it for mechanics does not satisfy this. The review gate and
+  scope reassessment review run through it; the review gate keeps its demanded model and effort, while scope
+  reassessment has no named model in the goal file.
 
 ## Powerhorse mode
 
 - The skill supports a powerhorse mode, turned on by the word `powerhorse` used as a switch in the argument string or by
   a plain-language request that the executing agent supervise large parallel chunks on strong models. What counts as a
-  switch, a mention, or an unclear request follows the no-workhorse rules. Powerhorse and no-workhorse are mutually
-  exclusive; a request for both is asked about.
+  switch, a mention, or an unclear request follows the galaxy brain rules. A request for more than one mode is asked
+  about.
 - The up-front batch states the mode, and in powerhorse mode states defaults the user can override for the worker model
   (the executing session's own model and effort), the width (two writer chunks in flight), and PR sizing (one PR per
   chunk, or bite-sized PRs with chunk specs naming the boundaries).
@@ -157,10 +170,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
 
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
-- Using `scode-galaxy-brain` for the entire run, activated right after the resume protocol and kept active through every
-  delegation. Reading it for mechanics does not satisfy this. In no-workhorse mode, no orchestration skill at all, and
-  instead the demands and allowances described under No-workhorse mode. In powerhorse mode, `scode-powerhorse` in place
-  of galaxy-brain throughout, as described under Powerhorse mode.
+- In the default no-workhorse mode, no orchestration skill, with the demands and allowances described under No-workhorse
+  mode. In galaxy brain mode, `scode-galaxy-brain` for the entire run as described under Galaxy brain mode. In
+  powerhorse mode, `scode-powerhorse` throughout, as described under Powerhorse mode.
 - A resource watchdog for memory and disk, started before the first delegation and without the watcher-agent option in
   the no-workhorse and powerhorse modes, restarted if it dies, and carried in every handoff note. Prefer a process
   monitor over a model watchdog to keep routine minute-level sampling out of model turns. A small-context model watcher

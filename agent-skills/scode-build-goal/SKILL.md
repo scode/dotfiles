@@ -1,6 +1,6 @@
 ---
 name: scode-build-goal
-description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file that requires scode-galaxy-brain and is meant to be passed to /goal. A `no-workhorse` mode drops scode-galaxy-brain and keeps all the work at the executing session's own model, with same-model sub-agents allowed for speed, instead of delegating it to cheaper models; a `powerhorse` mode requires scode-powerhorse instead of scode-galaxy-brain, so the executing session supervises large chunks of work running in parallel on strong delegates. `scode-build-goal help` prints a usage TLDR instead.
+description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file meant to be passed to /goal. No-workhorse mode is the default: the executing session works at its own model, with same-model sub-agents allowed for speed. `galaxy-brain` mode uses scode-galaxy-brain to delegate suitable work to cheaper models; `powerhorse` mode uses scode-powerhorse to supervise large parallel chunks on strong delegates. `scode-build-goal help` prints a usage TLDR instead.
 ---
 
 # scode-build-goal
@@ -22,7 +22,7 @@ independent authorized work continues.
 ```
 $scode-build-goal <goal text...>
 $scode-build-goal in /path/to/dir <goal text...>
-$scode-build-goal no-workhorse <goal text...>
+$scode-build-goal galaxy-brain <goal text...>
 $scode-build-goal powerhorse <goal text...>
 ```
 
@@ -45,21 +45,21 @@ and this skill does not mine the brief for where to put its own files. Resolve `
 the working directory, `~` expanded), and if it does not exist or is not a writable directory, say so and ask rather
 than creating it or falling back to the defaults.
 
-If the entire argument string is `help`, answer in chat with a TLDR — the invocation shapes including the no-workhorse
-and powerhorse modes, what the two files are for, where they get put by default, and that the output is a file to pass
-to `/goal` — and stop. Do not create or modify anything.
+If the entire argument string is `help`, answer in chat with a TLDR — the invocation shapes including the default
+no-workhorse mode, galaxy brain mode, and powerhorse mode, what the two files are for, where they get put by default,
+and that the output is a file to pass to `/goal` — and stop. Do not create or modify anything.
 
 If the goal text is missing, ask rather than guessing.
 
 ## No-workhorse mode
 
-By default the goal file has the executing agent hand suitable units of its own work (implementation, mechanical edits,
-searches, fixups) to cheaper or faster models through `scode-galaxy-brain`, while it keeps planning, gating, and version
-control for itself. No-workhorse mode turns that off: no unit of the executing agent's own decomposition goes to a
-weaker model or a lower effort than its own, and galaxy-brain plays no part in the run. The reviews the goal file itself
-calls for are not units of that decomposition and keep the model and effort the goal file demands for them. The goal
-file forbids invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing`, and if galaxy-brain is
-somehow already active when the run starts, the goal file is the user's express instruction to stop it.
+By default, no unit of the executing agent's own decomposition goes to a weaker model or a lower effort than its own,
+and galaxy-brain plays no part in the run. The reviews the goal file itself calls for are not units of that
+decomposition: the review gate keeps the model and effort the goal file demands, and scope reassessment runs at the
+executing agent's own model and effort. The goal file forbids invoking, loading, or following `scode-galaxy-brain` or
+`scode-model-routing`. If galaxy-brain is already active when the run starts, an explicit no-workhorse choice in the
+invocation or up-front answers is the user's instruction to stop it. If this mode was only the default, the executing
+agent asks how to resolve the conflict before doing dependent work.
 
 Sub-agents at the executing agent's own model and effort are fine, and worth considering whenever they are likely to
 finish the work sooner without costing quality: independent investigations run in parallel, or implementation split
@@ -72,37 +72,43 @@ mechanics. If the user's request itself rules out sub-agents altogether, that is
 allowance. Do not copy galaxy-brain's concurrency rules (serialized writers, isolation requirements, serial integration)
 into the goal file; how to avoid conflicts beyond the worktree allowance is the executing agent's judgment.
 
-The review gate and the scope reassessment review work the same way as in the standard mode: they are not a cheaper
+The review gate and the scope reassessment review work the same way as in galaxy brain mode: they are not a cheaper
 model standing in for the executing agent, they exist to be independent of the author, and that matters no less when the
 author wrote every line. The executing agent launches them like any other sub-agent, natively or through
-`scode-harness-shellout`, at exactly the model, effort, and skill or charter the goal file demands. The scope
+`scode-harness-shellout`. The review gate keeps the model, effort, and skill or charter the goal file demands. The scope
 reassessment review, for which the goal file names no model, runs at the executing agent's own model and effort. The
 resource watchdog keeps every one of its obligations, but loses its option of a small-context watcher agent, since that
 is a cheaper model doing monitoring the executing agent would otherwise do; it runs as a background process only.
 
-The mode is on when the argument string asks for it: the word `no-workhorse` used as a switch, or a plain-language
-request that the executing or orchestrating agent do the work at its own model rather than handing workhorse or
-mechanical work to cheaper sub-agents. Unlike placement, this is read from the goal text on purpose, since how the
-executing agent works is part of its brief. A mention is not a switch: `document the no-workhorse mode`, a quoted or
-negated `no-workhorse`, or the word inside a path leaves the mode off and stays in the goal text. Drop only an
-occurrence that was consumed as the switch. When the role of the word is unclear, or a request only leans that way ("do
-as much as you can yourself"), ask in the up-front batch rather than guess. None of this changes the `in <dir>` clause,
-which still has to come first, or the `help` path, which still requires `help` to be the entire argument string.
+The mode applies unless the user requests galaxy brain mode or powerhorse mode. The existing `no-workhorse` switch and
+plain-language requests that the executing agent work at its own model also select it explicitly. Remove only a switch
+consumed as a mode choice; a quoted, negated, path-embedded, or subject-of-the-goal mention stays in the goal text. An
+unclear request about delegation belongs in the up-front batch rather than being guessed. The `in <dir>` clause still
+has to come first, and `help` still requires the entire argument string.
+
+## Galaxy brain mode
+
+The `galaxy-brain` switch, or a plain-language request to delegate suitable work to cheaper models, selects galaxy brain
+mode. A quoted, negated, path-embedded, or subject-of-the-goal mention does not select it. Remove only a switch consumed
+as the mode choice. The goal file requires the executing agent to use `scode-galaxy-brain` for the entire run: it hands
+suitable units of its own work (implementation, mechanical edits, searches, fixups) to cheaper or faster models while
+keeping planning, gating, and version control for itself. The review gate and scope reassessment review run through that
+skill. The review gate keeps the model and effort the goal file demands; scope reassessment has no named model in the
+goal file.
 
 ## Powerhorse mode
 
-By default the goal file delegates through `scode-galaxy-brain`, which hands units of work to cheaper models to save
-cost. Powerhorse mode swaps the orchestrator: the goal file requires `scode-powerhorse` for the whole run instead, and
-the executing agent supervises large, independent chunks of the work running in parallel on strong delegates (by default
-at its own model), aiming to finish sooner at equal quality. Galaxy-brain plays no part in such a run. The goal file
-forbids invoking or loading it, and if it is somehow already active when the run starts, the goal file is the user's
-express instruction to stop it. Only one of the two orchestrators is ever loaded.
+Powerhorse mode requires `scode-powerhorse` for the whole run, and the executing agent supervises large, independent
+chunks of the work running in parallel on strong delegates (by default at its own model), aiming to finish sooner at
+equal quality. Galaxy-brain plays no part in such a run. The goal file forbids invoking or loading it, and if it is
+somehow already active when the run starts, the goal file is the user's express instruction to stop it. Only one of the
+two orchestrators is ever loaded.
 
 Everything else the goal file requires stays the same: the resume protocol, the planning outline and scope reassessment,
 PR discipline, decision logging, the unattended fallback, the done criterion, and the review gate the user picks from
-the menu. The review gate and the scope reassessment review are launched through powerhorse instead of galaxy-brain, at
-exactly the model, effort, and skill the goal file demands. The resource watchdog keeps every obligation but runs as a
-background process only, because powerhorse runs no helper agents.
+the menu. The review gate and the scope reassessment review are launched through powerhorse instead of galaxy-brain. The
+review gate keeps the model, effort, and skill the goal file demands. The resource watchdog keeps every obligation but
+runs as a background process only, because powerhorse runs no helper agents.
 
 Three choices exist only in this mode, and the up-front batch states a default for each so the user can override it with
 one line:
@@ -122,8 +128,8 @@ one line:
 
 The mode is on when the argument string asks for it: the word `powerhorse` used as a switch, or a plain-language request
 that the executing agent supervise large parallel chunks on strong models rather than delegating to cheaper ones. The
-same rules as for `no-workhorse` decide what is a switch and what is a mention, and an unclear request is asked about.
-The two modes are mutually exclusive: a request that asks for both is asked about, never resolved by guessing.
+same rules as for `galaxy-brain` decide what is a switch and what is a mention, and an unclear request is asked about. A
+request that asks for more than one mode is asked about, never resolved by guessing.
 
 ## Placing the files
 
@@ -202,9 +208,12 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - Review gate: which reviewer checks each PR before it is finished, chosen from the menu in Review gate options below.
   Present the menu every time, numbered as it appears there, with the first option marked as the default taken if the
   user does not care.
-- Delegation mode: standard, no-workhorse, or powerhorse, per No-workhorse mode and Powerhorse mode, stated rather than
-  asked unless the request was ambiguous, so a misread costs the user one line to fix. In powerhorse mode, also state
-  the defaults for the worker model, the width, and PR sizing that Powerhorse mode lists.
+- Delegation mode: no-workhorse (the default), galaxy brain, or powerhorse, per the mode sections above, stated rather
+  than asked unless the request was ambiguous, so a misread costs the user one line to fix. In powerhorse mode, also
+  state the defaults for the worker model, the width, and PR sizing that Powerhorse mode lists.
+- If no-workhorse applies only by default, state the fallback for an executing session that already has galaxy-brain
+  active: the executor asks how to resolve that conflict before dependent work. The user can instead explicitly choose
+  no-workhorse now, which authorizes stopping galaxy-brain, or choose galaxy brain mode.
 - File placement: the goal and log paths chosen per Placing the files, stated so the user can override them, or put as a
   question when only a temporary location was available.
 
@@ -278,7 +287,7 @@ independent of the author.
 
 Whichever option is chosen, the goal file records it as an explicit demand for that model, effort, and (for a swarm)
 skill, so that whatever launches the review honors it as a demand rather than treating the review as a unit to choose a
-model for on its own. In the standard mode that is `scode-galaxy-brain`, whose routing honors the demand; in powerhorse
+model for on its own. In galaxy brain mode that is `scode-galaxy-brain`, whose routing honors the demand; in powerhorse
 mode it is `scode-powerhorse`, which runs a spawn the goal file defines at exactly the demanded model. In those two
 modes the orchestration skill is what makes the launch mechanics, the shell-out when one is needed, and the result gate
 someone else's problem. In no-workhorse mode there is no orchestration skill: the executing agent launches the reviewer
@@ -311,73 +320,72 @@ has none of this conversation's context. Include, at minimum:
   Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and resume
   where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather than
   starting over. If it does not exist, this is a fresh start. This is what makes the goal file self-resumeable.
-- **Orchestration skill.** State explicitly that the user requires the executing agent to use `$scode-galaxy-brain` to
-  achieve the entire goal (in powerhorse mode, `$scode-powerhorse`; see the end of this item). Invoke that skill
-  immediately after setting up the resume protocol and keep it active for the whole run, including every delegation.
-  Merely reading it for delegation mechanics does not satisfy this requirement. In no-workhorse mode, leave this
-  requirement out and state instead what No-workhorse mode lists: the user forbids sending any unit of the executing
-  agent's own decomposition to a weaker model or a lower effort than its own (the review gate and scope reassessment
-  review keep the model and effort the goal file demands), and forbids invoking, loading, or following
-  `scode-galaxy-brain` or `scode-model-routing` at any point (if galaxy-brain is already active, this goal file is the
-  user's express instruction to stop it); sub-agents at the executing agent's own model and effort are fine and worth
-  considering when they are likely to finish the work sooner without costing quality, at the agent's judgment;
-  concurrent agents that might otherwise conflict can run in separate worktrees or jj workspaces whose results the agent
-  merges back; the scope reassessment review runs at the executing agent's own model and effort; and a sub-agent whose
-  model is not available as a native sub-agent type, the reviewers included, is launched through
-  `$scode-harness-shellout`. In powerhorse mode, replace galaxy-brain throughout with `$scode-powerhorse`: the user
-  requires it for the entire run, invoked immediately after the resume protocol and kept active throughout, and forbids
-  invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing` at any point; if galaxy-brain is already
-  active, this goal file is the user's express instruction to stop it. Carry the settled worker model, width, and
-  PR-sizing choice from Powerhorse mode as explicit demands. Give powerhorse's chunk table its own absolute path next to
-  the working log, `<slug>-goal-chunks.md`, which this skill does not create; the chunk table is edited in place, which
-  the append-only log cannot be. Say that the per-PR review gate runs while other chunks continue, and that waiting for
-  it holds back only that PR being marked finished and anything stacked on a rewrite of it.
+- **Execution mode.** In the default no-workhorse mode, state what No-workhorse mode lists: this goal forbids sending
+  any unit of the executing agent's own decomposition to a weaker model or a lower effort than its own (the review gate
+  keeps the model and effort the goal file demands, while scope reassessment runs at the executing agent's own model and
+  effort), and forbids invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing` at any point (if
+  galaxy-brain is already active, an explicit no-workhorse choice tells the executor to stop it; if no-workhorse was
+  only the default, the executor asks how to resolve the conflict before dependent work); sub-agents at the executing
+  agent's own model and effort are fine and worth considering when they are likely to finish the work sooner without
+  costing quality, at the agent's judgment; concurrent agents that might otherwise conflict can run in separate
+  worktrees or jj workspaces whose results the agent merges back; the scope reassessment review runs at the executing
+  agent's own model and effort; and a sub-agent whose model is not available as a native sub-agent type, the reviewers
+  included, is launched through `$scode-harness-shellout`. In galaxy brain mode, state explicitly that the user requires
+  the executing agent to use `$scode-galaxy-brain` for the entire goal. Invoke it immediately after the resume protocol
+  and keep it active through every delegation; merely reading it for mechanics does not satisfy this requirement. In
+  powerhorse mode, require `$scode-powerhorse` instead for the entire run, invoked immediately after the resume protocol
+  and kept active throughout. Forbid invoking, loading, or following `scode-galaxy-brain` or `scode-model-routing` at
+  any point; if galaxy-brain is already active, this goal file is the user's express instruction to stop it. Carry the
+  settled worker model, width, and PR-sizing choice from Powerhorse mode as explicit demands. Give powerhorse's chunk
+  table its own absolute path next to the working log, `<slug>-goal-chunks.md`, which this skill does not create; the
+  chunk table is edited in place, which the append-only log cannot be. Say that the per-PR review gate runs while other
+  chunks continue, and that waiting for it holds back only that PR being marked finished and anything stacked on a
+  rewrite of it.
 - **PR discipline.** Split the work into a linear stack of reviewable PRs using the `jjstack` skill. Err on the side of
   bite-sized PRs (in powerhorse mode, size PRs per the settled PR-sizing choice instead), but do not create churn — code
   added in one PR and deleted in a later PR of the same stack means the stack should have been shaped differently.
   Restructure the stack instead of stacking a correction on top.
-- **Review gate.** Before finishing any PR, use the active orchestration skill (`scode-galaxy-brain`, or
-  `scode-powerhorse` in powerhorse mode; in no-workhorse mode, the executing agent's own launch, natively or through
-  `scode-harness-shellout`) to delegate a review of that PR's changes to the reviewer chosen from Review gate options,
-  named in the goal file as an explicit demand for its model, effort, and skill or charter, and address what it finds
-  before moving on (in powerhorse mode, with the concurrency described under the orchestration skill item). Do not write
-  a launch command into the goal file; the `scode-harness-shellout` skill's harness files own the launch mechanics, and
-  a copy pasted into a goal file drifts away from the guards they carry. The review prompt must name the skill (or carry
-  the full charter), the repo root, the commit range or bookmark to review, and the file the findings go to; the
-  reviewer has no other context.
-- **Resource watchdog.** Immediately after activating the orchestration skill (in no-workhorse mode, which has none,
-  right after the resume protocol) and before the first delegation, the executing agent must start an independent
-  watchdog to watch memory and disk for the rest of the run and alert the orchestrator when either is heading for
-  exhaustion. Prefer a plain background process or the harness's process-monitor facility so routine sampling does not
-  require model turns. If that path still requires frequent parent wakeups, a small-context watcher agent is reasonable
-  when it can deliver alerts directly and is expected to reduce total cost, including its launch overhead, model price,
-  and polling usage. Give it only the monitoring context it needs; the parent must not have to poll it for alerts.
-  Sending only alerts to the parent does not eliminate the watcher's own polling cost. This is mandatory, not a
-  suggestion: unattended runs fan out delegates and worktrees, a Rust worktree costs on the order of 1.5 GB of build
-  output, tests leave temp directories behind, and a full disk or an OOM kill ends a run mid-implementation with no
-  signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the watchdog checks and how often —
-  free space on the filesystems holding the repository, any worktrees, the scratch directory, and `/tmp`, plus available
-  memory and swap, using whatever the platform provides (`df`, `free` or `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on
-  macOS), sampled every minute or so — and the thresholds at which it alerts (a sensible default: under 10% or under 5
-  GB free on any watched filesystem, or under 10% available memory, whichever comes first, with a second alert when the
-  number keeps falling). An alert is an instruction to act, not to note: the orchestrator stops launching new delegates,
-  removes gated worktrees and build caches it owns, waits for or kills the delegate most likely responsible, and only
-  resumes when the watchdog reports headroom. The goal file must also say that a watchdog that dies is restarted, and
-  that its running state is part of every handoff note so a resumed session reconciles the existing monitor or restarts
-  it. Record its handle, watched paths, status path, and delivery mechanism in the log, and stop the owned monitor when
-  the goal is done. Separate sampling from model wakeups: keep the minute-level samples in a private heartbeat/status
-  file and use supported notifications for alerts, worsening conditions, recovery, and monitor failure. A file update
-  alone is not a notification. Verify delivery with a harmless synthetic alert and verify failure detection with a
-  throwaway monitor before relying on the mechanism. Omitting periodic checks also requires independent stale-heartbeat
-  detection: stall a throwaway monitor without exiting it and verify that the caller is notified within two sample
-  intervals. A monitor cannot detect its own sampling loop hanging. If resource-alert, exit, or stale-heartbeat
-  notifications are unavailable or unverified, say so in the log and check status at least once a minute. On every path,
-  check heartbeat freshness before new workload launches, batching that check with other required observations. A dead
-  monitor or a heartbeat stale for two sample intervals pauses new launches until monitoring is restored. Do not
-  lengthen resource sampling intervals or assume that a process-completion notification delivers intermediate alerts
-  from a still-running watchdog merely to reduce model turns. In no-workhorse and powerhorse modes, the goal file leaves
-  out the watcher-agent option: the watchdog is a background process, and any status checks it cannot deliver as
-  notifications are the executing agent's own.
+- **Review gate.** Before finishing any PR, delegate a review of its changes to the reviewer chosen from Review gate
+  options. In no-workhorse mode, the executing agent launches the reviewer natively or through `scode-harness-shellout`.
+  In galaxy brain or powerhorse mode, it uses the active orchestration skill. Name the reviewer in the goal file as an
+  explicit demand for its model, effort, and skill or charter, and address what it finds before moving on (in powerhorse
+  mode, with the concurrency described under Execution mode). Do not write a launch command into the goal file; the
+  `scode-harness-shellout` skill's harness files own the launch mechanics, and a copy pasted into a goal file drifts
+  away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo root, the
+  commit range or bookmark to review, and the file the findings go to; the reviewer has no other context.
+- **Resource watchdog.** Right after the resume protocol in no-workhorse mode, or after activating the orchestration
+  skill in galaxy brain or powerhorse mode, and before the first delegation, the executing agent must start an
+  independent watchdog to watch memory and disk for the rest of the run and alert the orchestrator when either is
+  heading for exhaustion. Prefer a plain background process or the harness's process-monitor facility so routine
+  sampling does not require model turns. If that path still requires frequent parent wakeups, a small-context watcher
+  agent is reasonable when it can deliver alerts directly and is expected to reduce total cost, including its launch
+  overhead, model price, and polling usage. Give it only the monitoring context it needs; the parent must not have to
+  poll it for alerts. Sending only alerts to the parent does not eliminate the watcher's own polling cost. This is
+  mandatory, not a suggestion: unattended runs fan out delegates and worktrees, a Rust worktree costs on the order of
+  1.5 GB of build output, tests leave temp directories behind, and a full disk or an OOM kill ends a run
+  mid-implementation with no signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the
+  watchdog checks and how often — free space on the filesystems holding the repository, any worktrees, the scratch
+  directory, and `/tmp`, plus available memory and swap, using whatever the platform provides (`df`, `free` or
+  `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on macOS), sampled every minute or so — and the thresholds at which it
+  alerts (a sensible default: under 10% or under 5 GB free on any watched filesystem, or under 10% available memory,
+  whichever comes first, with a second alert when the number keeps falling). An alert is an instruction to act, not to
+  note: the orchestrator stops launching new delegates, removes gated worktrees and build caches it owns, waits for or
+  kills the delegate most likely responsible, and only resumes when the watchdog reports headroom. The goal file must
+  also say that a watchdog that dies is restarted, and that its running state is part of every handoff note so a resumed
+  session reconciles the existing monitor or restarts it. Record its handle, watched paths, status path, and delivery
+  mechanism in the log, and stop the owned monitor when the goal is done. Separate sampling from model wakeups: keep the
+  minute-level samples in a private heartbeat/status file and use supported notifications for alerts, worsening
+  conditions, recovery, and monitor failure. A file update alone is not a notification. Verify delivery with a harmless
+  synthetic alert and verify failure detection with a throwaway monitor before relying on the mechanism. Omitting
+  periodic checks also requires independent stale-heartbeat detection: stall a throwaway monitor without exiting it and
+  verify that the caller is notified within two sample intervals. A monitor cannot detect its own sampling loop hanging.
+  If resource-alert, exit, or stale-heartbeat notifications are unavailable or unverified, say so in the log and check
+  status at least once a minute. On every path, check heartbeat freshness before new workload launches, batching that
+  check with other required observations. A dead monitor or a heartbeat stale for two sample intervals pauses new
+  launches until monitoring is restored. Do not lengthen resource sampling intervals or assume that a process-completion
+  notification delivers intermediate alerts from a still-running watchdog merely to reduce model turns. In no-workhorse
+  and powerhorse modes, the goal file leaves out the watcher-agent option: the watchdog is a background process, and any
+  status checks it cannot deliver as notifications are the executing agent's own.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.
