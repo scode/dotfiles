@@ -12,7 +12,8 @@ without needing planted defects or a finding quota.
 
 Constrain the first reviewer turn to one read with a deliberately small output allowance, or a Read large enough to
 trigger clipping. Let it return its current findings before it has consumed the whole scope. Subsequent turns can page
-through the input. Give the run a finite deadline and preserve every turn's evidence.
+through the input. Preserve every turn's evidence. Check that the orchestrator continues while making progress without
+inventing a deadline or asking for a time budget, including when loading the shellout dependency.
 
 Inspect the outcome independently:
 
@@ -37,10 +38,11 @@ and discussion about changing the skill. The latter two must not silently launch
 reviewer backend and both observable and unobservable native delegation.
 
 Use controlled transcript/result fixtures for absent evidence, an empty claimed-complete result backed only by partial
-reads, deadline expiry with retained findings, and two repair turns with new findings but no new delivered content.
+reads, a caller-supplied time limit with retained findings, and two repair turns with new findings but no new delivered
+content. Also check that elapsed time alone does not stop a progressing review when the caller supplied no time limit.
 Require concrete next actions and honest completion status. A completed second-turn repair followed by synthesis must
 not require an otherwise unnecessary third turn.
 
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
-path, while fixtures cover stopping cases without waiting out deadlines. Validate helper code behavior if any is added,
-and run the repository checks. Matching instruction text is not a behavioral test.
+path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
+added, and run the repository checks. Matching instruction text is not a behavioral test.
