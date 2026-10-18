@@ -53,6 +53,13 @@ version. Other tool-result records or content blocks fail explicitly. The parser
 reasoning without emitting them. Valid logs with no matching packets remain incomplete; full raw stdout cannot fill that
 gap.
 
+Codex's top-level `compacted` context-management record is supported when its payload has a string `message` and an
+array or null `replacement_history`. Ignore that summary and replacement history for delivery credit. Original
+call/result evidence before compaction remains valid; context replacement neither erases it nor proves delivery of
+missing text. If original results are absent from the supplied rollout, those ranges remain unverified. Unsupported
+compaction payload shapes still fail explicitly. Claude's `system` compaction boundaries already follow its non-tool
+record path; they likewise supply no source evidence.
+
 Successful parsing exits 0 with a compact JSON report. Its `status` means delivery coverage only: `complete` or
 `incomplete`, with source versions, covered/missing ranges, rejected packets, and raw log line references. Repeated
 reads do not inflate covered ranges. Keep reports on disk and read them per group rather than aggregating every event

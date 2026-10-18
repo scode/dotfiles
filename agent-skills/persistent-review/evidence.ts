@@ -150,6 +150,17 @@ async function* delivered(backend: string, session: string, cwd: string, paths: 
         initialized.add(path);
       } else {
         requireThat(initialized.has(path), `Missing session_meta before records: ${ref}`);
+        if (type === "compacted") {
+          const context = object(row.payload);
+          string(context.message);
+          requireThat(
+            context.replacement_history === null || Array.isArray(context.replacement_history),
+            `Unsupported Codex compaction history: ${ref}`,
+          );
+          // This is context management, not a new delivery. Keep original call/result joins and coverage;
+          // summaries and replacement history cannot repair missing original tool-result evidence.
+          continue;
+        }
         requireThat(
           ["event_msg", "response_item", "world_state", "turn_context", "token_usage_record"].includes(type),
           `Unsupported Codex record: ${type} at ${ref}`,
@@ -548,6 +559,50 @@ Deno.test("source text cannot disguise malformed packets as harness clipping", (
     await fails(() => audit("codex", "session", "/repo", [item], [path]), "Malformed");
     await saveLog(path, logRows("codex", packet(item, 1, 2)));
     equal((await audit("codex", "session", "/repo", [item], [path])).status, "complete");
+  }));
+
+Deno.test("Codex top-level compaction preserves original delivery but cannot supply missing evidence", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const compaction = {
+      type: "compacted",
+      payload: {
+        message: "",
+        replacement_history: [{ type: "message", content: packet(item, 2, 3) }, {
+          type: "compaction",
+          encrypted_content: "opaque",
+        }],
+        replacement_history_metadata: [{}, {}],
+        retained_context: {},
+        window_number: 1,
+        window_id: "window",
+        previous_window_id: "previous",
+      },
+    };
+    const rows = logRows("codex", packet(item, 1, 1));
+    // A compaction between a call and its result must not orphan or fabricate a delivery.
+    rows.splice(3, 0, compaction);
+    await saveLog(path, rows);
+    const partial = await audit("codex", "session", "/repo", [item], [path]);
+    equal(partial.sources[0].covered, [[1, 1]]);
+    equal(partial.sources[0].missing, [[2, 3]]);
+    await saveLog(path, [rows[0], {
+      ...compaction,
+      payload: { message: packet(item, 1, 3), replacement_history: null },
+    }]);
+    equal((await audit("codex", "session", "/repo", [item], [path])).sources[0].missing, [[1, 3]]);
+    await saveLog(path, [...logRows("codex", packet(item, 1, 3)), compaction]);
+    equal((await audit("codex", "session", "/repo", [item], [path])).status, "complete");
+    await saveLog(path, [...logRows("codex", packet(item, 1, 3)), {
+      ...compaction,
+      payload: { message: "", replacement_history: "changed shape" },
+    }]);
+    await fails(() => audit("codex", "session", "/repo", [item], [path]), "Unsupported Codex compaction history");
+    await saveLog(path, [...logRows("codex", packet(item, 1, 3)), {
+      ...compaction,
+      payload: { message: 42, replacement_history: null },
+    }]);
+    await fails(() => audit("codex", "session", "/repo", [item], [path]), "Expected a string");
   }));
 Deno.test("findings count revisions once, preserve owners, and accept initialized empty logs", () =>
   fixture(async (root) => {

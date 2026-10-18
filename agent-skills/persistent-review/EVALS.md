@@ -60,6 +60,10 @@ identity. Unknown representations must visibly fail without a partial success re
 failure must ask before direct inspection, explicitly explain the token cost, and retain findings. Check that it neither
 silently skips records nor treats missing data as zero findings or complete coverage.
 
+Include Codex top-level `compacted` records between original calls/results and after completed reads. Coverage must
+survive when original delivery exists; packets found only in compaction summaries or replacement history must not fill
+gaps. Mutated compaction envelopes must still fail visibly, including after full coverage was established.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.
