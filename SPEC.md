@@ -14,6 +14,18 @@ This is acceptable for this repository because it is a personal checkout-driven 
 directory explicit, but reviews should not treat cwd-relative source lookup as a bug unless the CLI contract changes at
 the same time.
 
+## Installer Status Output
+
+An ordinary run logs changed features and failures as they happen. Install does not log individual skips: one unmet
+parent condition can otherwise repeat the same reason for every dependent feature. The final count includes changed,
+unchanged, skipped, and failed features, and points to `--show-status` when skips or failures need inspection.
+
+`--show-status` prints every feature's outcome at the end of either install or uninstall. The tree puts dependencies
+above dependents even though uninstall executes in the opposite order. A feature with multiple dependencies appears
+once, under its first declared dependency, with the others named on its line. Each line includes the feature ID so a
+reference to another dependency can be found even when its display text differs. The tree does not assert that each
+feature has only one prerequisite.
+
 ## Manual Skill Evals
 
 The `xtask` crate is repository tooling, not an installed dotfiles artifact. `cargo xtask eval ...` is intentionally

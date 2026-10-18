@@ -9,6 +9,7 @@
 //! - Features whose dependencies failed are skipped
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Result, bail};
@@ -24,6 +25,33 @@ pub struct RunStats {
     pub unchanged: u32,
     pub skipped: u32,
     pub failed: u32,
+}
+
+/// Counts and a complete, dependency-shaped view of one installer run.
+///
+/// The tree contains every registered feature, including features that did
+/// nothing. A feature with multiple dependencies appears under its first
+/// declared dependency; its other dependencies are named on the same line.
+/// Each line includes the feature ID so those dependency references can be
+/// found even when several features have the same display text.
+#[derive(Debug)]
+pub struct RunReport {
+    /// Aggregate counts for the same run represented by `status_tree`.
+    pub stats: RunStats,
+    /// Every feature, ordered by its displayed dependency branch.
+    pub status_tree: String,
+}
+
+/// The outcome retained for the optional end-of-run tree.
+///
+/// Dependency skips keep the blocked feature IDs so a node with multiple
+/// prerequisites can identify a blocker outside its displayed parent branch.
+enum FeatureStatus {
+    Changed,
+    Unchanged,
+    SkippedByCondition(String),
+    SkippedByDependency(Vec<String>),
+    Failed(String),
 }
 
 static NEXT_GRAPH_ID: AtomicU64 = AtomicU64::new(0);
@@ -219,6 +247,105 @@ impl FeatureGraph {
         Ok(result)
     }
 
+    /// Renders every feature once, with dependencies above their dependents.
+    ///
+    /// A dependency graph is not always a tree. The first declared dependency
+    /// owns the display branch, while any other dependencies remain visible on
+    /// the child's line. Sorting each branch makes reports stable even though
+    /// feature storage uses a hash map.
+    fn status_tree(&self, statuses: &HashMap<String, FeatureStatus>) -> String {
+        let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut roots = Vec::new();
+
+        for node in self.nodes.values() {
+            if let Some(parent) = node.depends_on.first() {
+                children.entry(parent).or_default().push(&node.id);
+            } else {
+                roots.push(node.id.as_str());
+            }
+        }
+        roots.sort_unstable();
+        for siblings in children.values_mut() {
+            siblings.sort_unstable();
+        }
+
+        let mut tree = String::from("Status tree:\n");
+        for (index, root) in roots.iter().enumerate() {
+            self.write_status_branch(
+                &mut tree,
+                root,
+                "",
+                index + 1 == roots.len(),
+                &children,
+                statuses,
+            );
+        }
+        tree
+    }
+
+    /// Writes one display branch without duplicating shared dependencies.
+    fn write_status_branch(
+        &self,
+        tree: &mut String,
+        id: &str,
+        prefix: &str,
+        last: bool,
+        children: &HashMap<&str, Vec<&str>>,
+        statuses: &HashMap<String, FeatureStatus>,
+    ) {
+        let node = &self.nodes[id];
+        let status = &statuses[id];
+        let branch = if last { "└─" } else { "├─" };
+        let label = match status {
+            FeatureStatus::Changed => "✅ changed",
+            FeatureStatus::Unchanged => "⏭️ unchanged",
+            FeatureStatus::SkippedByCondition(_) | FeatureStatus::SkippedByDependency(_) => {
+                "⏭️ skipped"
+            }
+            FeatureStatus::Failed(_) => "❌ failed",
+        };
+        write!(tree, "{prefix}{branch} {label}: {} [{id}]", node.feature).unwrap();
+
+        match status {
+            FeatureStatus::SkippedByCondition(condition) => {
+                write!(tree, " (condition not met: {condition})").unwrap();
+            }
+            FeatureStatus::SkippedByDependency(blocked) => {
+                if blocked.len() != 1 || blocked[0] != node.depends_on[0] {
+                    write!(tree, " (blocked by: {})", blocked.join(", ")).unwrap();
+                }
+            }
+            FeatureStatus::Failed(error) => {
+                write!(tree, " ({error})").unwrap();
+            }
+            FeatureStatus::Changed | FeatureStatus::Unchanged => {}
+        }
+
+        if node.depends_on.len() > 1 {
+            write!(
+                tree,
+                " [also depends on: {}]",
+                node.depends_on[1..].join(", ")
+            )
+            .unwrap();
+        }
+        tree.push('\n');
+
+        let child_prefix = format!("{prefix}{}", if last { "   " } else { "│  " });
+        if let Some(descendants) = children.get(id) {
+            for (index, child) in descendants.iter().enumerate() {
+                self.write_status_branch(
+                    tree,
+                    child,
+                    &child_prefix,
+                    index + 1 == descendants.len(),
+                    children,
+                    statuses,
+                );
+            }
+        }
+    }
+
     /// Install all features in dependency order, skipping any whose
     /// conditions are unmet or whose dependencies failed.
     ///
@@ -226,21 +353,33 @@ impl FeatureGraph {
     /// not returned as `Err`. `Err` is only returned for structural
     /// problems like dependency cycles.
     pub fn install(&self) -> Result<RunStats> {
+        Ok(self.install_with_report()?.stats)
+    }
+
+    /// Installs all features and returns their outcomes as a complete tree.
+    ///
+    /// Skips are recorded for the report but not logged individually. A skipped
+    /// dependent remains visible under its unavailable prerequisite, while an
+    /// unmet condition is shown on the feature where it was evaluated.
+    pub fn install_with_report(&self) -> Result<RunReport> {
         let order = self.topological_sort()?;
         let mut skipped: HashSet<String> = HashSet::new();
         let mut failed: HashSet<String> = HashSet::new();
+        let mut statuses: HashMap<String, FeatureStatus> = HashMap::new();
         let mut changed: u32 = 0;
         let mut noop: u32 = 0;
 
         for id in order {
             let node = &self.nodes[&id];
 
-            if node
+            let blocked: Vec<String> = node
                 .depends_on
                 .iter()
-                .any(|dep| skipped.contains(dep) || failed.contains(dep))
-            {
-                info!("⏭️ skipped: {} (dependency unavailable)", node.feature);
+                .filter(|dep| skipped.contains(*dep) || failed.contains(*dep))
+                .cloned()
+                .collect();
+            if !blocked.is_empty() {
+                statuses.insert(id.clone(), FeatureStatus::SkippedByDependency(blocked));
                 skipped.insert(id);
                 continue;
             }
@@ -249,12 +388,16 @@ impl FeatureGraph {
                 match cond.is_met() {
                     Ok(true) => {}
                     Ok(false) => {
-                        info!("⏭️ skipped: {} ({})", node.feature, cond);
+                        statuses.insert(
+                            id.clone(),
+                            FeatureStatus::SkippedByCondition(cond.to_string()),
+                        );
                         skipped.insert(id);
                         continue;
                     }
                     Err(e) => {
                         error!("❌ {} condition failed: {}", node.feature, e);
+                        statuses.insert(id.clone(), FeatureStatus::Failed(e.to_string()));
                         failed.insert(id);
                         continue;
                     }
@@ -265,24 +408,30 @@ impl FeatureGraph {
             match node.feature.install() {
                 Ok(FeatureResult::Changed) => {
                     info!("✅ changed: {}", node.feature);
+                    statuses.insert(id, FeatureStatus::Changed);
                     changed += 1;
                 }
                 Ok(FeatureResult::NoOp) => {
                     debug!("⏭️ noop:    {}", node.feature);
+                    statuses.insert(id, FeatureStatus::Unchanged);
                     noop += 1;
                 }
                 Err(e) => {
                     error!("❌ {}: {}", node.feature, e);
+                    statuses.insert(id.clone(), FeatureStatus::Failed(e.to_string()));
                     failed.insert(id);
                 }
             }
         }
 
-        Ok(RunStats {
-            changed,
-            unchanged: noop,
-            skipped: skipped.len() as u32,
-            failed: failed.len() as u32,
+        Ok(RunReport {
+            stats: RunStats {
+                changed,
+                unchanged: noop,
+                skipped: skipped.len() as u32,
+                failed: failed.len() as u32,
+            },
+            status_tree: self.status_tree(&statuses),
         })
     }
 
@@ -291,8 +440,18 @@ impl FeatureGraph {
     /// Individual feature failures are counted in [`RunStats::failed`],
     /// not returned as `Err`.
     pub fn uninstall(&self) -> Result<RunStats> {
+        Ok(self.uninstall_with_report()?.stats)
+    }
+
+    /// Uninstalls all features and reports each outcome in dependency order.
+    ///
+    /// Uninstall executes in reverse dependency order, but the report keeps
+    /// prerequisites above dependents so the same tree is readable for both
+    /// commands. Uninstall has no dependency skips.
+    pub fn uninstall_with_report(&self) -> Result<RunReport> {
         let order = self.topological_sort()?;
         let mut failed: HashSet<String> = HashSet::new();
+        let mut statuses: HashMap<String, FeatureStatus> = HashMap::new();
         let mut changed: u32 = 0;
         let mut noop: u32 = 0;
 
@@ -303,24 +462,30 @@ impl FeatureGraph {
             match node.feature.uninstall() {
                 Ok(FeatureResult::Changed) => {
                     info!("✅ changed: {}", node.feature);
+                    statuses.insert(id, FeatureStatus::Changed);
                     changed += 1;
                 }
                 Ok(FeatureResult::NoOp) => {
                     debug!("⏭️ noop:    {}", node.feature);
+                    statuses.insert(id, FeatureStatus::Unchanged);
                     noop += 1;
                 }
                 Err(e) => {
                     error!("❌ {}: {}", node.feature, e);
+                    statuses.insert(id.clone(), FeatureStatus::Failed(e.to_string()));
                     failed.insert(id);
                 }
             }
         }
 
-        Ok(RunStats {
-            changed,
-            unchanged: noop,
-            skipped: 0,
-            failed: failed.len() as u32,
+        Ok(RunReport {
+            stats: RunStats {
+                changed,
+                unchanged: noop,
+                skipped: 0,
+                failed: failed.len() as u32,
+            },
+            status_tree: self.status_tree(&statuses),
         })
     }
 }
@@ -672,6 +837,82 @@ mod tests {
                 skipped: 1,
                 failed: 1,
             }
+        );
+    }
+
+    /// The detailed report must account for every feature once, even when a
+    /// dependent has two prerequisites and only one of them blocks it.
+    #[test]
+    fn install_report_shows_complete_dependency_tree() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        let changed = graph
+            .add("changed", MockFeature::new("changed", log.clone()))
+            .build();
+        graph
+            .add("unchanged", MockFeature::noop("unchanged", log.clone()))
+            .depends_on(&changed)
+            .build();
+        let missing = graph
+            .add("missing", MockFeature::new("absent path", log.clone()))
+            .condition(PathExists::new("/nonexistent/path/that/does/not/exist"))
+            .build();
+        graph
+            .add("blocked", MockFeature::new("blocked", log.clone()))
+            .depends_on(&changed)
+            .depends_on(&missing)
+            .build();
+        graph
+            .add("failed", MockFeature::failing("failed", log))
+            .build();
+
+        let report = graph.install_with_report().unwrap();
+
+        assert_eq!(report.stats.changed, 1);
+        assert_eq!(report.stats.unchanged, 1);
+        assert_eq!(report.stats.skipped, 2);
+        assert_eq!(report.stats.failed, 1);
+        assert_eq!(report.status_tree.lines().count(), 6);
+        assert!(
+            report
+                .status_tree
+                .contains("├─ ✅ changed: mock: changed [changed]")
+        );
+        assert!(report.status_tree.contains(
+            "│  ├─ ⏭️ skipped: mock: blocked [blocked] (blocked by: missing) [also depends on: missing]"
+        ));
+        assert!(
+            report
+                .status_tree
+                .contains("│  └─ ⏭️ unchanged: mock: unchanged [unchanged]")
+        );
+        assert!(
+            report
+                .status_tree
+                .contains("├─ ❌ failed: mock: failed [failed] (mock failure)")
+        );
+        assert!(report.status_tree.contains("└─ ⏭️ skipped: mock: absent path [missing] (condition not met: path exists: /nonexistent/path/that/does/not/exist)"));
+    }
+
+    /// Uninstall runs from leaves to roots, but its report uses the same
+    /// dependency shape as install so every feature remains easy to locate.
+    #[test]
+    fn uninstall_report_keeps_dependency_shape() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let mut graph = FeatureGraph::new();
+        let parent = graph
+            .add("parent", MockFeature::new("parent", log.clone()))
+            .build();
+        graph
+            .add("child", MockFeature::noop("child", log))
+            .depends_on(&parent)
+            .build();
+
+        let report = graph.uninstall_with_report().unwrap();
+
+        assert_eq!(
+            report.status_tree,
+            "Status tree:\n└─ ✅ changed: mock: parent [parent]\n   └─ ⏭️ unchanged: mock: child [child]\n"
         );
     }
 

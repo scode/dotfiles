@@ -16,7 +16,7 @@ use anyhow::Result;
 /// pretending the prerequisite is simply absent.
 ///
 /// The `Display` impl should describe the condition in human-readable form
-/// for skip messages (e.g., "path exists: ~/.claude").
+/// for the optional status report (e.g., "path exists: ~/.claude").
 pub trait Condition: fmt::Debug + fmt::Display + Send + Sync {
     fn is_met(&self) -> Result<bool>;
 }

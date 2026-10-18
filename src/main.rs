@@ -1021,8 +1021,13 @@ fn features() -> FeatureGraph {
     g
 }
 
+/// Installer commands and the optional full status report shared by both.
 #[derive(Parser)]
 struct Cli {
+    /// Print every feature's outcome in dependency order after the run.
+    #[arg(long, global = true)]
+    show_status: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -1033,6 +1038,10 @@ enum Command {
     Uninstall,
 }
 
+/// Runs the requested operation and prints counts before optional detail.
+///
+/// Feature failures stay visible during the run and still set a failing exit
+/// status after the report has been printed.
 fn run() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -1044,15 +1053,25 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     let graph = features();
 
-    let stats = match cli.command {
-        Command::Install => graph.install(),
-        Command::Uninstall => graph.uninstall(),
+    let report = match cli.command {
+        Command::Install => graph.install_with_report(),
+        Command::Uninstall => graph.uninstall_with_report(),
     }?;
+    let stats = &report.stats;
 
+    let hint = if !cli.show_status && (stats.skipped > 0 || stats.failed > 0) {
+        " (re-run with --show-status for details)"
+    } else {
+        ""
+    };
     info!(
-        "{} changed, {} unchanged, {} skipped, {} failed",
+        "✅ {} changed, ⏭️ {} unchanged, ⏭️ {} skipped, ❌ {} failed{hint}",
         stats.changed, stats.unchanged, stats.skipped, stats.failed
     );
+
+    if cli.show_status {
+        eprintln!("\n{}", report.status_tree);
+    }
 
     if stats.failed > 0 {
         anyhow::bail!("one or more features failed");

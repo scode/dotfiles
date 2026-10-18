@@ -8,4 +8,4 @@ pub use features::{
     BlockPosition, DeleteManagedBlock, DeleteSymlink, Feature, FeatureResult, JsonManaged,
     ManagedBlock, ManagedDirectory, MissingDestination, PayloadSymlink, RawSymlink,
 };
-pub use graph::{FeatureBuilder, FeatureGraph, FeatureHandle, RunStats};
+pub use graph::{FeatureBuilder, FeatureGraph, FeatureHandle, RunReport, RunStats};
