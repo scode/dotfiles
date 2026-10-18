@@ -360,6 +360,55 @@ fn test_all_harnesses_install_the_same_skills() {
     }
 }
 
+/// A missing harness directory can skip many dependents. Normal output names
+/// that situation once in the count; the optional tree gives each outcome and
+/// keeps the missing prerequisite above the features it blocked.
+#[test]
+fn test_status_output_is_compact_until_requested() {
+    let fake_home = setup_fake_home();
+    std::fs::remove_dir(fake_home.path().join(".omp/agent")).unwrap();
+
+    let normal = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+    assert!(
+        normal.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&normal.stderr)
+    );
+    let normal_stderr = String::from_utf8(normal.stderr).unwrap();
+    assert!(!normal_stderr.contains("skipped:"));
+    assert!(!normal_stderr.contains("Status tree:"));
+    assert!(normal_stderr.contains("✅ "));
+    assert!(normal_stderr.contains("⏭️ "));
+    assert!(normal_stderr.contains("❌ 0 failed (re-run with --show-status for details)"));
+
+    let detailed = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .arg("--show-status")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+    assert!(
+        detailed.status.success(),
+        "detailed install failed: {}",
+        String::from_utf8_lossy(&detailed.stderr)
+    );
+    let detailed_stderr = String::from_utf8(detailed.stderr).unwrap();
+    assert!(detailed_stderr.contains("Status tree:\n"));
+    assert!(detailed_stderr.contains(
+        "⏭️ skipped: directory: ~/.omp/agent/skills [omp-skills-dir] (condition not met: path exists: ~/.omp/agent)"
+    ));
+    assert!(detailed_stderr.contains("⏭️ unchanged:"));
+    assert!(
+        detailed_stderr
+            .contains("⏭️ skipped: symlink: agent-skills/jjstack -> ~/.omp/agent/skills/jjstack")
+    );
+    assert!(!detailed_stderr.contains("re-run with --show-status"));
+}
+
 #[test]
 fn test_uninstall_removes_symlinks() {
     let fake_home = setup_fake_home();
