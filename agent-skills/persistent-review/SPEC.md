@@ -35,7 +35,13 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   delivery survive compaction; missing original evidence remains missing. Unknown compaction shapes still fail.
 - Structurally valid read packets for paths outside the audited manifest are reported explicitly with claimed ranges and
   raw references. They are unverified context and earn no credit, do not load additional sources, and never expand
-  mandatory scope. Malformed/oversized packets still fail; missing required ranges remain missing.
+  mandatory scope. Malformed required fields still fail; missing required ranges remain missing.
+- Audit comparison uses packet meaning: path, digest, inclusive range and exact decoded text. JSON key order, additive
+  metadata and hexadecimal digest case do not change delivery evidence. Blank JSONL separators are ignored while
+  physical line references are preserved. Whitespace-only required logs still fail as empty.
+- The read producer retains its 200-line/24,000-byte budgets. Those defaults do not invalidate a larger complete
+  delivered packet whose required source identity, bounds and text can be verified. Audit memory is still affected by
+  the largest JSONL record and retained snapshots, independent of producer defaults.
 - Unknown record/tool-result shapes, malformed logs, orphan results, mixed sessions, changed sources and mismatched
   packets fail visibly with a nonzero exit and no successful partial report. Valid clipped packets earn no coverage.
   Missing packets or ranges remain incomplete. Known failed reads are retried with smaller packets; unfinished logs may
