@@ -42,7 +42,7 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   ranges receive named, targeted same-session repairs independent of finding count. Large scopes may span batches.
 - Synthesis occurs later than the initial review and after required content delivery, revisiting interactions and
   unresolved assumptions under the charter. Final repair and synthesis may share a turn. The orchestrator audits that
-  turn afterwards; remaining gaps require repair and updated synthesis within finite limits.
+  turn afterwards; remaining gaps require repair and updated synthesis subject to the stopping rules below.
 - Native delegation is usable only when the parent can inspect the relevant delivered-content transcript evidence and
   resume the same reviewer session. Otherwise an observable shellout path is considered even if native supports the
   requested model. Explicit mechanism choices are honored; unavailable evidence or continuation is reported rather than
@@ -51,17 +51,18 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   canonical loading contract. Harness files own launch and evidence-access mechanics. Local deviations require
   verification of the relevant delivery semantics, not assumptions based on a harness name or JSON availability.
 
-## Finite stopping and reporting
+## Stopping and reporting
 
-- Default to a 30-minute absolute deadline covering setup through reporting; a caller may choose another finite limit.
-  Record and announce it before launch, reserve time for audit/reporting, and never reset it on continuation.
-- Stop incomplete when the deadline expires, transcript access or same-session continuation becomes unusable, or two
-  consecutive repair turns make no verified coverage progress. Progress means delivery of previously missing mandatory
-  content, not new findings. A successful repair resets the counter. Do not replace the reviewer identity to bypass a
-  failed run. Termination uses the selected mechanism's facilities.
+- The protocol imposes no elapsed-time limit or required time-budget question. Overall and per-turn deadlines must not
+  be invented, including to satisfy delegation or shellout defaults requiring a hard deadline. Monitoring and
+  termination of failed or stuck runs still apply. Honor a time limit only when explicitly supplied by the caller.
+- Stop incomplete when transcript access or same-session continuation becomes unusable, or two consecutive repair turns
+  make no verified coverage progress. Progress means delivery of previously missing mandatory content, not new findings.
+  A successful repair resets the counter. Do not replace the reviewer identity to bypass a failed run. Termination uses
+  the selected mechanism's facilities.
 - Optional searches after verified coverage and audited later-turn synthesis default to at most one additional turn for
   a concrete unresolved lead; callers may choose another finite allowance. Optional-search limits never declare unread
-  mandatory scope complete or cap repairs independently of the deadline/no-progress rule.
+  mandatory scope complete or cap repairs independently of the no-progress rule.
 - Preserve findings on every stop. The result includes completion status and reason, stable scope, backend/model/effort,
   session identity and actual turn count, verified delivery references, exact missing or uncertain material, and the
   status of later-turn synthesis. Use an accompanying completion note when the caller's format requires it.

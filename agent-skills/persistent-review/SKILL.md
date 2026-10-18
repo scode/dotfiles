@@ -25,17 +25,17 @@ Recover settled inputs from the caller's request and session context. Ask only f
 - Exact required scope: files, ranges, diff sides, or other text, including mandatory context.
 - Reviewer backend, model, and effort; preserve all three without substitution.
 - Result destination and any caller-required reporting format.
-- Any selected launch mechanism, time limit, or limit on optional further searching.
+- Any selected launch mechanism, caller-imposed constraints, or limit on optional further searching.
 
 Keep reviewed inputs read-only unless the caller separately authorizes edits; writing the requested result and private
 run artifacts is allowed. A finding is not permission to fix it. Give the reviewer a self-contained charter, scope,
 constraints, result destination, and the persistence requirements below. Require it to preserve substantive findings in
 that destination across continuations, rather than leaving the real deliverable stranded in intermediate messages.
 
-Before launch, record an absolute deadline. Default to 30 minutes from starting this review, including setup, repair,
-audit, and reporting, unless the caller supplies another finite limit. Announce the chosen limit and leave time for the
-final audit and report. Continuations do not reset it. Use the selected mechanism's deadline and termination facilities;
-do not let a timed-out reviewer keep running unaccounted for.
+This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
+rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
+shellout defaults requiring a hard deadline do not apply to this protocol; retain their monitoring and termination
+mechanics for failed or stuck runs. Honor a time limit only when the caller explicitly supplies one.
 
 ## Stabilize the required input
 
@@ -129,15 +129,15 @@ replace it. Ordinary range reads and compact notes are enough unless an observed
 
 ## Stop and report
 
-Stop incomplete at the deadline, loss of usable transcript access or same-session continuation, or after two consecutive
-repair turns add no verified delivery of previously missing required material. A successful repair resets that counter;
-a new finding does not. Retain the existing findings and last verified coverage. Do not start a replacement reviewer
-identity and describe it as the same persistent review.
+Stop incomplete on loss of usable transcript access or same-session continuation, or after two consecutive repair turns
+add no verified delivery of previously missing required material. A successful repair resets that counter; a new finding
+does not. Retain the existing findings and last verified coverage. Do not start a replacement reviewer identity and
+describe it as the same persistent review.
 
 Coverage repair and optional searching for more findings have separate limits. Once delivery is verified and the
 later-turn synthesis is audited, stop unless a concrete unresolved lead warrants further work. By default allow at most
 one optional additional reviewer turn; use another finite allowance if the caller supplied one. That allowance never
-caps mandatory coverage repair or turns unread scope into completed scope. All work remains inside the deadline.
+caps mandatory coverage repair or turns unread scope into completed scope.
 
 At the caller's result destination, preserve the findings in the requested format and include a compact completion
 record (or an accompanying note if the format cannot hold it):
