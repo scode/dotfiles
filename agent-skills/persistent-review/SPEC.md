@@ -33,6 +33,9 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - Codex top-level `compacted` records are recognized as context management after validating the known message/history
   envelope. Their summary and replacement history earn no delivery credit. Original call/result joins and verified
   delivery survive compaction; missing original evidence remains missing. Unknown compaction shapes still fail.
+- Structurally valid read packets for paths outside the audited manifest are reported explicitly with claimed ranges and
+  raw references. They are unverified context and earn no credit, do not load additional sources, and never expand
+  mandatory scope. Malformed/oversized packets still fail; missing required ranges remain missing.
 - Unknown record/tool-result shapes, malformed logs, orphan results, mixed sessions, changed sources and mismatched
   packets fail visibly with a nonzero exit and no successful partial report. Valid clipped packets earn no coverage.
   Missing packets or ranges remain incomplete. Known failed reads are retried with smaller packets; unfinished logs may

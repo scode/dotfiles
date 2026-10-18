@@ -266,6 +266,7 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
   const coverage = new Map(sources.map((s) => [s.path, [] as Range[]]));
   const evidence: { path: string; range: Range; ref: string }[] = [];
   const rejected: { ref: string; reason: string }[] = [];
+  const outside_manifest: { path: string; reported_range: Range; ref: string }[] = [];
   let results = 0;
   for await (const result of delivered(backend, session, cwd, paths)) {
     results++;
@@ -281,11 +282,28 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
         rejected.push({ ref: result.ref, reason: "Clipped read packet; reread a smaller range" });
         break;
       }
-      const value = parse(rest.slice(0, stop));
+      const raw = rest.slice(0, stop);
+      requireThat(
+        new TextEncoder().encode(BEGIN + raw + END).length <= MAX_PACKET,
+        `Oversized read packet: ${result.ref}`,
+      );
+      const value = parse(raw);
       rest = rest.slice(stop + END.length);
-      const item = sources.find((s) => s.path === value.path);
-      requireThat(item, `Read packet refers to a source outside this manifest: ${result.ref}`);
+      const path = string(value.path);
       const start = integer(value.start), end = integer(value.end);
+      // Exploratory context is not mandatory scope. Validate its envelope without loading that source
+      // or trusting its claimed version/text; report it explicitly and never add it to coverage.
+      requireThat(
+        Object.keys(value).sort().join(",") === "end,path,sha256,start,text" && path.startsWith("/") &&
+          /^[0-9a-f]{64}$/.test(string(value.sha256)) && start >= 1 && end >= start && end - start < 200,
+        `Malformed read packet envelope: ${result.ref}`,
+      );
+      string(value.text);
+      const item = sources.find((s) => s.path === path);
+      if (!item) {
+        outside_manifest.push({ path, reported_range: [start, end], ref: result.ref });
+        continue;
+      }
       requireThat(value.sha256 === item.sha256, `Packet source version mismatch: ${result.ref}`);
       const expected = packet(item, start, end);
       requireThat(
@@ -313,6 +331,7 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
     sources: report,
     evidence,
     rejected,
+    outside_manifest,
   };
 }
 
@@ -604,6 +623,31 @@ Deno.test("Codex top-level compaction preserves original delivery but cannot sup
     }]);
     await fails(() => audit("codex", "session", "/repo", [item], [path]), "Expected a string");
   }));
+
+for (const backend of ["codex", "claude"]) {
+  Deno.test(`${backend}: context packets outside the manifest are visible but cannot supply coverage`, () =>
+    fixture(async (root, item) => {
+      const other = { ...item, path: `${root}/not-in-manifest.txt` };
+      const path = `${root}/log`;
+      await saveLog(path, logRows(backend, packet(other, 1, 3) + packet(item, 1, 1)));
+      const report = await audit(backend, "session", "/repo", [item], [path]);
+      equal(report.status, "incomplete");
+      equal(report.sources[0].covered, [[1, 1]]);
+      equal(report.sources[0].missing, [[2, 3]]);
+      equal(report.outside_manifest, [{
+        path: other.path,
+        reported_range: [1, 3],
+        ref: `${path}:${backend === "codex" ? 4 : 3}`,
+      }]);
+      await saveLog(path, logRows(backend, packet(item, 1, 3) + packet(other, 1, 3)));
+      equal((await audit(backend, "session", "/repo", [item], [path])).status, "complete");
+      await saveLog(path, logRows(backend, packet(other, 1, 3).replace('"start":1', '"start":0')));
+      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Malformed read packet envelope");
+      const padded = packet(other, 1, 3).replace(BEGIN, BEGIN + " ".repeat(MAX_PACKET));
+      await saveLog(path, logRows(backend, packet(item, 1, 3) + padded));
+      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Oversized read packet");
+    }));
+}
 Deno.test("findings count revisions once, preserve owners, and accept initialized empty logs", () =>
   fixture(async (root) => {
     const first = `${root}/first`, second = `${root}/second`;
