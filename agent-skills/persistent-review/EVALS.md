@@ -64,6 +64,10 @@ Include Codex top-level `compacted` records between original calls/results and a
 survive when original delivery exists; packets found only in compaction summaries or replacement history must not fill
 gaps. Mutated compaction envelopes must still fail visibly, including after full coverage was established.
 
+For both backends, mix valid required-source packets with context packets from another manifest. The audit must report
+the latter without certifying them, credit only matched mandatory text, preserve gaps, and avoid loading foreign source
+paths. Fully covered mandatory scope may complete despite extra context. Malformed foreign packets must still fail.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.

@@ -65,6 +65,12 @@ Successful parsing exits 0 with a compact JSON report. Its `status` means delive
 reads do not inflate covered ranges. Keep reports on disk and read them per group rather than aggregating every event
 into the orchestrator's context. A missing packet end is a clipped read and earns no coverage; reread a smaller range.
 
+Reviewers may read additional context with another manifest. Structurally valid packets for paths absent from the
+audited manifest appear in `outside_manifest`, with reported ranges and transcript references. Their source versions and
+contents are unverified and earn no coverage credit; the helper does not load those sources or expand mandatory scope.
+Inspect the list for mistaken group/manifest selection. Required ranges remain missing until independently matched.
+Malformed or oversized context packets still fail visibly rather than being silently skipped.
+
 Format errors, malformed JSON, orphan results, mixed sessions, snapshot drift, and unmatched packet content fail with a
 nonzero exit. Expected format errors print `PERSISTENT_REVIEW_TOOL_FAILED` to stderr and no coverage report to stdout;
 unexpected runtime errors also exit nonzero. Preserve the diagnostic. An unfinished writer can be retried at its turn
