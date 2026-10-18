@@ -1016,9 +1016,9 @@ Deno.test("land --allow-no-checks merges a PR with no checks without waiting out
 });
 
 /**
- * `--allow-no-checks` skips the wait only when a PR has no checks at all. A check skipped while the PR was still a
- * draft is the trap the draft-skip rule exists for (marking the PR ready may start the real run a little later), so it
- * still gets the grace period, here six seconds at this world's time scale, before the landing proceeds without it.
+ * `--allow-no-checks` skips the wait only when a PR has no checks at all. A pre-ready skipped check may still get a
+ * replacement after readiness, so it gets the grace period, here six seconds at this world's time scale, before the
+ * explicit no-verdict policy lets the landing proceed.
  */
 Deno.test("land --allow-no-checks still gives a draft-time skipped check the grace period", async () => {
   await withWorld(async (w) => {
@@ -1032,7 +1032,70 @@ Deno.test("land --allow-no-checks still gives a draft-time skipped check the gra
     const r = await jjstack(w, ["land", "--expect", "1", "--allow-no-checks"]);
     assertEquals(r.code, 0, r.err);
     assertEquals((await readState(w)).prs[0].state, "MERGED");
-    assert(Date.now() - started >= 6000, "merged on a draft-time skip without waiting out the grace period");
+    assert(Date.now() - started >= 6000, "merged on a pre-ready skip without waiting out the grace period");
+  });
+});
+
+/**
+ * A path-conditioned job can skip before a PR leaves draft while the applicable jobs pass on the same head. The
+ * landing must refuse that ambiguous skip by default, then accept an exact, PR-scoped declaration without asking
+ * GitHub to rerun adequate CI or weakening the failed-check guard.
+ */
+Deno.test("land accepts a declared conditional skip on a previously validated head", async () => {
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.05";
+    await stackOf(w, 1);
+    const sha = (await $`git --git-dir ${w.remote} rev-parse pr1`.env(w.env).text()).trim();
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    await editState(w, (s) => {
+      s.prs[0].isDraft = false;
+      s.prs[0].readyAt = [hourAgo];
+      s.suiteCreatedAt[sha] = hourAgo;
+      s.defaultChecks = [
+        { name: "changes", status: "COMPLETED", conclusion: "SUCCESS", startedAt: hourAgo },
+        { name: "test", status: "COMPLETED", conclusion: "SUCCESS", startedAt: hourAgo },
+        { name: "catalog-check", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+      ];
+    });
+    let r = await jjstack(w, ["land", "--expect", "1"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_LAND_UNCLASSIFIED_SKIP");
+    assertEquals((await readState(w)).prs[0].state, "OPEN");
+    r = await jjstack(w, [
+      "land",
+      "--expect",
+      "1",
+      "--resume",
+      "--accept-skipped-check",
+      "1:CI/catalog-check",
+    ]);
+    assertEquals(r.code, 0, r.err);
+    assertStringIncludes(r.out, "accepted skipped check: CI/catalog-check");
+    assertEquals((await readState(w)).prs[0].state, "MERGED");
+  });
+});
+
+/**
+ * A request to merge anyway after CI blocks a partial landing must keep its `--through` boundary. The fast path still
+ * plans and merges through the script, then restacks the upper PR without merging it or broadening the user's request.
+ */
+Deno.test("fast-land resumes a CI-blocked partial landing without merging upper PRs", async () => {
+  await withWorld(async (w) => {
+    await stackOf(w, 2);
+    await editState(w, (s) => {
+      s.checks["1"] = [[{ name: "test", status: "COMPLETED", conclusion: "FAILURE" }]];
+    });
+    const blocked = await jjstack(w, ["land", "--through", "1", "--expect", "1"]);
+    assertEquals(blocked.code, 4, blocked.err);
+    assertStringIncludes(blocked.err, "code=E_LAND_CHECKS_FAILED");
+    const plan = await jjstack(w, ["fast-land", "--through", "1", "--expect", "1", "--resume", "--plan-only"]);
+    assertEquals(plan.code, 0, plan.err);
+    assertStringIncludes(plan.out, "prs=1 landed=none restack=2");
+    const fast = await jjstack(w, ["fast-land", "--through", "1", "--expect", "1", "--resume"]);
+    assertEquals(fast.code, 0, fast.err);
+    assertEquals((await readState(w)).prs.map((p) => p.state), ["MERGED", "OPEN"]);
+    assertEquals((await readState(w)).prs[1].baseRefName, "main");
+    assertEquals(await mainSubjects(w), ["feat: add pr1 (#1)"]);
   });
 });
 

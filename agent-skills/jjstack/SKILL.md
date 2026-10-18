@@ -114,10 +114,15 @@ environment already guarantees those operations work inside it.
   flow unless it says "fast path" or "don't wait for CI" again.
 - "stop waiting for CI", "don't run more CI, just land", or similar while a CI-gated `land` is running. Switch the rest
   of that landing to the fast path: run the script's `stop` command, wait for the running `land` to exit with
-  `E_STOP_REQUESTED`, then plan and land what is left with `fast-land --resume`, passing the same `--expect` as the
-  stopped landing (see "Fast path merge"). This is the fast-path request for the rest of that landing only. Any other
-  change of course mid-landing (editing a PR, slipping a PR in below the next merge) starts the same way: `stop`, wait
-  for the exit, make the change and `submit`, then rerun the landing with `--resume`.
+  `E_STOP_REQUESTED`, then plan and land what is left with `fast-land --resume`, passing the same `--expect` and
+  `--through` as the stopped landing (see "Fast path merge"). This is the fast-path request for the rest of that landing
+  only. Any other change of course mid-landing (editing a PR, slipping a PR in below the next merge) starts the same
+  way: `stop`, wait for the exit, make the change and `submit`, then rerun the landing with `--resume`.
+- "merge anyway" or "land anyway" after a CI wait or refusal is an explicit request to skip CI for the rest of that
+  landing. If `land` is still running, stop it as above. If it has stopped, plan with `fast-land --resume --plan-only`,
+  then run `fast-land --resume` with the original `--expect` and `--through`, if any. Use the script's merge guards; do
+  not run `gh pr merge` or retarget PRs by hand. This instruction applies to that landing only. A branch-protection
+  refusal still stops the script; skipping its checks does not grant `--admin`.
 
 If the user says only "make a PR" and there is already a PR for the current bookmark, do not push back immediately.
 First inspect whether there is new intended work in the working copy that should become the next stacked PR. If yes,
@@ -312,8 +317,10 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   will not open a second PR for the same branch). A `JJSTACK_WARN` line names an open PR based on a stack bookmark whose
   own head is not in the stack.
 - `land [--through <PR-or-bookmark>] [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup] [--check-timeout
-  <minutes>] [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing; see "Landing stacked PRs".
-- `fast-land [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup]`: landing without CI; see "Fast path merge".
+  <minutes>] [--allow-no-checks] [--ignore-check <names>] [--accept-skipped-check <PR:workflow/job,...>]`: CI-gated
+  landing; see "Landing stacked PRs".
+- `fast-land [--through <PR-or-bookmark>] [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup]`: landing without CI;
+  see "Fast path merge".
 - `stop`: asks a running `land` or `fast-land` in the same checkout to stop at its next safe point, which is before it
   starts the next PR or between polls while it waits on checks, never inside a merge. The landing exits with
   `E_STOP_REQUESTED` and a `JJSTACK_STOPPED` line. Use it rather than killing the process, which stops it wherever it is
@@ -402,6 +409,13 @@ first: `land` refuses when a PR's head is not the local commit, so run `submit` 
 the call a timeout of at least the repo's CI time per PR, or run it in the background and wait for it to exit; its run
 log shows the progress meanwhile.
 
+Before the first `land` call, check the target repo's CI instructions, workflow triggers in `.github/workflows/`, and
+any other automatic PR checks. If those sources show that no automatic PR verdict is expected after retarget, push, or
+ready (for example, CI is documented as manual-only and workflows have only `workflow_dispatch`), pass
+`--allow-no-checks` on that first call and tell the user why. A manually dispatched run is a separate decision; the flag
+does not dispatch one. If check behavior is uncertain or a check may attach after the ready event, leave the flag off
+and use the ordinary wait. One empty check rollup is not evidence that a repo has no automatic PR checks.
+
 For each PR, bottom-up, `land`:
 
 1. retargets it to the default branch once its parent has landed, before any push, so CI sees the final base;
@@ -440,16 +454,21 @@ Every check blocks by default: the script cannot tell a required check from an o
 protection. When a check fails that the user says is optional, rerun with `--ignore-check <name>` (comma-separated; a
 job name, a status context, or `workflow/job`), and say you did. Do not decide a check is optional yourself.
 
-"No CI verdict" covers a PR with no checks, one whose checks were all skipped, and one trap: a check whose newest run
-was skipped before the PR last left draft (GitHub's own `ready_for_review` event time, so a rerun or `--resume` applies
-the same rule as the run that marked it ready). That is a repo whose workflows skip drafts but do not list
-`ready_for_review` among their `pull_request` types, where marking a PR ready starts nothing and the draft-time skip
-would pass for a verdict. When `land` stops with `E_LAND_NO_CHECKS`, read `.github/workflows/` to tell the cases apart.
-If the repo really runs no PR checks, rerun with `--allow-no-checks`, and say you did, since it is a fact about the repo
-rather than a shortcut. With it, a PR with no checks at all merges as soon as it is ready; checks that are attached
-still have to pass, and a check skipped while the PR was a draft still gets the two minutes to be replaced by a real
-run. Otherwise tell the user what the workflows do; triggering a run (the script's `ci`, where a workflow allows
-`workflow_dispatch`) and rerunning is their call.
+"No CI verdict" covers a PR with no checks or one whose checks were all skipped. When `land` stops with
+`E_LAND_NO_CHECKS`, recheck the repo's CI instructions, workflow triggers, and other automatic PR checks. If the repo
+really runs no automatic PR checks, resume with `--allow-no-checks` and say why. With it, a PR with no checks at all
+merges as soon as it is ready; attached failed or pending checks still block. Otherwise tell the user what the workflows
+do; triggering a run (the script's `ci`, where a workflow allows `workflow_dispatch`) is their call.
+
+A check skipped in an Actions run from before the PR left draft is ambiguous. It may be intentionally inapplicable to
+the diff, or it may have skipped required validation because the PR was a draft. `land` waits two minutes for a
+replacement, then stops with `E_LAND_UNCLASSIFIED_SKIP`; its message does not claim the cause. Inspect the workflow
+version at the reviewed head, including the job's `if:` and any upstream change detector, and compare it with this PR's
+diff. If that proves the job was intentionally inapplicable independent of draft state, resume with
+`--accept-skipped-check <PR:workflow/job>` and report the evidence. Use comma-separated entries for several jobs or PRs.
+Each entry applies only to that exact Actions job on that PR, and only while it is `SKIPPED`; a failure or pending run
+still blocks, and an all-skipped rollup remains no verdict. Do not use the flag for a job whose condition is unclear or
+draft-gated. `--ignore-check` and `--allow-no-checks` have broader effects and are not substitutes for this declaration.
 
 Lines starting with `JJSTACK_` are the ledger. `JJSTACK_PLAN` lists what will land and what will be restacked.
 `JJSTACK_LANDED` names each landed PR with its exact landed head and squash commit. `JJSTACK_SUBMITTED` lines report the
@@ -523,14 +542,17 @@ copy onto the landed result and has nothing left to submit.
 
 ## Fast path merge
 
-NOTE: Only use this section when the current merge request literally says "fast path" (or "fast-path"), or explicitly
-says not to wait for CI. It is a one-shot instruction scoped to that one request. It does not become a session
-preference, it does not apply to the next "merge the stack", and a user who said "fast path" an hour ago has not said it
-now. When the request says neither, land with `land` and do not offer the fast path as a shortcut.
+NOTE: Only use this section when the current merge request literally says "fast path" (or "fast-path"), explicitly says
+not to wait for CI, or says "merge anyway" in response to a CI wait or refusal. It is a one-shot instruction scoped to
+that landing. It does not become a session preference, it does not apply to the next "merge the stack", and a user who
+said "fast path" an hour ago has not said it now. When the request says none of these, land with `land` and do not offer
+the fast path as a shortcut.
 
-The fast path lands the whole stack bottom-up, one squash commit on the default branch per PR, and never waits for CI.
-It is the script's `fast-land` command. Measured on scode/repotesting on 2026-10-11: about 10 seconds per PR that GitHub
-can squash as-is and about 15 seconds per PR that needs a restack, so a 30-PR stack takes roughly 5 to 8 minutes.
+The fast path lands the planned stack prefix bottom-up, one squash commit on the default branch per PR, and never waits
+for CI. With no `--through` it lands the whole stack; with `--through` it leaves the PRs above open and restacks them
+onto the landed result. It is the script's `fast-land` command. Measured on scode/repotesting on 2026-10-11: about 10
+seconds per PR that GitHub can squash as-is and about 15 seconds per PR that needs a restack, so a 30-PR stack takes
+roughly 5 to 8 minutes.
 
 Each PR lands in one of two modes, and the switch from the first to the second is one-way for the rest of the landing.
 In `github` mode the PR is retargeted once its parent is `MERGED` and squashed as it is, with no rebase and no push. In
@@ -541,7 +563,7 @@ and a PR conflicts in `github` mode whenever it edits a file or hunk that any ea
 changed. A restack never needs conflict resolution in that case, because the squash commit's tree equals the parent PR's
 tree.
 
-Before merging anything, `fast-land` simulates the whole landing with `git merge-tree`, prints the mode each PR will
+Before merging anything, `fast-land` simulates the requested landing with `git merge-tree`, prints the mode each PR will
 use, and refuses to start if any PR would need a manual conflict resolution. While landing it checks every step against
 the simulation: the default branch must still be where the previous squash left it before each PR and each merge
 attempt, a restacked commit's tree must equal the prediction before it is pushed, and each squash must produce the
@@ -554,12 +576,14 @@ the run never reaches stays a draft.
 <skill-dir>/scripts/jjstack fast-land --dir <checkout> --plan-only
 <skill-dir>/scripts/jjstack fast-land --dir <checkout> --expect 175,176,177
 <skill-dir>/scripts/jjstack fast-land --dir <checkout> --resume
+<skill-dir>/scripts/jjstack fast-land --dir <checkout> --through 175 --expect 175 --resume
 ```
 
-The request covers the whole stack, so the printed plan is an announcement, not a question: tell the user the bottom-up
-PR list and where the switch to `restack` happens, then land with `--expect`. Give the call a timeout of at least a
-minute per PR. The ledger is the same as for `land`. Report the landed PRs and their squash commits, then stop, and do
-not say or imply that later merges will also use the fast path.
+Tell the user the bottom-up PR list that will land, the PRs that will stay open, and where the switch to `restack`
+happens, then land with `--expect` and the planned `--through` boundary. The printed plan is an announcement when the
+request already covers those PRs. Give the call a timeout of at least a minute per PR. The ledger is the same as for
+`land`. Report the landed PRs and their squash commits, then stop, and do not say or imply that later merges will also
+use the fast path.
 
 A refusal during planning means the stack is not in the shape the fast path assumes; nothing was merged. Show the user
 what the script reported, and do not fall back to `land` on your own. A stop partway is handled as for `land`, except

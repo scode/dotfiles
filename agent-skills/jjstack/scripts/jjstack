@@ -20,10 +20,10 @@
  * - `ci [--prs 12,13] [--workflow <file>]`: dispatch one CI run per PR without changing draft state. See "Dispatching
  *   CI".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
- *   [--allow-no-checks] [--ignore-check <names>]`: CI-gated landing, one squash commit per PR, bottom-up. See "CI-gated
- *   landing".
- * - `fast-land [--expect 12,13,14] [--plan-only] [--no-cleanup] [--resume]`: landing without waiting for CI. See "Fast
- *   landing".
+ *   [--allow-no-checks] [--ignore-check <names>] [--accept-skipped-check <PR:workflow/job,...>]`: CI-gated landing,
+ *   one squash commit per PR, bottom-up. See "CI-gated landing".
+ * - `fast-land [--through <PR-or-bookmark>] [--expect 12,13,14] [--plan-only] [--no-cleanup] [--resume]`: landing
+ *   without waiting for CI. See "Fast landing".
  * - `stop`: ask a running `land` or `fast-land` in the same checkout to stop at its next safe point. See "Stop
  *   requests".
  *
@@ -2370,11 +2370,12 @@ function settleStart(github: number | undefined, own: number | undefined, waitSt
  * (matched by job name, status context, or `workflow/job`), so their failures do not block.
  *
  * `none` covers an empty rollup and one where every check was skipped: neither is a verdict on the code. `readyAt` is
- * when GitHub recorded the PR's latest transition out of draft. A skipped check is a draft-time leftover, not a
- * verdict, when its newest run started before that, or when no Actions suite was created after it at all (a run
- * triggered while the PR was a draft can execute after the ready event, still seeing the draft payload). It counts as
- * pending until a newer run replaces it, and once `graceOver` it is reported as `stale-skipped`, because a repo whose
- * workflows skip drafts but do not list `ready_for_review` among their `pull_request` types never starts the real run.
+ * when GitHub recorded the PR's latest transition out of draft. A skipped Actions job from a draft-era run is
+ * ambiguous: it may be inapplicable to this diff, or it may have skipped needed validation because the PR was a
+ * draft. A later start time does not resolve this when no post-ready suite exists, since a draft-era run can finish
+ * after the ready event. Unless the caller names that exact job in `acceptSkipped`, the skip stays pending until a
+ * replacement arrives and becomes `stale-skipped` after the grace period. The declaration applies only to skips;
+ * failure and pending checks still block, and an all-skipped rollup still has no CI verdict.
  *
  * A run that ended `CANCELLED` or `STALE` less than `replaceSec` before `now` is pending, not failed. GitHub cancels a
  * run when a concurrency group or a newer event supersedes it, and the replacement can take a while to attach; a 2026-10
@@ -2387,6 +2388,7 @@ function checkVerdict(
   readyAt: number | undefined,
   graceOver: boolean,
   ignore: string[] = [],
+  acceptSkipped: string[] = [],
   now = Date.now(),
   replaceSec = 120,
 ): { v: Verdict; detail: string } {
@@ -2415,20 +2417,28 @@ function checkVerdict(
   }
   if (suitesRunning.length > 0) return { v: "pending", detail: `suites still running: ${suitesRunning.join(", ")}` };
   if (checks.length === 0) return { v: "none", detail: "no checks attached" };
-  const stale = readyAt === undefined ? [] : checks.filter((c) =>
-    !isStatus(c) && c.conclusion === "SKIPPED" &&
-    ((Date.parse(c.startedAt ?? c.completedAt ?? "") || 0) < readyAt || !suites.postReady)
+  const acceptedSkips = checks.filter((c) =>
+    c.workflowName && c.conclusion === "SKIPPED" && acceptSkipped.includes(checkName(c))
   );
+  const stale = readyAt === undefined
+    ? []
+    : checks.filter((c) =>
+      !isStatus(c) && c.conclusion === "SKIPPED" && !acceptedSkips.includes(c) &&
+      ((Date.parse(c.startedAt ?? c.completedAt ?? "") || 0) < readyAt || !suites.postReady)
+    );
   if (stale.length > 0) {
     return {
       v: graceOver ? "stale-skipped" : "pending",
-      detail: `skipped while draft: ${stale.map(checkName).join(", ")}`,
+      detail: `unclassified skipped checks: ${stale.map(checkName).join(", ")}`,
     };
   }
   if (checks.every((c) => !isStatus(c) && c.conclusion === "SKIPPED")) {
     return { v: "none", detail: `only skipped checks: ${checks.map(checkName).join(", ")}` };
   }
-  return { v: "passed", detail: checks.map(checkName).join(", ") };
+  const accepted = acceptedSkips.length > 0
+    ? `; accepted skipped check: ${acceptedSkips.map(checkName).join(", ")}`
+    : "";
+  return { v: "passed", detail: checks.map(checkName).join(", ") + accepted };
 }
 
 /**
@@ -2471,8 +2481,9 @@ async function readSuites(ctx: Ctx, code: string, sha: string, readyAt: number |
 }
 
 /**
- * Reads the PR's head and the check verdict on `e.sha` in one place, so the wait loop and the per-merge-attempt recheck
- * cannot disagree about what "passed" means. `trigger` is `lastTrigger` for the head, for the wait's settle period.
+ * Read the PR's head and check verdict on `e.sha` for both the wait and immediate pre-merge guard. Both reads receive
+ * the same declared conditional skips, so a skip cannot be accepted during the wait and reclassified at merge time.
+ * `trigger` is `lastTrigger` for the head, for the wait's settle period.
  */
 async function readVerdict(
   ctx: Ctx,
@@ -2481,20 +2492,21 @@ async function readVerdict(
   readyAt: number | undefined,
   graceOver: boolean,
   ignore: string[],
+  acceptSkipped: string[],
 ) {
   const p = await ctx.pr(code, e.pr, "headRefOid,statusCheckRollup", true);
   if (p.headRefOid !== e.sha) fail(code, `PR #${e.pr} head moved to ${p.headRefOid} while landing ${e.sha}`);
   const suites = await readSuites(ctx, code, e.sha, readyAt);
   const rollup = (p.statusCheckRollup ?? []) as Check[];
   return {
-    ...checkVerdict(rollup, suites, readyAt, graceOver, ignore, Date.now(), scaled(120_000) / 1000),
+    ...checkVerdict(rollup, suites, readyAt, graceOver, ignore, acceptSkipped, Date.now(), scaled(120_000) / 1000),
     trigger: lastTrigger(readyAt, suites),
   };
 }
 
 /**
- * Waits until the PR's checks on `e.sha` pass, refusing on a failure, a timeout, or no real verdict after the grace
- * period. Returns the verdict it proceeded on, which the merge guard then requires again.
+ * Wait until checks on `e.sha` pass, refusing on failure, timeout, no verdict, or a pre-ready skip without an explicit
+ * classification after the grace period. Return the verdict the merge guard must see again.
  *
  * With `allowNoChecks`, a head with no checks at all proceeds at once: the caller has said the repo runs no PR checks,
  * and holding every PR for the grace period made a CI-less landing of nine PRs take 18 minutes. Checks that are attached
@@ -2518,7 +2530,15 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts): Promise<Verdic
     await honorStop(ctx, where);
     const elapsed = (Date.now() - start) / 1000;
     const graceOver = elapsed >= opts.graceSec;
-    const { v, detail, trigger } = await readVerdict(ctx, "E_LAND_READ_CHECKS", e, readyAt, graceOver, opts.ignore);
+    const { v, detail, trigger } = await readVerdict(
+      ctx,
+      "E_LAND_READ_CHECKS",
+      e,
+      readyAt,
+      graceOver,
+      opts.ignore,
+      opts.acceptSkipped,
+    );
     if (v === "failed") fail("E_LAND_CHECKS_FAILED", `PR #${e.pr} checks failed on ${e.sha}: ${detail}`);
     if (v === "passed" && Date.now() - settleStart(trigger, e.triggeredAt, start) >= opts.settleSec * 1000) {
       console.log(`PR #${e.pr}: checks passed (${detail})`);
@@ -2533,12 +2553,19 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts): Promise<Verdic
         console.log(`PR #${e.pr}: ${detail}; proceeding without a CI verdict (--allow-no-checks)`);
         return v;
       }
+      if (v === "stale-skipped") {
+        fail(
+          "E_LAND_UNCLASSIFIED_SKIP",
+          `PR #${e.pr} has ${detail} on ${e.sha} after ${opts.graceSec}s. A skipped job may be conditional or may ` +
+            `hide draft-gated validation; verify its workflow at this head before using ` +
+            `--accept-skipped-check ${e.pr}:workflow/job`,
+        );
+      }
       fail(
         "E_LAND_NO_CHECKS",
-        `PR #${e.pr} has no CI verdict on ${e.sha} after ${opts.graceSec}s (${detail}). Either the repo runs no CI ` +
-          `for PRs, or its workflows did not run for this head: a pull_request workflow only fires on the ready event ` +
-          `when it lists ready_for_review under types:, so a workflow that skips drafts may never run after the PR was ` +
-          `marked ready`,
+        `PR #${e.pr} has no CI verdict on ${e.sha} after ${opts.graceSec}s (${detail}). The repo may have no ` +
+          `automatic PR checks, or its workflows may have produced no verdict on this head; inspect their triggers ` +
+          `and conditions before resuming`,
       );
     }
     if (elapsed >= opts.timeoutSec) {
@@ -2579,8 +2606,18 @@ async function isAncestor(ctx: Ctx, code: string, a: string, b: string): Promise
   fail(code, `git merge-base --is-ancestor ${a} ${b} exited ${r.code}: ${r.stderr.trim()}`);
 }
 
-/** Tunables of the CI wait, shared by `ciLandOne` and `waitForChecks`. */
-type LandOpts = { timeoutSec: number; graceSec: number; settleSec: number; allowNoChecks: boolean; ignore: string[] };
+/**
+ * CI policy for one PR. `acceptSkipped` contains exact Actions workflow/job names verified as inapplicable to this
+ * PR; its scope must be reset for each entry in a stack, even when a job has the same name on the next PR.
+ */
+type LandOpts = {
+  timeoutSec: number;
+  graceSec: number;
+  settleSec: number;
+  allowNoChecks: boolean;
+  ignore: string[];
+  acceptSkipped: string[];
+};
 
 /** Lands one PR as described in the section header and returns its squash commit. */
 async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
@@ -2643,7 +2680,15 @@ async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
   const accepted = await waitForChecks(ctx, e, opts);
   const readyAt = await readyEventTime(ctx, "E_LAND_READ_READY_RECHECK", e.pr);
   const result = await guardedMerge(ctx, e, undefined, async () => {
-    const { v, detail } = await readVerdict(ctx, "E_LAND_RECHECK_READ", e, readyAt, true, opts.ignore);
+    const { v, detail } = await readVerdict(
+      ctx,
+      "E_LAND_RECHECK_READ",
+      e,
+      readyAt,
+      true,
+      opts.ignore,
+      opts.acceptSkipped,
+    );
     // A pass, or the same lack of a verdict the wait already accepted under --allow-no-checks; anything else means the
     // checks changed since the wait ended.
     const ok = v === "passed" || v === accepted;
@@ -2654,6 +2699,61 @@ async function ciLandOne(ctx: Ctx, e: Entry, opts: LandOpts): Promise<string> {
   return result;
 }
 
+/**
+ * Resolve the last PR a landing may merge, including one already merged by a stopped run. Both landing modes use this
+ * boundary so switching modes with `--resume` keeps the original scope instead of pulling upper PRs into the merge.
+ */
+function throughCount(
+  entries: Entry[],
+  landedBefore: Entry[],
+  through: string | undefined,
+  resume: boolean,
+  expect: string | undefined,
+): number {
+  if (through === undefined) return entries.length;
+  const t = through.replace(/^#/, "");
+  const named = (e: Entry) => String(e.pr) === t || e.bookmark === t;
+  const inExpect = resume && expect !== undefined && /^[0-9]+$/.test(t) &&
+    parsePrList("E_USAGE_THROUGH_EXPECT", expect).includes(Number(t));
+  if (landedBefore.some(named) || (!entries.some(named) && inExpect)) return 0;
+  const k = entries.findIndex(named) + 1;
+  if (k === 0) {
+    fail(
+      "E_LAND_THROUGH_NOT_IN_STACK",
+      `--through ${through} is not a PR of this stack (pending: ${planOf(entries)}, ` +
+        `landed and still in the stack: ${planOf(landedBefore)})`,
+    );
+  }
+  return k;
+}
+
+/**
+ * Rebase PRs above a partial landing onto its landed tip, prove they still carry their reviewed changes, then submit
+ * them. A mode switch after a stopped CI landing uses the same suffix work as an ordinary `land --through`.
+ */
+async function restackRemaining(ctx: Ctx, remaining: Entry[], topChange: string) {
+  await ctx.fetch("E_LAND_REMAINING_FETCH", true);
+  const tip = await ctx.resolve("E_LAND_REMAINING_TIP", ctx.defaultRev);
+  const local = await ctx.resolve("E_LAND_REMAINING_RESOLVE", remaining[0].changeId);
+  const parent = await exec("E_LAND_REMAINING_PARENT", ctx.sh`git rev-parse ${local + "^"}`);
+  if (!(await isAncestor(ctx, "E_LAND_REMAINING_ANCESTRY", parent, tip))) {
+    await exec(
+      "E_LAND_REMAINING_REBASE",
+      ctx.sh`jj ${JJ_SAFE} rebase -s ${remaining[0].changeId} -d ${tip}`,
+      { write: true },
+    );
+  }
+  for (const d of remaining) {
+    const now = await ctx.resolve("E_LAND_REMAINING_D", d.changeId);
+    await verifyContent(ctx, "E_LAND_REMAINING_CONTENT", d, now);
+  }
+  await submit(ctx, topChange, false, false);
+}
+
+/**
+ * Land only the requested prefix behind check verdicts, then restack any PRs left above it. The plan's `--expect` and
+ * `--through` boundary survive a stopped run, so resuming cannot pull an upper PR into the merge by accident.
+ */
 async function ciLand(
   ctx: Ctx,
   args: {
@@ -2666,32 +2766,12 @@ async function ciLand(
     timeoutSec: number;
     allowNoChecks: boolean;
     ignore: string[];
+    acceptSkipped: Map<number, string[]>;
   },
 ) {
   const { landedBefore, entries, carry, topChange } = await planLanding(ctx, args.top, args.resume);
   if (!args.plan) await clearStaleStop(ctx);
-  // `--through` may name a PR the stopped run already landed; then nothing more lands, and the rerun only finishes
-  // the restack and cleanup the original command was supposed to do.
-  let k = entries.length;
-  if (args.through !== undefined) {
-    const t = args.through.replace(/^#/, "");
-    const named = (e: Entry) => String(e.pr) === t || e.bookmark === t;
-    // A PR the stopped run landed may have left the stack; naming it is fine when `--expect` lists it, because
-    // `resolveExpect` then proves it merged (it can only sit in the part of `--expect` the plan does not cover).
-    const inExpect = args.resume && args.expect !== undefined && /^[0-9]+$/.test(t) &&
-      parsePrList("E_USAGE_THROUGH_EXPECT", args.expect).includes(Number(t));
-    if (landedBefore.some(named) || (!entries.some(named) && inExpect)) k = 0;
-    else {
-      k = entries.findIndex(named) + 1;
-      if (k === 0) {
-        fail(
-          "E_LAND_THROUGH_NOT_IN_STACK",
-          `--through ${args.through} is not a PR of this stack (pending: ${planOf(entries)}, ` +
-            `landed and still in the stack: ${planOf(landedBefore)})`,
-        );
-      }
-    }
-  }
+  const k = throughCount(entries, landedBefore, args.through, args.resume, args.expect);
   const landing = entries.slice(0, k);
   const remaining = entries.slice(k);
   const landedElsewhere = await resolveExpect(
@@ -2722,6 +2802,7 @@ async function ciLand(
         settleSec: scaled(30_000) / 1000,
         allowNoChecks: args.allowNoChecks,
         ignore: args.ignore,
+        acceptSkipped: args.acceptSkipped.get(e.pr) ?? [],
       });
     } catch (err) {
       printStopped(e, [...landedElsewhere, ...landedBefore, ...landing]);
@@ -2730,22 +2811,7 @@ async function ciLand(
   }
   if (remaining.length > 0) {
     phase = "restack remaining";
-    await ctx.fetch("E_LAND_REMAINING_FETCH", true);
-    const tip = await ctx.resolve("E_LAND_REMAINING_TIP", ctx.defaultRev);
-    const local = await ctx.resolve("E_LAND_REMAINING_RESOLVE", remaining[0].changeId);
-    const parent = await exec("E_LAND_REMAINING_PARENT", ctx.sh`git rev-parse ${local + "^"}`);
-    if (!(await isAncestor(ctx, "E_LAND_REMAINING_ANCESTRY", parent, tip))) {
-      await exec(
-        "E_LAND_REMAINING_REBASE",
-        ctx.sh`jj ${JJ_SAFE} rebase -s ${remaining[0].changeId} -d ${tip}`,
-        { write: true },
-      );
-    }
-    for (const d of remaining) {
-      const now = await ctx.resolve("E_LAND_REMAINING_D", d.changeId);
-      await verifyContent(ctx, "E_LAND_REMAINING_CONTENT", d, now);
-    }
-    await submit(ctx, topChange, false, false);
+    await restackRemaining(ctx, remaining, topChange);
   }
   // With PRs left above, the working copy stays on them; otherwise it follows the landing onto the default branch.
   if (args.cleanup) {
@@ -2760,8 +2826,8 @@ async function ciLand(
 // Fast landing (`fast-land`)
 // ---------------------------------------------------------------------------------------------------------------------
 //
-// Lands the whole stack without waiting for CI. Each PR lands in one of two modes, and the switch from the first to the
-// second is one-way:
+// Lands the planned stack prefix without waiting for CI. Each PR lands in one of two modes, and the switch from the
+// first to the second is one-way:
 //
 // - `github`: retarget the PR to the default branch once its parent is MERGED and squash it as-is. No rebase, no push.
 //   This only works while GitHub's three-way merge is clean. A squash commit is never an ancestor of the next PR's
@@ -2904,47 +2970,61 @@ async function fastLandOne(ctx: Ctx, entries: Entry[], i: number, tip: string): 
   return result;
 }
 
+/**
+ * Simulate and land the requested prefix without CI, preserving any upper PRs as open, reviewed changes. Each squash
+ * must match its predicted tree, and the same `--through` boundary is honored when switching from a stopped `land`.
+ */
 async function fastLand(
   ctx: Ctx,
-  args: { top: string; expect?: string; plan: boolean; cleanup: boolean; resume: boolean },
+  args: { top: string; through?: string; expect?: string; plan: boolean; cleanup: boolean; resume: boolean },
 ) {
-  const { landedBefore, entries, carry } = await planLanding(ctx, args.top, args.resume);
+  const { landedBefore, entries, carry, topChange } = await planLanding(ctx, args.top, args.resume);
   if (!args.plan) await clearStaleStop(ctx);
+  const k = throughCount(entries, landedBefore, args.through, args.resume, args.expect);
+  const landing = entries.slice(0, k);
+  const remaining = entries.slice(k);
   const landedElsewhere = await resolveExpect(
     ctx,
     { mismatch: "E_FAST_EXPECT_MISMATCH", prefix: "E_FAST_EXPECT_PREFIX" },
-    [...landedBefore, ...entries],
+    [...landedBefore, ...landing],
     args.expect,
     args.resume,
   );
   const start = await ctx.resolve("E_FAST_RESOLVE_START", ctx.defaultRev);
   phase = "simulate";
-  await simulate(ctx, entries, 0, start, args.resume ? 0 : Infinity);
+  await simulate(ctx, landing, 0, start, args.resume ? 0 : Infinity);
 
   console.log(`landing ${ctx.repo} into ${ctx.defaultBranch} at ${start.slice(0, 12)}, bottom-up, without CI:`);
   for (const e of [...landedElsewhere, ...landedBefore]) console.log(`  #${e.pr} ${e.bookmark} already landed`);
-  for (const e of entries) console.log(`  #${e.pr} ${e.bookmark} ${e.sha.slice(0, 12)} ${e.mode}`);
+  for (const e of landing) console.log(`  #${e.pr} ${e.bookmark} ${e.sha.slice(0, 12)} ${e.mode}`);
+  if (remaining.length > 0) console.log(`then restacking, not landing: ${remaining.map((e) => `#${e.pr}`).join(" ")}`);
   console.log(
-    `JJSTACK_PLAN command=fast-land repo=${ctx.repo} default=${ctx.defaultBranch} prs=${planOf(entries)} ` +
-      `landed=${planOf([...landedElsewhere, ...landedBefore])}`,
+    `JJSTACK_PLAN command=fast-land repo=${ctx.repo} default=${ctx.defaultBranch} prs=${planOf(landing)} ` +
+      `landed=${planOf([...landedElsewhere, ...landedBefore])} restack=${planOf(remaining)}`,
   );
   if (args.plan) return;
 
   let tip = start;
-  for (const [i, e] of entries.entries()) {
+  for (const [i, e] of landing.entries()) {
     phase = `land #${e.pr}`;
     try {
       await honorStop(ctx, `before starting PR #${e.pr}`);
-      tip = await fastLandOne(ctx, entries, i, tip);
+      tip = await fastLandOne(ctx, landing, i, tip);
     } catch (err) {
-      printStopped(e, [...landedElsewhere, ...landedBefore, ...entries]);
+      printStopped(e, [...landedElsewhere, ...landedBefore, ...landing]);
       throw err;
     }
   }
-  if (args.cleanup) await cleanup(ctx, [...landedElsewhere, ...landedBefore, ...entries], carry);
+  if (remaining.length > 0) {
+    phase = "restack remaining";
+    await restackRemaining(ctx, remaining, topChange);
+  }
+  if (args.cleanup) {
+    await cleanup(ctx, [...landedElsewhere, ...landedBefore, ...landing], remaining.length > 0 ? [] : carry);
+  }
   phase = "done";
   const now = await ctx.resolve("E_FAST_DONE_TIP", ctx.defaultRev);
-  console.log(`landed ${entries.length} PRs; ${ctx.defaultBranch} is at ${now.slice(0, 12)}`);
+  console.log(`landed ${landing.length} PRs; ${ctx.defaultBranch} is at ${now.slice(0, 12)}`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -2967,10 +3047,31 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["publish",   { strings: ["prs"],                                                booleans: [] }],
   ["goto",      { strings: ["pr"],                                                 booleans: [] }],
   ["ci",        { strings: ["prs", "workflow"],                                    booleans: [] }],
-  ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
-  ["fast-land", { strings: ["expect"],                                             booleans: ["plan-only", "no-cleanup", "resume"] }],
+  ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check", "accept-skipped-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
+  ["fast-land", { strings: ["through", "expect"],                                  booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
 ]);
+
+/**
+ * Bind each declared conditional skip to one PR and one exact Actions workflow/job name. A name without a PR would
+ * carry a catalog-only exception into an application PR later in the same stack, where that job may be essential.
+ * No wildcard or bare job name is accepted; an unmatched declaration has no effect.
+ */
+function parseAcceptedSkips(raw: string | undefined): Map<number, string[]> {
+  const byPr = new Map<number, string[]>();
+  if (raw === undefined) return byPr;
+  for (const item of raw.split(",")) {
+    const match = /^([1-9][0-9]*):([^/]+\/.+)$/.exec(item.trim());
+    const pr = match ? Number(match[1]) : NaN;
+    if (!match || !Number.isSafeInteger(pr)) {
+      usage("E_USAGE_ACCEPT_SKIPPED_CHECK", `--accept-skipped-check needs PR:workflow/job entries, got '${item}'`);
+    }
+    const names = byPr.get(pr) ?? [];
+    if (!names.includes(match[2])) names.push(match[2]);
+    byPr.set(pr, names);
+  }
+  return byPr;
+}
 
 async function main() {
   for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => kill.kill());
@@ -3028,10 +3129,12 @@ async function main() {
       ignore: args["ignore-check"] === undefined
         ? []
         : String(args["ignore-check"]).split(",").map((n) => n.trim()).filter(Boolean),
+      acceptSkipped: parseAcceptedSkips(args["accept-skipped-check"] as string | undefined),
     });
   } else {
     await fastLand(ctx, {
       top,
+      through: args.through as string | undefined,
       expect: args.expect as string | undefined,
       plan: !!args["plan-only"],
       cleanup: !args["no-cleanup"],
@@ -3225,6 +3328,15 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   assertEquals(parseCli(["fast-land"]).args["no-cleanup"], false);
   assertEquals(parseCli(["submit", "--update-text"]).args["update-text"], true);
   assertEquals(parseCli(["land", "--through", "#12", "--allow-no-checks"]).args.through, "#12");
+  assertEquals(
+    parseAcceptedSkips("86:CI/catalog-check,87:CI/fmt,87:CI/test"),
+    new Map([
+      [86, ["CI/catalog-check"]],
+      [87, ["CI/fmt", "CI/test"]],
+    ]),
+  );
+  assertThrows(() => parseAcceptedSkips("CI/catalog-check"), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips("86:catalog-check"), JjstackError, "PR:workflow/job");
   assertThrows(() => parseCli(["submit", "--expect", "1"]), JjstackError, "unknown option");
   assertThrows(() => parseCli(["status", "extra"]), JjstackError, "unexpected arguments");
   assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
@@ -3430,10 +3542,11 @@ Deno.test("splitDescription takes the first line as title and the rest after bla
 });
 
 /**
- * The check verdict is what a CI-gated landing merges on. Every misclassification here is either a merge without a
- * real verdict (the draft-skipped trap, a half-attached rollup) or a landing that never finishes (superseded runs).
+ * The check verdict is what a CI-gated landing merges on. A pre-ready skip alone cannot say whether the job was
+ * inapplicable or draft-gated, so only a PR-scoped declaration makes it count alongside successful validation.
+ * Failures, pending work, and an all-skipped rollup retain their separate blocking behavior.
  */
-Deno.test("checkVerdict separates pass, fail, pending, no verdict, and runs skipped while the PR was a draft", () => {
+Deno.test("checkVerdict separates pass, fail, pending, no verdict, and ambiguous pre-ready skips", () => {
   const at = (s: number) => new Date(Date.UTC(2026, 9, 17, 0, 0, s)).toISOString();
   const run = (name: string, conclusion: string, started = 10, status = "COMPLETED"): Check => ({
     __typename: "CheckRun",
@@ -3446,8 +3559,14 @@ Deno.test("checkVerdict separates pass, fail, pending, no verdict, and runs skip
   });
   // Far past every fixture timestamp, so recent-cancellation handling only applies where a test asks for it.
   const late = Date.parse(at(10_000));
-  const v = (rollup: Check[], readyAt?: number, grace = false, running: string[] = [], postReady = true) =>
-    checkVerdict(rollup, { running, postReady }, readyAt, grace, [], late).v;
+  const v = (
+    rollup: Check[],
+    readyAt?: number,
+    grace = false,
+    running: string[] = [],
+    postReady = true,
+    accepted: string[] = [],
+  ) => checkVerdict(rollup, { running, postReady }, readyAt, grace, [], accepted, late).v;
   const readyAt = Date.parse(at(20));
   assertEquals(v([]), "none");
   assertEquals(v([run("a", "SUCCESS"), run("b", "SKIPPED")]), "passed");
@@ -3457,9 +3576,32 @@ Deno.test("checkVerdict separates pass, fail, pending, no verdict, and runs skip
   assertEquals(v([run("a", "SKIPPED"), run("b", "SKIPPED")], undefined, true), "none");
   // A suite still working on a `needs:` job keeps an all-green rollup pending.
   assertEquals(v([run("build", "SUCCESS")], undefined, false, ["github-actions:in_progress"]), "pending");
-  // Skipped before the ready event: pending during the grace period, then a refusal-worthy verdict.
+  // A pre-ready skip is ambiguous without evidence of the job's condition, even when another job passed.
   assertEquals(v([run("lint", "SUCCESS"), run("test", "SKIPPED")], readyAt, false), "pending");
   assertEquals(v([run("lint", "SUCCESS"), run("test", "SKIPPED")], readyAt, true), "stale-skipped");
+  const application = [run("changes", "SUCCESS"), run("test", "SUCCESS"), run("catalog-check", "SKIPPED")];
+  assertEquals(v(application, readyAt, true, [], false), "stale-skipped");
+  assertEquals(v(application, readyAt, true, [], false, ["PR/catalog-check"]), "passed");
+  const catalog = [
+    run("changes", "SUCCESS"),
+    run("fmt", "SKIPPED"),
+    run("test", "SKIPPED"),
+    run("catalog-check", "SUCCESS"),
+  ];
+  assertEquals(v(catalog, readyAt, true, [], false, ["PR/fmt", "PR/test"]), "passed");
+  assertEquals(
+    v([run("meta", "SUCCESS"), run("test", "SKIPPED")], readyAt, true, [], false, ["PR/catalog-check"]),
+    "stale-skipped",
+  );
+  assertEquals(v([run("test", "SKIPPED")], readyAt, true, [], false, ["PR/test"]), "none");
+  assertEquals(
+    v([run("test", "FAILURE"), run("catalog-check", "SKIPPED")], readyAt, true, [], false, ["PR/catalog-check"]),
+    "failed",
+  );
+  assertEquals(
+    v([run("test", "", 10, "QUEUED"), run("catalog-check", "SKIPPED")], readyAt, true, [], false, ["PR/catalog-check"]),
+    "pending",
+  );
   // Skipped after the ready event is a real decision of the workflow, not a draft leftover...
   assertEquals(v([run("lint", "SUCCESS"), run("test", "SKIPPED", 30)], readyAt, false), "passed");
   // ...unless no Actions suite was created after the ready event: then it ran on a draft-era payload, just late.
@@ -3471,7 +3613,7 @@ Deno.test("checkVerdict separates pass, fail, pending, no verdict, and runs skip
   // A cancellation with no replacement yet is pending for two minutes after it ended, then a failure.
   const cancelled = [run("lint", "SUCCESS"), run("test", "CANCELLED", 40)];
   const verdictAt = (s: number) =>
-    checkVerdict(cancelled, { running: [], postReady: true }, undefined, false, [], Date.parse(at(s))).v;
+    checkVerdict(cancelled, { running: [], postReady: true }, undefined, false, [], [], Date.parse(at(s))).v;
   assertEquals(verdictAt(60), "pending");
   assertEquals(verdictAt(200), "failed");
   assertEquals(v([run("test", "SUCCESS", 30), run("test", "", 5, "QUEUED")]), "pending");
