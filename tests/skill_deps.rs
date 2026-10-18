@@ -2,7 +2,7 @@
 //!
 //! Some skills under `agent-skills/` depend on other skills (galaxy-brain on
 //! the routing and delegation skills, powerhorse on the delegation skill, and
-//! delegation on the shell-out skill).
+//! delegation and persistent review on the shell-out skill).
 //! There is no harness-level
 //! way to declare that, so the contract is carried in text: a layered skill's
 //! `SPEC.md` opens with a `Dependencies:` line, and its `SKILL.md` carries one
@@ -60,6 +60,7 @@ schemes, search other skill roots, substitute another copy or similar skill, or 
 /// together would silently opt a skill out of the test. Add a skill here in
 /// the PR that gives it a `Dependencies:` line.
 const LAYERED_SKILLS: &[&str] = &[
+    "persistent-review",
     "scode-agent-delegation",
     "scode-build-blueprint",
     "scode-galaxy-brain",
