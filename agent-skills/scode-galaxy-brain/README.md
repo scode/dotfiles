@@ -43,8 +43,8 @@ when a delegate runs on a foreign harness:
   the work-profile table, provider preference, and the model routing config file live there.
 - `scode-agent-delegation` owns everything between that answer and the orchestrator's verdict: the task spec, the run id
   and run directory, the checkpoint protocol, the gate, and the verdict vocabulary.
-- `scode-harness-shellout`, loaded by the delegation skill, owns the launch commands and the observed-behavior notes for
-  `codex exec`, `claude -p`, `muse exec`, and `opencode run`.
+- `scode-harness-shellout`, loaded by the delegation skill, picks which CLI runs an `external` route and owns the launch
+  commands and the observed-behavior notes for `codex exec`, `claude -p`, `muse exec`, `opencode run`, and `omp -p`.
 
 The one procedure file next to SKILL.md, `feedback.md`, is read when the user gives feedback. The reasoning behind the
 rules is archived under [lore/](lore/) and is not maintained.

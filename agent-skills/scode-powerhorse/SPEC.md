@@ -36,9 +36,10 @@ orchestrator so that galaxy-brain's text, behavior, and evals stay untouched.
   read-only helpers of its own (the user decided this explicitly), which count against harness capacity; it may not
   start helpers that edit files.
 - The supervisor chooses each launch mechanism itself: native only when it can select the model and effort and, for a
-  chunk, resume the same agent after a checkpoint; otherwise the shell-out harness that serves the model. Availability
-  restrictions in the user's `~/.scode-model-routing.md`, when it exists, are honored. A demanded model nothing can
-  reach goes to the user, never to a substitute.
+  chunk, resume the same agent after a checkpoint; otherwise `external`, which leaves the CLI to the shell-out skill,
+  and a resume goes through the CLI recorded at launch. Availability restrictions in the user's
+  `~/.scode-model-routing.md`, when it exists, are honored, and what it says about the provider or harness for a model
+  is passed on as the launch preference. A demanded model nothing can reach goes to the user, never to a substitute.
 - A chunk is one coherent outcome with its tests and documentation, roughly a reviewable PR or a subsystem, finishable
   without another in-flight chunk's unfinished changes. Work smaller than a chunk is never delegated, and chunks are
   never split only to widen the fan-out. A chunk is delegated when it can overlap other in-flight work or would fill a
