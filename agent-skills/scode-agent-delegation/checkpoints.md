@@ -197,10 +197,14 @@ delegate's context (what it read, what it planned) is what makes the resumed tur
 means a follow-up message to the same agent (`SendMessage` in Claude Code). For a shelled-out delegate,
 `scode-harness-shellout` (loaded as `SKILL.md` describes) gives the rules common to every harness — the session or
 thread id recorded at launch, the same model, effort, directory, and permission flags on the resume — and its file for
-the mechanism gives the verified resume command and says where the final message lands on a resumed turn. Whatever the
-path, it must support same-session resume; if a mechanism cannot, do not use it for writers. Write your `ANSWERS.md` or
-`REVIEW.md` into the run directory first, then launch the resume; the resume prompt is one of the short ones below,
-built in a file and passed like any other prompt.
+the mechanism gives the verified resume command and says where the final message lands on a resumed turn. For a launch
+on `external`, the mechanism is the CLI the shell-out skill chose at launch and recorded with the id; resume through
+that CLI and never choose again, since a session lives in the CLI that started it. If that CLI is no longer installed,
+do not resume through another one and do not return `unresumable`, since the session still exists: report the resume as
+blocked on that CLI to the caller, keep the tree as it is, and let the caller decide between restoring the CLI and
+giving the run up as `unresumable`. Whatever the path, it must support same-session resume; if a mechanism cannot, do
+not use it for writers. Write your `ANSWERS.md` or `REVIEW.md` into the run directory first, then launch the resume; the
+resume prompt is one of the short ones below, built in a file and passed like any other prompt.
 
 If the handle is gone — a native sub agent id that no longer resolves after compaction, a session the harness cannot
 find — the delegation is over: return `unresumable`, with the answers you already gave as the payload so the caller can

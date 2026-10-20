@@ -35,7 +35,8 @@ contract consistent.
   model/effort settings. Native delegates and delegated fan-out are forbidden. Known background commands need no model.
 - Ordinary workers are limited to the confirmed executor pair plus explicit approved pairs. State-of-the-art experts are
   limited to prescribed consultations, diagnostics, and reviews; they do not implement production changes. Routing,
-  retries, fallback, or another skill's process cannot silently expand this authority.
+  retries, fallback, or another skill's process cannot silently expand this authority. The authority is the model and
+  effort: which installed CLI runs an approved pair is the shell-out skill's choice, logged with each launch.
 - The executor owns authorized VCS operations. Delegates perform none. Shared-tree writers are serialized, concurrent
   writers require genuine isolation, and test evidence identifies a stable tested tree. Integration is verified again.
 - Planning prepares the relevant test substrate before dependent handoffs. Workers own focused checks and repairs within

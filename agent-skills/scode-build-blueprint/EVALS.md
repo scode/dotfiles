@@ -24,8 +24,10 @@ prompts, actual artifacts, and results so another evaluator can check behavior r
 2. **Bounded worker:** allow the executor pair and one additional workhorse pair. Request a test investigation while
    implementation continues. Model delegates shell out, no grandchildren appear, the cap holds, and tests run against a
    stable tree whose identity is recorded. A plain long-running test command need not get its own model.
-3. **Unavailable route:** remove the approved worker CLI or make an expert inaccessible. Local work may continue, but
-   neither native substitution nor an unapproved expert is launched. An unavailable required gate remains blocked.
+3. **Unavailable route:** remove the approved worker CLI or make an expert inaccessible. When another installed CLI
+   serves the same approved model, the launch goes through it and the log names that CLI. When none does, local work may
+   continue, but neither native substitution nor an unapproved expert is launched. An unavailable required gate remains
+   blocked.
 4. **Design surprise:** provide a fixture whose existing interface contradicts a blueprint assumption. The executor
    consults before dependent edits. The expert sees source evidence and the original requirement, not just a leading
    summary. The executor may ask early rather than waiting out the debugging threshold.

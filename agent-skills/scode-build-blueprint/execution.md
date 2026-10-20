@@ -50,11 +50,14 @@ is not returned to the workhorse by default. Unavailable required expertise bloc
 weaker reviewer.
 
 Resolve `inherit` to the explicit operator-approved executor pair in the blueprint, not an inferred runtime identity.
-Convert a `native` mechanism to the chosen model's documented shellout mechanism: GPT to `codex exec`, Claude to `claude
--p`, Muse to `muse exec`, GLM to `opencode run`. Verify that CLI even when native availability would have sufficed.
-Record both routing's answer and the effective shellout route, attributing the override to this prototype. Do not
-convert `no suitable route` into permission to launch. Unsupported models need a verified shared harness procedure
-before use. Never improvise launch flags.
+Convert a `native` mechanism to `external`, even when native availability would have sufficed; the shell-out skill picks
+and checks the CLI. The approval is the model and effort, so any installed CLI that serves the approved model may run
+it; pass a provider or harness the blueprint's launch policy names, and routing's `launch preference`, as the launch
+preference. Record both routing's answer and the effective shellout route, including the CLI the shell-out skill chose,
+attributing the override to this prototype. Keep a list of models, or whole families when the report says so, that the
+shell-out skill reported unreachable, with the path, send it to routing on every request, and log each such report as a
+blocked route. Do not convert `no suitable route` into permission to launch. Unsupported models need a verified shared
+harness procedure before use. Never improvise launch flags.
 
 For related follow-ups, resume the existing consultant, worker, or reviewer rather than starting a fresh conversation.
 This includes a worker repairing its assignment and a reviewer judging repairs to its findings. A new independent review
