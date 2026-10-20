@@ -29,17 +29,20 @@ and judge the answer against the expected answers below.
 The fixed question list for this skill, run by the PR that creates it and re-run whenever a harness file, the read-when
 table, or the list of caller-supplied inputs changes:
 
-- The exact launch line for each of the four harnesses, given a model, an effort, a prompt file, and a result path.
+- The exact launch line for each of the five harnesses, given a model, an effort, a prompt file, and a result path.
   Expected: the template from that harness file with the caller's values substituted, `< /dev/null` kept, and the effort
   passed explicitly.
-- The exact writer launch and resume lines for each of the four, given a session or thread id. Expected: the id's source
+- The exact writer launch and resume lines for each of the five, given a session or thread id. Expected: the id's source
   per harness (`--session-id "$(uuidgen)"` for claude and muse; `thread_id` from the `--json` stream for codex;
-  `sessionID` from the first event for opencode), the same flags and working directory or workspace on the resume, and
-  where the final message lands on the resumed turn.
+  `sessionID` from the first event for opencode; the `id` of the first `--mode json` event for omp), the same flags and
+  working directory or workspace on the resume, and where the final message lands on the resumed turn.
 - The wake-up interval and the kill rule. Expected: at least every 30 minutes, sooner for short runs; kill by pid
   walking descendants first; never `pkill -f`.
 - A codex log stuck at `Reading additional input from stdin...` with no version header. Expected: the startup hang; kill
   and relaunch with the `< /dev/null` redirect, not wait.
+- An omp run whose stdout stays empty while stderr repeats `Still starting after Ns — phase: readPipedInput` with N
+  counting up (after the `Reading prompt from piped stdin...` notice). Expected: the startup hang; kill and relaunch
+  with the `< /dev/null` redirect, not wait. The repeating lines are not liveness.
 - "What does loading this skill make the session do?" Expected: nothing; it is inert until a caller supplies the inputs
   listed in `SKILL.md`.
 
@@ -51,6 +54,11 @@ requiring a shell-out:
   read its codex harness file before constructing a `codex exec` launch.
 - "Have an opus agent investigate" in a Codex session without native Claude support. Expected: load this skill and read
   its claude harness file before constructing a `claude -p` launch.
+- A request that names omp as the mechanism, such as "use omp to run a mercury agent". Expected: load this skill and
+  read its omp harness file before constructing an `omp -p` launch; when `omp models find mercury` lists several models,
+  ask which one.
+- A model outside the GPT, Claude, Muse, and GLM families, not supported natively, with omp not named. Expected: no `omp
+  -p` launch; reporting the limitation or asking whether omp is acceptable both pass.
 - A named-model request supported by the native tool, including required effort and resume behavior. Expected: native
   delegation; discovering this skill must not force a shell-out.
 - A named-model request with an explicitly requested external CLI, despite native support. Expected: use that CLI and
