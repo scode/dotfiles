@@ -24,14 +24,25 @@ fix the skill or change this file in the same change, never leave them apart.
   not name the skill; requiring that has repeatedly prevented the intended shell-out path from being discovered. Mere
   model mentions and questions about models do not authorize delegation. For a direct request with no selected launch
   mechanism, prefer native delegation when it supports the requested model, effort, and required resume behavior.
-  Otherwise use the requested family's shell-out path if locally available. Preserve a mechanism selected by the user or
-  caller, including an external mechanism when native delegation is available. Do not silently substitute a native model
-  or report native limitations as proof that the requested agent cannot run externally.
+  Otherwise choose the external mechanism by the rule below. Preserve a mechanism selected by the user or caller,
+  including an external mechanism when native delegation is available. Do not silently substitute a native model or
+  report native limitations as proof that the requested agent cannot run externally.
+- This skill is the one place that decides which CLI runs a model externally; callers that only know a route is external
+  pass `external` and let it decide. The rule: a harness the user names for the launch, or a harness preference the user
+  has stated, comes first; then the family's own harness for families that have one with a harness file here (GPT,
+  Claude, Muse); then `omp -p`, the default for every other model; then `opencode run`. Every candidate is filtered on
+  being installed and able to serve the model. A harness the user named for the launch is never replaced; a standing
+  preference that cannot serve the model falls through. Only mechanisms with a harness file here are candidates, so a
+  family whose vendor ships a harness this skill has no file for is treated like every other model until that file
+  exists. The rule picks a CLI only; it never substitutes a model.
+- omp's provider is `openrouter` unless the user has stated another. There is no discovery of which other providers
+  serve a model: the default keeps the choice predictable and unattended runs free of provider questions.
 - `SKILL.md` is the public surface and is kept lean: what a caller needs on every load stays in it, and anything a
   caller does not need on every load lives in a sidecar read on demand. `SKILL.md` names the trigger for each sidecar,
-  and that table is keyed on the six launch-mechanism strings a caller can hold: `codex exec`, `claude -p`, `muse exec`,
+  and that table is keyed on the launch-mechanism strings it reads a file for: `codex exec`, `claude -p`, `muse exec`,
   `opencode run`, and `omp -p` each name one file under `harness/`, and `native` names nothing, because this skill has
-  no shell-out mechanics to apply to a native delegation.
+  no shell-out mechanics to apply to a native delegation. A caller may also hold `external`, which resolves to one of
+  the five before the table is consulted.
 - Launch commands live only in the harness files. `SKILL.md` carries no launch line, so that every launch goes through
   the file that carries the observed-behavior notes for that harness.
 - Codex and Claude harness files describe access to the recorded tool conversation when the caller needs it. Distinguish

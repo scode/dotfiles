@@ -18,6 +18,13 @@ Before presenting a change as done, search every file in this directory for the 
 directory, its own `SKILL.md`) or a leak of a consumer's vocabulary into a skill that must not know its consumers;
 rewrite the leak so the sentence names an input the caller supplies instead.
 
+## Adding a harness
+
+A new harness file is not enough on its own. When it is a vendor's own harness for its models (a grok CLI for grok,
+say), also add that family to rule 2 of Choosing the external mechanism in `SKILL.md`, and to the matching requirement
+in `SPEC.md`. Until then the family is served by the default like every other model, which is intended: a harness gets
+preference only once its launch mechanics are written down and verified here.
+
 ## Evaluating changes
 
 Skill text is consumed by agents that have none of your conversation context, so your own reading of the new wording
@@ -27,7 +34,7 @@ presenting the work as done: install the skill into an isolated home, point the 
 and judge the answer against the expected answers below.
 
 The fixed question list for this skill, run by the PR that creates it and re-run whenever a harness file, the read-when
-table, or the list of caller-supplied inputs changes:
+table, the external mechanism rule, or the list of caller-supplied inputs changes:
 
 - The exact launch line for each of the five harnesses, given a model, an effort, a prompt file, and a result path.
   Expected: the template from that harness file with the caller's values substituted, `< /dev/null` kept, and the effort
@@ -46,19 +53,30 @@ table, or the list of caller-supplied inputs changes:
 - "What does loading this skill make the session do?" Expected: nothing; it is inert until a caller supplies the inputs
   listed in `SKILL.md`.
 
-When changing the description or direct-request instructions, also evaluate discovery from the skill catalog without
-naming the skill in the request. These cases preserve the distinction between recognizing a delegation request and
-requiring a shell-out:
+When changing the description, the direct-request instructions, or the external mechanism rule, also evaluate discovery
+from the skill catalog without naming the skill in the request. These cases preserve the distinction between recognizing
+a delegation request and requiring a shell-out:
 
 - "Start an astra agent to review this" in a Claude session without native GPT support. Expected: load this skill and
   read its codex harness file before constructing a `codex exec` launch.
 - "Have an opus agent investigate" in a Codex session without native Claude support. Expected: load this skill and read
   its claude harness file before constructing a `claude -p` launch.
 - A request that names omp as the mechanism, such as "use omp to run a mercury agent". Expected: load this skill and
-  read its omp harness file before constructing an `omp -p` launch; when `omp models find mercury` lists several models,
+  read its omp harness file before constructing an `omp -p` launch; when several mercury models exist on `openrouter`,
   ask which one.
-- A model outside the GPT, Claude, Muse, and GLM families, not supported natively, with omp not named. Expected: no `omp
-  -p` launch; reporting the limitation or asking whether omp is acceptable both pass.
+- A GLM or grok model, not supported natively, with no harness named. Expected: `omp -p` on the `openrouter` provider
+  (`openrouter/z-ai/glm-5.3-flash` for GLM), with no question about providers.
+- The same GLM request with a standing user preference for omp's `opencode-zen` provider. Expected: `omp -p` with
+  `opencode-zen/glm-5.3-flash`.
+- A GPT model when `codex` is missing from `PATH`. Expected: `omp -p` on `openrouter`, not a refusal.
+- "Run the glm agent through opencode" with no opencode credential for the provider. Expected: report that opencode
+  cannot serve it; no fallthrough to omp.
+- The same GLM request with a stated preference for opencode. Expected: `opencode run`, once `opencode providers list`
+  shows a credential for its provider.
+- The same GLM request with `omp` missing from `PATH` and an opencode credential present. Expected: `opencode run`.
+- A caller that supplies `external` for gpt-6.1-sol high. Expected: `codex exec`, not omp.
+- A caller that supplies `external` for a model no installed CLI serves. Expected: report it unreachable, naming what
+  each candidate lacked; no substitute model.
 - A named-model request supported by the native tool, including required effort and resume behavior. Expected: native
   delegation; discovering this skill must not force a shell-out.
 - A named-model request with an explicitly requested external CLI, despite native support. Expected: use that CLI and

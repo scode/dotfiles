@@ -12,14 +12,17 @@ stdin handling, resume, process layout — was observed with omp 18.12.3; treat 
 CLI changes, not as a stable contract. The final response is printed to stdout; `Working...` and diagnostics go to
 stderr, so keep the two streams separate as in the template.
 
-- Model: pass the exact model the caller supplies to `--model` literally, as a full `provider/model-id` (for example
-  `openrouter/inception/mercury-3`). omp also accepts bare ids, fuzzy matches, and configured role aliases (`@slow`,
-  `@smol`), but do not rely on them: a fuzzy or bare id can resolve to a different model than the caller meant, and a
-  role alias follows user config rather than a release. Confirm an id resolves with `omp models find <pattern>` before
-  launching when there is any doubt. Without `--model`, omp uses the user's configured default, so always pass it
-  explicitly per `SKILL.md`. A request that names only a model line ("a mercury agent") is resolved with `omp models
-  find <line>`: when exactly one model matches, use its full id; when several do, ask the user or caller which one
-  rather than picking.
+- Model: pass `--model <provider>/<model-id>`. The provider is `openrouter` unless the user has stated another (in the
+  request or in their standing instructions); do not look for other providers that also serve the model. OpenRouter ids
+  are `vendor/model`, so a full selector reads `openrouter/z-ai/glm-5.3-flash` or `openrouter/inception/mercury-3`. An
+  id written for another CLI (`opencode/glm-5.3-flash`, a bare `gpt-6.1-sol`) needs the provider's spelling, which `omp
+  models find <model>` shows under that provider's heading. `find` is a substring search and exits 0 even when nothing
+  matches, so read the model column for an exact match rather than relying on the exit status. omp also accepts bare
+  ids, fuzzy matches, and configured role aliases (`@slow`, `@smol`), but do not rely on them: a fuzzy or bare id can
+  resolve to a different model than the caller meant, and a role alias follows user config rather than a release.
+  Without `--model`, omp uses the user's configured default, so always pass it explicitly per `SKILL.md`. A request that
+  names only a model line ("a mercury agent") is resolved the same way, within the provider: when exactly one model of
+  that line matches, use it; when several do, ask the user or caller which one rather than picking.
 - Reasoning effort is `--thinking <level>`, which accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and
   `auto`. An invalid level is rejected at startup, not silently ignored: exit 2 with `Error: Invalid --thinking value:
   ...` on stderr and nothing on stdout (verified). A model selector can also carry a `:level` suffix. Models support
