@@ -68,6 +68,12 @@ For both backends, mix valid required-source packets with context packets from a
 the latter without certifying them, credit only matched mandatory text, preserve gaps, and avoid loading foreign source
 paths. Fully covered mandatory scope may complete despite extra context. Malformed foreign packets must still fail.
 
+For both backends, vary JSON key order, additive packet metadata, spacing and digest case while preserving essential
+values. Coverage must remain identical. Fully delivered matching packets above producer line/byte budgets remain valid
+evidence, while `read` still enforces its own budgets. Blank JSONL separators preserve physical references; blank-only
+required logs remain errors. Corrupt text, version mismatches, invalid source bounds and unknown evidence shapes must
+continue to fail, including after earlier successful coverage.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.

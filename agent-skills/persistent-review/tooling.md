@@ -69,7 +69,16 @@ Reviewers may read additional context with another manifest. Structurally valid 
 audited manifest appear in `outside_manifest`, with reported ranges and transcript references. Their source versions and
 contents are unverified and earn no coverage credit; the helper does not load those sources or expand mandatory scope.
 Inspect the list for mistaken group/manifest selection. Required ranges remain missing until independently matched.
-Malformed or oversized context packets still fail visibly rather than being silently skipped.
+Malformed required fields in context packets still fail visibly rather than being silently skipped.
+
+The audit compares essential values, not JSON serialization. Reordered object keys, additive metadata, JSON spacing and
+hexadecimal digest case are harmless. Blank JSONL separator lines are skipped with physical evidence line numbers
+preserved; whitespace-only required logs still fail as empty. Unknown evidence record/block representations still fail
+because the tool cannot establish their delivery semantics.
+
+The 200-line/24,000-byte budgets constrain `read`, not existing delivery evidence. A larger fully delivered packet can
+be audited when its source identity, range and exact decoded text match. The audit streams JSONL records, but each
+record and retained source snapshots still need to fit in memory; producer defaults are not an audit memory limit.
 
 Format errors, malformed JSON, orphan results, mixed sessions, snapshot drift, and unmatched packet content fail with a
 nonzero exit. Expected format errors print `PERSISTENT_REVIEW_TOOL_FAILED` to stderr and no coverage report to stdout;

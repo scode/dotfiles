@@ -68,7 +68,7 @@ async function manifest(path: string): Promise<Source[]> {
     const entry = object(value);
     const item = await source(string(entry.path));
     requireThat(!sources.some((s) => s.path === item.path), "Duplicate source path");
-    requireThat(item.sha256 === entry.sha256, `Snapshot changed: ${item.path}`);
+    requireThat(item.sha256 === string(entry.sha256).toLowerCase(), `Snapshot changed: ${item.path}`);
     item.ranges = array(entry.ranges).map((value) => {
       const pair = array(value);
       const start = integer(pair[0]), end = integer(pair[1]);
@@ -93,26 +93,32 @@ function packet(item: Source, start: number, end: number): string {
   return output;
 }
 
-/** Process JSONL incrementally; incomplete or unknown records cannot disappear through a best-effort filter. */
+/**
+ * Keep physical references while skipping whitespace separators, which carry no delivery semantics.
+ * Incomplete or unknown records cannot disappear through a best-effort filter; required logs need a real record.
+ */
 async function* records(
   paths: string[],
   allowEmpty = false,
 ): AsyncGenerator<{ row: ObjectValue; ref: string; path: string }> {
   for (const path of paths) {
     let line = 0;
+    let count = 0;
     const input = createReadStream(path, { encoding: "utf8" });
     const reader = createInterface({ input, crlfDelay: Infinity });
     try {
       for await (const text of reader) {
         line++;
-        requireThat(text.trim(), `Blank log record: ${path}:${line}`);
+        // Spacing is not an evidence record; preserve physical line numbers for all real records.
+        if (!text.trim()) continue;
+        count++;
         yield { row: parse(text), ref: `${path}:${line}`, path };
       }
     } finally {
       reader.close();
       input.destroy();
     }
-    requireThat(line || allowEmpty, `Empty log: ${path}`);
+    requireThat(count || allowEmpty, `Empty log: ${path}`);
   }
 }
 
@@ -283,19 +289,15 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
         break;
       }
       const raw = rest.slice(0, stop);
-      requireThat(
-        new TextEncoder().encode(BEGIN + raw + END).length <= MAX_PACKET,
-        `Oversized read packet: ${result.ref}`,
-      );
       const value = parse(raw);
       rest = rest.slice(stop + END.length);
       const path = string(value.path);
       const start = integer(value.start), end = integer(value.end);
-      // Exploratory context is not mandatory scope. Validate its envelope without loading that source
-      // or trusting its claimed version/text; report it explicitly and never add it to coverage.
+      // Validate the fields that identify delivered text. Object ordering, additive metadata and the
+      // producer's read-size defaults do not change evidence; only the read command enforces those budgets.
+      // Exploratory context stays unverified and never adds coverage or triggers a source load.
       requireThat(
-        Object.keys(value).sort().join(",") === "end,path,sha256,start,text" && path.startsWith("/") &&
-          /^[0-9a-f]{64}$/.test(string(value.sha256)) && start >= 1 && end >= start && end - start < 200,
+        path.startsWith("/") && /^[0-9a-f]{64}$/i.test(string(value.sha256)) && start >= 1 && end >= start,
         `Malformed read packet envelope: ${result.ref}`,
       );
       string(value.text);
@@ -304,10 +306,11 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
         outside_manifest.push({ path, reported_range: [start, end], ref: result.ref });
         continue;
       }
-      requireThat(value.sha256 === item.sha256, `Packet source version mismatch: ${result.ref}`);
-      const expected = packet(item, start, end);
+      requireThat(string(value.sha256).toLowerCase() === item.sha256, `Packet source version mismatch: ${result.ref}`);
+      requireThat(end <= item.lines.length, `Packet range exceeds pinned source: ${result.ref}`);
+      const expected = item.lines.slice(start - 1, end).join("");
       requireThat(
-        BEGIN + JSON.stringify(value) + END === expected,
+        value.text === expected,
         `Delivered packet does not match pinned source: ${result.ref}`,
       );
       if (result.failed) rejected.push({ ref: result.ref, reason: "Tool reported failure" });
@@ -486,6 +489,57 @@ async function saveLog(path: string, rows: ObjectValue[]) {
 }
 
 for (const backend of ["codex", "claude"]) {
+  // Evidence depends on decoded source values, not the producer's particular JSON serialization.
+  Deno.test(`${backend}: harmless packet formatting and metadata do not change verified delivery`, () =>
+    fixture(async (root, item) => {
+      const path = `${root}/log`;
+      const value = {
+        note: "extra metadata",
+        text: item.lines.join(""),
+        end: 3,
+        start: 1,
+        sha256: item.sha256.toUpperCase(),
+        path: item.path,
+      };
+      const data = BEGIN + JSON.stringify(value, null, 2) + END;
+      await saveLog(path, logRows(backend, data));
+      const report = await audit(backend, "session", "/repo", [item], [path]);
+      equal(report.status, "complete");
+      await saveLog(path, logRows(backend, BEGIN + JSON.stringify({ ...value, text: "wrong" }) + END));
+      await fails(() => audit(backend, "session", "/repo", [item], [path]), "does not match");
+      await saveLog(path, logRows(backend, BEGIN + JSON.stringify({ ...value, end: 4 }) + END));
+      await fails(() => audit(backend, "session", "/repo", [item], [path]), "range exceeds");
+    }));
+  // Production budgets prevent oversized new reads; they are not grounds for discarding existing exact delivery.
+  Deno.test(`${backend}: producer read budgets do not invalidate fully delivered matching text`, () =>
+    fixture(async (root, item) => {
+      const path = `${root}/log`;
+      for (const text of ["line\n".repeat(201), "x".repeat(MAX_PACKET + 1)]) {
+        await Deno.writeTextFile(item.path, text);
+        const large = await source(item.path);
+        const value = { path: large.path, sha256: large.sha256, start: 1, end: large.lines.length, text };
+        await saveLog(path, logRows(backend, BEGIN + JSON.stringify(value) + END));
+        equal((await audit(backend, "session", "/repo", [large], [path])).status, "complete");
+        await fails(
+          () => packet(large, 1, large.lines.length),
+          large.lines.length > 200 ? "200 existing lines" : "24000",
+        );
+      }
+    }));
+  // Tolerating spacing must neither break raw evidence references nor make an absent required transcript usable.
+  Deno.test(`${backend}: blank separators preserve evidence line numbers but do not initialize empty logs`, () =>
+    fixture(async (root, item) => {
+      const path = `${root}/log`;
+      await saveLog(path, logRows(backend, packet(item, 1, 3)));
+      const data = await Deno.readTextFile(path);
+      await Deno.writeTextFile(path, "\n \t\n" + data);
+      const report = await audit(backend, "session", "/repo", [item], [path]);
+      equal(report.status, "complete");
+      equal(report.evidence[0].ref, `${path}:${backend === "codex" ? 6 : 5}`);
+      await Deno.writeTextFile(path, "\n \t\n");
+      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Empty log");
+      equal((await findings([path])).active, 0);
+    }));
   Deno.test(`${backend}: valid tool-free turns leave required text missing`, () =>
     fixture(async (root, item) => {
       const path = `${root}/log`;
@@ -645,7 +699,9 @@ for (const backend of ["codex", "claude"]) {
       await fails(() => audit(backend, "session", "/repo", [item], [path]), "Malformed read packet envelope");
       const padded = packet(other, 1, 3).replace(BEGIN, BEGIN + " ".repeat(MAX_PACKET));
       await saveLog(path, logRows(backend, packet(item, 1, 3) + padded));
-      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Oversized read packet");
+      const paddedReport = await audit(backend, "session", "/repo", [item], [path]);
+      equal(paddedReport.status, "complete");
+      equal(paddedReport.outside_manifest.length, 1);
     }));
 }
 Deno.test("findings count revisions once, preserve owners, and accept initialized empty logs", () =>
