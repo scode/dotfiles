@@ -7,9 +7,9 @@ routing requests on its own, and nothing here changes an answer.
 
 Each row is a model at one calibrated reasoning effort. The rows record what routing has calibrated so far, not the
 efforts a model can run: a user may explicitly request an effort no row lists (see Routing model in `SKILL.md`). The
-family determines the launch mechanism (see Launch mechanism in `SKILL.md`); `sota` marks models trusted with critical
-review and design decisions, not eligibility to orchestrate. Availability and user overrides may remove or replace these
-defaults; see Local availability in `SKILL.md`.
+session's harness and the family determine whether a route is native or external (see Launch mechanism in `SKILL.md`);
+`sota` marks models trusted with critical review and design decisions, not eligibility to orchestrate. Availability and
+user overrides may remove or replace these defaults; see Local availability in `SKILL.md`.
 
 Claude rows carry no version because they are harness aliases that follow each new release on their own. Their
 placements therefore move to a new release without anyone re-measuring them, the same as a GPT row whose id is bumped.
@@ -94,8 +94,9 @@ nothing was decided.
 - **The visual carve-out.** Real-world feedback consistently rates sol below the Claude models on visual design taste
   even while its coding reputation holds up.
 - **The workhorse-writer default.** The cross-family cost the native-path bias exists to weigh is small and
-  characterized for writers: the shell-out path to codex (launch, resume, and monitoring) is exercised end to end (two
-  items there remain explicitly unverified), and the price gap to the same-family writer alternative is about 30× for no
-  measured difference in first-attempt correctness (the eval above). The default rests on one eval in one small
-  repository; if a follow-up on a larger, messier codebase finds luna's literalism surviving the caller's checkpoint
-  protocol, the workhorse-writer paragraph in `SKILL.md` is what to revisit.
+  characterized for writers (measured through `codex exec`; an external GPT route on another CLI has not been measured):
+  the shell-out path to codex (launch, resume, and monitoring) is exercised end to end (two items there remain
+  explicitly unverified), and the price gap to the same-family writer alternative is about 30× for no measured
+  difference in first-attempt correctness (the eval above). The default rests on one eval in one small repository; if a
+  follow-up on a larger, messier codebase finds luna's literalism surviving the caller's checkpoint protocol, the
+  workhorse-writer paragraph in `SKILL.md` is what to revisit.

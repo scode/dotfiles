@@ -28,35 +28,40 @@ would. Judge the answer against the expected one, not against whether it quotes 
 a sidecar directly; whether `SKILL.md` sends it there is part of what the eval checks.
 
 Unless a question says otherwise, the situation is: a Claude Code session on fable high (`sota`), no provider
-preference, no config file, all four CLIs on `PATH`, own decomposition, first attempt. The list is run by the PR that
-creates this skill and re-run whenever the profile table, the precedence list, the request or answer shape, or the
-inventory changes.
+preference, no config file, own decomposition, first attempt. The list is run by the PR that creates this skill and
+re-run whenever the profile table, the precedence list, the request or answer shape, or the inventory changes.
 
-| Situation                                                                                    | Expected answer                                                                                                      |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| clear-spec writer, short, input not large                                                    | gpt-6-luna high via `codex exec`, cross-family yes (workhorse default)                                               |
-| clear-spec writer, tiny                                                                      | `orchestrator`                                                                                                       |
-| read-only scan of one subsystem, input not large                                             | haiku high native                                                                                                    |
-| read-only whole-repo scan, input large                                                       | haiku high native (read-only work never takes the luna route, so the long-context exception has nothing to redirect) |
-| design decision, own decomposition                                                           | `orchestrator`                                                                                                       |
-| design decision from a sonnet orchestrator (not `sota`)                                      | fable high native (delegate up)                                                                                      |
-| UI styling from a Codex session on gpt-6.1-sol high under `prefer-gpt`                       | opus high via `claude -p`, diverged from preference yes (visual)                                                     |
-| routine authored under `prefer-muse`                                                         | muse-spark-1.3-contributor medium via `muse exec`, escalation high                                                   |
-| critical review under `prefer-glm`                                                           | fable high native, diverged from preference yes (no suitable model)                                                  |
-| critical review under `prefer-glm` from a Codex session on gpt-6-astra high                  | gpt-6-astra high native, diverged from preference yes                                                                |
-| config file removes fable; critical review                                                   | gpt-6-astra high via `codex exec`, cross-family yes (the only remaining `sota` model)                                |
-| design decision from a Codex session on gpt-6.1-sol high (not `sota`)                        | gpt-6-astra high native (delegate up)                                                                                |
-| config file removes sonnet medium; clear-spec writer under `prefer-claude`                   | sonnet high native                                                                                                   |
-| no `codex` on `PATH`; clear-spec writer, short                                               | sonnet medium native, reason says the gpt path is unavailable                                                        |
-| a swarm-defined design role (process-defined spawn)                                          | `inherit`                                                                                                            |
-| a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only) | sonnet high native, diverged from preference yes (mechanism fixed)                                                   |
-| user demands opus for a mechanical task                                                      | opus high native, reason attributes the demand                                                                       |
-| user demands claude-fable-5, the older release, for critical review                          | claude-fable-5 high via `claude -p`, reason attributes the demand (native model parameter takes only aliases)        |
-| user writes "fable-5 high" for a mechanical task, copied from an older prompt                | fable high native, reason attributes the demand (the old label means the alias)                                      |
-| critical review with independent perspective requested                                       | gpt-6-astra high via `codex exec`, cross-family yes (independence)                                                   |
-| clear-spec writer after one `substantive failure` on gpt-6-luna high                         | gpt-6.1-sol medium via `codex exec` (not sonnet)                                                                     |
-| the same after `execution-path failure`                                                      | gpt-6-luna high via `codex exec` again                                                                               |
-| the same after `substantive failure (lost context)`                                          | gpt-6.1-sol medium via `codex exec`, reason says no attempt consumed                                                 |
+| Situation                                                                                              | Expected answer                                                                                                      |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| clear-spec writer, short, input not large                                                              | gpt-6-luna high external, cross-family yes (workhorse default)                                                       |
+| clear-spec writer, tiny                                                                                | `orchestrator`                                                                                                       |
+| read-only scan of one subsystem, input not large                                                       | haiku high native                                                                                                    |
+| read-only whole-repo scan, input large                                                                 | haiku high native (read-only work never takes the luna route, so the long-context exception has nothing to redirect) |
+| design decision, own decomposition                                                                     | `orchestrator`                                                                                                       |
+| design decision from a sonnet orchestrator (not `sota`)                                                | fable high native (delegate up)                                                                                      |
+| UI styling from a Codex session on gpt-6.1-sol high under `prefer-gpt`                                 | opus high external, diverged from preference yes (visual)                                                            |
+| routine authored under `prefer-muse`                                                                   | muse-spark-1.3-contributor medium external, escalation high                                                          |
+| critical review under `prefer-glm`                                                                     | fable high native, diverged from preference yes (no suitable model)                                                  |
+| critical review under `prefer-glm` from a Codex session on gpt-6-astra high                            | gpt-6-astra high native, diverged from preference yes                                                                |
+| config file removes fable; critical review                                                             | gpt-6-astra high external, cross-family yes (the only remaining `sota` model)                                        |
+| design decision from a Codex session on gpt-6.1-sol high (not `sota`)                                  | gpt-6-astra high native (delegate up)                                                                                |
+| config file removes sonnet medium; clear-spec writer under `prefer-claude`                             | sonnet high native                                                                                                   |
+| clear-spec writer, short; input 13 lists the gpt family as unreachable on `external`                   | sonnet medium native, reason says the gpt path is unavailable                                                        |
+| clear-spec writer, large input; input 13 lists gpt-6.1-sol and gpt-6-luna as unreachable on `external` | a Claude route native, not sol or luna again                                                                         |
+| routine authored under `prefer-gpt`; input 13 lists the gpt family as unreachable on `external`        | sonnet low native, diverged from preference yes                                                                      |
+| config file says "use GLM through the zai provider"; routine authored under `prefer-glm`               | glm-5.3-flash high external, `launch preference` carrying those words verbatim                                       |
+| config file says "run sonnet through claude -p"; clear-spec writer under `prefer-claude`               | sonnet medium external, `launch preference` carrying those words                                                     |
+| user demands gpt-6-luna; input 13 lists it as unreachable on `external`                                | `no suitable route`, reason names the demand                                                                         |
+| a Codex session; input 13 lists gpt-6-luna as unreachable on `native`; clear-spec writer, short        | gpt-6-luna high external                                                                                             |
+| a swarm-defined design role (process-defined spawn)                                                    | `inherit`                                                                                                            |
+| a swarm-defined mechanical-review reviewer under `prefer-gpt` (process-defined, native only)           | sonnet high native, diverged from preference yes (mechanism fixed)                                                   |
+| user demands opus for a mechanical task                                                                | opus high native, reason attributes the demand                                                                       |
+| user demands claude-fable-5, the older release, for critical review                                    | claude-fable-5 high external, reason attributes the demand (native model parameter takes only aliases)               |
+| user writes "fable-5 high" for a mechanical task, copied from an older prompt                          | fable high native, reason attributes the demand (the old label means the alias)                                      |
+| critical review with independent perspective requested                                                 | gpt-6-astra high external, cross-family yes (independence)                                                           |
+| clear-spec writer after one `substantive failure` on gpt-6-luna high                                   | gpt-6.1-sol medium external (not sonnet)                                                                             |
+| the same after `execution-path failure`                                                                | gpt-6-luna high external again                                                                                       |
+| the same after `substantive failure (lost context)`                                                    | gpt-6.1-sol medium external, reason says no attempt consumed                                                         |
 
 Focused-review scenarios:
 

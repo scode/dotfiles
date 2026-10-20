@@ -24,24 +24,31 @@ fix the skill or change this file in the same change, never leave them apart.
   The guarantee is inertness: an unsolicited load does nothing.
 - Routing answers a request of the shape `SKILL.md` describes under "The routing request" with an answer of the shape
   under "The routing answer": a route (a model id with effort, `orchestrator`, `inherit`, or `no suitable route`), a
-  launch mechanism (`native`, `codex exec`, `claude -p`, `muse exec`, `opencode run`), the `route exhausted` and
-  `endpoint trusted` facts, the preference and cross-family divergence flags with reasons, and a one-line reason. A
-  profile-table cell that reads `none` is never returned; it resolves inside routing. Routing is a pure function of the
-  request and the local environment: it holds no state between requests and never decides whether to delegate or to
-  escalate.
-- Routing reads the model routing config file, `~/.scode-model-routing.md`, and checks CLI and credential availability
-  itself when answering; those are not request inputs. If that file is absent and `~/.scode-galaxy-brainrc.md` is
-  present, routing stops and tells the user to rename it rather than answering as if no config existed. Prose in this
-  skill calls it "the model routing config file", never "the rc file".
+  launch mechanism (`native` or `external`), a verbatim `launch preference` when the config file states one for an
+  external route's model, the `route exhausted` and `endpoint trusted` facts, the preference and cross-family divergence
+  flags with reasons, and a one-line reason. A profile-table cell that reads `none` is never returned; it resolves
+  inside routing. Routing is a pure function of the request and the local environment: it holds no state between
+  requests and never decides whether to delegate or to escalate.
+- Routing never names or checks a CLI. Its mechanism answer is only `native` or `external`, because that is all a model
+  choice depends on (native-path bias, native-only process roles, writer resume, alias-only native model parameters);
+  which program runs an external route, and whether one installed here can, is the launcher's decision. An external
+  route that cannot launch comes back in the caller's list of models unreachable on a path (input 13), which routing
+  treats as unavailable on that path for every unit; a demanded model unavailable on every path is `no suitable route`,
+  never a substitute. The one exception to never naming a CLI is the `launch preference` field, which passes the user's
+  own config-file words through unchanged. This keeps the CLI choice in one place instead of a second table that drifts.
+- Routing reads the model routing config file, `~/.scode-model-routing.md`, itself when answering; it is not a request
+  input. If that file is absent and `~/.scode-galaxy-brainrc.md` is present, routing stops and tells the user to rename
+  it rather than answering as if no config existed. Prose in this skill calls it "the model routing config file", never
+  "the rc file".
 - The effort words attached to models in the inventory and profile tables are calibration defaults, not a whitelist of
   what a model may run. An explicit user demand for a model at an effort the tables do not list routes to that model at
   that effort (input 8); the tables' omission is never a reason to block, ask for confirmation, or substitute another
   model. What the launch mechanism can actually select (input 11) is the limit on a demanded effort.
 - The inventory and profile tables name Claude models by harness alias alone (`haiku`, `sonnet`, `opus`, `fable`), with
-  no version number, because the alias is the launch argument and follows each new release. Only ids passed to a CLI
-  literally (GPT, Muse, GLM) carry a version there. The skill's former versioned labels (`fable-5`, `sonnet-5.5`, and so
-  on) mean the plain alias. An explicit demand for a specific older Claude release is the one exception: routing answers
-  it with that release's full model id, launched through `claude -p` when the native mechanism takes only aliases.
+  no version number, because the alias is the launch argument and follows each new release. Only ids passed literally
+  (GPT, Muse, GLM) carry a version there. The skill's former versioned labels (`fable-5`, `sonnet-5.5`, and so on) mean
+  the plain alias. An explicit demand for a specific older Claude release is the one exception: routing answers it with
+  that release's full model id, on `external` when the native mechanism takes only aliases.
 - A request that names a model by its line alone ("sol high", "sonnet medium") resolves to that line's model in the
   inventory, never to an older release of the line. A request that names a model by version (other than the former
   Claude labels) is an explicit demand even when the inventory does not list that version; absence from the inventory is
