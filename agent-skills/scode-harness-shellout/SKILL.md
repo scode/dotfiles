@@ -6,7 +6,7 @@ description: >
   cannot launch natively. The user need not name this skill. Prefer supported native delegation when the launch
   mechanism is open; honor an external mechanism selected by the user or caller. Also loaded by other skills for
   foreign-harness launches. Supplies verified launch, monitoring, resume, and kill mechanics for `codex exec`,
-  `claude -p`, `muse exec`, and `opencode run`; loading alone activates no session-wide behavior.
+  `claude -p`, `muse exec`, `opencode run`, and `omp -p`; loading alone activates no session-wide behavior.
 ---
 
 # scode-harness-shellout
@@ -26,18 +26,20 @@ Honor the requested model and effort, and preserve any launch mechanism and cons
 selected. For a direct request that leaves the mechanism open, first check whether the current harness's native
 delegation tool supports the requested model, effort, and any required resume behavior. If it does, use that tool;
 loading this skill does not require a shell-out. Otherwise use `codex exec` for GPT, `claude -p` for Claude, `muse exec`
-for Muse, or `opencode run` for GLM, subject to local availability and the caller's constraints. A selected external
-mechanism stays external even when native delegation is available. Read the matching harness file before launching. Lack
-of native support is a reason to check the shell-out path, not to silently substitute a native model or claim the
-requested agent cannot be run. If the external path is unavailable too, report that limitation.
+for Muse, or `opencode run` for GLM, subject to local availability and the caller's constraints. `omp -p` is used only
+when the user or caller names omp. A selected external mechanism stays external even when native delegation is
+available. Read the matching harness file before launching. Lack of native support is a reason to check the shell-out
+path, not to silently substitute a native model or claim the requested agent cannot be run. If the external path is
+unavailable too, report that limitation.
 
 ## What the caller supplies
 
 The caller supplies these inputs before an external launch, applying the request rules above when the mechanism is still
 open.
 
-- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, or `opencode run`. The fifth value a caller can
-  hold, `native`, means the caller's own sub agent mechanism; the shell-out procedures below do not apply to it.
+- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, `opencode run`, or `omp -p`. The sixth value a
+  caller can hold, `native`, means the caller's own sub agent mechanism; the shell-out procedures below do not apply to
+  it.
 - The model id and reasoning effort, both set explicitly on every launch.
 - A run id, a string unique to this delegation that the caller generated, used to name every file this skill creates.
 - The prompt, as a file the caller writes before the launch, the way Launch hygiene below describes.
@@ -61,6 +63,7 @@ about to launch through it, then launch.
 | `claude -p`    | `harness/claude.md`                                        |
 | `muse exec`    | `harness/muse.md`                                          |
 | `opencode run` | `harness/opencode.md`                                      |
+| `omp -p`       | `harness/omp.md`                                           |
 | `native`       | nothing; no shell-out mechanics apply to native delegation |
 
 "`harness/`" means the `harness` directory under the directory this `SKILL.md` was loaded from, whatever path that is in
@@ -96,8 +99,9 @@ These rules were each learned from a real incident and apply to every shelled-ou
   than N model failures: stop the batch and fix the path instead of judging each delegate separately.
 - Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them per the section
   below; use a foreground timeout only when it is shorter than the monitoring interval.
-- Permission bypass flags (`--yolo`, `--auto`, `--dangerously-skip-permissions`) disable approval, sandboxing, and trust
-  checks for the delegate. Use them only where you would accept the same for the orchestrating session.
+- Permission bypass flags (`--yolo`, `--auto`, `--dangerously-skip-permissions`, `--approval-mode yolo`) disable
+  approval and trust checks for the delegate, and sandboxing where the harness has one. Use them only where you would
+  accept the same for the orchestrating session.
 
 ## Monitoring long-running delegates
 
@@ -151,10 +155,11 @@ the monitoring obligations below or any more frequent resource checks the caller
 ## Resuming a stopped delegate
 
 A delegate that stops mid-task and is later continued with more input is resumed in the same session rather than
-relaunched. Resume works on every harness (verified 2026-08-30 with a planted codeword that each harness answered on the
-resumed turn). Resuming preserves context and can reuse cached input, but cache hits still count toward usage; resume
-for work or guidance, not for status polling. Whether a run stops, what it must produce before stopping, and what the
-continuation says are the caller's protocol; this skill supplies the mechanics common to every harness:
+relaunched. Resume works on every harness (verified with a planted codeword that each harness answered on the resumed
+turn: 2026-08-30 for codex, claude, muse, and opencode, and 2026-10-19 for omp 18.12.3). Resuming preserves context and
+can reuse cached input, but cache hits still count toward usage; resume for work or guidance, not for status polling.
+Whether a run stops, what it must produce before stopping, and what the continuation says are the caller's protocol;
+this skill supplies the mechanics common to every harness:
 
 - Record the harness's session or thread id at launch; each harness file says where it comes from (a `--session-id` you
   generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
