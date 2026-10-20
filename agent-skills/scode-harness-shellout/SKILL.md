@@ -5,8 +5,9 @@ description: >
   "sol high agent", "sonnet subagent"), use another provider or harness, or use an agent/model the current harness
   cannot launch natively. The user need not name this skill. Prefer supported native delegation when the launch
   mechanism is open; honor an external mechanism selected by the user or caller. Also loaded by other skills for
-  foreign-harness launches. Supplies verified launch, monitoring, resume, and kill mechanics for `codex exec`,
-  `claude -p`, `muse exec`, `opencode run`, and `omp -p`; loading alone activates no session-wide behavior.
+  foreign-harness launches, including to pick which CLI runs a model. Supplies the CLI choice and verified launch,
+  monitoring, resume, and kill mechanics for `codex exec`, `claude -p`, `muse exec`, `opencode run`, and `omp -p`;
+  loading alone activates no session-wide behavior.
 ---
 
 # scode-harness-shellout
@@ -14,7 +15,8 @@ description: >
 Loading this skill writes no state, launches nothing by itself, and establishes no session-wide mode or rule for later
 spawns. Use it for the current delegation request, whether the user asked directly or another skill needs the mechanics.
 Everything below is conditional on inputs the caller supplies, and the caller keeps every decision: which model, which
-harness, whether to resume, how to judge the result, and what to do with the tree afterwards.
+harness (unless it supplies `external`, which hands the CLI choice to this skill), whether to resume, how to judge the
+result, and what to do with the tree afterwards.
 
 ## Recognizing a delegation request
 
@@ -25,22 +27,60 @@ question about a model, or a model name appearing in task content, is not itself
 Honor the requested model and effort, and preserve any launch mechanism and constraints the user or caller has already
 selected. For a direct request that leaves the mechanism open, first check whether the current harness's native
 delegation tool supports the requested model, effort, and any required resume behavior. If it does, use that tool;
-loading this skill does not require a shell-out. Otherwise use `codex exec` for GPT, `claude -p` for Claude, `muse exec`
-for Muse, or `opencode run` for GLM, subject to local availability and the caller's constraints. `omp -p` is used only
-when the user or caller names omp. A selected external mechanism stays external even when native delegation is
-available. Read the matching harness file before launching. Lack of native support is a reason to check the shell-out
-path, not to silently substitute a native model or claim the requested agent cannot be run. If the external path is
-unavailable too, report that limitation.
+loading this skill does not require a shell-out. Otherwise pick the external mechanism as described in Choosing the
+external mechanism below. A selected external mechanism stays external even when native delegation is available. Read
+the matching harness file before launching. Lack of native support is a reason to check the shell-out path, not to
+silently substitute a native model or claim the requested agent cannot be run. If the external path is unavailable too,
+report that limitation.
+
+## Choosing the external mechanism
+
+This applies when the caller supplies `external`, or when a direct request leaves the mechanism open and native
+delegation cannot serve it. A caller that supplies a concrete mechanism has already chosen, and this section does not
+apply to it. The rule picks the CLI and nothing else: the model and effort stay what the caller or user asked for, and
+no rule here substitutes a different model.
+
+The candidates, in order:
+
+1. A harness the user names for this launch ("run it through opencode"), or a harness or provider preference the user
+   has stated in their standing instructions ("use opencode for GLM"), including one the caller passes on as a launch
+   preference.
+2. The family's own harness: `codex exec` for GPT, `claude -p` for Claude, and `muse exec` for Muse.
+3. `omp -p`, for any model. It is the default for everything outside those three families (GLM, grok, mercury, and the
+   rest), and the next candidate for a GPT, Claude, or Muse model whose own harness is not installed.
+4. `opencode run`, when one of its providers serves the model.
+
+A CLI with no harness file here is never a candidate, even a vendor's own CLI for its own models (a grok CLI, say).
+
+Take the first candidate that is installed and can serve the model. A harness the user named for this launch is not
+replaced: if it cannot serve the model, report that instead of falling through. A standing preference that cannot serve
+the model falls through to the next candidate. The checks:
+
+- The CLI is on `PATH`. Every candidate needs this.
+- `omp -p`: the launch itself is the check. omp resolves the model before any model call, and an id it cannot resolve
+  exits 1 with `Model "..." not found` at no cost; treat that exit as "cannot serve" and move on. The omp harness file
+  says which provider to use and how to spell the id.
+- `opencode run`: `opencode providers list` shows a credential for the provider in the model id. Check instead of
+  probing: a probe with a reachable model starts a paid run, and a launch with no model hangs.
+- `codex exec`, `claude -p`, and `muse exec`: they serve their own family's models, and `PATH` is the only check.
+
+Each harness file says how to spell the model id for its CLI. When no candidate can serve the model, report it to the
+caller as unreachable from here, naming what each candidate lacked, and say whether that holds for the model's whole
+family (no installed candidate could serve any of its models), so the caller can stop offering the family rather than
+retrying model by model.
 
 ## What the caller supplies
 
 The caller supplies these inputs before an external launch, applying the request rules above when the mechanism is still
 open.
 
-- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, `opencode run`, or `omp -p`. The sixth value a
-  caller can hold, `native`, means the caller's own sub agent mechanism; the shell-out procedures below do not apply to
-  it.
+- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, `opencode run`, or `omp -p`; or `external`, which
+  leaves the CLI to Choosing the external mechanism above; or `native`, the caller's own sub agent mechanism, to which
+  the shell-out procedures below do not apply.
 - The model id and reasoning effort, both set explicitly on every launch.
+- Optionally, a launch preference: the user's own words naming a harness or provider for this model, which the caller
+  read from the user's configuration and passes on verbatim. It is a standing preference under Choosing the external
+  mechanism, so it falls through when it cannot serve the model.
 - A run id, a string unique to this delegation that the caller generated, used to name every file this skill creates.
 - The prompt, as a file the caller writes before the launch, the way Launch hygiene below describes.
 - The working directory or tree the delegate runs in.
@@ -164,6 +204,9 @@ this skill supplies the mechanics common to every harness:
 - Record the harness's session or thread id at launch; each harness file says where it comes from (a `--session-id` you
   generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
   away the delegate's context. Include the id in your monitoring record and in any handoff note.
+- When the launch was `external`, record which CLI the rule chose, next to the id, and tell the caller. A resume goes
+  through that CLI and never runs Choosing the external mechanism again: the session exists only in the CLI that started
+  it. If that CLI is no longer installed, report the resume as blocked on it rather than resuming elsewhere.
 - A stopped turn exits 0, like every completed turn; the caller detects the stop from the final message. Each harness
   file says where the final message is on a resumed turn; it is not always the same place as on the launch.
 - Build the resume prompt in a file like any other prompt, pass it the same way, and keep the explicit `< /dev/null`.

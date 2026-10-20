@@ -12,6 +12,9 @@ resolve, process layout — was observed with OpenCode 1.18.20 against glm-5.3-f
 behavior described next was additionally re-verified against the same model on the `opencode` (OpenCode Zen) provider.
 Treat all of it as an observation to re-check when the CLI changes, not as a stable contract.
 
+- Model: `-m <provider>/<model-id>`. The provider is `opencode` (OpenCode Zen, as in the template) unless the user has
+  stated another, such as `zai`; its credential is what `opencode providers list` has to show. An id written for another
+  CLI (`openrouter/z-ai/glm-5.3-flash`, a bare `glm-5.3-flash`) is respelled with that provider prefix.
 - `--variant <v>` is how effort reaches the model, and the `opencode` (OpenCode Zen) provider ships the variants
   natively: `low`, `high`, and `max`, observed to change the request (thinking length differed clearly between low and
   high runs, and a run with no variant landed between them; the max rung comes from the provider's shipped variants and
@@ -38,10 +41,10 @@ Treat all of it as an observation to re-check when the CLI changes, not as a sta
   same goes for the `skill` tool: a `permission.skill` denial in `OPENCODE_CONFIG_CONTENT` or the user's config removes
   it, and a delegate whose task loads a skill by name (a process skill in its task, or a dependency that skill loads)
   then cannot load anything and stops, so never deny it for such a run.
-- A coordinator-shaped GLM assignment is one fully equipped `opencode run`. Let that coordinator use `task` for its own
-  fan-out instead of launching one outer OpenCode process per child. Disabling `task` turns a nested workload into a
-  long series of memory-heavy CLI processes constrained by the outer orchestrator's concurrency. Do not restore that
-  failure mode in the name of containment, keeping model choice at the outer session, or read-only scope.
+- A coordinator-shaped assignment on opencode is one fully equipped `opencode run`. Let that coordinator use `task` for
+  its own fan-out instead of launching one outer OpenCode process per child. Disabling `task` turns a nested workload
+  into a long series of memory-heavy CLI processes constrained by the outer orchestrator's concurrency. Do not restore
+  that failure mode in the name of containment, keeping model choice at the outer session, or read-only scope.
 - Native `task` calls are completion-only in the outer JSONL stream. OpenCode 1.18.20 emitted no launch event, stable
   handle, or active-task count when a coordinator issued three calls concurrently; each `tool_use` event appeared only
   when that child finished. The completed event's `part.state.time.start` and `part.state.time.end` showed the real
