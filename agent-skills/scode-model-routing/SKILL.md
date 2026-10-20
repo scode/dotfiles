@@ -15,12 +15,12 @@ This skill is never active. It answers when loaded and claims nothing about late
 request and the local environment: it holds no state between requests, never decides whether to delegate or whether to
 escalate, never launches anything, and never claims later spawns. A skill that has decided to delegate a unit of work
 asks it "which model, at what effort, through which mechanism" and acts on the answer under its own rules. The one thing
-routing reads from disk on its own is the model routing config file and the CLIs and credentials that decide what is
-reachable here (see Local availability); everything else comes from the request.
+routing reads from disk on its own is the model routing config file (see Local availability); everything else comes from
+the request.
 
 ## The routing request
 
-A request carries twelve facts, all of which the caller has and routing does not:
+A request carries thirteen facts, all of which the caller has and routing does not:
 
 1. The work profile (see Work profiles and How to name a profile).
 2. The caller's harness and model id. Routing derives the session's family and whether it is `sota` from its own
@@ -40,15 +40,18 @@ A request carries twelve facts, all of which the caller has and routing does not
     follow-up message. Claude Code and Codex support resumable native writers. For other harnesses, or when the
     available tools differ, use the capabilities the caller reports; unknown capability is not proof of support.
 12. The current route and its outcome so far: `none` for a first attempt, or the model and effort last tried with one of
-    `substantive failure`, `substantive failure (lost context)`, `misclassified`, or `execution-path failure`, the last
-    optionally marking that mechanism unavailable for this unit (a CLI on `PATH` whose launch path is broken, for
-    example). A plain substantive failure advances to the next rung, and so does `misclassified` (the task proved more
-    demanding than the profile named; the caller may instead name a stronger profile and start over); `lost context`
-    reroutes to the long-context rung without counting an attempt; an execution-path failure keeps the route unless its
-    mechanism is marked unavailable, in which case routing answers as if that mechanism did not exist. When a provider
-    preference is in force, this input also says whether the preferred family has already produced poor output in this
-    session, on this unit or earlier ones, since that history is a reason to diverge (see Provider preference) and
-    routing has no memory of it.
+    `substantive failure`, `substantive failure (lost context)`, `misclassified`, or `execution-path failure`. A plain
+    substantive failure advances to the next rung, and so does `misclassified` (the task proved more demanding than the
+    profile named; the caller may instead name a stronger profile and start over); `lost context` reroutes to the
+    long-context rung without counting an attempt; an execution-path failure keeps the route, unless the caller has
+    since listed that model and path in input 13. When a provider preference is in force, this input also says whether
+    the preferred family has already produced poor output in this session, on this unit or earlier ones, since that
+    history is a reason to diverge (see Provider preference) and routing has no memory of it.
+13. What the caller has found unreachable in this session: each entry a model (or a whole family, when the launcher
+    reported that nothing installed can run any of its models) with the path that failed, `native` or `external`.
+    Routing treats each entry as unavailable on that path for every unit, the way a config file removal works, and
+    answers as if the model did not exist there. Routing has no memory, so the caller keeps this list and passes all of
+    it on every request.
 
 ## The routing answer
 
@@ -57,8 +60,10 @@ The answer carries:
 - The route: a model id with its effort (`gpt-6-luna high`), or `orchestrator` (the caller does this unit itself, it is
   not delegated), or `inherit` (run at the session's own model on the caller's mechanism), or `no suitable route`
   (nothing in any reachable family fits; there is no implied fallback, and the caller decides).
-- The launch mechanism: `native`, `codex exec`, `claude -p`, `muse exec`, or `opencode run`, exactly those strings, from
-  the session-by-family table under Launch mechanism.
+- The launch mechanism: `native` or `external`, exactly those strings, per Launch mechanism. Routing never names a CLI.
+- `launch preference`, only on an `external` route whose model the config file gives a provider or harness for: the
+  user's words, copied verbatim (see `config-file.md`). It is a standing preference of the user's, for whatever launches
+  the route; routing does not act on it, and a `native` route never carries one.
 - `route exhausted: yes/no`: yes when the route just answered is the last rung its family offers for this profile, so a
   substantive failure there is not answered by a further rung (see Escalation facts).
 - `endpoint trusted: yes/no`: yes when that last rung is a `sota` model.
@@ -87,7 +92,9 @@ Highest first. Each earlier rule settles what it covers and the later ones fill 
 
 1. The caller's process constraints (inputs 7 and 8) bound the available mechanisms, regardless of harness.
 2. An explicit demand (input 8), subject to availability: honor it, and the reason attributes the choice to whoever
-   demanded it. A demand is process, not a routing default.
+   demanded it. A demand is process, not a routing default. A demanded model that is unavailable on every path it could
+   take (config file or input 13) is `no suitable route`, with the reason naming the demand; routing never substitutes
+   for a demanded model.
 3. A process-defined spawn (input 7) of a design-shaped role, with no demand, is `inherit` on `native`: it runs at the
    session's own model unless the process says otherwise. Every other process-defined spawn is routed by its profile
    like the caller's own units, with the mechanism fixed to `native` unless the process says otherwise; a preference
@@ -118,10 +125,10 @@ model can spend more tokens, take longer, require more review, and trigger an es
 range. Route by work profile instead; the caller's gate and escalation policy control total cost through an accepted
 result.
 
-Each model name includes its reasoning effort. The family determines which launch mechanism applies (see Launch
-mechanism). `sota` marks models trusted with critical review and design decisions; it is not an eligibility requirement
-for the orchestrator role. The inventory, with the calibration history behind it, is in `inventory.md` next to this
-file; the families and the `sota` marks are:
+Each model name includes its reasoning effort. The session's harness and the family together determine whether a route
+is native or external (see Launch mechanism). `sota` marks models trusted with critical review and design decisions; it
+is not an eligibility requirement for the orchestrator role. The inventory, with the calibration history behind it, is
+in `inventory.md` next to this file; the families and the `sota` marks are:
 
 | family | models (effort words)                                                          | sota             |
 | ------ | ------------------------------------------------------------------------------ | ---------------- |
@@ -154,11 +161,11 @@ real use calibrates them neither its benchmark tier nor its token price counts a
 (`inventory.md`, under "Evidence behind the rules in SKILL.md", says what the placements rest on). It carries no `sota`
 mark, so it is never the sole critical-review gate, and no muse route ends at a trusted endpoint (see Escalation facts).
 
-The glm family is Z.ai's GLM-5.3-Flash, reached through OpenCode Zen (`opencode/glm-5.3-flash` via `opencode run`).
-Everything said about muse above applies to it unchanged: opt-in only, via a `glm` preference, a request naming it, or
-an announced cross-family decision; provisional placements; no `sota` mark; no route ending at a trusted endpoint. Its
-price is not a reason for an unprompted cross-family route until real use has calibrated it. The provider ships three
-variants for this model — `low`, `high`, and `max` — and nothing beyond those three has been observed.
+The glm family is Z.ai's GLM-5.3-Flash. Everything said about muse above applies to it unchanged: opt-in only, via a
+`glm` preference, a request naming it, or an announced cross-family decision; provisional placements; no `sota` mark; no
+route ending at a trusted endpoint. Its price is not a reason for an unprompted cross-family route until real use has
+calibrated it. The model takes three efforts, `low`, `high`, and `max`, and nothing beyond those three has been
+observed.
 
 ## Work profiles
 
@@ -206,13 +213,13 @@ announced as a divergence. A Claude session does its own visual design.
 Long context is an exception to the luna routes, from every orchestrator. Luna's current calibration is weaker on
 long-context retrieval, so a mechanical or clear-spec task whose input is genuinely large — whole-repo scans, big log
 files, long-document analysis, a change that has to be reasoned across many files at once — starts at gpt-6.1-sol medium
-instead of luna. A Claude session shelling out to luna under the workhorse default shells out to sol for these instead,
-rather than reverting to its native route. This is about input size the model must actually reason across (input 5), not
-task difficulty; small-input work stays on luna, and when the caller cannot tell in advance, luna first is the right bet
-— a reroute after a lost-context failure costs one cheap run. A luna delegate that loses track of earlier context
-mid-task is this weakness surfacing, not a generic substantive failure: the outcome `substantive failure (lost context)`
-reroutes to sol without counting against the profile. For the GPT focused-review route, large input or a lost-context
-failure instead routes directly to sol high, without counting a lost-context failure as an attempt.
+instead of luna. A Claude session routing luna `external` under the workhorse default routes sol `external` for these
+instead, rather than reverting to its native route. This is about input size the model must actually reason across
+(input 5), not task difficulty; small-input work stays on luna, and when the caller cannot tell in advance, luna first
+is the right bet — a reroute after a lost-context failure costs one cheap run. A luna delegate that loses track of
+earlier context mid-task is this weakness surfacing, not a generic substantive failure: the outcome `substantive failure
+(lost context)` reroutes to sol without counting against the profile. For the GPT focused-review route, large input or a
+lost-context failure instead routes directly to sol high, without counting a lost-context failure as an attempt.
 
 ## Native-path bias
 
@@ -234,15 +241,15 @@ bias.
 
 The bias does not apply to workhorse writers. For delegates that edit the tree under the mechanical or clear-spec
 implementation profile, the default from any orchestrator is gpt-6-luna high, reached however the session reaches a gpt
-model per Launch mechanism — `codex exec` from a Claude session, the native sub agent mechanism from a Codex session —
-unless a provider preference says otherwise, the path to a gpt model is unavailable (no `codex` on `PATH` from a
-non-Codex session), or the config file rules the model out. Read-only mechanical work (searches, scans, log reading) is
-not covered: there the ordinary bias stands, and a Claude session's cheap native fan-out (haiku) beats paying shell-out
-launch and monitoring overhead per delegate. A "short" writer task crosses families under this rule; a "tiny" one is
-still `orchestrator`. After a luna-high failure, a workhorse writer follows the GPT route to sol medium; that is the
-rung for mechanical and clear-spec work. The complex-implementation route starts at sol medium and may escalate to sol
-high. The same-family routes are what a session uses when the gpt path is unavailable or a preference directs it there.
-A user who would rather not cross families by default says `prefer-claude` or writes the config file.
+model per Launch mechanism — `external` from a Claude session, `native` from a Codex session — unless a provider
+preference says otherwise, the gpt model is unreachable (input 13), or the config file rules the model out. Read-only
+mechanical work (searches, scans, log reading) is not covered: there the ordinary bias stands, and a Claude session's
+cheap native fan-out (haiku) beats paying external launch and monitoring overhead per delegate. A "short" writer task
+crosses families under this rule; a "tiny" one is still `orchestrator`. After a luna-high failure, a workhorse writer
+follows the GPT route to sol medium; that is the rung for mechanical and clear-spec work. The complex-implementation
+route starts at sol medium and may escalate to sol high. The same-family routes are what a session uses when the gpt
+path is unavailable or a preference directs it there. A user who would rather not cross families by default says
+`prefer-claude` or writes the config file.
 
 ## Escalation facts
 
@@ -282,46 +289,52 @@ unavailable models from every profile and use the next suitable option rather th
 mechanically. "Suitable" is defined by the profile, not by the family: a model with no placement in a profile's row is
 not the next option for that profile just because it is the strongest one left in the family. When a config file removes
 the only `sota` model of the session's own family, critical review and the design delegate-up go cross-family to the
-other family's `sota` model (the removal of fable sends a Claude session's critical review to gpt-6-astra high via
-`codex exec`), not to opus or sol natively. Apart from the seeding request described in `config-file.md`, do not create
-or edit the config file yourself; it belongs to the user. If the config file does not exist but the file it replaced,
+other family's `sota` model (the removal of fable sends a Claude session's critical review to gpt-6-astra high on
+`external`), not to opus or sol natively. Apart from the seeding request described in `config-file.md`, do not create or
+edit the config file yourself; it belongs to the user. If the config file does not exist but the file it replaced,
 `~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and answering as if
 no config existed would silently route to models the user said are unavailable.
 
-If the config file does not exist, all inventory models are assumed available, with one practical exception: a
-shelled-out family whose CLI is not installed (`codex`, `claude`, `muse`, or `opencode` missing from `PATH`) is
-unavailable regardless of the config file, and so is the glm family when `opencode providers list` shows no credential
-for the provider the model id names — `opencode run` with a model it cannot reach fails immediately, but with no model
-at all it hangs, so check rather than probe. Treat either as a missing family when honoring a provider preference — the
-answer diverges and says so — rather than as a launch failure for the caller to retry.
+If the config file does not exist, all inventory models are assumed available. Routing does not check CLIs or
+credentials: whether a route can launch here is settled at launch. When it cannot, the caller adds the model and path to
+input 13, and from then on the model is unavailable on that path for every unit, as if the config file had removed it.
+Under a provider preference, a preferred family whose suitable models are all unavailable this way is a missing family:
+the answer diverges and says so, rather than handing back a route the caller already could not launch.
 
 ## Launch mechanism
 
-The mechanism half of an answer comes from the session's harness, its reported native capabilities (input 11), and the
-target model. Use a native mechanism when it supports the selected model and effort, subject to the effort inheritance
-rule below. Otherwise use the target family's shell-out mechanism, subject to availability and process constraints:
+The mechanism half of an answer is `native` or `external`. It comes from the session's harness, its reported native
+capabilities (input 11), and the target model. Use `native` when the session's sub agent mechanism supports the selected
+model and effort, subject to the effort inheritance rule below; otherwise the route is `external`, subject to process
+constraints:
 
 - **Claude Code session → claude model**: `native` (the session's sub agent mechanism, with the model parameter set to
   the target model).
 - **Codex session → gpt model**: `native` (the session's sub agent mechanism, specifying the target model).
 - **Other native paths**: use the caller's reported capabilities. A native path that only inherits the current model
   cannot satisfy a route to a different model.
-- **Shell-out fallback from any session**: `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and
-  `opencode run` for GLM. The OpenCode launch uses the unrestricted default build agent with `task` available.
+- **Everything else**: `external`.
+
+`external` names no program. Which CLI runs the route, and whether one installed here can, is the launcher's decision
+from the model and the local setup, so the mechanism field never carries a CLI name, provider, or launch flag. The
+`launch preference` field is the one place such words appear, and only as the user's own text passed through.
+
+A config file that wants a model run through a named harness even where the native mechanism could run it ("run sonnet
+through claude -p") is a restriction on the native path for that model: answer `external` and carry the words as the
+`launch preference`.
 
 Claude models are named in the inventory by their harness alias (`fable`, `opus`, `sonnet`, `haiku`), and that alias is
-also the launch argument, whether native or through `claude -p`. Each alias resolves to the current release of its line,
-so the inventory carries no Claude version numbers. A demand for a specific older Claude release (input 8) is launched
-by that release's full model id, as `modelUsage` reports it (`claude-fable-5`, `claude-sonnet-5`); a short form such as
+also the model the route names, whether native or external. Each alias resolves to the current release of its line, so
+the inventory carries no Claude version numbers. A demand for a specific older Claude release (input 8) is routed by
+that release's full model id, as `modelUsage` reports it (`claude-fable-5`, `claude-sonnet-5`); a short form such as
 `sonnet-5` is not a model id and is rejected. A native mechanism whose model parameter takes only aliases (input 11)
-cannot satisfy such a demand, so it goes through `claude -p`. GPT, Muse, and GLM ids are passed to their CLIs as
-written, minus the effort word.
+cannot satisfy such a demand, so it is `external`. GPT, Muse, and GLM ids are given as written, minus the effort word.
 
 When the mechanism is `native`, the caller also sets the target reasoning effort if its sub agent mechanism has an
 effort parameter; otherwise sub agents inherit the session's effort and that is acceptable. A writer needs a mechanism
 that can resume the same delegate with a follow-up message (input 11); on a harness whose native sub agents cannot, the
-answer for a writer is that family's shell-out mechanism instead, and the reason says so. This can be a shell-out to the
-session's own family; matching families does not establish native resume support.
+answer for a writer is `external` instead, and the reason says so. This can be an external route to the session's own
+family; matching families does not establish native resume support.
 
 ## Composing with another skill's process
 

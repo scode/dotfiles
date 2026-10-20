@@ -6,17 +6,14 @@ when talking to the user, never "the rc file".
 
 The config file may replace the model inventory, override profile assignments, or add natural-language routing
 constraints. An inventory it supplies replaces the default inventory wholesale: omitted models are unavailable for
-delegation. Model names are the ids to invoke — pass GPT names to `codex -m` and muse names to `muse exec --model`
-without the trailing effort word, map Claude names to the nearest `--model` alias, and pass GLM names to `opencode run
--m` prefixed with the provider (`opencode/`, OpenCode Zen, by default; the config file may name another provider that
-serves the same model, such as a coding-plan or router endpoint — or the `zai` provider, which serves this model but
-ships no reasoning variants, so its launches additionally need the `OPENCODE_CONFIG_CONTENT` variants block described in
-the opencode harness doc) with the effort word going to `--variant`. When a replacement inventory introduces models
-absent from the built-in profiles, the config file must assign them to profiles or describe their roles well enough to
-do so. Ask instead of inventing profile assignments when that information is missing. A new family also needs an
-invocation mechanism, and it must be one of the five an answer can carry (see Launch mechanism in `SKILL.md`), since
-those are the only launches any caller has rules for; treat a family as unavailable until the config file names one of
-them for it.
+delegation. Model names are the ids a route names, without the trailing effort word; Claude names map to the nearest
+alias. How an id is spelled for a particular CLI, and which provider serves it, are not routing's concern: a config file
+that says which provider or harness to use for a model ("GLM through a coding plan") is a launch preference. Routing
+does not apply it; it copies the user's words into the answer's `launch preference` field for the caller to hand to
+whatever launches the route. When a replacement inventory introduces models absent from the built-in profiles, the
+config file must assign them to profiles or describe their roles well enough to do so. Ask instead of inventing profile
+assignments when that information is missing. A new family needs no mechanism of its own: it is `external` unless the
+session's native mechanism can select it.
 
 Legacy config files may still contain the old `cost`, `intelligence`, and `taste` columns. Treat known rows as an
 availability inventory and preserve family/SOTA metadata, but ignore the numeric scores. Apply the built-in work
