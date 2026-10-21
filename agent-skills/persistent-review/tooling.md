@@ -59,6 +59,11 @@ version. Other tool-result records or content blocks fail explicitly. The parser
 reasoning without emitting them. Valid logs with no matching packets remain incomplete; full raw stdout cannot fill that
 gap.
 
+Claude `system/hook_started`, `system/hook_progress`, and `system/hook_response` records may appear before
+`system/init`. They must belong to the expected session and cannot be nested child records. Hook output earns no
+delivery credit, even if it contains read packets. Each supplied log still needs its own `system/init` with the expected
+cwd before any assistant, user, result, or other system record; unrecognized startup subtypes fail explicitly.
+
 Codex's top-level `compacted` context-management record is supported when its payload has a string `message` and an
 array or null `replacement_history`. Ignore that summary and replacement history for delivery credit. Original
 call/result evidence before compaction remains valid; context replacement neither erases it nor proves delivery of

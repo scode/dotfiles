@@ -205,6 +205,14 @@ async function* delivered(backend: string, session: string, cwd: string, paths: 
         ["system", "assistant", "user", "result"].includes(type),
         `Unsupported Claude record: ${type} at ${ref}`,
       );
+      // Startup hooks can precede init. They retain the stream's identity checks but carry no
+      // delivered tool results; each log still needs its own cwd-checked init before any messages.
+      if (
+        type === "system" && typeof row.subtype === "string" &&
+        ["hook_started", "hook_progress", "hook_response"].includes(row.subtype)
+      ) {
+        continue;
+      }
       if (type === "system" && row.subtype === "init") {
         requireThat(!initialized.has(path) && row.cwd === cwd, `Session/cwd mismatch: ${ref}`);
         initialized.add(path);
@@ -610,6 +618,70 @@ Deno.test("Claude resume logs retain identity; a failed tool cannot earn coverag
     equal((await audit("claude", "session", "/repo", [item], [first, second])).sources[0].missing, [[2, 3]]);
     await saveLog(second, logRows("claude", packet(item, 2, 3), { id: "second" }));
     equal((await audit("claude", "session", "/repo", [item], [first, second])).status, "complete");
+  }));
+
+// Hook output is lifecycle metadata even when it contains a syntactically valid read packet.
+// Exercise resumed logs separately so one turn's init cannot authorize the next turn's messages.
+Deno.test("Claude startup hooks preserve delivery references across initialized resume logs", () =>
+  fixture(async (root, item) => {
+    const paths = [`${root}/first`, `${root}/second`];
+    for (const [index, path] of paths.entries()) {
+      const hooks = ["hook_started", "hook_progress", "hook_response"].map((subtype) => ({
+        type: "system",
+        subtype,
+        session_id: "session",
+        output: packet(item, 1, 3),
+      }));
+      const rows = logRows("claude", packet(item, index + 1, index + 1), { id: `call-${index}` });
+      await saveLog(path, [...hooks, ...rows, ...hooks]);
+    }
+    const report = await audit("claude", "session", "/repo", [item], paths);
+    equal(report.status, "incomplete");
+    equal(report.sources[0].covered, [[1, 2]]);
+    equal(report.sources[0].missing, [[3, 3]]);
+    equal(report.delivered_results, 2);
+    equal(report.evidence.map(({ ref }) => ref), paths.map((path) => `${path}:6`));
+    equal((await audit("claude", "session", "/repo", [{ ...item, ranges: [[1, 2]] }], paths)).status, "complete");
+  }));
+
+// Allowing startup metadata must not weaken session ownership or the per-log initialization gate.
+Deno.test("Claude startup hooks cannot bypass identity or initialization checks", () =>
+  fixture(async (root, item) => {
+    const first = `${root}/first`, second = `${root}/second`;
+    const rows = logRows("claude", packet(item, 1, 3));
+    for (const subtype of ["hook_started", "hook_progress", "hook_response"]) {
+      const hook = { type: "system", subtype, session_id: "session" };
+      for (
+        const [patch, reason] of [
+          [{ session_id: "other" }, "Session mismatch"],
+          [{ parent_tool_use_id: "child" }, "Nested child stream"],
+        ] as const
+      ) {
+        await saveLog(first, [{ ...hook, ...patch }, ...rows]);
+        await fails(() => audit("claude", "session", "/repo", [item], [first]), reason);
+      }
+      await saveLog(first, [hook]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first]), "Missing session initialization");
+      await saveLog(first, [hook, { ...rows[0], cwd: "/other" }]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session/cwd mismatch");
+      await saveLog(first, [hook, rows[0], rows[0]]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session/cwd mismatch");
+      for (
+        const row of [
+          rows[1],
+          rows[2],
+          { type: "result", session_id: "session" },
+          { type: "system", subtype: "unknown_startup", session_id: "session" },
+          { type: "system", subtype: [subtype], session_id: "session" },
+        ]
+      ) {
+        await saveLog(first, [hook, row, ...rows]);
+        await fails(() => audit("claude", "session", "/repo", [item], [first]), "Missing Claude init");
+      }
+      await saveLog(first, rows);
+      await saveLog(second, [hook, ...rows.slice(1)]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first, second]), "Missing Claude init");
+    }
   }));
 
 Deno.test("Codex middle clipping and process failure reject packets rather than certifying coverage", () =>
