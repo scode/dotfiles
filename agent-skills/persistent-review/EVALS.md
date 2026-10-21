@@ -64,6 +64,13 @@ and actionability, retain original logs, and distinguish an actual final empty s
 discovery after new cross-group evidence is synthesized. Check that a valid charter-relevant finding is not discarded
 solely for failing another workflow's severity threshold, and that finding progress cannot excuse missing delivery.
 
+Run `cargo test --test helper_launcher` for launcher selection and `cargo test --test helper_launcher -- --ignored` for
+a real native compile and startup freshness checks. The latter requires Deno on the build host and may download its
+runtime. Cover directory symlinks, spaces in paths, an unrelated working directory, missing Deno, broken/nonexecutable
+artifacts, and stale or missing neighboring source. Builds must preserve the old executable on compiler failure or a
+concurrent source edit. These checks do not run a real reviewer or establish CentOS compatibility from a successful
+native or Ubuntu test.
+
 Run `deno check` and `deno test -A` on `evidence.ts`. Cover both delivered-result schemas, false raw-stdout coverage,
 unknown records/blocks, wrong session/cwd, unpaired calls, malformed/trailing records, source drift, corrupt and clipped
 packets, overlapping ranges, resumed streams, failed tools, empty findings, finding revisions/withdrawals, and log-owner

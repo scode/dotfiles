@@ -19,6 +19,8 @@ rustix = { version = "1", features = ["fs"] }
 # JsonEnsure rewrites only owned keys and should avoid gratuitously reordering
 # unrelated user-managed keys when it touches an existing config file.
 serde_json = { version = "1", features = ["preserve_order"] }
+# Bind each optional helper executable to the exact source shipped beside it.
+sha2 = "0.10"
 # Atomic file replacement writes a sibling temporary file and renames it over
 # the destination, so this is a runtime dependency rather than a test-only one.
 tempfile = "3"

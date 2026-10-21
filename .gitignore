@@ -2,6 +2,9 @@
 /target/
 **/*.rs.bk
 
+# Optional compiled skill helpers
+/agent-skills/persistent-review/bin/
+
 # Manual skill eval artifacts
 /eval-runs/
 /eval-worktrees/

@@ -1,8 +1,14 @@
 # Compact evidence and findings
 
-Run `evidence.ts` with Deno. It uses built-in APIs only. Resolve it relative to this skill's actual base directory; the
-commands below use `/skill/evidence.ts` as a placeholder. Source snapshots and logs remain private run artifacts. The
-tool never launches a reviewer or inspects reasoning.
+Always invoke the `evidence` launcher relative to this skill's actual base directory; `/skill/evidence` below is a
+placeholder. It selects a matching compiled executable when present, otherwise runs the neighboring `evidence.ts` with
+Deno. Make that selection through the launcher, not separate agent probes. Source snapshots and logs remain private run
+artifacts. The tool never launches a reviewer or inspects reasoning.
+
+A stale or broken binary is an error, even if Deno is installed. Compiled helpers check their neighboring source before
+executing any command and refuse changed or missing source; do not bypass this by invoking `evidence.ts` directly. Ask
+for the helper to be rebuilt and copied again. A missing matching binary permits source execution only when Deno exists.
+Checks detect drift at startup; they do not lock files against concurrent edits.
 
 ## Pin a functional group
 
@@ -10,7 +16,7 @@ Create a manifest from absolute paths to immutable UTF-8 source snapshots. Keep 
 and diff sides in the group notes. Separate manifests and log sets belong to separate reviewers.
 
 ```text
-deno run -A /skill/evidence.ts manifest /run/group/manifest.json /run/snapshots/module.rs /run/snapshots/module_test.rs
+/skill/evidence manifest /run/group/manifest.json /run/snapshots/module.rs /run/snapshots/module_test.rs
 ```
 
 This creates a version-1 manifest exclusively, with each source's absolute path, SHA-256, and required inclusive line
@@ -23,7 +29,7 @@ Line endings are preserved; binary/non-UTF-8 sources are unsupported.
 Tell the reviewer to read mandatory text with:
 
 ```text
-deno run -A /skill/evidence.ts read /run/group/manifest.json /run/snapshots/module.rs 1 120
+/skill/evidence read /run/group/manifest.json /run/snapshots/module.rs 1 120
 ```
 
 Reads contain at most 200 lines and 24,000 encoded bytes. Use fewer lines if the helper rejects a range or the harness
@@ -37,8 +43,8 @@ audit.
 ## Audit completed turns
 
 ```text
-deno run -A /skill/evidence.ts audit codex THREAD_ID /reviewer/cwd /run/group/manifest.json /run/group/rollout.jsonl
-deno run -A /skill/evidence.ts audit claude SESSION_ID /reviewer/cwd /run/group/manifest.json /run/group/turn1.jsonl /run/group/turn2.jsonl
+/skill/evidence audit codex THREAD_ID /reviewer/cwd /run/group/manifest.json /run/group/rollout.jsonl
+/skill/evidence audit claude SESSION_ID /reviewer/cwd /run/group/manifest.json /run/group/turn1.jsonl /run/group/turn2.jsonl
 ```
 
 Supply the expected reviewer ID and working directory, not values inferred from an arbitrary log. Codex needs the exact
@@ -105,8 +111,8 @@ its event to a private JSON file and append it immediately with the command belo
 ```
 
 ```text
-deno run -A /skill/evidence.ts record /run/group/findings.jsonl /run/group/event.json
-deno run -A /skill/evidence.ts findings /run/group/findings.jsonl /run/other-group/findings.jsonl
+/skill/evidence record /run/group/findings.jsonl /run/group/event.json
+/skill/evidence findings /run/group/findings.jsonl /run/other-group/findings.jsonl
 ```
 
 Use the same local ID for revisions and `state: "withdrawn"` for a retraction; include the reason in `detail`. Never

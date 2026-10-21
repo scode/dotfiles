@@ -96,9 +96,9 @@ original. Record unresolved leads in the progress file as they arise. At each gr
 interface assumptions, and the next action before returning. This boundary summary never delays a completed finding.
 
 The orchestrator polls findings/progress artifacts while reviewers run and reports observed active findings separately
-from the deduplicated total. Use `evidence.ts findings` for counts and pointers; inspect finding details directly from
-the findings logs, not transcripts. An initialized empty log means zero findings so far, not a clean review. Missing
-logs, stale progress, and unfinished writes require investigation; do not credit advertised counts without records.
+from the deduplicated total. Use `evidence findings` for counts and pointers; inspect finding details directly from the
+findings logs, not transcripts. An initialized empty log means zero findings so far, not a clean review. Missing logs,
+stale progress, and unfinished writes require investigation; do not credit advertised counts without records.
 
 ## Establish observable delegation
 
@@ -116,9 +116,10 @@ For shellout, load the dependency below. Before choosing an external evidence so
 `harness/codex.md` for `codex exec`, or `harness/claude.md` for `claude -p`. Those files own launch, capture, transcript
 access, resume, monitoring, and termination mechanics. Use their verified delivery semantics, not an assumed JSON shape
 or the largest available output dump. When the local tools differ, verify the relevant semantics before crediting
-evidence. Do not duplicate launch templates here. Read `tooling.md` and use the bundled `evidence.ts` for normal
-coverage audits. It checks actual delivered read packets against pinned source text and returns ranges and evidence
-references, without pulling code or unrelated transcript content into the orchestrator's context.
+evidence. Do not duplicate launch templates here. Read `tooling.md` and use its `evidence` launcher for normal coverage
+audits and helper failure handling. The helper checks actual delivered read packets against pinned source text and
+returns ranges and evidence references, without pulling code or unrelated transcript content into the orchestrator's
+context.
 
 A tool failure is not an empty or successful audit. Report its diagnostic and preserve findings. Retry a known clipped
 read with smaller packets, or an unfinished log after the writer reaches a turn boundary. For unsupported or changed log
@@ -158,12 +159,12 @@ continuations between turns. Several sweeps inside one prompt are still one turn
 result skips these requirements.
 
 1. Start each reviewer with only its bounded functional group, the overall charter, interface context, and immediate
-   findings instructions. Require small source reads through `evidence.ts read` and return after the assigned group; do
-   not let a reviewer consume queued groups on its own. Preserve its findings, progress, result, and session handle.
-2. Audit delivered content against that group's pinned manifest after each turn using `evidence.ts audit`. Read the
-   compact report: checked session, matched ranges, gaps, rejected packets, and transcript references. The tool must
-   compare actual delivered text to the snapshot; receipts or a checksum alone are insufficient. Leave uncertain ranges
-   open. Keep the raw evidence on disk and inspect payloads directly only under the explicit fallback approval above.
+   findings instructions. Require small source reads through `evidence read` and return after the assigned group; do not
+   let a reviewer consume queued groups on its own. Preserve its findings, progress, result, and session handle.
+2. Audit delivered content against that group's pinned manifest after each turn using `evidence audit`. Read the compact
+   report: checked session, matched ranges, gaps, rejected packets, and transcript references. The tool must compare
+   actual delivered text to the snapshot; receipts or a checksum alone are insufficient. Leave uncertain ranges open.
+   Keep the raw evidence on disk and inspect payloads directly only under the explicit fallback approval above.
 3. When gaps remain, resume that same reviewer with named gaps: exact source and ranges, the observed truncation or
    uncertainty, and a manageable next batch. Preserve existing findings and pursue unresolved substantive leads. Ask for
    smaller bounded reads when earlier output was clipped. Repair is required regardless of the number of findings. If no
