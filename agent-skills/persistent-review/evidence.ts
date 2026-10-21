@@ -405,12 +405,13 @@ async function main(args: string[]) {
     await Deno.writeTextFile(rest[0], JSON.stringify(row) + "\n", { append: true, mode: 0o600 });
     return;
   }
-  throw new EvidenceError("Usage: evidence.ts manifest|read|audit|record|findings ...; see tooling.md");
+  throw new EvidenceError("Usage: evidence manifest|read|audit|record|findings ...; see tooling.md");
 }
 
-if (import.meta.main) {
+/** Share diagnostics and exit semantics between direct source execution and the generated compiled entrypoint. */
+export async function runCli(args: string[] = Deno.args) {
   try {
-    await main(Deno.args);
+    await main(args);
   } catch (error) {
     if (!(error instanceof EvidenceError)) throw error;
     console.error(
@@ -419,6 +420,8 @@ if (import.meta.main) {
     Deno.exit(2);
   }
 }
+
+if (import.meta.main) await runCli();
 
 // The fixtures model delivered-result shapes, not the larger raw command-event stream.
 // Keeping both forms in tests protects the distinction that originally defeated coverage audits.

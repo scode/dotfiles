@@ -13,6 +13,19 @@ cargo run -p dotfiles -- install
 cargo run -p dotfiles -- uninstall
 ```
 
+Before copying skills to a Linux x64 host without Deno, run `cargo run -- build-helpers --target
+x86_64-unknown-linux-gnu`. This builds only the `persistent-review` helper, under
+`agent-skills/persistent-review/bin/linux-x64/evidence`. The directory is Git-ignored; copy it with the rest of the
+skill. Omit `--target` to build for the current host. Linux ARM64 and both macOS architectures are also supported.
+
+The skill uses its `evidence` shell launcher everywhere. It prefers a matching compiled helper, otherwise runs
+`evidence.ts` with Deno. A compiled helper refuses to run if its neighboring source changed or is missing: rebuild
+before copying the skill again. Broken executables fail rather than falling back. Ordinary installation does not build
+helpers.
+
+The existing Linux CI job runs the source tests and a real helper build with startup freshness checks. Native macOS
+builds can be checked locally with `cargo test --test helper_launcher -- --ignored`.
+
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
 Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. Agent skills are also
 installed for Muse Code, OpenCode, Goose, Pi, and Oh My Pi (`omp`), into `~/.config/muse/skills`,

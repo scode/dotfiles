@@ -20,6 +20,11 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 
 ## Stable scope and evidence
 
+- All helper commands use the bundled POSIX `evidence` launcher. It prefers a matching compiled executable and permits
+  Deno source fallback only when that executable is absent. Stale, missing-source, broken, or nonexecutable compiled
+  deployments fail without running the command through source as a fallback. Compiled helpers embed their source hash
+  and check the neighboring `evidence.ts` at startup. This is a freshness check, not a lock against later edits.
+
 - Before launch the orchestrator establishes a mandatory inventory of stable text and ranges. Full files are required
   only when agreed. Discretionary exploration does not expand the inventory. Diff scope preserves its agreed old/new
   content. Changed inputs require retained originals or an explicit inventory reconciliation and affected-range audit.

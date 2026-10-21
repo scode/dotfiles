@@ -68,3 +68,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
       - run: cargo test
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+          cache: true
+      - name: Test persistent-review source helper
+        run: deno test --no-config --no-lock -A agent-skills/persistent-review/evidence.ts
+      # Exercise the real builder and compiled freshness checks on the existing Linux runner.
+      - name: Build and test compiled persistent-review helper
+        run: cargo test --test helper_launcher -- --ignored

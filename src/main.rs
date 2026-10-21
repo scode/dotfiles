@@ -4,6 +4,8 @@ use serde_json::json;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+mod helpers;
+
 use dotfiles::{
     DeleteSymlink, FeatureGraph, FeatureHandle, JsonManaged, ManagedBlock, ManagedDirectory,
     MissingDestination, PathExists, PayloadSymlink, RawSymlink,
@@ -1021,7 +1023,7 @@ fn features() -> FeatureGraph {
     g
 }
 
-/// Installer commands and the optional full status report shared by both.
+/// Installer operations and optional helper builds share the checkout-root invocation contract.
 #[derive(Parser)]
 struct Cli {
     /// Print every feature's outcome in dependency order after the run.
@@ -1036,6 +1038,12 @@ struct Cli {
 enum Command {
     Install,
     Uninstall,
+    /// Compile optional skill helpers before copying skills to a host without Deno.
+    BuildHelpers {
+        /// Deno target triple; defaults to this host. Use x86_64-unknown-linux-gnu for Linux x64.
+        #[arg(long)]
+        target: Option<String>,
+    },
 }
 
 /// Runs the requested operation and prints counts before optional detail.
@@ -1051,11 +1059,16 @@ fn run() -> Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let graph = features();
-
     let report = match cli.command {
-        Command::Install => graph.install_with_report(),
-        Command::Uninstall => graph.uninstall_with_report(),
+        Command::Install => features().install_with_report(),
+        Command::Uninstall => features().uninstall_with_report(),
+        Command::BuildHelpers { target } => {
+            anyhow::ensure!(
+                !cli.show_status,
+                "--show-status applies only to install and uninstall"
+            );
+            return helpers::build(std::path::Path::new("."), target.as_deref());
+        }
     }?;
     let stats = &report.stats;
 

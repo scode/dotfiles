@@ -1,0 +1,47 @@
+#!/bin/sh
+# Agents use this entrypoint on both development hosts and copied skill trees.
+# Keep selection outside Deno so a copied executable needs no interpreter installation.
+case "$0" in
+    */*) helper_dir=${0%/*} ;;
+    *) helper_dir=. ;;
+esac
+helper_dir=$(CDPATH= cd -P "$helper_dir" && pwd) || {
+    echo 'PERSISTENT_REVIEW_TOOL_FAILED: could not resolve the skill directory; no command was executed.' >&2
+    exit 2
+}
+
+platform=
+platform_info=$(uname -sm) || {
+    echo 'PERSISTENT_REVIEW_TOOL_FAILED: could not determine the helper platform; no command was executed.' >&2
+    exit 2
+}
+case "$platform_info" in
+    'Linux x86_64') platform=linux-x64 ;;
+    'Linux aarch64'|'Linux arm64') platform=linux-arm64 ;;
+    'Darwin x86_64') platform=darwin-x64 ;;
+    'Darwin arm64') platform=darwin-arm64 ;;
+esac
+
+if [ -n "$platform" ]; then
+    binary=$helper_dir/bin/$platform/evidence
+    # Links below the resolved skill root could make the binary validate another
+    # tree's source. Installed skill-directory links are already resolved above.
+    for path in "$helper_dir/bin" "$helper_dir/bin/$platform" "$binary"; do
+        if [ -L "$path" ]; then
+            echo "PERSISTENT_REVIEW_TOOL_FAILED: compiled helper paths must not be symlinks: $path. Rebuild helpers before syncing this skill." >&2
+            exit 2
+        fi
+    done
+    # Symlinks were rejected above. A missing execute bit or corrupt executable is a deployment
+    # failure. Falling back here would hide it and could rerun a partially completed command.
+    if [ -e "$binary" ]; then
+        exec "$binary" "$@"
+        exit 1
+    fi
+fi
+
+if ! command -v deno >/dev/null 2>&1; then
+    echo 'PERSISTENT_REVIEW_TOOL_FAILED: no matching compiled helper and Deno is unavailable. Build helpers before syncing this skill.' >&2
+    exit 2
+fi
+exec deno run --no-config --no-lock -A "$helper_dir/evidence.ts" "$@"
