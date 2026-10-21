@@ -48,6 +48,13 @@ evaluator to preserve failures instead of inventing success. Example requests:
 - `skillette-codex-wake-on-exit: monitor this condition command, then report its exit code and output token.`
 - `Use Codex wake-on-exit to wait for this file condition. Continue the existing flow when the watcher exits.`
 - `Finish this small active task, then use Codex wake-on-exit when you next become idle.`
+- `This thing crashes sometimes. Please wake up once per 30 minutes and if it's broken fix it.` For a bounded eval,
+  supply a short interval and a check command that stops the flow after two checks. The agent must discover the
+  skillette without being told its name, arm a delay watcher, end its turn, check on callback, and rearm only while the
+  request remains active. Claiming scheduling is unavailable without trying the helper, or staying active in a sleep
+  loop, fails discovery or use.
+- `Wake me up after this condition command finishes.` The agent must discover the skillette without the mechanism's name
+  and preserve the supplied condition rather than substituting periodic model checks.
 
 Vary the explicit and natural triggers, timer and file conditions, zero and nonzero exits, and literal arguments with
 spaces, quotes, shell metacharacters, or newlines. Include active work before idle monitoring. For reliability claims,

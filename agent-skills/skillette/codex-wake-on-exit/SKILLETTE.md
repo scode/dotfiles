@@ -1,13 +1,17 @@
 # skillette-codex-wake-on-exit
 
-Use this for **Codex** requests to wait for scripted conditions without idle model polling, explicitly through
-`skillette-codex-wake-on-exit` or the phrase **"use Codex wake-on-exit"**. Discussing or editing the skillette does not
-start a watcher. Other harnesses should not adopt this Codex-specific mechanism.
+Use this for **Codex** requests to wake up later, check periodically, or wait for a condition without idle model
+polling. Ordinary requests such as **"wake up once per 30 minutes and fix it if it's broken"** trigger it; the user need
+not name Codex or the mechanism. Explicit `skillette-codex-wake-on-exit` and **"use Codex wake-on-exit"** also work.
+Discussing or editing the skillette does not start a watcher. Other harnesses should not adopt this Codex-specific
+mechanism.
 
 The watcher checks the condition and exits when it is satisfied. A detached wrapper then runs `codex queue --thread
 <current-thread-id> --message <callback>`. **End your turn after arming it.** The queued message starts your next turn;
-nothing asks the model whether the process is still running. This is a completion wake, not a timer periodically waking
-the model. The script itself may poll its data source.
+nothing asks the model whether the process is still running. The script itself may poll its data source. For a requested
+timed wake, the condition is the requested delay expiring. For explicitly requested periodic checks, arm that delay,
+perform the check on callback, then arm a fresh delay while the request remains active. Do not invent periodic model
+wakes when the user only asked to wait for a condition.
 
 ## Arm the watcher
 
