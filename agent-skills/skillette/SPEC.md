@@ -128,14 +128,17 @@ same `change` skillette as everything else.
 ## The `codex-wake-on-exit` skillette
 
 This skillette is intentionally Codex-specific, overriding the normal harness-neutral default for this one entry. Its
-explicit trigger is `skillette-codex-wake-on-exit`; its natural-language trigger is "use Codex wake-on-exit". Discussion
-and edits do not arm watchers. The wording narrows activation to Codex, but the shared table does not provide
-deterministic harness filtering.
+explicit trigger is `skillette-codex-wake-on-exit`; its natural-language triggers cover requests to wake up later, check
+periodically, or wait for a condition in a Codex session, including "use Codex wake-on-exit". The user need not name the
+harness or mechanism: "wake up once per 30 minutes and fix it if it's broken" must discover this skillette. Discussion
+and edits do not arm watchers. The shared table does not provide deterministic harness filtering.
 
 It teaches idle monitoring through a detached, owned condition watcher whose exit queues a message to the existing Codex
 thread, then has the agent end its turn. The watcher may poll its data source; the model must not poll the watcher's
-status or wake periodically to collect it. Active plan work continues until the flow next becomes idle. The existing
-flow's watcher arguments, baseline, role, lifetime, and terminal exit rules are preserved.
+status or wake periodically to collect it. A requested timed wake uses a delay watcher. Explicitly requested periodic
+checks use a fresh delay watcher after each callback and check while the request remains active; waiting for a condition
+does not authorize inventing periodic model wakes. Active plan work continues until the flow next becomes idle. The
+existing flow's watcher arguments, baseline, role, lifetime, and terminal exit rules are preserved.
 
 The bundled Deno helper captures the actual current thread, confirms local queue support, and acknowledges detached
 startup before returning. Linux and macOS ordinary Codex sessions are supported; unloaded native spawned subagents
