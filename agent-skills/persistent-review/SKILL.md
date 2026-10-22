@@ -122,10 +122,13 @@ returns ranges and evidence references, without pulling code or unrelated transc
 context.
 
 A tool failure is not an empty or successful audit. Report its diagnostic and preserve findings. Retry a known clipped
-read with smaller packets, or an unfinished log after the writer reaches a turn boundary. For unsupported or changed log
-formats, stop coverage credit and ask whether the user permits direct transcript inspection, explicitly warning that it
-loads code into the orchestrator's context and uses more tokens. Do not silently fall back to bulk reads, guess schema
-fields, or ignore unknown blocks. Without permission, retain partial results and report the affected groups incomplete.
+read with smaller packets, or an unfinished log after the writer reaches a turn boundary. The audit does not fail on
+transcript shapes it does not know; it skips them without credit and names them under `unrecognized`. Judging those is
+your job: when missing ranges match reads the reviewer reports making and an `unrecognized` kind could plausibly carry
+tool output, treat it as a changed log format. For a changed format or another helper failure, stop coverage credit and
+ask whether the user permits direct transcript inspection, explicitly warning that it loads code into the orchestrator's
+context and uses more tokens. Do not silently fall back to bulk reads or guess schema fields. Without permission, retain
+partial results and report the affected groups incomplete.
 
 <!-- dependency: scode-harness-shellout -->
 
@@ -160,11 +163,15 @@ result skips these requirements.
 
 1. Start each reviewer with only its bounded functional group, the overall charter, interface context, and immediate
    findings instructions. Require small source reads through `evidence read` and return after the assigned group; do not
-   let a reviewer consume queued groups on its own. Preserve its findings, progress, result, and session handle.
+   let a reviewer consume queued groups on its own. Tell it to read source itself rather than through subagents: what a
+   subagent reads is delivered to the subagent, not the reviewer, earns no coverage, and leaves the reviewer with a
+   summary instead of the code. Subagents are fine for work that is not reading, such as running tests or builds; the
+   groups are sized so reading needs no help. Preserve its findings, progress, result, and session handle.
 2. Audit delivered content against that group's pinned manifest after each turn using `evidence audit`. Read the compact
-   report: checked session, matched ranges, gaps, rejected packets, and transcript references. The tool must compare
-   actual delivered text to the snapshot; receipts or a checksum alone are insufficient. Leave uncertain ranges open.
-   Keep the raw evidence on disk and inspect payloads directly only under the explicit fallback approval above.
+   report: checked session, matched ranges, gaps, rejected packets, unfinished calls, `unrecognized` record kinds, and
+   transcript references. The tool must compare actual delivered text to the snapshot; receipts or a checksum alone are
+   insufficient. Leave uncertain ranges open. Keep the raw evidence on disk and inspect payloads directly only under the
+   explicit fallback approval above.
 3. When gaps remain, resume that same reviewer with named gaps: exact source and ranges, the observed truncation or
    uncertainty, and a manageable next batch. Preserve existing findings and pursue unresolved substantive leads. Ask for
    smaller bounded reads when earlier output was clipped. Repair is required regardless of the number of findings. If no

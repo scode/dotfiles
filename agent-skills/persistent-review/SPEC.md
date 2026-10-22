@@ -35,12 +35,22 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   text, including exact range content and source version. It validates reviewer session/cwd and call/result pairing. It
   emits compact coverage and evidence references without echoing source or reasoning. Codex's persisted delivered
   results and Claude's verbose stream are supported; raw Codex command stdout is never substituted.
-- Codex top-level `compacted` records are recognized as context management after validating the known message/history
-  envelope. Their summary and replacement history earn no delivery credit. Original call/result joins and verified
-  delivery survive compaction; missing original evidence remains missing. Unknown compaction shapes still fail.
-- Claude `system` records with subtype `hook_started`, `hook_progress`, or `hook_response` may precede initialization.
-  They retain session and nested-stream checks but earn no delivery credit. Each log still requires its own matching
-  `system/init` session and cwd before assistant, user, result, or other system records.
+- The audit must not break when a harness adds a command, tool, record type, or content shape. It aborts only when
+  continuing could misattribute identity or certify text that does not match pinned source; everything else degrades to
+  no credit plus a report entry. No allowlist of record, tool, family, or block types may decide whether it runs.
+- Only tool results can earn coverage: Codex `response_item` payloads with a string call ID (any family; results end in
+  `_output`) and Claude `tool_use`/`tool_result` blocks. A result needs an earlier call with its ID in the supplied
+  logs; Codex calls may have several results. Result text comes from a string or the text of array blocks. Codex results
+  over 40,000 bytes earn nothing, because Codex delivers about 12,000 tokens without marking the cut.
+- The report keeps unusable material visible: packet-bearing results that earned nothing in `rejected` with a reason,
+  calls without results in `unfinished_calls`, skipped kinds known to carry no delivery in `ignored`, and any other
+  skipped kind in `unrecognized`. Skipped records never earn coverage, even when they quote packets, and compaction
+  neither erases original delivery nor proves missing text. The orchestrator judges whether `unrecognized` entries may
+  hide reads and, if so, treats them as a format failure.
+- Skipping does not weaken identity. Each Codex log has exactly one matching `session_meta` before other records; native
+  subagent rollouts fail with a diagnostic that names them as unsupported. Every Claude record that names a session
+  names the expected one, and each log has a matching `system/init` before its first message; repeated inits must also
+  match.
 - Structurally valid read packets for paths outside the audited manifest are reported explicitly with claimed ranges and
   raw references. They are unverified context and earn no credit, do not load additional sources, and never expand
   mandatory scope. Malformed required fields still fail; missing required ranges remain missing.
@@ -50,10 +60,10 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - The read producer retains its 200-line/24,000-byte budgets. Those defaults do not invalidate a larger complete
   delivered packet whose required source identity, bounds and text can be verified. Audit memory is still affected by
   the largest JSONL record and retained snapshots, independent of producer defaults.
-- Unknown record/tool-result shapes, malformed logs, orphan results, mixed sessions, changed sources and mismatched
-  packets fail visibly with a nonzero exit and no successful partial report. Valid clipped packets earn no coverage.
-  Missing packets or ranges remain incomplete. Known failed reads are retried with smaller packets; unfinished logs may
-  be retried after their writer reaches a boundary. Other format failures require a user decision before direct
+- Malformed log lines, mixed sessions or working directories, missing initialization, changed sources and malformed or
+  mismatched packets fail visibly with a nonzero exit and no successful partial report. Valid clipped packets earn no
+  coverage. Missing packets or ranges remain incomplete. Known failed reads are retried with smaller packets; unfinished
+  logs may be retried after their writer reaches a boundary. Other format failures require a user decision before direct
   inspection, with an explicit warning about loading duplicate code and spending more tokens. No silent fallback.
 - Attempted reads, process success, file lists, search hits, tool counts, checksums, reviewer assertions, or raw output
   larger than what the model received cannot establish delivery of required ranges. Relevant truncation metadata and
@@ -75,6 +85,8 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   before further analysis or reads, never waiting for a checkpoint, batch end, turn end, final report, or compaction.
   Findings and progress artifacts are initialized before source reads. No finding quota is imposed. Recording a finding
   does not end the assigned pass; reviewers continue that pass instead of stopping at a count.
+- Reviewer prompts tell reviewers to read source themselves, not through subagents, whose reads reach only the subagent
+  and earn no coverage. Subagents remain allowed for non-reading work such as running tests or builds.
 - Versioned finding events carry a stable local ID, open/withdrawn state, summary, original location and complete detail
   in the caller's format. Revisions/retractions append under the same ID and preserve history. Unresolved leads are
   saved as they arise and in boundary progress summaries, independently of immediate finding writes.

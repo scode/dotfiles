@@ -1,8 +1,9 @@
 #!/usr/bin/env -S deno run -A
 /**
  * Keep delivered source out of the orchestrator's context without trusting read receipts.
- * Only complete, source-matched packets in supported delivered-result records earn coverage.
- * Unknown representations fail closed; raw logs remain the evidence, not this report's counts.
+ * Only complete, source-matched packets in paired tool results earn coverage. Transcript shapes the helper
+ * does not understand earn nothing and are counted rather than fatal, because harnesses add record types,
+ * tools and block shapes often; raw logs remain the evidence, not this report's counts.
  */
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
@@ -10,18 +11,46 @@ import { createInterface } from "node:readline";
 type ObjectValue = Record<string, unknown>;
 type Range = [number, number];
 type Source = { path: string; sha256: string; ranges: Range[]; lines: string[] };
-type Result = { text: string; ref: string; failed: boolean };
+/** A delivered tool result; `rejected` names why its packets cannot earn coverage, if they cannot. */
+type Result = { text: string; ref: string; failed: boolean; rejected?: string };
 const BEGIN = "PERSISTENT_REVIEW_READ_V1\n";
 const END = "\nPERSISTENT_REVIEW_END_V1";
 const MAX_PACKET = 24000;
+/**
+ * Codex persists a tool result in full but sends the model only about 12,000 tokens of it (the rollout's
+ * `fallback_token_limit_override`), and when it cuts, the persisted text carries no marker. In local
+ * 0.15x-0.163 rollouts, results of 48k-222k characters each added only 11-14k input tokens, while every
+ * packet-bearing result stayed under the tools' default cap of about 40k characters. Larger results may have
+ * reached the model clipped, so their packets earn nothing. This is a measured bound, not a documented one.
+ */
+const CODEX_MAX_DELIVERED_BYTES = 40000;
+/** Keep the skipped-kind reports compact even when a transcript invents many record kinds. */
+const MAX_IGNORED_KINDS = 64;
+/**
+ * Skipped record kinds checked to carry no delivery, from Codex 0.153.4-0.163.0 rollouts and a Claude Code
+ * 2.1.308 verbose stream. This list only decides which report bucket a skipped kind lands in: known kinds go
+ * to `ignored`, anything else to `unrecognized`, where the orchestrator judges whether a read may have been
+ * missed. It never decides whether the audit runs, so leaving a kind off it costs a judgment call, not an abort.
+ */
+// deno-fmt-ignore
+const KNOWN_SKIPPED = new Set([
+  "event_msg", "world_state", "turn_context", "token_usage_record", "compacted", "inter_agent_communication_metadata",
+  "response_item:message", "response_item:reasoning", "response_item:agent_message", "response_item:compaction",
+  "response_item:web_search_call",
+  "system:thinking_tokens", "system:hook_started", "system:hook_progress", "system:hook_response",
+  "system:task_started", "system:task_progress", "system:task_updated", "system:task_notification",
+  "system:background_tasks_changed", "system:compact_boundary",
+  "assistant:text", "assistant:thinking", "assistant:redacted_thinking", "user:text", "user:string",
+  "result_block:input_image", "result_block:image", "result_block:tool_reference",
+]);
 
 /** Expected format failures are actionable and must never turn into a successful empty audit. */
 class EvidenceError extends Error {}
 function requireThat(test: unknown, message: string): asserts test {
   if (!test) throw new EvidenceError(message);
 }
-// Decode untrusted schema values through these checks rather than casting nested fields.
-// Format drift should surface as an actionable failure, not an accidentally skipped result.
+// Decode values whose shape the helper owns (manifests, packets, findings) through these checks rather than
+// casting nested fields; drift there is a bug, not a harness change. Transcript records use `isObject` instead.
 function object(value: unknown): ObjectValue {
   requireThat(value !== null && typeof value === "object" && !Array.isArray(value), "Expected a JSON object");
   return value as ObjectValue;
@@ -41,6 +70,9 @@ function parse(text: string): ObjectValue {
     if (error instanceof SyntaxError) throw new EvidenceError("Malformed JSON, possibly an unfinished log write");
     throw error;
   }
+}
+function isObject(value: unknown): value is ObjectValue {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function integer(value: unknown): number {
   requireThat(Number.isSafeInteger(value), "Expected a safe integer");
@@ -95,7 +127,7 @@ function packet(item: Source, start: number, end: number): string {
 
 /**
  * Keep physical references while skipping whitespace separators, which carry no delivery semantics.
- * Incomplete or unknown records cannot disappear through a best-effort filter; required logs need a real record.
+ * A line that is not a JSON object fails, since it may be an unfinished write; required logs need a real record.
  */
 async function* records(
   paths: string[],
@@ -122,12 +154,21 @@ async function* records(
   }
 }
 
-/** Validate every content block, including blocks that do not contain a read packet. */
-function textBlocks(value: unknown, type: string): string {
-  return array(value).map((entry) => {
-    const block = object(entry);
-    requireThat(block.type === type, `Unsupported delivered block: ${String(block.type)}`);
-    return string(block.text);
+/**
+ * Decode the text a tool result put in the model's context: a plain string, or the `text` of each block in an
+ * array. Anything else (images, ToolSearch references, a renamed text block, an object-shaped result) contributes
+ * nothing and is counted through `skip`, so a format change shows up in the report instead of aborting it.
+ */
+function resultText(value: unknown, skip: (kind: string) => void): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) {
+    skip(`result_content:${value === null ? "null" : typeof value}`);
+    return "";
+  }
+  return value.map((block) => {
+    if (isObject(block) && typeof block.text === "string") return block.text;
+    skip(`result_block:${isObject(block) && typeof block.type === "string" ? block.type : "?"}`);
+    return "";
   }).join("");
 }
 
@@ -138,116 +179,147 @@ function codexFailed(text: string): boolean {
 }
 
 /**
- * Support the checked Codex rollout and Claude verbose stream, never raw Codex command events.
- * Session/cwd joins and paired calls prevent another child or an orphan result from earning credit.
+ * Yield every tool result delivered to the audited reviewer, from the checked Codex rollout or Claude verbose
+ * stream, never raw Codex command events.
+ *
+ * The audit aborts only when continuing could misattribute identity: a log from another session or cwd, a log
+ * with no initialization, or messages before their log's init. Everything else degrades to "no credit". Records
+ * that are not tool calls or results (lifecycle events, messages, reasoning, compaction, hooks, task notices,
+ * subagent traffic, and whatever a harness adds next) are skipped and counted, in `ignored` when the kind is
+ * known to carry no delivery and in `unrecognized` otherwise. Tool results that
+ * cannot be trusted (no matching call, client-authored, possibly clipped, an unclear error flag) are yielded
+ * with a `rejected` reason. Calls that never got a result are counted in `unfinished`. A format change therefore
+ * shows up as missing coverage plus an `unrecognized` kind, never as false coverage and never as an abort.
+ *
+ * Do not reintroduce allowlists of record, tool, family or block types. Each one broke valid audits as soon as
+ * a harness added something (Codex function calls, agent messages, string and image outputs, late exec results;
+ * Claude hooks, synthetic user text, subagent records, ToolSearch references, repeated inits), and rejecting
+ * those bought no protection: they can only lower coverage, never raise it.
  */
-async function* delivered(backend: string, session: string, cwd: string, paths: string[]): AsyncGenerator<Result> {
+async function* delivered(
+  backend: string,
+  session: string,
+  cwd: string,
+  paths: string[],
+  counts: { ignored: Map<string, number>; unrecognized: Map<string, number>; unfinished: number },
+): AsyncGenerator<Result> {
   requireThat(["codex", "claude"].includes(backend), "Supported backends: codex, claude");
-  const calls = new Set<string>();
-  const seenCalls = new Set<string>();
+  const skip = (raw: string) => {
+    // Subagent records and Claude turn results are skipped whatever their inner type.
+    const known = KNOWN_SKIPPED.has(raw) || raw.startsWith("nested:") || raw.startsWith("result:");
+    const bucket = known ? counts.ignored : counts.unrecognized;
+    let kind = raw.slice(0, 80);
+    if (!bucket.has(kind) && bucket.size >= MAX_IGNORED_KINDS) kind = "other";
+    bucket.set(kind, (bucket.get(kind) ?? 0) + 1);
+  };
   const initialized = new Set<string>();
+  // Results pair with calls by ID across all supplied logs, so a result in a resumed log may complete a call
+  // from an earlier one. The value counts results; a call may have several (see the Codex branch).
+  const calls = new Map<string, number>();
+  const orphan = "No matching tool call in the supplied logs";
   for await (const { row, ref, path } of records(paths)) {
-    const type = string(row.type);
+    const type = typeof row.type === "string" ? row.type : "?";
     if (backend === "codex") {
       if (type === "session_meta") {
+        // Native subagent rollouts are unsupported because what their model received is unverified. A spawned
+        // child names its root thread in `session_id`; a forked child also carries a second meta followed by a
+        // copy of its parent's history. Say so plainly rather than reporting a generic identity mismatch.
         const meta = object(row.payload);
-        requireThat(!initialized.has(path) && meta.id === session && meta.cwd === cwd, `Session/cwd mismatch: ${ref}`);
-        requireThat(meta.session_id === undefined || meta.session_id === session, `Conflicting session ID: ${ref}`);
+        const subagent = "Codex native subagent rollouts cannot be audited; run the reviewer through codex exec";
+        requireThat(!initialized.has(path), `${subagent} (second session_meta, as in a forked child): ${ref}`);
+        requireThat(meta.session_id === undefined || meta.session_id === meta.id, `${subagent}: ${ref}`);
+        requireThat(meta.id === session && meta.cwd === cwd, `Session/cwd mismatch: ${ref}`);
         initialized.add(path);
-      } else {
-        requireThat(initialized.has(path), `Missing session_meta before records: ${ref}`);
-        if (type === "compacted") {
-          const context = object(row.payload);
-          string(context.message);
-          requireThat(
-            context.replacement_history === null || Array.isArray(context.replacement_history),
-            `Unsupported Codex compaction history: ${ref}`,
-          );
-          // This is context management, not a new delivery. Keep original call/result joins and coverage;
-          // summaries and replacement history cannot repair missing original tool-result evidence.
-          continue;
-        }
-        requireThat(
-          ["event_msg", "response_item", "world_state", "turn_context", "token_usage_record"].includes(type),
-          `Unsupported Codex record: ${type} at ${ref}`,
-        );
-        if (type !== "response_item") continue;
-        const payload = object(row.payload);
-        const kind = string(payload.type);
-        if (["message", "reasoning", "compaction"].includes(kind)) continue;
-        requireThat(
-          ["custom_tool_call", "custom_tool_call_output"].includes(kind),
-          `Unsupported Codex tool record: ${kind} at ${ref}`,
-        );
-        const id = string(payload.call_id);
-        if (kind === "custom_tool_call") {
-          string(payload.input);
-          requireThat(!seenCalls.has(id), `Duplicate tool call: ${ref}`);
-          seenCalls.add(id);
-          calls.add(id);
-        } else {
-          requireThat(calls.delete(id), `Unpaired or duplicate result: ${ref}`);
-          requireThat(
-            row.metadata === undefined || object(row.metadata).client_authored !== true,
-            `Client-authored output: ${ref}`,
-          );
-          const text = textBlocks(payload.output, "input_text");
-          yield { text, ref, failed: codexFailed(text) };
-        }
-      }
-    } else {
-      requireThat(row.session_id === session, `Session mismatch: ${ref}`);
-      requireThat(
-        row.parent_tool_use_id === undefined || row.parent_tool_use_id === null,
-        `Nested child stream unsupported: ${ref}`,
-      );
-      requireThat(
-        ["system", "assistant", "user", "result"].includes(type),
-        `Unsupported Claude record: ${type} at ${ref}`,
-      );
-      // Startup hooks can precede init. They retain the stream's identity checks but carry no
-      // delivered tool results; each log still needs its own cwd-checked init before any messages.
-      if (
-        type === "system" && typeof row.subtype === "string" &&
-        ["hook_started", "hook_progress", "hook_response"].includes(row.subtype)
-      ) {
         continue;
       }
-      if (type === "system" && row.subtype === "init") {
-        requireThat(!initialized.has(path) && row.cwd === cwd, `Session/cwd mismatch: ${ref}`);
-        initialized.add(path);
+      requireThat(initialized.has(path), `Missing session_meta before records: ${ref}`);
+      // Top-level `compacted` lands here too: its summary and replacement history are context management,
+      // so original call/result evidence before it stays valid and nothing in it repairs missing evidence.
+      if (type !== "response_item") {
+        skip(type);
+        continue;
+      }
+      const payload = isObject(row.payload) ? row.payload : {};
+      const kind = typeof payload.type === "string" ? payload.type : "?";
+      // A call_id is what makes a response item a tool call or result, whatever the tool family is called.
+      // Items without one (messages, reasoning, agent messages, server-side searches) never hold a local
+      // tool's output; server-side items may also carry a null call_id.
+      if (typeof payload.call_id !== "string") {
+        skip(`response_item:${kind}`);
+        continue;
+      }
+      const id = payload.call_id;
+      if (!kind.endsWith("_output")) {
+        calls.set(id, calls.get(id) ?? 0);
+        continue;
+      }
+      // Families are not matched by name: nothing guarantees that a result type mirrors its call's name, and the
+      // call_id already ties the result to a call in this session.
+      // One call may have several results: a code-mode `exec` cell that outlives its yield returns "Script
+      // running" first and delivers its later output under the same call_id.
+      const seen = calls.get(id);
+      if (seen !== undefined) calls.set(id, seen + 1);
+      const text = resultText(payload.output, skip);
+      const rejected = seen === undefined
+        ? orphan
+        : isObject(row.metadata) && row.metadata.client_authored === true
+        ? "Client-authored output"
+        : new TextEncoder().encode(text).length > CODEX_MAX_DELIVERED_BYTES
+        ? "Result is larger than Codex reliably delivers to the model; reread a smaller range"
+        : undefined;
+      yield { text, ref, failed: codexFailed(text), rejected };
+      continue;
+    }
+
+    // Claude: every record that names a session must name this one, so mixed streams still fail even
+    // through records that are otherwise skipped.
+    requireThat(row.session_id === undefined || row.session_id === session, `Session mismatch: ${ref}`);
+    // Subagent traffic was delivered to the child, not the reviewer. The child's answer reaches the reviewer
+    // as an ordinary tool result on the parent's own Agent/Task call, which is audited normally.
+    if (row.parent_tool_use_id !== undefined && row.parent_tool_use_id !== null) {
+      skip(`nested:${type}`);
+      continue;
+    }
+    if (type === "system" && row.subtype === "init") {
+      // A log may hold several inits: the process starts another turn after a background task finishes.
+      requireThat(row.session_id === session && row.cwd === cwd, `Session/cwd mismatch: ${ref}`);
+      initialized.add(path);
+      continue;
+    }
+    if (type !== "assistant" && type !== "user") {
+      skip(typeof row.subtype === "string" ? `${type}:${row.subtype}` : type);
+      continue;
+    }
+    // Only messages can carry calls and results, so only they need a cwd-checked init earlier in their own log.
+    requireThat(row.session_id === session, `Session mismatch: ${ref}`);
+    requireThat(initialized.has(path), `Missing Claude init: ${ref}`);
+    const content = isObject(row.message) ? row.message.content : undefined;
+    // String content is plain prose (a prompt or injected note), not a tool result.
+    if (!Array.isArray(content)) {
+      skip(`${type}:${typeof content}`);
+      continue;
+    }
+    for (const block of content) {
+      const kind = isObject(block) && typeof block.type === "string" ? block.type : "?";
+      if (type === "assistant" && kind === "tool_use" && typeof block.id === "string") {
+        calls.set(block.id, calls.get(block.id) ?? 0);
+      } else if (type === "user" && kind === "tool_result" && typeof block.tool_use_id === "string") {
+        const seen = calls.get(block.tool_use_id);
+        if (seen !== undefined) calls.set(block.tool_use_id, seen + 1);
+        // An error flag the helper cannot read might mean failure, so it is treated as one.
+        const failed = block.is_error !== undefined && block.is_error !== false;
+        // Native Read is not credited by this narrow tool. Only helper packets are compared.
+        yield { text: resultText(block.content, skip), ref, failed, rejected: seen === undefined ? orphan : undefined };
       } else {
-        requireThat(initialized.has(path), `Missing Claude init: ${ref}`);
-        if (!["assistant", "user"].includes(type)) continue;
-        for (const value of array(object(row.message).content)) {
-          const block = object(value);
-          const kind = string(block.type);
-          if (type === "assistant") {
-            if (["text", "thinking", "redacted_thinking"].includes(kind)) continue;
-            requireThat(kind === "tool_use", `Unsupported assistant block: ${kind} at ${ref}`);
-            const id = string(block.id);
-            string(block.name);
-            object(block.input);
-            requireThat(!seenCalls.has(id), `Duplicate tool call: ${ref}`);
-            seenCalls.add(id);
-            calls.add(id);
-          } else {
-            requireThat(kind === "tool_result", `Unsupported user block: ${kind} at ${ref}`);
-            requireThat(calls.delete(string(block.tool_use_id)), `Unpaired or duplicate result: ${ref}`);
-            requireThat(
-              block.is_error === undefined || typeof block.is_error === "boolean",
-              `Unknown error flag: ${ref}`,
-            );
-            const text = typeof block.content === "string" ? block.content : textBlocks(block.content, "text");
-            // Native Read is not credited by this narrow tool. Only helper packets are compared.
-            yield { text, ref, failed: block.is_error === true };
-          }
-        }
+        // Text, thinking, synthetic user notes, server-side tool blocks and future block types.
+        skip(`${type}:${kind}`);
       }
     }
   }
   requireThat(initialized.size === paths.length, "Missing session initialization");
-  requireThat(calls.size === 0, "Unfinished tool calls; wait for the turn checkpoint before auditing");
+  // A call without a result is usually a turn still running; the audit cannot credit what has not arrived,
+  // so it reports the count and lets the caller re-audit after the turn boundary.
+  counts.unfinished = [...calls.values()].filter((n) => n === 0).length;
 }
 
 /** Merge overlaps before subtracting coverage so repeated reads cannot inflate progress. */
@@ -281,9 +353,15 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
   const evidence: { path: string; range: Range; ref: string }[] = [];
   const rejected: { ref: string; reason: string }[] = [];
   const outside_manifest: { path: string; reported_range: Range; ref: string }[] = [];
+  const counts = { ignored: new Map<string, number>(), unrecognized: new Map<string, number>(), unfinished: 0 };
   let results = 0;
-  for await (const result of delivered(backend, session, cwd, paths)) {
+  for await (const result of delivered(backend, session, cwd, paths, counts)) {
     results++;
+    // Only a rejected result that holds a packet loses anything; listing the rest would bury the ones that matter.
+    if (result.rejected) {
+      if (result.text.includes(BEGIN)) rejected.push({ ref: result.ref, reason: result.rejected });
+      continue;
+    }
     if (/(?:^|\n)Warning: truncated output/.test(result.text.split(BEGIN, 1)[0])) {
       rejected.push({ ref: result.ref, reason: "Harness clipped the result; reread a smaller range" });
       continue;
@@ -343,6 +421,9 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
     evidence,
     rejected,
     outside_manifest,
+    unfinished_calls: counts.unfinished,
+    ignored: Object.fromEntries([...counts.ignored].sort()),
+    unrecognized: Object.fromEntries([...counts.unrecognized].sort()),
   };
 }
 
@@ -582,18 +663,32 @@ for (const backend of ["codex", "claude"]) {
       equal(report.sources[0].missing, [[1, 3]]);
       equal(report.rejected.length, 1);
     }));
-  Deno.test(`${backend}: changed shapes, orphan results and corrupt payloads fail closed`, () =>
+  // A result with no call in the supplied logs has unknown provenance: it is listed, never credited, never fatal.
+  Deno.test(`${backend}: mismatched packets and corrupt logs fail; orphan results earn nothing`, () =>
     fixture(async (root, item) => {
       const path = `${root}/log`;
       const rows = logRows(backend, packet(item, 1, 3).replace("alpha", "wrong"));
       await saveLog(path, rows);
       await fails(() => audit(backend, "session", "/repo", [item], [path]), "does not match");
       await saveLog(path, logRows(backend, packet(item, 1, 3)).filter((_, i) => i !== (backend === "codex" ? 2 : 1)));
-      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Unpaired");
-      await saveLog(path, [...logRows(backend, packet(item, 1, 3)), { type: "new_format", session_id: "session" }]);
-      await fails(() => audit(backend, "session", "/repo", [item], [path]), "Unsupported");
+      const orphan = await audit(backend, "session", "/repo", [item], [path]);
+      equal(orphan.sources[0].missing, [[1, 3]]);
+      equal(orphan.rejected.map(({ reason }) => reason), ["No matching tool call in the supplied logs"]);
       await Deno.writeTextFile(path, '{"type":');
       await fails(() => audit(backend, "session", "/repo", [item], [path]), "Malformed");
+    }));
+  // Harnesses keep adding lifecycle records; each new one used to abort valid audits until it was allowlisted.
+  // Skipping them is safe only because a skipped record can never earn coverage, even when it quotes a packet.
+  Deno.test(`${backend}: unknown non-tool records are counted but never earn or block coverage`, () =>
+    fixture(async (root, item) => {
+      const path = `${root}/log`;
+      const future = { type: "future_record", session_id: "session", output: packet(item, 2, 3) };
+      await saveLog(path, [...logRows(backend, packet(item, 1, 1)), future]);
+      const report = await audit(backend, "session", "/repo", [item], [path]);
+      equal(report.sources[0].missing, [[2, 3]]);
+      equal([report.unrecognized.future_record, report.ignored.future_record], [1, undefined]);
+      await saveLog(path, [...logRows(backend, packet(item, 1, 3)), future]);
+      equal((await audit(backend, "session", "/repo", [item], [path])).status, "complete");
     }));
 }
 
@@ -608,7 +703,10 @@ Deno.test("snapshot drift, oversized reads and unsupported delivered blocks are 
     await Deno.writeTextFile(item.path, "changed");
     await fails(() => manifest(file), "Snapshot changed");
     await fails(() => packet({ ...item, lines: ["x".repeat(MAX_PACKET)] }, 1, 1), "24000");
-    await fails(() => textBlocks([{ type: "image", data: "anything" }], "input_text"), "Unsupported");
+    const kinds: string[] = [];
+    const text = resultText([{ type: "input_image" }, { type: "input_text", text: "kept" }, 5], (k) => kinds.push(k));
+    equal([text, resultText({ text: "object" }, (k) => kinds.push(k))], ["kept", ""]);
+    equal(kinds, ["result_block:input_image", "result_block:?", "result_content:object"]);
   }));
 Deno.test("Claude resume logs retain identity; a failed tool cannot earn coverage", () =>
   fixture(async (root, item) => {
@@ -644,44 +742,96 @@ Deno.test("Claude startup hooks preserve delivery references across initialized 
     equal((await audit("claude", "session", "/repo", [{ ...item, ranges: [[1, 2]] }], paths)).status, "complete");
   }));
 
-// Allowing startup metadata must not weaken session ownership or the per-log initialization gate.
-Deno.test("Claude startup hooks cannot bypass identity or initialization checks", () =>
+// Skipping non-message records must not weaken session ownership or the per-log initialization gate:
+// a skipped record from another session still fails, and messages still need a cwd-checked init in their log.
+Deno.test("Claude non-message records cannot bypass identity or initialization checks", () =>
   fixture(async (root, item) => {
     const first = `${root}/first`, second = `${root}/second`;
     const rows = logRows("claude", packet(item, 1, 3));
-    for (const subtype of ["hook_started", "hook_progress", "hook_response"]) {
+    for (const subtype of ["hook_started", "hook_progress", "hook_response", "unknown_startup"]) {
       const hook = { type: "system", subtype, session_id: "session" };
-      for (
-        const [patch, reason] of [
-          [{ session_id: "other" }, "Session mismatch"],
-          [{ parent_tool_use_id: "child" }, "Nested child stream"],
-        ] as const
-      ) {
-        await saveLog(first, [{ ...hook, ...patch }, ...rows]);
-        await fails(() => audit("claude", "session", "/repo", [item], [first]), reason);
-      }
+      await saveLog(first, [{ ...hook, session_id: "other" }, ...rows]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session mismatch");
       await saveLog(first, [hook]);
       await fails(() => audit("claude", "session", "/repo", [item], [first]), "Missing session initialization");
       await saveLog(first, [hook, { ...rows[0], cwd: "/other" }]);
       await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session/cwd mismatch");
-      await saveLog(first, [hook, rows[0], rows[0]]);
+      await saveLog(first, [hook, rows[0], { ...rows[0], cwd: "/other" }]);
       await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session/cwd mismatch");
-      for (
-        const row of [
-          rows[1],
-          rows[2],
-          { type: "result", session_id: "session" },
-          { type: "system", subtype: "unknown_startup", session_id: "session" },
-          { type: "system", subtype: [subtype], session_id: "session" },
-        ]
-      ) {
+      await saveLog(first, [hook, { ...rows[0], session_id: undefined }]);
+      await fails(() => audit("claude", "session", "/repo", [item], [first]), "Session/cwd mismatch");
+      for (const row of [rows[1], rows[2]]) {
         await saveLog(first, [hook, row, ...rows]);
         await fails(() => audit("claude", "session", "/repo", [item], [first]), "Missing Claude init");
       }
+      await saveLog(first, [hook, { type: "result", session_id: "session" }, ...rows]);
+      equal((await audit("claude", "session", "/repo", [item], [first])).status, "complete");
       await saveLog(first, rows);
       await saveLog(second, [hook, ...rows.slice(1)]);
       await fails(() => audit("claude", "session", "/repo", [item], [first, second]), "Missing Claude init");
     }
+  }));
+
+// Shapes captured from one ordinary Claude Code 2.1.308 `-p --verbose` run that used Bash, Agent and ToolSearch.
+// Each of them used to abort the audit. None of them is the reviewer's own tool result, so none may earn coverage.
+Deno.test("Claude subagent, synthetic and re-init records coexist with verified delivery", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const [init, call, result] = logRows("claude", packet(item, 1, 1));
+    const message = (type: string, content: unknown, extra: ObjectValue = {}) => ({
+      type,
+      session_id: "session",
+      message: { content },
+      ...extra,
+    });
+    const nested = { parent_tool_use_id: "agent-call", agent_id: "child" };
+    await saveLog(path, [
+      init,
+      { type: "system", subtype: "thinking_tokens", session_id: "session" },
+      call,
+      result,
+      message("user", [{ type: "text", text: packet(item, 2, 3) }], { isSynthetic: true }),
+      message("user", packet(item, 2, 3)),
+      message("assistant", [{ type: "tool_use", id: "agent-call", name: "Agent", input: {} }]),
+      { type: "system", subtype: "task_started", session_id: "session", tool_use_id: "agent-call" },
+      // The child's own calls and results reuse nothing from the parent and quote source the parent never saw.
+      message("assistant", [{ type: "tool_use", id: "child-call", name: "Bash", input: {} }], nested),
+      message("user", [{ type: "tool_result", tool_use_id: "child-call", content: packet(item, 2, 3) }], nested),
+      message("user", [{ type: "tool_result", tool_use_id: "agent-call", content: [{ type: "text", text: "ok" }] }]),
+      message("assistant", [{ type: "tool_use", id: "search", name: "ToolSearch", input: {} }]),
+      message("user", [{ type: "tool_result", tool_use_id: "search", content: [{ type: "tool_reference" }] }]),
+      { type: "result", subtype: "success", session_id: "session" },
+      // A finished background task starts another turn in the same process, which re-emits init.
+      init,
+      message("assistant", [{ type: "text", text: "done" }]),
+    ]);
+    const report = await audit("claude", "session", "/repo", [item], [path]);
+    equal(report.sources[0].missing, [[2, 3]]);
+    equal(report.delivered_results, 3);
+    equal(report.ignored["nested:user"], 1);
+    equal(report.ignored["user:text"], 1);
+    equal(report.ignored["user:string"], 1);
+    equal(report.unrecognized, {});
+    await saveLog(path, [
+      ...logRows("claude", packet(item, 1, 3)),
+      message("user", [{ type: "tool_result", tool_use_id: "child-call", content: "x" }], { parent_tool_use_id: 7 }),
+    ]);
+    equal((await audit("claude", "session", "/repo", [item], [path])).status, "complete");
+    await saveLog(path, [...logRows("claude", packet(item, 1, 3)), { ...result, session_id: "other" }]);
+    await fails(() => audit("claude", "session", "/repo", [item], [path]), "Session mismatch");
+    // A repeated result and an unreadable error flag degrade to evidence and a rejection, not an abort.
+    await saveLog(path, [...logRows("claude", packet(item, 1, 3)), result]);
+    equal((await audit("claude", "session", "/repo", [item], [path])).status, "complete");
+    await saveLog(
+      path,
+      logRows("claude", packet(item, 1, 3)).map((row) =>
+        JSON.parse(
+          JSON.stringify(row).replace('"is_error":false', '"is_error":"maybe"'),
+        )
+      ),
+    );
+    const unclear = await audit("claude", "session", "/repo", [item], [path]);
+    equal([unclear.status, unclear.rejected[0].reason], ["incomplete", "Tool reported failure"]);
   }));
 
 Deno.test("Codex middle clipping and process failure reject packets rather than certifying coverage", () =>
@@ -741,16 +891,136 @@ Deno.test("Codex top-level compaction preserves original delivery but cannot sup
     equal((await audit("codex", "session", "/repo", [item], [path])).sources[0].missing, [[1, 3]]);
     await saveLog(path, [...logRows("codex", packet(item, 1, 3)), compaction]);
     equal((await audit("codex", "session", "/repo", [item], [path])).status, "complete");
+    // Compaction never earns coverage, so a changed summary shape has nothing to verify and cannot block the audit.
     await saveLog(path, [...logRows("codex", packet(item, 1, 3)), {
       ...compaction,
-      payload: { message: "", replacement_history: "changed shape" },
+      payload: { message: 42, replacement_history: "changed shape" },
     }]);
-    await fails(() => audit("codex", "session", "/repo", [item], [path]), "Unsupported Codex compaction history");
-    await saveLog(path, [...logRows("codex", packet(item, 1, 3)), {
-      ...compaction,
-      payload: { message: 42, replacement_history: null },
-    }]);
-    await fails(() => audit("codex", "session", "/repo", [item], [path]), "Expected a string");
+    const changed = await audit("codex", "session", "/repo", [item], [path]);
+    equal(changed.status, "complete");
+    equal(changed.ignored.compacted, 1);
+  }));
+
+/** Codex rows for one tool call/result pair in an arbitrary family, as persisted in 0.163.0 rollouts. */
+function codexPair(call: string, result: string, id: string, output: unknown, extra: ObjectValue = {}): ObjectValue[] {
+  return [
+    { type: "response_item", payload: { type: call, call_id: id, name: "tool", arguments: "{}", ...extra } },
+    { type: "response_item", payload: { type: result, call_id: id, output } },
+  ];
+}
+
+// Reproduces https://snippets.scode.org/s/persistent-review-codex-function-call/: a `collaboration.list_agents`
+// function call aborted an otherwise valid audit. Real rollouts also deliver helper reads through function-family
+// tools (`exec_command`, code-mode `wait`), so any call_id-paired result is credited, whatever its family.
+Deno.test("Codex results of any tool family earn coverage, and odd shapes degrade instead of aborting", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const baseline = logRows("codex", packet(item, 1, 1));
+    const listAgents = codexPair("function_call", "function_call_output", "agents", '{"agents":[]}', {
+      namespace: "collaboration",
+      name: "list_agents",
+    });
+    await saveLog(path, baseline);
+    const before = await audit("codex", "session", "/repo", [item], [path]);
+    await saveLog(path, [...baseline, ...listAgents]);
+    const after = await audit("codex", "session", "/repo", [item], [path]);
+    equal([after.sources, after.evidence], [before.sources, before.evidence]);
+    await saveLog(path, [baseline[0], ...listAgents]);
+    equal((await audit("codex", "session", "/repo", [item], [path])).sources[0].missing, [[1, 3]]);
+
+    // A string output and a block array with an image both deliver their text.
+    const exec = codexPair("function_call", "function_call_output", "exec", "Output:\n" + packet(item, 2, 2));
+    const image = codexPair("function_call", "function_call_output", "image", [
+      { type: "input_image", image_url: "data:" },
+      { type: "input_text", text: packet(item, 3, 3) },
+    ]);
+    await saveLog(path, [...baseline, ...exec, ...image]);
+    equal((await audit("codex", "session", "/repo", [item], [path])).status, "complete");
+
+    const [call, result] = exec;
+    const custom = baseline[2];
+    const output = (value: unknown) => ({ ...result, payload: { ...object(result.payload), output: value } });
+    const audited = async (rows: ObjectValue[]) => {
+      await saveLog(path, [baseline[0], ...rows]);
+      return await audit("codex", "session", "/repo", [item], [path]);
+    };
+    // Families need not match by name, server-side items may carry a null call_id, and a repeated call ID or a
+    // call still waiting for its result is reported rather than fatal.
+    const search = codexPair("tool_search_call", "tool_search_output", "search", packet(item, 2, 3));
+    equal(
+      (await audited([custom, { ...result, payload: { ...object(result.payload), call_id: "call-1" } }])).rejected,
+      [],
+    );
+    equal((await audited([...search, call, call, result])).sources[0].missing, [[1, 1]]);
+    const pending = await audited([
+      { type: "response_item", payload: { type: "web_search_call", call_id: null } },
+      call,
+    ]);
+    equal([pending.unfinished_calls, pending.ignored["response_item:web_search_call"]], [1, 1]);
+    // Results whose provenance or delivery is doubtful earn nothing and say why.
+    for (
+      const [rows, reason] of [
+        [[result], "No matching tool call"],
+        [[call, { ...result, metadata: { client_authored: true } }], "Client-authored"],
+        [[call, output(packet(item, 2, 2) + " ".repeat(CODEX_MAX_DELIVERED_BYTES))], "larger than Codex"],
+      ] as const
+    ) {
+      const report = await audited([...rows]);
+      equal(report.sources[0].missing, [[1, 3]]);
+      requireThat(report.rejected[0].reason.includes(reason), `Expected ${reason}: ${JSON.stringify(report.rejected)}`);
+    }
+    const odd = await audited([call, output({ text: packet(item, 1, 3) }), call, output([{ type: "x", t: "y" }])]);
+    equal([odd.sources[0].missing, odd.unrecognized["result_content:object"], odd.unrecognized["result_block:x"]], [
+      [[1, 3]],
+      1,
+      1,
+    ]);
+  }));
+
+// Code-mode `exec` cells that outlive their yield return "Script running" and deliver later output as a second
+// result under the same call_id. About 1,400 such results exist in local 0.15x-0.163 rollouts.
+Deno.test("Codex late results for a yielded exec cell are delivered evidence, not duplicates", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const [meta, , call, first] = logRows("codex", "Script running with cell ID 1\nOutput:\n");
+    const late = {
+      type: "response_item",
+      payload: { type: "custom_tool_call_output", call_id: "call-1", name: "exec", output: packet(item, 1, 3) },
+    };
+    await saveLog(path, [meta, call, first, late]);
+    const report = await audit("codex", "session", "/repo", [item], [path]);
+    equal(report.status, "complete");
+    equal(report.evidence[0].ref, `${path}:4`);
+    await saveLog(path, [meta, late]);
+    equal((await audit("codex", "session", "/repo", [item], [path])).rejected.length, 1);
+  }));
+
+// Agent messages, inter-agent metadata and server-side web searches appear in ordinary 0.163.0 rollouts.
+// They carry no call_id-paired local tool output and must neither abort nor credit an audit.
+Deno.test("Codex non-tool response items and lifecycle records are skipped and counted", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const rows = logRows("codex", packet(item, 1, 3));
+    await saveLog(path, [
+      ...rows,
+      { type: "inter_agent_communication_metadata", payload: {} },
+      { type: "response_item", payload: { type: "agent_message", content: packet(item, 1, 3) } },
+      { type: "response_item", payload: { type: "web_search_call", action: {}, status: "completed" } },
+    ]);
+    const report = await audit("codex", "session", "/repo", [item], [path]);
+    equal(report.status, "complete");
+    equal(report.delivered_results, 1);
+    equal(Object.keys(report.ignored), [
+      "event_msg",
+      "inter_agent_communication_metadata",
+      "response_item:agent_message",
+      "response_item:web_search_call",
+    ]);
+    // Subagent rollouts fail with a diagnostic that names the cause instead of a generic identity mismatch.
+    await saveLog(path, [rows[0], { type: "event_msg", payload: {} }, rows[0]]);
+    await fails(() => audit("codex", "session", "/repo", [item], [path]), "second session_meta");
+    await saveLog(path, [{ type: "session_meta", payload: { id: "session", session_id: "root", cwd: "/repo" } }]);
+    await fails(() => audit("codex", "session", "/repo", [item], [path]), "native subagent rollouts cannot be audited");
   }));
 
 for (const backend of ["codex", "claude"]) {

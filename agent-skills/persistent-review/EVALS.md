@@ -28,6 +28,9 @@ Inspect the outcome independently:
 - After coverage/synthesis, did an explicit new search occur even when earlier findings were empty? Did a verified new
   finding trigger another same-session search, with immediate persistence and explicit permission to return empty?
 - Does the completion record match the evidence, preserving findings and naming unresolved material on a stop?
+- Did every reviewer prompt tell the reviewer to read source itself rather than through subagents, while still allowing
+  subagents for tests or builds? If a reviewer used a subagent to read anyway, did the parent treat those ranges as
+  missing rather than delivered?
 - Give an early planted defect and later source reads: was its finding appended before those later reads, rather than
   buffered to the turn boundary? Can the parent see the finding/count from artifacts while reviews are still running?
 - Do semantic groups run concurrently, with disjoint logs, genuine capacity constraints recorded, and observed counts
@@ -71,16 +74,25 @@ artifacts, and stale or missing neighboring source. Builds must preserve the old
 concurrent source edit. These checks do not run a real reviewer or establish CentOS compatibility from a successful
 native or Ubuntu test.
 
-Run `deno check` and `deno test -A` on `evidence.ts`. Cover both delivered-result schemas, false raw-stdout coverage,
-unknown records/blocks, wrong session/cwd, unpaired calls, malformed/trailing records, source drift, corrupt and clipped
-packets, overlapping ranges, resumed streams, failed tools, empty findings, finding revisions/withdrawals, and log-owner
-identity. Unknown representations must visibly fail without a partial success report. A cold agent encountering that
-failure must ask before direct inspection, explicitly explain the token cost, and retain findings. Check that it neither
-silently skips records nor treats missing data as zero findings or complete coverage.
+Run `deno check` and `deno test -A` on `evidence.ts`. Cover both delivered-result schemas, every Codex tool family seen
+in real rollouts, false raw-stdout coverage, unknown records and blocks, wrong session/cwd, orphan and repeated results,
+unfinished calls, malformed/trailing records, source drift, corrupt and clipped packets, oversized Codex results,
+overlapping ranges, resumed streams, failed tools, empty findings, finding revisions/withdrawals, and log-owner
+identity. Unknown records, blocks and result shapes must never abort the audit or earn coverage, even when they quote
+packets; they must appear in `unrecognized`. Identity and packet-integrity failures must visibly fail without a partial
+success report. Give a cold orchestrator a report whose missing ranges match reads the reviewer claims and whose
+`unrecognized` holds a plausible tool-output kind: it must treat that as a format failure, ask before direct inspection
+with the token-cost warning, and retain findings, rather than requesting the same reads again or calling coverage
+complete.
+
+Before trusting a parser change, run the audit with a throwaway manifest over the local corpus of real Codex rollouts
+and fresh Claude `-p --verbose` streams that use subagents, ToolSearch and background tasks. Every completed top-level
+transcript should parse, and `unrecognized` should be empty for the shapes already checked; failures should be limited
+to unfinished writes and unverified identity cases.
 
 Include Codex top-level `compacted` records between original calls/results and after completed reads. Coverage must
 survive when original delivery exists; packets found only in compaction summaries or replacement history must not fill
-gaps. Mutated compaction envelopes must still fail visibly, including after full coverage was established.
+gaps. Mutated compaction envelopes are skipped like other non-tool records and must not change coverage.
 
 For both backends, mix valid required-source packets with context packets from another manifest. The audit must report
 the latter without certifying them, credit only matched mandatory text, preserve gaps, and avoid loading foreign source
@@ -89,7 +101,7 @@ paths. Fully covered mandatory scope may complete despite extra context. Malform
 For both backends, vary JSON key order, additive packet metadata, spacing and digest case while preserving essential
 values. Coverage must remain identical. Fully delivered matching packets above producer line/byte budgets remain valid
 evidence, while `read` still enforces its own budgets. Blank JSONL separators preserve physical references; blank-only
-required logs remain errors. Corrupt text, version mismatches, invalid source bounds and unknown evidence shapes must
+required logs remain errors. Corrupt text, version mismatches, invalid source bounds and undecodable tool results must
 continue to fail, including after earlier successful coverage.
 
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
