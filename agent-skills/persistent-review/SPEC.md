@@ -38,6 +38,9 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - Codex top-level `compacted` records are recognized as context management after validating the known message/history
   envelope. Their summary and replacement history earn no delivery credit. Original call/result joins and verified
   delivery survive compaction; missing original evidence remains missing. Unknown compaction shapes still fail.
+- Claude `system` records with subtype `hook_started`, `hook_progress`, or `hook_response` may precede initialization.
+  They retain session and nested-stream checks but earn no delivery credit. Each log still requires its own matching
+  `system/init` session and cwd before assistant, user, result, or other system records.
 - Structurally valid read packets for paths outside the audited manifest are reported explicitly with claimed ranges and
   raw references. They are unverified context and earn no credit, do not load additional sources, and never expand
   mandatory scope. Malformed required fields still fail; missing required ranges remain missing.
