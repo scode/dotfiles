@@ -52,29 +52,59 @@ persisted rollout, including resumes, rather than `--json` command events. Claud
 stream in order. Use the dependency's capture and identity mechanics. Do not concatenate overlapping exports or mix
 reviewers. The helper joins calls/results and validates each log's session and cwd before crediting packets.
 
-Supported delivered shapes are Codex 0.163.0 `response_item` / `custom_tool_call_output` arrays of `input_text` blocks
-and Claude Code 2.1.302 verbose `user.message.content` tool results, paired with assistant `tool_use` blocks. Claude
-text results may be strings or arrays of text blocks. These are verified representations, not a promise about every
-version. Other tool-result records or content blocks fail explicitly. The parser ignores known non-tool records and
-reasoning without emitting them. Valid logs with no matching packets remain incomplete; full raw stdout cannot fill that
-gap.
+NOTE: The audit is built not to break when a harness adds a command, tool, record type or content shape, and both Codex
+and Claude Code add them often. It aborts only when continuing could misattribute identity or certify text that does not
+match the pinned source. Everything else becomes "no credit" plus a report entry, and you decide what it means.
 
-Claude `system/hook_started`, `system/hook_progress`, and `system/hook_response` records may appear before
-`system/init`. They must belong to the expected session and cannot be nested child records. Hook output earns no
-delivery credit, even if it contains read packets. Each supplied log still needs its own `system/init` with the expected
-cwd before any assistant, user, result, or other system record; unrecognized startup subtypes fail explicitly.
+Only tool results can earn coverage. On Codex a tool call or result is any `response_item` payload with a string
+`call_id`, whatever its tool family; a result's type ends in `_output`. On Claude they are assistant `tool_use` blocks
+and user `tool_result` blocks. A result earns coverage only when a call with its ID appears earlier in the supplied
+logs. Its text is either a string or the `text` of each block in an array. Other blocks (images, ToolSearch references,
+a renamed text block) and non-array content contribute nothing. One Codex call may have several results, because a
+code-mode `exec` cell that outlives its yield delivers its later output under the original call ID. These
+representations were checked against Codex 0.153.4 through 0.163.0 rollouts and a Claude Code 2.1.308 verbose stream.
+That is not a promise about every version.
 
-Codex's top-level `compacted` context-management record is supported when its payload has a string `message` and an
-array or null `replacement_history`. Ignore that summary and replacement history for delivery credit. Original
-call/result evidence before compaction remains valid; context replacement neither erases it nor proves delivery of
-missing text. If original results are absent from the supplied rollout, those ranges remain unverified. Unsupported
-compaction payload shapes still fail explicitly. Claude's `system` compaction boundaries already follow its non-tool
-record path; they likewise supply no source evidence.
+Codex persists each tool result in full but sends the model only about 12,000 tokens of it, and when it cuts, the
+rollout text carries no marker. A Codex result over 40,000 bytes therefore earns no coverage. That bound comes from
+local measurement, not documentation: oversized results added only 11-14k input tokens, and packet-bearing results
+stayed under 40k characters. Keep each `evidence read` in its own tool call so its result stays small.
+
+The report separates what it could not use, so silence never stands in for a claim:
+
+- `rejected` lists packet-bearing results that earned nothing, with a reason: no matching call, client-authored, larger
+  than Codex reliably delivers, reported failure (including an error flag the helper cannot read), or clipped.
+- `unfinished_calls` counts calls that have no result yet, usually because the turn is still running. Re-audit after the
+  turn boundary.
+- `ignored` counts skipped records of kinds known to carry no delivery: Codex lifecycle records, messages, reasoning,
+  agent messages and server-side searches; Claude hooks, task notices, turn results, thinking, synthetic user text, and
+  subagent records; image and ToolSearch result blocks. These need no attention.
+- `unrecognized` counts skipped records and result blocks of any other kind. They earn nothing, even when they quote a
+  complete packet. A non-empty `unrecognized` means the harness wrote something this helper has not seen. Judge whether
+  it could hold reads the audit missed: if the missing ranges match reads the reviewer reports making and an
+  `unrecognized` kind plausibly carries tool output, treat it as a format change and take the manual-inspection path
+  below rather than asking for the same reads again. Otherwise trust the report as usual.
+
+Identity checks still apply around everything that is skipped. Each Codex log needs exactly one `session_meta` with the
+expected thread ID and cwd before any other record. Rollouts of native Codex subagents cannot be audited, because what
+their model received has not been verified: a spawned child names its root thread in `session_id`, and a forked child
+also carries a second `session_meta` followed by a copy of its parent's history. Both fail with a diagnostic saying so;
+run Codex reviewers through `codex exec`. Every Claude record that names a session must name the expected one, including
+skipped records. Each Claude log needs a `system/init` with the expected session and cwd before its first assistant or
+user message. Later inits in the same log, which appear when a finished background task starts another turn, must match
+too. Claude records with a non-null `parent_tool_use_id` belong to a subagent and were delivered to it, not the
+reviewer; the subagent's answer reaches the reviewer as the result of its `Agent` call and is audited like any other
+result.
+
+Codex's top-level `compacted` record is context management. Original call/result evidence before compaction remains
+valid, and neither the summary nor the replacement history can prove delivery of missing text. If original results are
+absent from the supplied rollout, those ranges remain unverified.
 
 Successful parsing exits 0 with a compact JSON report. Its `status` means delivery coverage only: `complete` or
-`incomplete`, with source versions, covered/missing ranges, rejected packets, and raw log line references. Repeated
-reads do not inflate covered ranges. Keep reports on disk and read them per group rather than aggregating every event
-into the orchestrator's context. A missing packet end is a clipped read and earns no coverage; reread a smaller range.
+`incomplete`, with source versions, covered/missing ranges, raw log line references, and the `rejected`,
+`unfinished_calls`, `ignored` and `unrecognized` entries described above. Repeated reads do not inflate covered ranges.
+Keep reports on disk and read them per group rather than aggregating every event into the orchestrator's context. A
+missing packet end is a clipped read and earns no coverage; reread a smaller range.
 
 Reviewers may read additional context with another manifest. Structurally valid packets for paths absent from the
 audited manifest appear in `outside_manifest`, with reported ranges and transcript references. Their source versions and
@@ -84,19 +114,20 @@ Malformed required fields in context packets still fail visibly rather than bein
 
 The audit compares essential values, not JSON serialization. Reordered object keys, additive metadata, JSON spacing and
 hexadecimal digest case are harmless. Blank JSONL separator lines are skipped with physical evidence line numbers
-preserved; whitespace-only required logs still fail as empty. Unknown evidence record/block representations still fail
-because the tool cannot establish their delivery semantics.
+preserved; whitespace-only required logs still fail as empty.
 
 The 200-line/24,000-byte budgets constrain `read`, not existing delivery evidence. A larger fully delivered packet can
 be audited when its source identity, range and exact decoded text match. The audit streams JSONL records, but each
 record and retained source snapshots still need to fit in memory; producer defaults are not an audit memory limit.
 
-Format errors, malformed JSON, orphan results, mixed sessions, snapshot drift, and unmatched packet content fail with a
-nonzero exit. Expected format errors print `PERSISTENT_REVIEW_TOOL_FAILED` to stderr and no coverage report to stdout;
-unexpected runtime errors also exit nonzero. Preserve the diagnostic. An unfinished writer can be retried at its turn
-boundary. For other format failures, explain the failure and ask whether to use manual inspection, warning that actual
-tool outputs duplicate code in the orchestrator's context and use more tokens. Until approved, credit no new coverage
-from the failed invocation. A previous valid audit remains historical evidence, not a successful current audit.
+Malformed JSON lines, mixed sessions or working directories, missing initialization, snapshot drift, malformed packets
+and packet content that does not match the pinned source fail with a nonzero exit. Expected errors print
+`PERSISTENT_REVIEW_TOOL_FAILED` to stderr and no coverage report to stdout; unexpected runtime errors also exit nonzero.
+Preserve the diagnostic. A malformed last line is usually an unfinished write; retry at the turn boundary. For other
+failures, or when you judge that `unrecognized` records hide reads, explain the problem and ask whether to use manual
+inspection, warning that actual tool outputs duplicate code in the orchestrator's context and use more tokens. Until
+approved, credit no new coverage from that invocation. A previous valid audit remains historical evidence, not a
+successful current audit.
 
 ## Record and count findings
 
