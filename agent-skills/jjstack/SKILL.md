@@ -236,21 +236,23 @@ the working copy on top of the stack, or pass the top bookmark as `--top`; it re
   with that message, bookmarks the commit, and submits; changes outside the paths stay in the working copy. Put `--`
   before a path that starts with `-`. Pick a new bookmark name of letters, digits, `.`, `_`, `/`, and `-`, starting with
   a letter or digit, that no local bookmark, remote branch, or earlier PR has used. Before committing anything, it
-  refuses a name that breaks those rules, nothing to commit, a working copy that already carries a bookmark or a
-  conflict, a working copy that is not on top of the stack, and anything `submit` would refuse about the stack below.
-  Once it prints `JJSTACK_COMMITTED`, the commit and bookmark exist: if it stops after that, fix the cause and run
-  `submit`, not `new-pr` again.
+  refuses a name that breaks those rules, nothing to commit, a path that matches no change (a path may name a file or a
+  directory, which covers everything under it; for a rename, pass both the old and the new path), a working copy that
+  already carries a bookmark or a conflict, a working copy that is not on top of the stack, and anything `submit` would
+  refuse about the stack below. Once it prints `JJSTACK_COMMITTED`, the commit and bookmark exist: if it stops after
+  that, fix the cause and run `submit`, not `new-pr` again.
 - Update a PR: make the edit in the working copy and run `amend --bookmark <name> [--message-file <file>] [paths...]`.
   It folds the working copy's changes (only the given paths, when there are any) into that PR's commit, rewords the
   commit when given a message file, and submits; jj rebases everything above the edit, and the submit pushes all of it.
   Run it from the top of the stack, or, when the edit touches lines that PRs higher up also change, from the PR's own
   commit: `jj new <bookmark>`, edit, `amend --bookmark <bookmark>`, then `jj new <top-bookmark>` to put the working copy
   back on top. It refuses, before changing anything, a bookmark that is not in the stack below the working copy, an
-  amend with no changes and no message, and a working copy that has conflicts or carries a bookmark of its own (it is
-  then a PR's commit, which `jj edit` leaves you on; use `jj new <bookmark>` instead). Once it prints `JJSTACK_AMENDED`,
-  the amend is done: if the submit after it stops, fix the cause and run `submit`, with `--update-text` when the amend
-  reworded the commit. Each PR is exactly one commit: a follow-up commit with the bookmark moved onto it leaves the
-  original commit unbookmarked, and `submit` refuses that rather than let GitHub fold it in silently.
+  amend with no changes and no message, a path that matches no change, and a working copy that has conflicts or carries
+  a bookmark of its own (it is then a PR's commit, which `jj edit` leaves you on; use `jj new <bookmark>` instead). Once
+  it prints `JJSTACK_AMENDED`, the amend is done: if the submit after it stops, fix the cause and run `submit`, with
+  `--update-text` when the amend reworded the commit. Each PR is exactly one commit: a follow-up commit with the
+  bookmark moved onto it leaves the original commit unbookmarked, and `submit` refuses that rather than let GitHub fold
+  it in silently.
 - Insert a PR into the stack: `jj new --insert-after <bookmark-below>`, make the change, describe it, `jj bookmark set
   <name> -r @`, then `jj new <top-bookmark>` and `submit`. It creates the inserted PR and retargets the PR above it.
 - Restack, reorder, or drop a commit: do it with `jj rebase` or `jj abandon`, then `submit`.
