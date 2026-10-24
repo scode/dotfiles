@@ -378,6 +378,54 @@ Deno.test("new-pr commits, bookmarks, and opens a draft PR on top, leaving other
 });
 
 /**
+ * A path argument may name a directory, which covers every change under it. An earlier version wrapped each path as a
+ * jj `file:` pattern, which matches only a file of exactly that path, so a directory matched nothing and its changes
+ * stayed out of the commit without a word; a whole new skill directory once went missing from a PR that way. A path
+ * that matches no change at all is now refused before anything is written, by `new-pr` and `amend` alike, rather than
+ * dropped while the other paths go ahead.
+ */
+Deno.test("new-pr and amend take a directory path, and refuse a path that matches no change", async () => {
+  await withWorld(async (w) => {
+    await Deno.mkdir(`${w.work}/skill/assets`, { recursive: true });
+    await Deno.writeTextFile(`${w.work}/skill/a.txt`, "a\n");
+    await Deno.writeTextFile(`${w.work}/skill/assets/b.txt`, "b\n");
+    await Deno.writeTextFile(`${w.work}/top.txt`, "top\n");
+    // A sibling whose name starts with the directory's must not ride along.
+    await Deno.writeTextFile(`${w.work}/skill-other.txt`, "other\n");
+    const m = await messageFile(w, "m", "feat: add skill\n\nWhy skill.\n");
+    const refused = async (cmd: string, args: string[], code: string) => {
+      const r = await jjstack(w, [cmd, ...args]);
+      assertEquals(r.code, 3, r.err);
+      assertStringIncludes(r.err, `code=${code}`);
+      assertStringIncludes(r.err, "missing");
+    };
+    await refused("new-pr", ["--bookmark", "skill", "--message-file", m, "skill", "missing"], "E_NEWPR_PATH_UNMATCHED");
+    assertEquals((await readState(w)).prs.length, 0);
+
+    const r = await jjstack(w, ["new-pr", "--bookmark", "skill", "--message-file", m, "skill", "top.txt"]);
+    assertEquals(r.code, 0, r.err);
+    const pushed = await $`git --git-dir ${w.remote} show --name-only --format= skill`.env(w.env).text();
+    assertEquals(pushed.trim().split("\n").sort(), ["skill/a.txt", "skill/assets/b.txt", "top.txt"]);
+
+    await Deno.writeTextFile(`${w.work}/skill/assets/b.txt`, "b fixed\n");
+    await Deno.writeTextFile(`${w.work}/later.txt`, "not yet\n");
+    await refused("amend", ["--bookmark", "skill", "skill", "missing"], "E_AMEND_PATH_UNMATCHED");
+    const a = await jjstack(w, ["amend", "--bookmark", "skill", "skill"]);
+    assertEquals(a.code, 0, a.err);
+    assertEquals(await remoteFile(w, "skill", "skill/assets/b.txt"), "b fixed");
+    assertEquals((await inWork(w)`jj diff --name-only -r @`.text()).trim().split("\n").sort(), [
+      "later.txt",
+      "skill-other.txt",
+    ]);
+
+    // An empty path (an empty shell variable in quotes) would match the whole checkout, so it is a usage error.
+    const empty = await jjstack(w, ["amend", "--bookmark", "skill", ""]);
+    assertEquals(empty.code, 2, empty.err);
+    assertStringIncludes(empty.err, "code=E_USAGE_EMPTY_PATH");
+  });
+});
+
+/**
  * Everything `new-pr` can refuse on its own is refused before it commits anything (exit 3), so a refusal never leaves
  * a half-made PR behind: a bookmark name already in use, nothing to commit, a message without a title, and a working
  * copy sitting below open PRs, where the new commit would land mid-stack.

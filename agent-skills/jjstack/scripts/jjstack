@@ -1725,17 +1725,35 @@ async function readMessage(code: string, emptyCode: string, file: string): Promi
   return text;
 }
 
-/** `paths` as jj filesets that each match exactly that file or directory, relative to `--dir`. */
+/**
+ * `paths` as jj filesets that each match that file, or everything under that directory, relative to `--dir`. `cwd:`
+ * rather than `file:`, which matches only a file of exactly that path: with `file:`, a directory argument matched
+ * nothing and its changes silently stayed out of the commit (a skill directory once left out of a PR that way).
+ */
 function pathFilesets(paths: string[]): string[] {
-  // A bare path is parsed as a fileset expression, so a name with `(`, `|`, or `~` in it would mean something else.
-  return paths.map((p) => `file:${JSON.stringify(p)}`);
+  // A bare path is parsed as a fileset expression, so a name with `(`, `|`, or `~` in it would mean something else;
+  // the quoted pattern is always taken literally.
+  return paths.map((p) => `cwd:${JSON.stringify(p)}`);
+}
+
+/**
+ * The given paths that match no change in the working copy. Each one is a mistake to refuse before committing: a typo,
+ * a path that is already committed, or a pattern that does not mean what the caller thinks. Without this check such a
+ * path is dropped without a word while the other paths go ahead.
+ */
+async function unmatchedPaths(ctx: Ctx, code: string, paths: string[], filesets: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (let i = 0; i < paths.length; i++) {
+    if ((await exec(code, ctx.sh`jj ${JJ_SAFE} diff --name-only -r @ ${filesets[i]}`)) === "") out.push(paths[i]);
+  }
+  return out;
 }
 
 /**
  * `jjstack new-pr`: turns working-copy changes into the next PR on top of the stack, in one call. It commits them (all
  * of them, or only `paths`) with the message file as the description, bookmarks the new commit, and runs `submit` up to
- * it, which pushes it and opens a draft PR based on the PR below (or on the default branch for the first one). Changes
- * left out of `paths` stay in the working copy.
+ * it, which pushes it and opens a draft PR based on the PR below (or on the default branch for the first one). A path
+ * names a file or a directory, which covers everything under it. Changes left out of `paths` stay in the working copy.
  *
  * Everything that can refuse is checked before the commit, so a refusal leaves the working copy as it was:
  *
@@ -1743,6 +1761,7 @@ function pathFilesets(paths: string[]): string[] {
  * - a bookmark name that is not a valid branch name, that already exists locally or on the remote, or that an earlier
  *   PR used (`submit` will not open a second PR for a branch, and landed branches are deleted, so a reused name is
  *   only visible as an old PR);
+ * - a path that matches no change in the working copy (a typo, or a path already committed), rather than dropping it;
  * - nothing to commit, or a working copy that already carries a bookmark or a conflict (the commit would keep the
  *   bookmark next to the new one, or carry the conflict into the PR);
  * - open PRs above the working copy's parent, where the new commit would land mid-stack;
@@ -1790,6 +1809,10 @@ async function newPr(ctx: Ctx, bookmark: string, messageFile: string, paths: str
       "E_NEWPR_NOTHING",
       paths.length > 0 ? `no changes in the working copy under ${paths.join(" ")}` : "the working copy has no changes",
     );
+  }
+  const unmatchedNew = await unmatchedPaths(ctx, "E_NEWPR_PATH_DIFF", paths, filesets);
+  if (unmatchedNew.length > 0) {
+    fail("E_NEWPR_PATH_UNMATCHED", `no changes in the working copy under ${unmatchedNew.join(", ")}`);
   }
   // Labelled fields, because `exec` trims its output and an empty bookmark list would otherwise vanish.
   const template =
@@ -1845,7 +1868,8 @@ async function newPr(ctx: Ctx, bookmark: string, messageFile: string, paths: str
  *
  * Refused before anything is written: an unreadable or untitled message file; a bookmark that does not exist locally,
  * is conflicted, or does not point at a commit in the stack below the working copy; nothing to fold in and no new
- * message; a working copy with conflicts (they would move into the PR) or with a bookmark of its own (then it is a PR's
+ * message; a path that matches no change in the working copy (even with a new message, since the caller meant to fold
+ * something in); a working copy with conflicts (they would move into the PR) or with a bookmark of its own (then it is a PR's
  * commit, and folding it would move that whole PR into this one); and bookmarks above the amended commit that fork
  * into more than one head, where there is no single stack to submit.
  *
@@ -1884,6 +1908,10 @@ async function amend(ctx: Ctx, bookmark: string, messageFile: string | undefined
         ? `no changes in the working copy under ${paths.join(" ")}, and no --message-file`
         : "the working copy has no changes, and no --message-file",
     );
+  }
+  const unmatchedAmend = await unmatchedPaths(ctx, "E_AMEND_PATH_DIFF", paths, filesets);
+  if (unmatchedAmend.length > 0) {
+    fail("E_AMEND_PATH_UNMATCHED", `no changes in the working copy under ${unmatchedAmend.join(", ")}`);
   }
   // Labelled fields, because `exec` trims its output and an empty bookmark list would otherwise vanish.
   const template =
@@ -3145,7 +3173,8 @@ async function main() {
 
 /**
  * Parses the command line strictly: an unknown command, an option the command does not take, a positional argument
- * for a command that takes no paths, or an empty value is a usage error, so a typo never silently runs with defaults.
+ * for a command that takes no paths, an empty value, or an empty path is a usage error, so a typo never silently runs
+ * with defaults.
  */
 function parseCli(argv: string[]) {
   const [command, ...rest] = argv;
@@ -3166,6 +3195,9 @@ function parseCli(argv: string[]) {
     },
   });
   if (args._.length > 0 && !spec.paths) usage("E_USAGE_POSITIONAL", `unexpected arguments: ${args._.join(" ")}`);
+  // An empty path would become `cwd:""`, which matches the whole checkout: an empty shell variable passed in quotes
+  // would put every unrelated change into the PR.
+  if (args._.some((p) => String(p) === "")) usage("E_USAGE_EMPTY_PATH", "a path argument is empty");
   for (const s of strings) {
     if (typeof args[s] === "string" && args[s] === "") usage("E_USAGE_EMPTY_VALUE", `--${s} needs a value`);
   }
