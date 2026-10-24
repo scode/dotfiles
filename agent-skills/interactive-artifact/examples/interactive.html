@@ -1,0 +1,97 @@
+<h1>Replacing the job queue</h1>
+<p>A proposal, three decisions, and a draft announcement. Select any text to comment on it or suggest a change.</p>
+
+<div class="tldr">
+  <p>Move the job queue from Redis streams to SQLite in WAL mode. It removes our only reason to run Redis, and
+    load tests keep p99 enqueue latency under 5 ms at three times today's peak.</p>
+</div>
+
+<h2>Which backend?</h2>
+<p>Pick one. Click a card again to clear it.</p>
+
+<div class="options" data-pick="backend" data-label="Queue backend">
+  <article class="option recommended" data-value="sqlite">
+    <span class="badge blue">Recommended</span>
+    <h3>SQLite queue</h3>
+    <p>One file next to the service, WAL mode, a single writer.</p>
+    <ul class="pros">
+      <li>No new infrastructure</li>
+      <li>Transactional with the rest of our state</li>
+    </ul>
+    <ul class="cons">
+      <li>One writer process only</li>
+    </ul>
+  </article>
+  <article class="option" data-value="redis">
+    <h3>Keep Redis streams</h3>
+    <p>What we run today, via the shared cluster.</p>
+    <ul class="pros">
+      <li>Already works</li>
+    </ul>
+    <ul class="cons">
+      <li>Cluster outages take us down</li>
+    </ul>
+  </article>
+  <article class="option" data-value="postgres">
+    <h3>Postgres <code>SKIP LOCKED</code></h3>
+    <p>A jobs table polled with row locks.</p>
+    <ul class="pros">
+      <li>Transactional</li>
+    </ul>
+    <ul class="cons">
+      <li>Adds load to the primary</li>
+    </ul>
+  </article>
+</div>
+
+<h2>Open questions</h2>
+
+<ol class="questions">
+  <li data-pick="durability">
+    <span class="q">Can the queue lose in-flight jobs on a crash?</span>
+    <p>With synchronous commits off we get about 3x throughput, but up to one second of enqueues can vanish.</p>
+    <span data-value="no">No, keep synchronous commits</span>
+    <span data-value="yes">Yes, take the throughput</span>
+  </li>
+  <li data-pick="rollout" data-multiple data-placeholder="Anything else about the rollout?">
+    <span class="q">Which safety nets do you want for the rollout?</span>
+    <p>Pick any number.</p>
+    <span data-value="flag">Feature flag</span>
+    <span data-value="shadow">Two weeks of shadow traffic</span>
+    <span data-value="fallback">Redis fallback for one release</span>
+  </li>
+  <li data-pick="owner" data-no-text>
+    <span class="q">Who owns the migration?</span>
+    <span data-value="me">Me</span>
+    <span data-value="platform">Platform team</span>
+  </li>
+</ol>
+
+<h2>Draft announcement</h2>
+
+<p>Starting November 4, background jobs run on a SQLite queue stored next to each service instead of the shared
+  Redis cluster. You do not need to change anything: the <code>enqueue()</code> API is the same, and existing jobs
+  drain before the switch.</p>
+
+<p>The main visible difference is that a Redis outage no longer stops job processing. Enqueue latency drops
+  slightly, from about 11 ms to about 4 ms at p99, and jobs enqueued in the same transaction as a database write
+  are now committed or rolled back together with it.</p>
+
+<table>
+  <thead><tr><th>Metric</th><th class="num">Redis</th><th class="num">SQLite</th></tr></thead>
+  <tbody>
+    <tr><td>p99 enqueue</td><td class="num">10.8 ms</td><td class="num">4.1 ms</td></tr>
+    <tr><td>Throughput</td><td class="num">12K/s</td><td class="num">9.8K/s</td></tr>
+  </tbody>
+</table>
+
+<figure class="code">
+  <figcaption>src/queue/mod.rs</figcaption>
+  <pre><code><span class="k">pub fn</span> <span class="f">open</span>(path: &amp;Path) -&gt; Result&lt;Queue&gt; {
+    <span class="k">let</span> conn = Connection::open(path)?;
+    conn.pragma_update(<span class="k">None</span>, <span class="s">"journal_mode"</span>, <span class="s">"WAL"</span>)?;
+    <span class="f">Ok</span>(Queue::new(conn))
+}</code></pre>
+</figure>
+
+<p>Questions go to <a href="https://example.com/chat/queue">#queue-migration</a>.</p>

@@ -1,0 +1,1832 @@
+/*
+ * interactive-artifact default styling.
+ *
+ * Every page the interactive-artifact server renders loads this file. It styles plain HTML elements (the markdown-like
+ * vocabulary: headings, lists, tables, code, quotes, details) so a page needs no classes at all to look right, and adds
+ * a small set of opt-in component classes for the presentation patterns listed in SKILL.md. The last sections style the
+ * interactive layer that interactive-artifact.js builds: pickers, highlights, the comment sidebar, the selection
+ * toolbar, and the Submit dock.
+ *
+ * Colors are tokens on :root. Dark values are declared twice, once under the OS preference and once under
+ * [data-theme="dark"], because the page's theme toggle has to win in both directions: the :not() guard lets an
+ * explicit light choice beat a dark OS, and the attribute rule lets an explicit dark choice beat a light OS.
+ *
+ * Fonts: Inter for text, JetBrains Mono Nerd Font for code, both as font files from jsDelivr (never CSS from
+ * there; see the Inter rules below). The Nerd variant has no npm or Google Fonts build, so it prefers a locally
+ * installed copy and otherwise pulls the patched TTFs from the nerd-fonts repository (about 2.5 MB per face,
+ * cached by the browser after the first load).
+ */
+
+/* Inter (variable, with optical sizing), latin and latin-ext only. These rules are written out here rather than
+   @imported from the CDN on purpose: a stylesheet can read the page (attribute selectors can probe the message key
+   in the script tag's data-key), while a font file cannot, so the CDN is trusted with font files only. See SPEC.md. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-ext-opsz-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-opsz-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-ext-opsz-italic.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-opsz-italic.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "interactive-artifact mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local("JetBrainsMono Nerd Font"), local("JetBrainsMonoNerdFont-Regular"), local("JetBrainsMonoNF-Regular"),
+    url("https://cdn.jsdelivr.net/gh/ryanoasis/nerd-fonts@v3.5.1/patched-fonts/JetBrainsMono/Ligatures/JetBrainsMonoNerdFont-Regular.ttf")
+    format("truetype");
+}
+@font-face {
+  font-family: "interactive-artifact mono";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local("JetBrainsMono Nerd Font Italic"), local("JetBrainsMonoNerdFont-Italic"), local("JetBrainsMonoNF-Italic"),
+    url("https://cdn.jsdelivr.net/gh/ryanoasis/nerd-fonts@v3.5.1/patched-fonts/JetBrainsMono/Ligatures/JetBrainsMonoNerdFont-Italic.ttf")
+    format("truetype");
+}
+@font-face {
+  font-family: "interactive-artifact mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local("JetBrainsMono Nerd Font Bold"), local("JetBrainsMonoNerdFont-Bold"), local("JetBrainsMonoNF-Bold"),
+    url("https://cdn.jsdelivr.net/gh/ryanoasis/nerd-fonts@v3.5.1/patched-fonts/JetBrainsMono/Ligatures/JetBrainsMonoNerdFont-Bold.ttf")
+    format("truetype");
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Tokens                                                                                                      */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "interactive-artifact mono", "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --bg: #f8f8f6;
+  --surface: #ffffff;
+  --surface-2: #f2f2ef;
+  --border: #e4e3de;
+  --border-strong: #d2d1ca;
+  --text: #18181a;
+  --text-2: #4f4f55;
+  --muted: #85858c;
+  --accent: #2a6fd6;
+  --accent-soft: #e7f0fc;
+  --mark: #fff1b8;
+  --accent-solid: #2a6fd6;
+  --comment: #d39a00;
+  --comment-soft: #fdf0c4;
+
+  --note: #2a6fd6;
+  --note-soft: #eef4fd;
+  --tip: #12804a;
+  --tip-soft: #ebf7f0;
+  --warn: #a86400;
+  --warn-soft: #fdf5e6;
+  --danger: #c8342f;
+  --danger-soft: #fcefee;
+
+  --add-bg: #e9f7ee;
+  --add-text: #135c33;
+  --del-bg: #fcecec;
+  --del-text: #8e2622;
+
+  /* Chart roles. Series hues follow the dataviz reference palette's validated order (blue, orange, aqua,
+     yellow); text never wears these. */
+  --chart-surface: var(--surface);
+  --grid: #e8e7e1;
+  --axis: #c3c2b7;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgb(16 16 20 / 0.04), 0 2px 8px rgb(16 16 20 / 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111113;
+    --surface: #18181b;
+    --surface-2: #1f1f23;
+    --border: #2b2b30;
+    --border-strong: #3a3a40;
+    --text: #ececef;
+    --text-2: #b6b6be;
+    --muted: #7d7d87;
+    --accent: #6aa5f2;
+    --accent-soft: #1a2638;
+    --mark: #5a4a12;
+    --accent-solid: #2f6fd0;
+    --comment: #e0b030;
+    --comment-soft: #43360f;
+    --note: #6aa5f2;
+    --note-soft: #172131;
+    --tip: #4cc787;
+    --tip-soft: #13261c;
+    --warn: #e6a740;
+    --warn-soft: #2a2112;
+    --danger: #f07571;
+    --danger-soft: #2c1717;
+    --add-bg: #12281b;
+    --add-text: #8fe0b0;
+    --del-bg: #2e1616;
+    --del-text: #f4a4a0;
+    --grid: #2a2a2e;
+    --axis: #3d3d42;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111113;
+  --surface: #18181b;
+  --surface-2: #1f1f23;
+  --border: #2b2b30;
+  --border-strong: #3a3a40;
+  --text: #ececef;
+  --text-2: #b6b6be;
+  --muted: #7d7d87;
+  --accent: #6aa5f2;
+  --accent-soft: #1a2638;
+  --mark: #5a4a12;
+  --accent-solid: #2f6fd0;
+  --comment: #e0b030;
+  --comment-soft: #43360f;
+  --note: #6aa5f2;
+  --note-soft: #172131;
+  --tip: #4cc787;
+  --tip-soft: #13261c;
+  --warn: #e6a740;
+  --warn-soft: #2a2112;
+  --danger: #f07571;
+  --danger-soft: #2c1717;
+  --add-bg: #12281b;
+  --add-text: #8fe0b0;
+  --del-bg: #2e1616;
+  --del-text: #f4a4a0;
+  --grid: #2a2a2e;
+  --axis: #3d3d42;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --shadow: none;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Page and base typography                                                                                    */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  font-optical-sizing: auto;
+  /* Tailed l and serifed I, so l, I and 1 stay distinguishable in identifiers and paths. */
+  font-feature-settings: "cv05", "cv08";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* The reading column, and beside it on wide screens the comment sidebar.
+
+   Wide screens use three columns: flexible space, the document, flexible space. The two outer columns share the
+   leftover width equally, which keeps the document centered in the window. The right one holds the sidebar and
+   may not shrink below it (1.5rem gap, 19rem of cards, 1rem to the window edge), so once the window is too
+   narrow for a centered document plus sidebar, the right column stops shrinking and the left one gives up the
+   difference: the document moves left only as far as it has to.
+
+   The sidebar space is reserved even with no comments, so the first comment does not shove the text sideways.
+   The 72rem breakpoint is mirrored in interactive-artifact.js, which positions cards only when the column exists. */
+.ia-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 48rem);
+  justify-content: center;
+}
+@media (min-width: 72rem) {
+  .ia-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 48rem) minmax(21.5rem, 1fr);
+  }
+  .ia-page {
+    grid-column: 2;
+  }
+}
+
+.ia-page {
+  min-width: 0;
+  padding: 4rem 1.5rem 6rem;
+}
+
+@media (max-width: 40rem) {
+  .ia-page {
+    padding: 3.5rem 1rem 4rem;
+  }
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 2.2em 0 0.6em;
+  font-weight: 650;
+  text-wrap: balance;
+}
+h1 {
+  font-size: 2.15rem;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+  margin-top: 0;
+}
+h2 {
+  font-size: 1.45rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+h1 + h2, h1 + p + h2 {
+  border-top: 0;
+  padding-top: 0;
+}
+h3 {
+  font-size: 1.15rem;
+}
+h4 {
+  font-size: 1rem;
+}
+h5, h6 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+/* A paragraph straight under the h1 acts as a subtitle. */
+h1 + p {
+  font-size: 1.15rem;
+  color: var(--text-2);
+  margin-top: -0.2rem;
+}
+
+p, ul, ol, dl, blockquote, pre, table, figure, details, .callout, .tldr {
+  margin: 0 0 1.15rem;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+a:hover {
+  text-decoration-color: var(--accent);
+}
+
+strong, b {
+  font-weight: 650;
+}
+mark {
+  background: var(--mark);
+  color: inherit;
+  padding: 0.05em 0.2em;
+  border-radius: 3px;
+}
+del, s {
+  color: var(--muted);
+}
+small, .muted {
+  color: var(--muted);
+}
+abbr[title] {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  cursor: help;
+}
+sup {
+  line-height: 0;
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--border);
+  margin: 2.5rem 0;
+}
+
+img, svg, video {
+  max-width: 100%;
+  height: auto;
+}
+img {
+  border-radius: var(--radius-sm);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Lists                                                                                                       */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+ul, ol {
+  padding-left: 1.4rem;
+}
+li {
+  margin: 0.25rem 0;
+}
+li > ul, li > ol {
+  margin: 0.25rem 0 0.4rem;
+}
+li::marker {
+  color: var(--muted);
+}
+ol > li::marker {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Task lists: <ul class="tasks"><li><input type="checkbox" checked disabled> ...</li></ul> */
+ul.tasks {
+  list-style: none;
+  padding-left: 0.2rem;
+}
+ul.tasks input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0 0.55rem 0 0;
+  vertical-align: -0.1em;
+  width: 0.95em;
+  height: 0.95em;
+}
+
+dt {
+  font-weight: 600;
+}
+dd {
+  margin: 0.1rem 0 0.8rem 1.25rem;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Code                                                                                                        */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+  font-feature-settings: "calt", "liga";
+}
+:not(pre) > code {
+  font-size: 0.86em;
+  padding: 0.12em 0.36em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  white-space: break-spaces;
+}
+kbd {
+  font-size: 0.8em;
+  padding: 0.1em 0.42em;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface);
+}
+pre {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  padding: 1rem 1.15rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+  tab-size: 4;
+}
+pre code {
+  font-size: inherit;
+}
+
+/* Optional hand-applied highlighting: <span class="k">fn</span>. Kept to five roles on purpose; pages are
+   written by agents, and more roles mostly produce inconsistent markup. */
+pre .k {
+  color: #8a3ffc;
+}
+pre .s {
+  color: #0f7b4f;
+}
+pre .n {
+  color: #b35b00;
+}
+pre .f {
+  color: #1f5fbf;
+}
+pre .c {
+  color: var(--muted);
+  font-style: italic;
+}
+:root[data-theme="dark"] pre .k {
+  color: #c4a2ff;
+}
+:root[data-theme="dark"] pre .s {
+  color: #7fd6a6;
+}
+:root[data-theme="dark"] pre .n {
+  color: #f0b46a;
+}
+:root[data-theme="dark"] pre .f {
+  color: #82b6ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) pre .k {
+    color: #c4a2ff;
+  }
+  :root:not([data-theme="light"]) pre .s {
+    color: #7fd6a6;
+  }
+  :root:not([data-theme="light"]) pre .n {
+    color: #f0b46a;
+  }
+  :root:not([data-theme="light"]) pre .f {
+    color: #82b6ff;
+  }
+}
+
+/* Code with a file name: <figure class="code"><figcaption>path</figcaption><pre>...</pre></figure> */
+figure.code {
+  margin-left: 0;
+  margin-right: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+figure.code > figcaption {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-2);
+  padding: 0.5rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  margin: 0;
+}
+figure.code > pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Quotes, tables, figures, details                                                                            */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+blockquote {
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0.1rem 0 0.1rem 1.1rem;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-2);
+}
+blockquote > :last-child {
+  margin-bottom: 0;
+}
+blockquote cite, blockquote footer {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.875rem;
+  font-style: normal;
+  color: var(--muted);
+}
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.925rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+th, td {
+  padding: 0.55rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+tr:last-child > td {
+  border-bottom: 0;
+}
+tbody tr:hover > td {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+/* On narrow screens a table scrolls inside its own box instead of widening the page. Only there, because a
+   block-level table no longer stretches its rows to the full width. */
+@media (max-width: 40rem) {
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+td.num, th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  caption-side: bottom;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: left;
+}
+
+figure {
+  margin-left: 0;
+  margin-right: 0;
+}
+figcaption {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0 1rem;
+}
+details > summary {
+  cursor: pointer;
+  padding: 0.7rem 0;
+  font-weight: 600;
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details > summary::before {
+  content: "\f054"; /* nf-fa-chevron_right */
+  font-family: var(--font-mono);
+  display: inline-block;
+  width: 1.2em;
+  font-size: 0.75em;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
+}
+details[open] > summary {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.9rem;
+}
+details > :last-child {
+  margin-bottom: 1rem;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Small utilities                                                                                             */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  vertical-align: 0.12em;
+  white-space: nowrap;
+}
+.badge.blue {
+  background: var(--note-soft);
+  border-color: color-mix(in srgb, var(--note) 30%, transparent);
+  color: var(--note);
+}
+.badge.green {
+  background: var(--tip-soft);
+  border-color: color-mix(in srgb, var(--tip) 30%, transparent);
+  color: var(--tip);
+}
+.badge.amber {
+  background: var(--warn-soft);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  color: var(--warn);
+}
+.badge.red {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--danger);
+}
+
+/* Nerd Font glyphs inline in prose: <span class="icon">&#xf0e7;</span> */
+.icon {
+  font-family: var(--font-mono);
+  font-style: normal;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 1: TL;DR summary                                                                                    */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.tldr {
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 1.02rem;
+}
+.tldr::before {
+  content: "TL;DR";
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+.tldr > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 2: callouts                                                                                         */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.callout {
+  --c: var(--note);
+  --c-soft: var(--note-soft);
+  position: relative;
+  padding: 0.85rem 1.1rem 0.85rem 2.9rem;
+  border-radius: var(--radius);
+  background: var(--c-soft);
+  border: 1px solid color-mix(in srgb, var(--c) 22%, transparent);
+}
+.callout::before {
+  content: "\f05a"; /* nf-fa-info_circle */
+  position: absolute;
+  left: 1.1rem;
+  top: 0.85rem;
+  font-family: var(--font-mono);
+  color: var(--c);
+  line-height: 1.65;
+}
+.callout.tip {
+  --c: var(--tip);
+  --c-soft: var(--tip-soft);
+}
+.callout.tip::before {
+  content: "\f0eb"; /* nf-fa-lightbulb_o */
+}
+.callout.warn {
+  --c: var(--warn);
+  --c-soft: var(--warn-soft);
+}
+.callout.warn::before {
+  content: "\f071"; /* nf-fa-warning */
+}
+.callout.danger {
+  --c: var(--danger);
+  --c-soft: var(--danger-soft);
+}
+.callout.danger::before {
+  content: "\f06a"; /* nf-fa-exclamation_circle */
+}
+.callout > .title {
+  display: block;
+  font-weight: 650;
+  color: var(--c);
+  margin-bottom: 0.15rem;
+}
+.callout > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 3: option cards                                                                                     */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.9rem;
+  margin: 0 0 1.4rem;
+}
+.option {
+  display: flex;
+  flex-direction: column;
+  padding: 1.1rem 1.2rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.option.recommended {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), var(--shadow);
+}
+.option > h3, .option > h4 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+.option > p {
+  color: var(--text-2);
+  font-size: 0.94rem;
+}
+.option > .badge {
+  align-self: flex-start;
+  margin-bottom: 0.55rem;
+}
+.option > :last-child {
+  margin-bottom: 0;
+}
+
+/* Pros and cons: <ul class="pros">, <ul class="cons">. Usable inside or outside an option card. */
+ul.pros, ul.cons {
+  list-style: none;
+  padding-left: 0;
+  font-size: 0.92rem;
+}
+ul.pros > li, ul.cons > li {
+  position: relative;
+  padding-left: 1.5rem;
+  margin: 0.2rem 0;
+}
+ul.pros > li::before, ul.cons > li::before {
+  position: absolute;
+  left: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  line-height: 1.95;
+}
+ul.pros > li::before {
+  content: "\f00c"; /* nf-fa-check */
+  color: var(--tip);
+}
+ul.cons > li::before {
+  content: "\f00d"; /* nf-fa-times */
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 4: comparison matrix                                                                                */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* <table class="matrix"> with cells marked .yes / .partial / .no. The glyph comes from the class so the cell
+   text can stay a short qualifier ("with plugin") or be empty. */
+table.matrix td:first-child {
+  font-weight: 600;
+}
+table.matrix td.yes::before, table.matrix td.partial::before, table.matrix td.no::before {
+  font-family: var(--font-mono);
+  margin-right: 0.45rem;
+}
+table.matrix td.yes::before {
+  content: "\f00c";
+  color: var(--tip);
+}
+table.matrix td.partial::before {
+  content: "\f042"; /* nf-fa-adjust */
+  color: var(--warn);
+}
+table.matrix td.no::before {
+  content: "\f00d";
+  color: var(--danger);
+}
+table.matrix td.yes, table.matrix td.partial, table.matrix td.no {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 5: question list                                                                                    */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+ol.questions {
+  list-style: none;
+  counter-reset: q;
+  padding-left: 0;
+}
+ol.questions > li {
+  counter-increment: q;
+  position: relative;
+  padding: 1rem 1.2rem 1rem 3.4rem;
+  margin: 0 0 0.75rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+ol.questions > li::before {
+  content: counter(q);
+  position: absolute;
+  left: 1.1rem;
+  top: 1.05rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+ol.questions .q {
+  display: block;
+  font-weight: 620;
+  margin-bottom: 0.3rem;
+}
+ol.questions > li > p {
+  color: var(--text-2);
+  font-size: 0.94rem;
+  margin-bottom: 0.5rem;
+}
+/* The answer the agent will assume if the user says nothing. */
+ol.questions .default {
+  display: inline-block;
+  font-size: 0.875rem;
+  color: var(--text-2);
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+ol.questions .default::before {
+  content: "Default: ";
+  font-weight: 600;
+  color: var(--muted);
+}
+ol.questions > li > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 6: diff                                                                                             */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* <pre class="diff"> with one <span> per line: class add, del, or hunk for changed lines and headers, no class
+   for context. Every line must be a span, because the pre itself collapses whitespace: that is what lets the
+   source keep a newline between spans without each one rendering as an extra blank line, while the spans
+   keep their own indentation. */
+pre.diff {
+  white-space: normal;
+  padding-left: 0;
+  padding-right: 0;
+}
+pre.diff > span {
+  display: block;
+  white-space: pre;
+  padding: 0 1.15rem;
+}
+pre.diff > span:empty::before {
+  content: " ";
+}
+pre.diff > .add {
+  background: var(--add-bg);
+  color: var(--add-text);
+}
+pre.diff > .del {
+  background: var(--del-bg);
+  color: var(--del-text);
+}
+pre.diff > .hunk {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 7: stat tiles                                                                                       */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1.4rem;
+}
+.stat {
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.stat .label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.stat .value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+.stat .delta {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* .good / .bad say whether the change is welcome, independent of direction: fewer errors is .good. */
+.stat .delta.good {
+  color: var(--tip);
+}
+.stat .delta.bad {
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 8: timeline / plan steps                                                                            */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* <ol class="timeline"> with <li class="done|active"> (default is upcoming). */
+ol.timeline {
+  list-style: none;
+  padding-left: 0;
+  position: relative;
+}
+ol.timeline > li {
+  position: relative;
+  padding: 0 0 1.2rem 2rem;
+  margin: 0;
+}
+ol.timeline > li::before {
+  content: "";
+  position: absolute;
+  left: 0.3rem;
+  top: 0.45rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border-strong);
+  z-index: 1;
+}
+ol.timeline > li::after {
+  content: "";
+  position: absolute;
+  left: calc(0.65rem - 1px);
+  top: 1.1rem;
+  bottom: -0.35rem;
+  width: 2px;
+  background: var(--border);
+}
+ol.timeline > li:last-child::after {
+  display: none;
+}
+ol.timeline > li.done::before {
+  background: var(--tip);
+  border-color: var(--tip);
+}
+ol.timeline > li.active::before {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+ol.timeline .when {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+ol.timeline > li > p {
+  color: var(--text-2);
+  font-size: 0.94rem;
+  margin: 0.15rem 0 0;
+}
+ol.timeline > li.done > strong:first-child {
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 9: file tree                                                                                        */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* Nested <ul class="tree">; an <li> holding a nested <ul> is a directory. <span class="note"> adds a comment,
+   and .add / .del on an <li> mark proposed additions (green, bold) and removals (red, struck through). */
+ul.tree, ul.tree ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
+}
+ul.tree {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.75;
+  padding: 0.8rem 1.1rem;
+  margin-bottom: 1.15rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+ul.tree ul {
+  margin-left: 0.45rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--border-strong);
+}
+ul.tree li {
+  margin: 0;
+  white-space: nowrap;
+}
+ul.tree li::before {
+  content: "\f15b"; /* nf-fa-file */
+  color: var(--muted);
+  margin-right: 0.55rem;
+}
+ul.tree li:has(> ul)::before {
+  content: "\f07c"; /* nf-fa-folder_open */
+  color: var(--accent);
+}
+ul.tree .note {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-left: 0.75rem;
+}
+ul.tree li.add {
+  color: var(--add-text);
+  font-weight: 700;
+}
+ul.tree li.del {
+  color: var(--del-text);
+  text-decoration: line-through;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Pattern 10: before / after split                                                                            */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* <div class="split"><section><h4>Before</h4>...</section><section><h4>After</h4>...</section></div>
+   Stacks on narrow screens. .before / .after on the sections tint the labels. */
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.9rem;
+  margin: 0 0 1.4rem;
+}
+.split > section {
+  min-width: 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.split > section > h4:first-child {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.split > section.before > h4:first-child {
+  color: var(--danger);
+}
+.split > section.after > h4:first-child {
+  color: var(--tip);
+}
+.split > section > :last-child {
+  margin-bottom: 0;
+}
+/* Half-width columns are too narrow for horizontal scrolling to be pleasant, and the point of a split is
+   reading both sides at once, so code wraps here. */
+.split pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Charts                                                                                                      */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* Inline SVG inside <figure class="chart">. SVG presentation attributes cannot read CSS variables, so charts
+   use these classes instead of fill=/stroke= to follow the theme. */
+figure.chart {
+  padding: 1.1rem 1.2rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--chart-surface);
+  border: 1px solid var(--border);
+}
+figure.chart > .chart-title {
+  display: block;
+  font-weight: 620;
+  margin-bottom: 0.1rem;
+}
+figure.chart > .chart-subtitle {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-2);
+  margin-bottom: 0.6rem;
+}
+figure.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--font-sans);
+}
+.chart .gridline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+.chart .baseline {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.chart .tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.chart .label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.chart .label-2 {
+  fill: var(--text-2);
+  font-size: 11px;
+}
+.chart .line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart .dot {
+  stroke: var(--chart-surface);
+  stroke-width: 2;
+}
+.chart .area {
+  opacity: 0.1;
+  stroke: none;
+}
+.chart .hit {
+  fill: transparent;
+  cursor: default;
+}
+.chart .hit:hover + .dot, .chart .dot:hover {
+  r: 6;
+}
+.chart .s1 {
+  stroke: var(--series-1);
+}
+.chart .s2 {
+  stroke: var(--series-2);
+}
+.chart .s3 {
+  stroke: var(--series-3);
+}
+.chart .s4 {
+  stroke: var(--series-4);
+}
+.chart .dot.s1, .chart .area.s1, .chart .bar.s1, .chart .key.s1 {
+  fill: var(--series-1);
+}
+.chart .dot.s2, .chart .area.s2, .chart .bar.s2, .chart .key.s2 {
+  fill: var(--series-2);
+}
+.chart .dot.s3, .chart .area.s3, .chart .bar.s3, .chart .key.s3 {
+  fill: var(--series-3);
+}
+.chart .dot.s4, .chart .area.s4, .chart .bar.s4, .chart .key.s4 {
+  fill: var(--series-4);
+}
+.chart .bar {
+  stroke: none;
+}
+
+/* HTML legend above or below the SVG: <ul class="legend"><li><span class="key s1"></span>Name</li></ul> */
+ul.legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  padding: 0;
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+ul.legend > li {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+ul.legend .key {
+  width: 0.9rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--series-1);
+}
+ul.legend .key.s2 {
+  background: var(--series-2);
+}
+ul.legend .key.s3 {
+  background: var(--series-3);
+}
+ul.legend .key.s4 {
+  background: var(--series-4);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Interactive: shared input style                                                                             */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.ia-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+}
+.ia-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.ia-input::placeholder {
+  color: var(--muted);
+}
+.ia-input[readonly] {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Interactive: pickers                                                                                        */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* Any [data-pick] element is a picker and its [data-value] descendants are choices. Option cards keep their
+   card look and gain a selected ring; everything else becomes a pill. */
+.ia-choice {
+  cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ia-choice:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ia-choice:not(.option) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.2rem 0.35rem 0.2rem 0;
+  padding: 0.28rem 0.8rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.ia-choice:not(.option):hover {
+  border-color: var(--accent);
+}
+.ia-choice:not(.option).ia-selected {
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: #fff;
+}
+.ia-choice:not(.option).ia-selected::before {
+  content: "\f00c";
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+}
+.option.ia-choice {
+  position: relative;
+}
+.option.ia-choice:hover {
+  border-color: var(--border-strong);
+}
+.option.ia-choice.ia-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), var(--shadow);
+}
+.option.ia-choice.ia-selected::after {
+  content: "\f00c";
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #fff;
+  background: var(--accent-solid);
+}
+/* The note field spans the whole picker, including when the picker is a grid of option cards. */
+.ia-pick-text {
+  grid-column: 1 / -1;
+  margin-top: 0.6rem;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Interactive: highlights in the page                                                                         */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+mark.ia-anchor {
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--comment) 22%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--comment) 70%, transparent);
+}
+mark.ia-anchor.active {
+  background: color-mix(in srgb, var(--comment) 42%, transparent);
+  border-bottom-color: var(--comment);
+}
+/* A suggestion reads like tracked changes: the original struck through, the replacement inserted after it. */
+mark.ia-anchor.suggestion {
+  background: var(--del-bg);
+  border-bottom: 0;
+  text-decoration: line-through;
+  text-decoration-color: var(--del-text);
+}
+mark.ia-anchor.suggestion.active, mark.ia-anchor.suggestion.active + .ia-ins {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+ins.ia-ins {
+  text-decoration: none;
+  color: var(--add-text);
+  background: var(--add-bg);
+  border-bottom: 2px solid color-mix(in srgb, var(--add-text) 50%, transparent);
+  margin-left: 0.15em;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Interactive: comment sidebar                                                                                */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* Narrow screens: a plain list below the page. Wide screens: a column beside it, cards absolutely positioned
+   by interactive-artifact.js next to their highlights. */
+.ia-notes {
+  padding: 0 1rem 6rem;
+  max-width: 48rem;
+  width: 100%;
+  justify-self: center;
+}
+.ia-notes.empty {
+  display: none;
+}
+@media (min-width: 72rem) {
+  .ia-notes, .ia-notes.empty {
+    grid-column: 3;
+    justify-self: start;
+    display: block;
+    position: relative;
+    width: 19rem;
+    margin-left: 1.5rem;
+    padding: 0;
+    max-width: none;
+  }
+  .ia-notes > .ia-card {
+    position: absolute;
+    left: 0;
+    right: 0;
+    margin: 0;
+    transition: top 0.18s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  }
+}
+
+.ia-card {
+  margin-bottom: 0.6rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--comment);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+.ia-card.suggestion {
+  border-left-color: var(--tip);
+}
+.ia-card.active {
+  border-color: var(--border-strong);
+  border-left-color: var(--accent);
+  box-shadow: 0 4px 18px rgb(16 16 20 / 0.1);
+  z-index: 2;
+}
+.ia-card.resolved {
+  opacity: 0.72;
+  border-left-color: var(--border-strong);
+}
+.ia-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.ia-kind {
+  font-weight: 650;
+}
+.ia-id {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.ia-status {
+  margin-left: auto;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.ia-card.pending .ia-status {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.ia-card.resolved .ia-status {
+  color: var(--tip);
+  background: var(--tip-soft);
+}
+.ia-x {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.ia-x::before {
+  content: "\f00d";
+}
+.ia-x:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.ia-quote {
+  margin: 0 0 0.5rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-2);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+.ia-card.suggestion .ia-quote {
+  text-decoration: line-through;
+  text-decoration-color: var(--del-text);
+}
+.ia-card.orphan .ia-quote {
+  color: var(--muted);
+}
+.ia-orphan-note {
+  display: none;
+  margin: -0.2rem 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--warn);
+}
+.ia-card.orphan:not(.resolved) .ia-orphan-note {
+  display: block;
+}
+.ia-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+.ia-repl {
+  margin-bottom: 0.5rem;
+  color: var(--add-text);
+}
+.ia-thread:empty {
+  display: none;
+}
+.ia-thread {
+  margin-bottom: 0.5rem;
+}
+.ia-msg {
+  margin: 0 0 0.4rem;
+}
+.ia-msg > p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ia-msg.agent {
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.ia-who {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+.ia-msg.agent .ia-who {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Interactive: selection toolbar, Submit dock, toast                                                          */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+/* Inverted colors so the toolbar reads as a tool floating over the text in either theme. */
+.ia-toolbar {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.22);
+  transform: translate(-50%, -100%);
+}
+.ia-toolbar.below {
+  transform: translate(-50%, 0);
+}
+.ia-toolbar[hidden], .ia-launch[hidden] {
+  display: none;
+}
+.ia-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: 500 0.8rem/1.2 var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ia-toolbar button:hover {
+  background: color-mix(in srgb, var(--bg) 16%, transparent);
+}
+.ia-icon {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.ia-dock {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+}
+.ia-launch {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  display: grid;
+  place-items: center;
+}
+.ia-launch::before {
+  content: "\f075"; /* nf-fa-comment */
+}
+.ia-launch:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ia-bar {
+  display: none;
+  align-items: flex-end;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 30px rgb(16 16 20 / 0.16);
+}
+.ia-dock.open .ia-launch {
+  display: none;
+}
+.ia-dock.open .ia-bar {
+  display: flex;
+}
+.ia-dock.pop .ia-bar {
+  animation: ia-pop 0.22s ease-out;
+}
+@keyframes ia-pop {
+  from {
+    transform: translateY(8px) scale(0.96);
+    opacity: 0;
+  }
+}
+.ia-note {
+  width: min(20rem, calc(100vw - 11rem));
+  max-height: 10rem;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  padding: 0.45rem 0.4rem 0.45rem 0.8rem;
+}
+.ia-note::placeholder {
+  color: var(--muted);
+}
+.ia-send {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem 0.55rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-solid);
+  color: #fff;
+  font: 650 0.9rem/1.2 var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ia-send:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.ia-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ia-count {
+  min-width: 1.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.24);
+  font-size: 0.75rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ia-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.4rem;
+  z-index: 60;
+  transform: translate(-50%, 1rem);
+  opacity: 0;
+  pointer-events: none;
+  max-width: calc(100vw - 2rem);
+  padding: 0.55rem 1rem;
+  border-radius: 1.2rem;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.875rem;
+  text-align: center;
+  font-weight: 500;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.2);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.ia-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+/* The page locked itself (see lock() in interactive-artifact.js). Fixed at the top and never dismissed: from here on
+   the tab is a read-only copy, and the user has to know before typing anything more into it. */
+.ia-lock {
+  position: fixed;
+  top: 0.9rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  width: min(40rem, calc(100vw - 6rem));
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius);
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+}
+.ia-lock strong {
+  margin-right: 0.3rem;
+}
+.ia-toast.bad {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------------------------------------- */
+/* Shell chrome                                                                                                */
+/* ---------------------------------------------------------------------------------------------------------- */
+
+.ia-theme {
+  position: fixed;
+  top: 0.9rem;
+  right: 0.9rem;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow);
+  z-index: 10;
+}
+.ia-theme:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+/* The icon names the current mode, not the one a click switches to: with three modes, "what you get next" is
+   not something a reader can guess from one glyph. The button's title spells out both. */
+.ia-theme::before {
+  content: "\f108"; /* nf-fa-desktop: system */
+}
+:root[data-theme="light"] .ia-theme::before {
+  content: "\f185"; /* nf-fa-sun_o */
+}
+:root[data-theme="dark"] .ia-theme::before {
+  content: "\f186"; /* nf-fa-moon_o */
+}
+
+@media print {
+  .ia-theme, .ia-ui, .ia-notes {
+    display: none;
+  }
+  body {
+    background: #fff;
+  }
+}

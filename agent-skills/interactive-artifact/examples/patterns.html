@@ -1,0 +1,171 @@
+<h1>Presentation patterns</h1>
+<p>The ten component patterns <code>interactive-artifact.css</code> styles, each with the situation it is for. View the page
+  source for the markup; every pattern is plain HTML plus one or two classes.</p>
+
+<h2>1. TL;DR summary</h2>
+<p>Lead a page with the conclusion when the reader may stop after one paragraph. One per page, at the top.</p>
+<div class="tldr">
+  <p>Switching the queue to SQLite removes the Redis dependency and keeps p99 latency under 5 ms at our current
+    load. It does not scale past one writer, which we are nowhere near.</p>
+</div>
+
+<h2>2. Callouts</h2>
+<p>Flag the one thing a skimming reader must not miss. Four tones: <code>note</code> (default), <code>tip</code>,
+  <code>warn</code>, <code>danger</code>. Use sparingly; three callouts in a row read as none.</p>
+<div class="callout"><span class="title">Note</span>
+  <p>The numbers below are from a single run on a laptop, not a benchmark.</p>
+</div>
+<div class="callout tip">
+  <p>Running with <code>--jobs 1</code> makes the failure reproducible.</p>
+</div>
+<div class="callout warn"><span class="title">Breaking change</span>
+  <p>The config key <code>cache.dir</code> moves to <code>storage.cache_dir</code>.</p>
+</div>
+<div class="callout danger">
+  <p>This migration deletes the old index. There is no undo.</p>
+</div>
+
+<h2>3. Option cards</h2>
+<p>Lay out two to four alternatives side by side when you want the reader to pick one. Mark your recommendation,
+  keep each card's pros and cons to the few that actually decide it. Add <code>data-pick</code> to the grid and
+  <code>data-value</code> to each card to let the user pick one (see <code>interactive.html</code>).</p>
+<div class="options">
+  <article class="option recommended">
+    <span class="badge blue">Recommended</span>
+    <h3>SQLite queue</h3>
+    <p>One file next to the service, WAL mode, a single writer.</p>
+    <ul class="pros">
+      <li>No new infrastructure</li>
+      <li>Transactional with the rest of our state</li>
+    </ul>
+    <ul class="cons">
+      <li>One writer process only</li>
+    </ul>
+  </article>
+  <article class="option">
+    <h3>Redis streams</h3>
+    <p>What we run today, via the shared cluster.</p>
+    <ul class="pros">
+      <li>Already works</li>
+      <li>Scales to many writers</li>
+    </ul>
+    <ul class="cons">
+      <li>Cluster outages take us down</li>
+      <li>No transactions with our database</li>
+    </ul>
+  </article>
+  <article class="option">
+    <h3>Postgres <code>SKIP LOCKED</code></h3>
+    <p>A jobs table polled with row locks.</p>
+    <ul class="pros">
+      <li>Transactional</li>
+    </ul>
+    <ul class="cons">
+      <li>Adds load to the primary</li>
+      <li>Polling latency</li>
+    </ul>
+  </article>
+</div>
+
+<h2>4. Comparison matrix</h2>
+<p>When the options share the same criteria and there are more than about four of either, a grid beats cards. The
+  cell class carries the verdict (<code>yes</code>, <code>partial</code>, <code>no</code>); the text is an optional
+  qualifier.</p>
+<table class="matrix">
+  <thead><tr><th>Criterion</th><th>SQLite</th><th>Redis</th><th>Postgres</th></tr></thead>
+  <tbody>
+    <tr><td>No new infrastructure</td><td class="yes"></td><td class="partial">shared cluster</td><td class="yes"></td></tr>
+    <tr><td>Transactional enqueue</td><td class="yes"></td><td class="no"></td><td class="yes"></td></tr>
+    <tr><td>Multiple writers</td><td class="no"></td><td class="yes"></td><td class="yes"></td></tr>
+    <tr><td>Sub-10 ms latency</td><td class="yes"></td><td class="yes"></td><td class="partial">with LISTEN</td></tr>
+  </tbody>
+</table>
+
+<h2>5. Question list</h2>
+<p>A numbered set of questions for the user, each with the context needed to answer it and the default you will
+  assume if they don't. The number gives them something to refer to. Give an item <code>data-pick</code> and
+  <code>&lt;span data-value&gt;</code> answers to make it answerable on the page.</p>
+<ol class="questions">
+  <li>
+    <span class="q">Can the queue lose in-flight jobs on a crash?</span>
+    <p>With synchronous commits off we get about 3x throughput, but up to one second of enqueues can vanish.</p>
+    <span class="default">No, keep synchronous commits</span>
+  </li>
+  <li>
+    <span class="q">Should the Redis code path stay behind a flag for one release?</span>
+    <span class="default">Yes</span>
+  </li>
+</ol>
+
+<h2>6. Diff</h2>
+<p>Show a proposed change in place, without making the reader open a branch. One <code>span</code> per line.</p>
+<pre class="diff">
+<span class="hunk">@@ -12,7 +12,7 @@ fn open_queue(cfg: &amp;Config) -&gt; Result&lt;Queue&gt; {</span>
+<span>     let path = cfg.storage.cache_dir.join("queue.db");</span>
+<span class="del">-    let conn = redis::Client::open(cfg.redis_url.as_str())?;</span>
+<span class="add">+    let conn = rusqlite::Connection::open(&amp;path)?;</span>
+<span class="add">+    conn.pragma_update(None, "journal_mode", "WAL")?;</span>
+<span>     Ok(Queue::new(conn))</span>
+<span> }</span>
+</pre>
+
+<h2>7. Stat tiles</h2>
+<p>When the point is a handful of numbers, not their shape over time. <code>good</code> and <code>bad</code> on the
+  delta mean welcome or not, independent of direction.</p>
+<div class="stats">
+  <div class="stat"><span class="label">p99 enqueue</span><span class="value">4.1 ms</span><span
+      class="delta good">-62% vs Redis</span></div>
+  <div class="stat"><span class="label">Throughput</span><span class="value">9.8K/s</span><span
+      class="delta bad">-18% vs Redis</span></div>
+  <div class="stat"><span class="label">Dependencies</span><span class="value">0</span><span class="delta good">-1
+      service</span></div>
+</div>
+
+<h2>8. Timeline</h2>
+<p>A plan or a history: what is done, what is in progress, what comes next. Mark items <code>done</code> or
+  <code>active</code>; unmarked items are upcoming.</p>
+<ol class="timeline">
+  <li class="done"><strong>Prototype</strong> <span class="when">Oct 2</span>
+    <p>SQLite queue behind a feature flag in staging.</p>
+  </li>
+  <li class="active"><strong>Shadow traffic</strong> <span class="when">Oct 20 to Oct 31</span>
+    <p>Write to both queues, read from Redis, compare.</p>
+  </li>
+  <li><strong>Cut over</strong> <span class="when">Nov 4</span>
+    <p>Read from SQLite. Redis stays as a fallback for one release.</p>
+  </li>
+  <li><strong>Remove Redis</strong></li>
+</ol>
+
+<h2>9. File tree</h2>
+<p>A proposed or existing layout. Mark proposed files <code>add</code> or <code>del</code>, and annotate the ones
+  that need a word of explanation.</p>
+<ul class="tree">
+  <li>src/
+    <ul>
+      <li>queue/
+        <ul>
+          <li>mod.rs</li>
+          <li class="add">sqlite.rs<span class="note">new backend</span></li>
+          <li class="del">redis.rs</li>
+        </ul>
+      </li>
+      <li>main.rs</li>
+    </ul>
+  </li>
+  <li>Cargo.toml<span class="note">drops the redis crate</span></li>
+</ul>
+
+<h2>10. Before and after</h2>
+<p>Two versions next to each other: wording, output, config, layout. Stacks on a narrow screen.</p>
+<div class="split">
+  <section class="before">
+    <h4>Before</h4>
+    <pre><code>error: queue unavailable</code></pre>
+  </section>
+  <section class="after">
+    <h4>After</h4>
+    <pre><code>error: cannot open queue at /var/lib/app/queue.db
+  caused by: permission denied (os error 13)</code></pre>
+  </section>
+</div>
