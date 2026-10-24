@@ -15,8 +15,8 @@ skill's fault, and nothing here tries to defend against it.
 Out of scope: root or anyone else who can act as the user's account (they can read every file and process involved), and
 a compromised machine running the browser. The server listens on loopback only and has no option to do otherwise.
 Loopback traffic is plain HTTP, which is acceptable because other non-root users cannot observe it. The skill's own
-files (`interactive-artifact`, `assets/`) are assumed not to be writable by other users; the server reads them on every
-request.
+files (the `interactive-artifact` launcher, `interactive-artifact.ts`, `assets/`, and any compiled helper under `bin/`)
+are assumed not to be writable by other users; they decide what runs, and the server reads the assets on every request.
 
 ### Requirements
 

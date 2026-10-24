@@ -1,0 +1,1556 @@
+/**
+ * Serve one HTML fragment as a styled, commentable page on a short-lived local web server, and carry what the
+ * user does on it (picks, comments, suggestions, notes) back to the agent.
+ *
+ * Here's the TLDR of the moving parts:
+ *
+ * - `serve` re-reads the page file on every request and wraps it in a fixed shell that loads
+ *   `assets/interactive-artifact.css` and `assets/interactive-artifact.js`. The open tab polls a version endpoint and
+ *   reloads when the file changes, so the agent edits the file instead of restarting anything. Other files in the
+ *   page's directory are served as-is.
+ * - The user's work lives in a state file under `.interactive-artifact/<page name>/` next to the page, owned by the
+ *   server process, so it survives live reloads and server restarts. The browser saves its part as the user types.
+ * - Pressing Submit turns everything pending into one numbered submission file in the same directory. `wait`
+ *   blocks until an unconsumed submission exists, prints it, and exits; that exit is how a backgrounded agent
+ *   command learns the user said something. Submissions queue on disk, so nothing is lost while the agent is
+ *   busy and no `wait` is running.
+ * - `reply` posts the agent's answer (and optionally a resolution) to one or more threads through the running
+ *   server, which is the only writer of the state file. `anchor` goes the same way, to point an open comment at new
+ *   text after the agent rewrote the text it was on, and so does `status`, which tells the page whether the agent is
+ *   updating it or done with it (`wait` itself reports when it starts and when it hands over a submission).
+ *
+ * Usage:
+ *   interactive-artifact serve PAGE.html [--port 0] [--ttl 4h] [--title TEXT]
+ *   interactive-artifact wait PAGE.html [--json] [--timeout 0]
+ *   interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
+ *   interactive-artifact anchor PAGE.html ID --file PATH
+ *   interactive-artifact status PAGE.html working|done [--file PATH]
+ */
+import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
+import { serveDir } from "jsr:@std/http@1.1.4/file-server";
+import { basename, dirname, join, resolve } from "jsr:@std/path@1.1.6";
+import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
+
+/**
+ * Everything the shell itself needs lives under this prefix, so it cannot collide with the page's own files. It
+ * is relative because every URL the server answers sits under the per-server token (see `tokenPath`), and a
+ * relative reference resolves under it without the token being written into the page.
+ */
+const API = "__interactive-artifact/";
+const ROUTE = `/${API}`;
+/** Every API call by method and name. All of them are sealed both ways; see "Message encryption". */
+// deno-fmt-ignore
+const API_CALLS = new Set([
+  "GET version", "GET state", "PUT state", "POST id", "POST submit", "POST agent", "POST anchor", "POST status",
+]);
+// deno-fmt-ignore
+const ASSETS = new Map([
+  ["interactive-artifact.css", "text/css; charset=utf-8"],
+  ["interactive-artifact.js", "text/javascript; charset=utf-8"],
+]);
+/**
+ * Where the page's CSS and JS are read from, on every request. Beside this file when run from source; a compiled
+ * binary sets it through `runCli`, because inside the binary `import.meta.url` names the build snapshot, not the skill.
+ */
+let assetDir = new URL("./assets/", import.meta.url);
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+/**
+ * A running server rewrites its heartbeat this often; `wait`, `reply`, and `anchor` treat one older than
+ * HEARTBEAT_STALE_MS as dead.
+ */
+const HEARTBEAT_MS = 5_000;
+const HEARTBEAT_STALE_MS = 20_000;
+/** Upper bound on any single text field from the browser, so a runaway paste cannot bloat the state file. */
+const MAX_TEXT = 50_000;
+
+// ---------------------------------------------------------------------------------------------------------------
+// State model
+// ---------------------------------------------------------------------------------------------------------------
+
+type Message = { from: "user" | "agent"; text: string };
+
+/**
+ * One comment or suggestion. Ownership is split so the browser's autosave can never clobber what the server wrote:
+ * the browser owns `replacement`, `draft`, and `removed`; the server owns `thread`, `sentOnce`, and `resolved`, which
+ * change only on submit and on agent replies. The anchor (quote, context, offset, section) is the browser's only when
+ * it creates the annotation; after that only `anchor` (the agent re-pointing it after editing the text it was on)
+ * changes it, so the two never fight over it.
+ *
+ * The anchor is a text quote with up to 32 characters of context on each side, taken from the rendered text of
+ * the page, plus the nearest preceding heading. Quotes are what lets an annotation find its text again after the
+ * agent rewrites the page, and show as orphaned when the text is gone.
+ *
+ * `draft` is the user's next unsent message: the comment itself for a new comment, a reply afterwards. A sent
+ * message moves into `thread`. A suggestion's `replacement` is fixed once sent; later changes go in replies.
+ */
+type Annotation = {
+  id: string;
+  kind: "comment" | "suggestion";
+  quote: string;
+  prefix: string;
+  suffix: string;
+  /** Where the quote started in the page text when it was made; breaks ties exactly on an unchanged page. */
+  offset?: number;
+  section: string;
+  replacement: string;
+  draft: string;
+  removed: boolean;
+  thread: Message[];
+  sentOnce: boolean;
+  resolved: boolean;
+};
+
+/** Current state of one picker, as the browser reports it. Labels are captured so submissions read well. */
+type Pick = { label: string; multiple: boolean; values: { value: string; label: string }[]; text: string };
+
+type State = {
+  /** Bumped whenever the server changes server-owned data, so the tab knows to refetch without reloading. */
+  rev: number;
+  /** Highest annotation number ever handed out, so a removed id is never reused for a different annotation. */
+  idFloor: number;
+  submissions: number;
+  note: string;
+  annotations: Annotation[];
+  picks: Record<string, Pick>;
+  /** Canonical form of each pick at the last submit; a pick whose canonical form differs is pending. */
+  picksSent: Record<string, string>;
+  /** What the agent is doing about the user's latest submission, shown on the page; see applyStatus. */
+  status: AgentStatus;
+};
+
+/**
+ * The agent's side of the conversation, as the page shows it. After a submit: `sent` until `wait` hands the submission
+ * to the agent, then `thinking`. From there the agent either says `working` (it is updating the page) and later starts
+ * `wait` again, which shows as `ready`, or says `done` (it is finished with the page; the user goes back to the chat).
+ * `message` is an optional line from the agent shown with it.
+ */
+type AgentStatus = { state: "idle" | "sent" | "thinking" | "working" | "ready" | "done"; message: string };
+
+type SubmissionItem = {
+  id: string;
+  kind: Annotation["kind"];
+  /** `new` is the first time the agent sees this annotation; `reply` is a follow-up on an existing thread. */
+  event: "new" | "reply";
+  quote: string;
+  section: string;
+  replacement?: string;
+  text: string;
+};
+
+type Submission = {
+  seq: number;
+  page: string;
+  at: string;
+  note: string;
+  items: SubmissionItem[];
+  withdrawn: string[];
+  picks: (Pick & { id: string; changed: boolean })[];
+};
+
+function emptyState(): State {
+  return {
+    rev: 0,
+    idFloor: 0,
+    submissions: 0,
+    note: "",
+    annotations: [],
+    picks: {},
+    picksSent: {},
+    status: { state: "idle", message: "" },
+  };
+}
+
+/**
+ * Only selected values and text decide whether a pick changed; a relabelled choice is not news to the agent.
+ * An empty pick canonicalizes like a missing one, so touching a picker and clearing it again is not a change.
+ */
+function canonPick(p: Pick | undefined): string {
+  if (!p || (!p.values.length && !p.text.trim())) return "null";
+  return JSON.stringify([p.values.map((v) => v.value), p.text]);
+}
+
+function str(v: unknown, max = MAX_TEXT): string {
+  return typeof v === "string" ? v.slice(0, max) : "";
+}
+
+function idNumber(id: string): number {
+  return Number(id.slice(1)) || 0;
+}
+
+/**
+ * Fold a browser autosave into the state. Annotations the browser did not mention are kept, because a second or
+ * stale tab must not delete another tab's work. A removal the agent has no reason to hear about (never sent, or
+ * already resolved) is dropped at once; a removal of something the agent is acting on is kept, hidden, until the
+ * next submission reports it as withdrawn.
+ */
+export function mergeBrowserState(state: State, body: unknown): void {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const incoming = Array.isArray(b.annotations) ? b.annotations as Record<string, unknown>[] : [];
+  const byId = new Map(state.annotations.map((a) => [a.id, a]));
+  const seen = new Set<string>();
+  const next: Annotation[] = [];
+  for (const raw of incoming) {
+    const id = str(raw?.id, 16);
+    if (!/^[cs]\d+$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    const existing = byId.get(id);
+    const a = existing ?? {
+      id,
+      kind: id.startsWith("s") ? "suggestion" : "comment",
+      thread: [],
+      sentOnce: false,
+      resolved: false,
+    } as unknown as Annotation;
+    // The anchor is taken from the browser once, when the annotation is created; the browser never changes it
+    // afterwards. Only `anchor` (the agent re-pointing it after an edit) does, and a later autosave must not undo that.
+    if (!existing) {
+      a.quote = str(raw.quote);
+      a.prefix = str(raw.prefix, 64);
+      a.suffix = str(raw.suffix, 64);
+      a.offset = Number.isSafeInteger(raw.offset) && (raw.offset as number) >= 0 ? raw.offset as number : undefined;
+      a.section = str(raw.section, 300);
+    }
+    // A sent suggestion's replacement is what the agent was told; holding it fixed keeps the record honest.
+    if (!a.sentOnce || a.kind === "comment") a.replacement = str(raw.replacement);
+    a.draft = str(raw.draft);
+    a.removed = raw.removed === true;
+    state.idFloor = Math.max(state.idFloor, idNumber(id));
+    if (a.removed && (!a.sentOnce || a.resolved)) continue;
+    next.push(a);
+  }
+  for (const a of state.annotations) if (!seen.has(a.id)) next.push(a);
+  state.annotations = next;
+
+  // Picks and the note merge per item: a tab sends only what it changed, so a tab that has been open since before
+  // another tab's answers cannot wipe them by saving its own unrelated edit.
+  const picks = state.picks;
+  const rawPicks = (b.picks ?? {}) as Record<string, Record<string, unknown>>;
+  for (const [id, p] of Object.entries(rawPicks).slice(0, 500)) {
+    // "__proto__" as a key would set the object's prototype instead of adding a pick.
+    if (!p || typeof p !== "object" || id === "__proto__") continue;
+    const values = Array.isArray(p.values) ? p.values as Record<string, unknown>[] : [];
+    picks[id.slice(0, 200)] = {
+      label: str(p.label, 500),
+      multiple: p.multiple === true,
+      values: values.slice(0, 200).map((v) => ({ value: str(v?.value, 200), label: str(v?.label, 500) })),
+      text: str(p.text),
+    };
+  }
+  if ("note" in b) state.note = str(b.note);
+}
+
+/**
+ * Hand out the next annotation number; the browser prefixes it with `c` or `s`. Numbers come from the server so
+ * that two tabs on one page can never mint the same id and overwrite each other's annotation, and the counter
+ * never goes backwards, so a removed id is not reused. Tabs reserve a number ahead of need so that creating an
+ * annotation never waits on the server; a reserved number that is never used just leaves a gap.
+ */
+export function allocateId(state: State): number {
+  for (const a of state.annotations) state.idFloor = Math.max(state.idFloor, idNumber(a.id));
+  state.idFloor += 1;
+  return state.idFloor;
+}
+
+/**
+ * Turn everything pending into one submission and mark it sent, or return null when there is nothing to send.
+ * Pending means: an unsent draft, a never-sent suggestion that changes its text, a withdrawal of something the
+ * agent has seen, a pick that differs from the last submit, or the note.
+ */
+export function takeSubmission(
+  state: State,
+  note: string,
+  page: string,
+  at: Date,
+  onPage?: string[],
+): Submission | null {
+  const items: SubmissionItem[] = [];
+  const withdrawn: string[] = [];
+  const kept: Annotation[] = [];
+  for (const a of state.annotations) {
+    if (a.removed) {
+      if (a.sentOnce && !a.resolved) withdrawn.push(a.id);
+      continue;
+    }
+    kept.push(a);
+    const text = a.draft.trim();
+    const newSuggestion = a.kind === "suggestion" && !a.sentOnce && a.replacement !== a.quote;
+    if (!text && !newSuggestion) continue;
+    items.push({
+      id: a.id,
+      kind: a.kind,
+      event: a.sentOnce ? "reply" : "new",
+      quote: a.quote,
+      section: a.section,
+      ...(a.kind === "suggestion" ? { replacement: a.replacement } : {}),
+      text,
+    });
+    if (text) a.thread.push({ from: "user", text });
+    a.draft = "";
+    a.sentOnce = true;
+    a.resolved = false;
+  }
+
+  // The browser keeps a cleared picker as an empty pick rather than dropping it, so a cleared answer still has
+  // its label and is reported as "nothing selected" instead of silently vanishing from the agent's view.
+  const picks: Submission["picks"] = [];
+  // Only pickers on the page as the user sees it now (`onPage`, from the tab) are reported. Answers to questions the
+  // agent has since removed stay stored, in case the question comes back, but would only clutter the submission.
+  const shown = onPage ? new Set(onPage) : null;
+  for (const [id, p] of Object.entries(state.picks)) {
+    if (shown && !shown.has(id)) continue;
+    const changed = canonPick(p) !== (Object.hasOwn(state.picksSent, id) ? state.picksSent[id] : "null");
+    if (changed || canonPick(p) !== "null") picks.push({ id, ...p, changed });
+  }
+
+  note = note.trim();
+  if (!items.length && !withdrawn.length && !picks.some((p) => p.changed) && !note) return null;
+  state.annotations = kept;
+  // Only what was reported counts as sent. An answer to a picker that is off the page stays pending, so if the
+  // question comes back, the agent still hears the answer instead of seeing it as "unchanged".
+  for (const [id, p] of Object.entries(state.picks)) if (!shown || shown.has(id)) state.picksSent[id] = canonPick(p);
+  state.note = "";
+  state.submissions += 1;
+  state.rev += 1;
+  return { seq: state.submissions, page, at: at.toISOString(), note, items, withdrawn, picks };
+}
+
+/**
+ * Apply a status report from the agent's side. `listening` is what `wait` sends when it starts: the agent is ready for
+ * more, which is news only after it has been reading or working (or had said it was done and changed its mind);
+ * otherwise, say before anything was submitted, nothing changes. The other states come from `wait` itself (`thinking`)
+ * or from the agent (`working`, `done`). Returns whether the shown status changed.
+ */
+export function applyStatus(state: State, report: string, message: string): boolean {
+  const cur = state.status ?? { state: "idle", message: "" };
+  let next: AgentStatus;
+  if (report === "listening") {
+    if (!["thinking", "working", "done"].includes(cur.state)) return false;
+    next = { state: "ready", message: "" };
+  } else if (report === "thinking" || report === "working" || report === "done") {
+    next = { state: report, message };
+  } else {
+    return false;
+  }
+  if (next.state === cur.state && next.message === cur.message) return false;
+  state.status = next;
+  state.rev += 1;
+  return true;
+}
+
+/**
+ * Point an open annotation at new text, for when the agent has edited the text it was on. The context is cleared,
+ * because the agent names the text itself and the old surroundings no longer apply; the quote alone is searched for.
+ * Returns false if there is no such annotation (or the user removed it).
+ */
+export function applyAnchor(state: State, id: string, quote: string): boolean {
+  const a = state.annotations.find((x) => x.id === id && !x.removed);
+  if (!a || !quote) return false;
+  Object.assign(a, { quote, prefix: "", suffix: "", offset: undefined });
+  state.rev += 1;
+  return true;
+}
+
+/**
+ * Append the agent's reply to each thread and optionally resolve it. Returns the ids that do not exist, which
+ * includes ids the user has removed but not yet submitted: the withdrawal reaches the agent with the next
+ * submission.
+ */
+export function applyAgentReply(state: State, ids: string[], text: string, resolve: boolean): string[] {
+  const byId = new Map(state.annotations.filter((a) => !a.removed).map((a) => [a.id, a]));
+  const missing = ids.filter((id) => !byId.has(id));
+  if (missing.length) return missing;
+  for (const id of ids) {
+    const a = byId.get(id)!;
+    if (text) a.thread.push({ from: "agent", text });
+    if (resolve) a.resolved = true;
+  }
+  state.rev += 1;
+  return [];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Submission rendering
+// ---------------------------------------------------------------------------------------------------------------
+
+function blockquote(text: string): string {
+  return text.split("\n").map((l) => (l ? `> ${l}` : ">")).join("\n");
+}
+
+/** Quotes come from rendered text, so source indentation and line breaks are noise; one space reads better. */
+function collapse(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Render a submission as Markdown for the agent to read. Original and replacement text sit in blockquotes
+ * rather than inline quotes, so text that itself contains quotes or newlines stays unambiguous.
+ */
+export function formatSubmission(s: Submission, pagePath: string): string {
+  const out = [`# interactive-artifact submission ${s.seq} (${basename(s.page)}, ${s.at})`, ""];
+  if (s.note) out.push("## Note from the user", "", blockquote(s.note), "");
+  if (s.picks.length) {
+    out.push("## Picks", "");
+    for (const p of s.picks) {
+      const chosen = p.values.length ? p.values.map((v) => v.label || v.value).join(", ") : "nothing selected";
+      out.push(`- ${p.label || p.id} (\`${p.id}\`${p.changed ? ", changed" : ", unchanged"}): ${chosen}`);
+      if (p.text.trim()) out.push(`  - Text: ${collapse(p.text)}`);
+    }
+    out.push("");
+  }
+  for (const it of s.items) {
+    out.push(`## ${it.id}: ${it.event === "new" ? `new ${it.kind}` : `reply on ${it.kind}`}`, "");
+    if (it.section) out.push(`Section: ${collapse(it.section)}`, "");
+    if (it.event === "new" || it.kind === "comment") out.push("On the text:", "", blockquote(collapse(it.quote)), "");
+    // A suggestion whose replacement is still the original text is really a comment; do not claim a change.
+    if (it.replacement !== undefined && it.event === "new" && it.replacement !== it.quote) {
+      out.push("Replace it with:", "", blockquote(it.replacement || "(nothing: delete the text)"), "");
+    }
+    if (it.text) out.push(it.event === "new" ? "Comment:" : "Reply:", "", blockquote(it.text), "");
+  }
+  if (s.withdrawn.length) {
+    out.push("## Withdrawn", "", `The user removed these; stop acting on them: ${s.withdrawn.join(", ")}`, "");
+  }
+  // This footer is what agents read at the moment they reply, so it carries the safe form: text in a file written with
+  // the agent's file tool, never in the command (see "Content never goes on a command line" in SPEC.md).
+  const replyFile = join(dirname(pagePath), "reply.txt");
+  out.push(
+    `Answer on the page: write the reply to ${replyFile} with your file tool, then run ` +
+      `interactive-artifact reply ${pagePath} ID... --file ${replyFile} [--resolve]`,
+  );
+  return out.join("\n");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Message encryption
+//
+// Every API request and response between the page (or the `reply` CLI) and this server is sealed with AES-256-GCM
+// under a key drawn fresh at each server start. The key reaches the page inside the page itself and reaches `reply`
+// through server.json (0600); it is never sent on its own. The point is the port, not the wire: once this server
+// exits, any local user can bind the same port and receive whatever an open tab sends next, along with the URL
+// token in each request path. Without the key, such an impostor can neither read what the tab sends nor produce a
+// response the tab accepts, and the tab locks itself on the first response it cannot open. GCM authenticates as
+// well as encrypts, so no separate MAC is needed.
+//
+// The additional data binds each message to its direction and call (`POST submit`, `response GET state`), so an
+// impostor cannot reflect a captured request back as a response or move a message to another endpoint. Web Crypto is
+// built into Deno and into browsers (in a secure context, which 127.0.0.1 and localhost are), so there are no
+// dependencies. assets/interactive-artifact.js has the browser half and must stay byte-compatible with this one.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A sealed message on the wire: base64 of a random 96-bit IV and of the ciphertext with its 128-bit tag. */
+type Envelope = { iv: string; ct: string };
+
+function toB64(bytes: Uint8Array): string {
+  let bin = "";
+  // Chunked because String.fromCharCode(...bytes) overflows the argument limit on large states.
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function fromB64(text: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+}
+
+export function importKey(raw: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+export async function seal(key: CryptoKey, aad: string, value: unknown): Promise<Envelope> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = new TextEncoder().encode(JSON.stringify(value));
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(aad) },
+    key,
+    data,
+  );
+  return { iv: toB64(iv), ct: toB64(new Uint8Array(ct)) };
+}
+
+/** Open an envelope, or throw if it is malformed, was sealed under another key or call, or was altered. */
+export async function unseal(key: CryptoKey, aad: string, env: unknown): Promise<unknown> {
+  const e = env as Envelope;
+  if (!e || typeof e.iv !== "string" || typeof e.ct !== "string") throw new Error("not an envelope");
+  const iv = fromB64(e.iv);
+  if (iv.length !== 12) throw new Error("bad iv");
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(aad) },
+    key,
+    fromB64(e.ct),
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Page shell
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Parse `90s`, `30m`, `4h`, or a bare number of seconds into milliseconds. `0` means no limit. */
+export function parseDuration(text: string): number {
+  const m = /^(\d+)([smh]?)$/.exec(text.trim());
+  if (!m) throw new Error(`bad duration ${JSON.stringify(text)}; use e.g. 90s, 30m, 4h, or 0 for none`);
+  return Number(m[1]) * ({ "": 1, s: 1, m: 60, h: 3600 }[m[2]] ?? 1) * 1000;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+}
+
+/**
+ * Pick the document title as HTML-safe text: an explicit title wins, then the first `<h1>`, then the file name.
+ * The `<h1>` contents are already HTML, so they are tag-stripped but not escaped again (that would turn `&amp;`
+ * into `&amp;amp;`).
+ */
+export function pageTitle(fragment: string, explicit: string | undefined, fileName: string): string {
+  if (explicit) return escapeHtml(explicit);
+  const h1 = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(fragment);
+  const text = h1?.[1].replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  return text || escapeHtml(fileName);
+}
+
+/**
+ * Apply a saved theme before first paint, so a dark choice does not flash light on every live reload. The choice is a
+ * cookie rather than localStorage because localStorage is per origin, and the origin includes the port: with a random
+ * port per server, every new page would forget the choice. Cookies ignore the port, so one choice covers every
+ * interactive-artifact page on this host. No cookie means "system", which needs no attribute at all.
+ */
+const THEME_HEAD_SCRIPT =
+  `{ const m = /(?:^|; )interactive-artifact-theme=(light|dark)(?:;|$)/.exec(document.cookie); if (m) document.documentElement.dataset.theme = m[1]; }`;
+
+/**
+ * Wrap a body fragment in the interactive-artifact shell. A full document is rejected rather than nested, because a
+ * second `<html>` inside `<main>` renders unpredictably and silently drops the stylesheet's layout. Everything
+ * interactive is built by `interactive-artifact.js` around `main.ia-page` and `aside.ia-notes`. `keyB64` is the message
+ * key (see "Message encryption"); the page is the only thing that carries it to the browser. `version` is the page
+ * file's version as rendered, so the tab compares later polls against what it shows rather than against what the file
+ * was by the time it first asked.
+ */
+export function renderPage(fragment: string, title: string, keyB64 = "", version = ""): string {
+  if (/^\s*<(!doctype|html|head|body)\b/i.test(fragment)) {
+    throw new Error("page must be a body fragment, not a full HTML document; drop <!doctype>, <html>, <head>, <body>");
+  }
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${title}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a6fd6'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="${API}interactive-artifact.css">
+<script>${THEME_HEAD_SCRIPT}</script>
+</head>
+<body>
+<button class="ia-theme" type="button" aria-label="Theme" title="Theme"></button>
+<div class="ia-layout">
+<main class="ia-page">
+${fragment}
+</main>
+<aside class="ia-notes" aria-label="Comments and suggestions"></aside>
+</div>
+<script src="${API}interactive-artifact.js" data-key="${keyB64}" data-version="${escapeHtml(version)}"></script>
+</body>
+</html>
+`;
+}
+
+/** A fresh 128-bit secret per server start, hex so it survives being pasted anywhere. */
+function newToken(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Compare without an early exit, so response timing does not reveal how much of a guessed token was right. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Capability check: the server answers only under `/<token>/`, so being able to reach the port (any local user,
+ * anything port-forwarded) is not enough; you need the URL the server printed, or the user's account to read it from
+ * `.interactive-artifact/`. Returns the path below the token (always starting with `/`), `""` for the bare `/<token>`
+ * that needs a trailing slash for relative URLs to work, or null for anything else, which callers must answer with the
+ * same 404 as an unknown path so a probe learns nothing.
+ */
+export function tokenPath(pathname: string, token: string): string | null {
+  const [, first, ...rest] = pathname.split("/");
+  if (first === undefined || !safeEqual(first, token)) return null;
+  return rest.length ? `/${rest.join("/")}` : "";
+}
+
+/**
+ * DNS-rebinding guard. The server is only reachable from this machine, but a hostile web page can point its own
+ * hostname at 127.0.0.1 and read the response; checking the Host header closes that. The port is ignored so a
+ * tunnel on a different local port still works.
+ */
+export function hostAllowed(hostHeader: string | null): boolean {
+  if (!hostHeader) return false;
+  try {
+    return LOOPBACK.has(new URL(`http://${hostHeader}`).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cross-site write guard. Any web page the user visits can fire a form POST at a localhost port, and a forged
+ * submission would put words in the user's mouth for the agent to act on. Requiring a custom header forces a
+ * CORS preflight, which this server never approves, so only same-origin script and the `reply` CLI get through;
+ * the Origin check is a second fence for browsers that send one.
+ */
+export function writeAllowed(headers: Headers): boolean {
+  if (!headers.get("x-interactive-artifact")) return false;
+  const origin = headers.get("origin");
+  return !origin || origin === `http://${headers.get("host")}`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Files under .interactive-artifact/<page name>/
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Per-page so two pages in one directory cannot read each other's submissions. */
+function stateDir(pagePath: string): string {
+  return join(dirname(pagePath), ".interactive-artifact", basename(pagePath));
+}
+
+/**
+ * Readers (`wait`, a restarted server) must never see a half-written file, hence write-then-rename. The parent is
+ * created on every write so that deleting `.interactive-artifact/` under a running server costs the history, not the
+ * server.
+ *
+ * Everything under `.interactive-artifact/` is private to the user: the server's URL with its token, the user's
+ * comments, and their submissions. Files are created 0600 and directories 0700 rather than left to the umask. A
+ * leftover temp file from a crashed run is removed first, because a mode applies only when a file is created and the
+ * old file could have been created with a looser one.
+ */
+async function writeAtomic(path: string, text: string): Promise<void> {
+  await Deno.mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const tmp = `${path}.tmp-${Deno.pid}`;
+  await Deno.remove(tmp).catch(() => {});
+  await Deno.writeTextFile(tmp, text, { mode: 0o600, createNew: true });
+  await Deno.rename(tmp, path);
+}
+
+/**
+ * Refuse a directory that another local user could read, enter, or modify. Callers pass `stat` for the page's
+ * own directory, which the agent chose and may reach through a symlink (macOS `/var` is one), and `lstat` for the
+ * state directories: those are ours, so a symlink there is something we did not create and fails the directory
+ * check.
+ */
+export function assertPrivate(st: Deno.FileInfo, uid: number | null, what: string, checkMode = true): void {
+  if (!st.isDirectory) throw new Error(`${what} is not a directory (a symlink there is refused)`);
+  if (uid !== null && st.uid !== uid) throw new Error(`${what} is owned by another user`);
+  if (checkMode && st.mode !== null && st.mode & 0o077) {
+    throw new Error(`${what} is accessible to other users; use a directory from mktemp -d, or chmod 700 it`);
+  }
+}
+
+/**
+ * Check the page's directory and set up the state directories owner-only (tightening any that an earlier
+ * version or a looser umask left open). Everything else rests on the page's directory being private: it holds
+ * the page itself, and while it is private nobody else can plant or swap anything inside it between our checks
+ * and our writes. See SPEC.md.
+ */
+async function ensurePrivateDirs(pagePath: string): Promise<void> {
+  const uid = Deno.uid();
+  assertPrivate(await Deno.stat(dirname(pagePath)), uid, `the page's directory ${dirname(pagePath)}`);
+  const top = join(dirname(pagePath), ".interactive-artifact");
+  const dir = stateDir(pagePath);
+  await Deno.mkdir(join(dir, "submissions"), { recursive: true, mode: 0o700 });
+  for (const d of [top, dir, join(dir, "submissions")]) {
+    // Refuse a symlink or a foreign directory before chmod, which would follow the symlink and change its target.
+    assertPrivate(await Deno.lstat(d), uid, d, false);
+    await Deno.chmod(d, 0o700);
+    assertPrivate(await Deno.lstat(d), uid, d);
+  }
+}
+
+/**
+ * The same checks as ensurePrivateDirs, without creating or changing anything, for `wait` and `reply`. They read
+ * files that decide what the agent believes the user said and where its replies go, so they refuse to trust a state
+ * directory another user could have planted files in.
+ */
+async function assertPrivateDirs(pagePath: string): Promise<void> {
+  const uid = Deno.uid();
+  assertPrivate(await Deno.stat(dirname(pagePath)), uid, `the page's directory ${dirname(pagePath)}`);
+  for (const d of [join(dirname(pagePath), ".interactive-artifact"), stateDir(pagePath)]) {
+    const st = await Deno.lstat(d).catch(() => null);
+    if (st) assertPrivate(st, uid, d);
+  }
+}
+
+async function readJson<T>(path: string): Promise<T | null> {
+  try {
+    return JSON.parse(await Deno.readTextFile(path)) as T;
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return null;
+    throw e;
+  }
+}
+
+/** What `reply` needs to reach the server: the tokened URL and the message key. The file is 0600 like the rest. */
+type ServerInfo = { url: string; pid: number; at: number; key: string };
+
+/**
+ * The running server for a page, or null. A stale heartbeat alone does not mean dead: right after a laptop resumes,
+ * the server's overdue heartbeat may not have landed yet, so on Linux a process that still exists counts as alive.
+ */
+async function liveServer(dir: string): Promise<ServerInfo | null> {
+  const info = await readJson<ServerInfo>(join(dir, "server.json"));
+  if (!info) return null;
+  return Date.now() - info.at < HEARTBEAT_STALE_MS || await processExists(info.pid) ? info : null;
+}
+
+async function submissionNumbers(dir: string): Promise<number[]> {
+  const out: number[] = [];
+  try {
+    for await (const e of Deno.readDir(join(dir, "submissions"))) {
+      const m = /^(\d+)\.json$/.exec(e.name);
+      if (m) out.push(Number(m[1]));
+    }
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/**
+ * Whether an interactive-artifact process with this pid exists, on Linux where /proc says so; elsewhere this cannot
+ * tell and answers false. Checking the command line, not just the pid, keeps a reused pid (common after a reboot, or in
+ * sandboxes with their own pid namespace) from passing for a live server.
+ */
+async function processExists(pid: number): Promise<boolean> {
+  if (!pid || Deno.build.os !== "linux") return false;
+  const owner = await Deno.stat(`/proc/${pid}`).then((st) => st.uid, () => null);
+  if (owner === null || owner !== Deno.uid()) return false;
+  // An interactive-artifact server specifically: an argument naming the script followed by `serve`, not merely a
+  // command line that mentions interactive-artifact (the harness's own `bash -c '... interactive-artifact wait ...'`
+  // would).
+  const args = (await Deno.readTextFile(`/proc/${pid}/cmdline`).catch(() => "")).split("\0");
+  return args.some((a, i) =>
+    // The compiled binary or the launcher by name, or the source as the launcher's Deno fallback runs it.
+    (a === "interactive-artifact" || a.endsWith("/interactive-artifact") || a === "interactive-artifact.ts" ||
+      a.endsWith("/interactive-artifact.ts")) &&
+    args[i + 1] === "serve"
+  );
+}
+
+/**
+ * One server per page. Two would each hold their own copy of the state, overwrite each other's files, and hand out
+ * the same submission numbers, so a submission could vanish. The lock is a file created exclusively; a lock left
+ * by a crashed server is taken over once its heartbeat has gone stale and its process is gone. Two servers taking
+ * over the same stale lock at the same moment can still both win; that needs two `serve` calls within
+ * milliseconds of each other after a crash, and is not guarded against.
+ */
+async function takeServeLock(dir: string): Promise<void> {
+  const path = join(dir, "serve.lock");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await Deno.writeTextFile(path, String(Deno.pid), { createNew: true, mode: 0o600 });
+      return;
+    } catch (e) {
+      if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
+    }
+    const live = await liveServer(dir);
+    const held = await Deno.stat(path).then((st) => Date.now() - (st.mtime?.getTime() ?? 0)).catch(() => 0);
+    const holder = Number(await Deno.readTextFile(path).catch(() => "")) || 0;
+    // A fresh lock with no heartbeat yet is a server that is still starting up. A stale heartbeat alone is not
+    // proof of death (a suspended laptop stops it too), so where the process table is readable, a holder that
+    // still exists keeps the lock.
+    if (live || held < HEARTBEAT_STALE_MS || await processExists(holder)) {
+      throw new Error(
+        `another interactive-artifact server is already serving this page${live ? ` (pid ${live.pid})` : ""}; ` +
+          `if you are sure none is, delete ${path}`,
+      );
+    }
+    await Deno.remove(path).catch(() => {});
+  }
+  throw new Error("could not take the serve lock for this page");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// serve
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * There is no option to bind anything but loopback. Pages only work in a browser secure context, which plain HTTP
+ * on a LAN address is not (see "Message encryption"), and every other loopback address would lack the [::1] hold
+ * below.
+ */
+async function serve(pagePath: string, opts: { port: number; ttlMs: number; title?: string }) {
+  const pageDir = dirname(pagePath);
+  const dir = stateDir(pagePath);
+  // Fail before printing a URL if the page is unreadable or a full document, so the caller sees the error
+  // instead of a link to an error page.
+  renderPage(await Deno.readTextFile(pagePath), "");
+  await ensurePrivateDirs(pagePath);
+  const token = newToken();
+  const rawKey = crypto.getRandomValues(new Uint8Array(32));
+  const keyB64 = toB64(rawKey);
+  const key = await importKey(rawKey);
+  const state = { ...emptyState(), ...await readJson<State>(join(dir, "state.json")) };
+  // A crash between writing a submission and saving the state leaves the counter behind the files on disk; going
+  // from the files keeps a new submission from overwriting one that `wait` has already consumed and would skip.
+  state.submissions = Math.max(state.submissions, ...await submissionNumbers(dir));
+  // A status from an earlier server says nothing about this one: a stale "done" would tell the user to leave, and a
+  // stale "working" would never clear.
+  state.status = { state: "idle", message: "" };
+
+  // All file writes go through one chain so a slow write can never land after a newer one. Each caller gets its
+  // own write's outcome, while the chain itself swallows failures; otherwise one failed write would reject every
+  // later one, and the next rejected heartbeat would kill the process as an unhandled rejection.
+  let writes = Promise.resolve();
+  const enqueue = (path: string, text: string) => {
+    const p = writes.then(() => writeAtomic(path, text));
+    writes = p.catch(() => {});
+    return p;
+  };
+  const persist = () => enqueue(join(dir, "state.json"), JSON.stringify(state));
+
+  // no-referrer keeps the tokened URL out of the Referer header on links and on the font CDN requests.
+  const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+  const json = (v: unknown, status = 200) =>
+    new Response(JSON.stringify(v), { status, headers: { ...noStore, "content-type": "application/json" } });
+  const text = (t: string, status: number) => new Response(`${t}\n`, { status, headers: noStore });
+
+  // API calls run one at a time. Several of them await file writes while holding a view of the state, and
+  // interleaving would let one overwrite another's changes: a submit adopting its working copy once its file is
+  // written would otherwise discard an agent reply or an id handed out meanwhile.
+  let apiQueue: Promise<unknown> = Promise.resolve();
+  const serialized = <T>(fn: () => Promise<T>): Promise<T> => {
+    const p = apiQueue.then(fn);
+    apiQueue = p.then(() => {}, () => {});
+    return p;
+  };
+
+  /** mtime alone can miss two writes within the filesystem's timestamp granularity; size catches most of them. */
+  const pageVersion = async () => {
+    const st = await Deno.stat(pagePath).catch(() => null);
+    return st ? `${st.mtime?.getTime()}:${st.size}` : "missing";
+  };
+
+  /** The API proper, on opened request bodies. Returns the status and payload that get sealed into the response. */
+  const apiCall = async (call: string, body: Record<string, unknown>): Promise<[number, unknown]> => {
+    switch (call) {
+      case "GET version":
+        return [200, { page: await pageVersion(), rev: state.rev }];
+      case "GET state":
+        return [200, state];
+      case "PUT state": {
+        const before = state.annotations.map((a) => a.id).join();
+        mergeBrowserState(state, body);
+        // A new or dropped annotation is news to other tabs on the page; bumping rev makes them refetch.
+        if (state.annotations.map((a) => a.id).join() !== before) state.rev += 1;
+        await persist();
+        return [200, { idFloor: state.idFloor, ids: state.annotations.map((a) => a.id) }];
+      }
+      case "POST id": {
+        const n = allocateId(state);
+        await persist();
+        return [200, { n }];
+      }
+      case "POST submit": {
+        // Work on a copy and adopt it only once the submission is on disk. Marking items sent before the write
+        // succeeded would lose them for good if it failed: they would show as sent and never reach the agent.
+        const next = structuredClone(state);
+        const onPage = Array.isArray(body?.pickers) ? body.pickers.map((v) => str(v, 200)) : undefined;
+        const sub = takeSubmission(next, str(body?.note), pagePath, new Date(), onPage);
+        if (!sub) return [409, "nothing to submit"];
+        // Submission before state: if the process dies between the two, the user's words still reach the agent
+        // and the worst case is the same items showing as unsent again.
+        await enqueue(join(dir, "submissions", `${String(sub.seq).padStart(6, "0")}.json`), JSON.stringify(sub));
+        Object.assign(state, next);
+        state.status = { state: "sent", message: "" };
+        console.error(`interactive-artifact: submission ${sub.seq} received`);
+        // The submission reached the agent, so this answers success even if saving the state fails; an error here
+        // would make the tab keep the note and send it again. The in-memory state is right and the next save
+        // writes it.
+        await persist().catch((e) =>
+          console.error(`interactive-artifact: saving state after a submit failed: ${e.message}`)
+        );
+        return [200, state];
+      }
+      case "POST agent": {
+        const ids = Array.isArray(body?.ids) ? body.ids.map((v) => str(v, 16)) : [];
+        const missing = applyAgentReply(state, ids, str(body?.text), body?.resolve === true);
+        if (missing.length) {
+          return [404, `no such comment or suggestion (or the user removed it): ${missing.join(", ")}`];
+        }
+        await persist();
+        return [200, { ok: true }];
+      }
+      case "POST status": {
+        const report = str(body?.state, 20);
+        if (!["listening", "thinking", "working", "done"].includes(report)) return [400, `unknown status: ${report}`];
+        if (applyStatus(state, report, str(body?.message, 500))) await persist();
+        return [200, { status: state.status }];
+      }
+      case "POST anchor": {
+        if (!applyAnchor(state, str(body?.id, 16), str(body?.quote))) {
+          return [
+            404,
+            `no such comment or suggestion (or the user removed it), or an empty quote: ${str(body?.id, 16)}`,
+          ];
+        }
+        await persist();
+        return [200, { ok: true }];
+      }
+    }
+    return [404, "not found"];
+  };
+
+  const handler = async (req: Request): Promise<Response> => {
+    // The token check comes first so that without it every request, of any method and Host, gets the same 404.
+    const pathname = tokenPath(new URL(req.url).pathname, token);
+    if (pathname === null) return text("not found", 404);
+    if (pathname === "") return new Response(null, { status: 308, headers: { ...noStore, location: `/${token}/` } });
+    if (!hostAllowed(req.headers.get("host"))) return text("bad host", 421);
+    const write = req.method !== "GET" && req.method !== "HEAD";
+    if (write && !writeAllowed(req.headers)) return text("forbidden", 403);
+
+    if (pathname === "/" || pathname === "/index.html") {
+      let html: string;
+      // Taken before reading, so an edit racing the read shows up as a newer version and reloads the tab again.
+      const version = await pageVersion();
+      try {
+        const fragment = await Deno.readTextFile(pagePath);
+        html = renderPage(fragment, pageTitle(fragment, opts.title, basename(pagePath)), keyB64, version);
+      } catch (e) {
+        // Errors render inside the shell, so the tab keeps polling and recovers by itself once the agent fixes the
+        // file. A bare error page has no script and would strand the tab until a manual reload.
+        const msg = escapeHtml((e as Error).message);
+        html = renderPage(
+          `<div class="callout danger"><p>interactive-artifact could not render the page: ${msg}</p></div>`,
+          "interactive-artifact",
+          keyB64,
+          version,
+        );
+      }
+      return new Response(html, { headers: { ...noStore, "content-type": "text/html; charset=utf-8" } });
+    }
+    if (pathname.startsWith(ROUTE) && API_CALLS.has(`${req.method} ${pathname.slice(ROUTE.length)}`)) {
+      const call = `${req.method} ${pathname.slice(ROUTE.length)}`;
+      let body: unknown = null;
+      if (req.method !== "GET") {
+        try {
+          body = await unseal(key, call, await req.json());
+        } catch {
+          return text("bad request", 400);
+        }
+      }
+      // Failures are answered sealed too. An unsealed error would be indistinguishable from an impostor, and the
+      // tab would lock with the wrong explanation.
+      const [status, data] = await serialized(() => apiCall(call, body as Record<string, unknown>)).catch((
+        e,
+      ): [number, unknown] => {
+        console.error(`interactive-artifact: ${call} failed: ${(e as Error).message}`);
+        return [500, `server error: ${(e as Error).message}`];
+      });
+      // The status travels inside the envelope, so an impostor cannot fake an error either.
+      return json(await seal(key, `response ${call}`, { status, data }));
+    }
+    if (pathname.startsWith(ROUTE)) {
+      const name = pathname.slice(ROUTE.length);
+      const type = ASSETS.get(name);
+      if (!type) return text("not found", 404);
+      // Read per request so styling and client edits show up without a restart, same as the page itself.
+      const body = await Deno.readTextFile(new URL(name, assetDir));
+      return new Response(body, { headers: { ...noStore, "content-type": type } });
+    }
+    // Dot paths would expose .interactive-artifact/, which holds the user's comments and submissions.
+    if (pathname.split("/").some((seg) => seg.startsWith("."))) return text("not found", 404);
+    // serveDir confines paths to fsRoot, so `..` cannot reach outside the page's directory.
+    const res = await serveDir(req, { fsRoot: pageDir, urlRoot: token, quiet: true, showDirListing: false });
+    // Rebuilt rather than modified: serveDir's redirects come from Response.redirect, whose headers are immutable.
+    const headers = new Headers(res.headers);
+    headers.set("referrer-policy", "no-referrer");
+    // A file with no recognized type must not be sniffed into HTML: script in a saved log would run on the page's
+    // origin and could read the key.
+    headers.set("x-content-type-options", "nosniff");
+    // And whatever a file is, it runs in an opaque origin: HTML, SVG, XHTML, or XML next to the page cannot script
+    // the page's origin, so a file the agent did not write cannot read the key. Images still load into the page.
+    headers.set("content-security-policy", "sandbox");
+    if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  };
+
+  // Listen on 127.0.0.1, and hold the same port on [::1] as well, serving the same handler.
+  // `localhost` often resolves to ::1 first, both in browsers and in `ssh -L`, so a [::1] port left free would let
+  // another local user bind it and receive requests meant for this server, token and all, and pass them through
+  // to read the page and its key. If someone already holds that port on [::1], pick another port.
+  const servers: Deno.HttpServer<Deno.NetAddr>[] = [];
+  const listen = (hostname: string, port: number) => Deno.serve({ hostname, port, onListen() {} }, handler);
+  for (let attempt = 0; !servers.length; attempt++) {
+    const main = listen("127.0.0.1", opts.port);
+    try {
+      servers.push(main, listen("::1", main.addr.port));
+    } catch (e) {
+      if (!(e instanceof Deno.errors.AddrInUse)) {
+        // No IPv6 loopback on this host, so there is no [::1] port for anyone to take.
+        servers.push(main);
+        break;
+      }
+      await main.shutdown();
+      if (opts.port || attempt >= 4) throw new Error(`port ${main.addr.port} is already in use on [::1]`);
+    }
+  }
+  const stopServers = () => Promise.all(servers.map((sv) => sv.shutdown()));
+  // Taken after binding, so a bind failure never leaves a lock behind to block the next attempt.
+  await takeServeLock(dir).catch(async (e) => {
+    await stopServers();
+    throw e;
+  });
+
+  const url = `http://127.0.0.1:${servers[0].addr.port}/${token}/`;
+  console.log(url);
+  const until = opts.ttlMs ? `until ${new Date(Date.now() + opts.ttlMs).toLocaleTimeString()}` : "until killed";
+  console.error(`interactive-artifact: serving ${pagePath} ${until}`);
+  console.error(`interactive-artifact: wait for the user with: interactive-artifact wait ${pagePath}`);
+  const beat = () =>
+    enqueue(join(dir, "server.json"), JSON.stringify({ url, pid: Deno.pid, at: Date.now(), key: keyB64 }))
+      .catch((e) => console.error(`interactive-artifact: heartbeat write failed: ${e.message}`));
+  beat();
+  const heartbeat = setInterval(beat, HEARTBEAT_MS);
+
+  // Removing the heartbeat on the way out lets a pending `wait` notice at once instead of after it goes stale.
+  // Our files are removed only if they are still ours: after a takeover, a server that is only now exiting must not
+  // delete the new server's lock and heartbeat. A request still open when the server stops gets a few seconds,
+  // then the process exits regardless, so that nothing keeps serving after the lock is gone.
+  // The listeners stop first and pending writes finish before the files go, so a submission in flight lands
+  // before `wait` can see the server gone, and nothing is still serving once the lock is released.
+  // The process ends when stop() is done, not when the listeners close: stopping the listeners comes first, and
+  // exiting then would skip the cleanup after it.
+  const stopped = Promise.withResolvers<void>();
+  let stopping: Promise<void> | null = null;
+  const stop = (why: string) => (stopping ??= stopNow(why).finally(stopped.resolve));
+  const stopNow = async (why: string) => {
+    console.error(`interactive-artifact: ${why}, shutting down`);
+    clearInterval(heartbeat);
+    await Promise.race([stopServers(), new Promise((r) => setTimeout(r, 3000))]);
+    // Capped, so a hung filesystem cannot keep a stopped server alive; whatever has not been written by then is lost.
+    await Promise.race([apiQueue.then(() => writes), new Promise((r) => setTimeout(r, 3000))]);
+    if ((await readJson<ServerInfo>(join(dir, "server.json")).catch(() => null))?.pid === Deno.pid) {
+      await Deno.remove(join(dir, "server.json")).catch(() => {});
+    }
+    if ((await Deno.readTextFile(join(dir, "serve.lock")).catch(() => "")) === String(Deno.pid)) {
+      await Deno.remove(join(dir, "serve.lock")).catch(() => {});
+    }
+  };
+  for (const sig of ["SIGINT", "SIGTERM"] as const) Deno.addSignalListener(sig, () => stop(sig));
+  if (opts.ttlMs) setTimeout(() => stop("TTL reached"), opts.ttlMs);
+  await stopped.promise;
+  Deno.exit(0);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// wait and reply
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Print every unconsumed submission and mark them consumed. With none, block until one arrives, the server
+ * stops (exit 4: nobody can submit any more), or the timeout passes (exit 3). Run one `wait` per page at a
+ * time; two would race for the same submissions.
+ */
+async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }): Promise<number> {
+  await assertPrivateDirs(pagePath);
+  const dir = stateDir(pagePath);
+  const deadline = opts.timeoutMs ? Date.now() + opts.timeoutMs : Infinity;
+  // Agents often start `serve` and `wait` in the same breath; until the server writes its first heartbeat there is
+  // no server.json, and that alone is not a reason to give up. The cost is that `wait` on a page whose server has
+  // already stopped cleanly (which also removes server.json) takes this long to say so.
+  const graceUntil = Date.now() + 5_000;
+  // Waiting is the agent saying it is ready for more; the page shows that once the agent has been busy. Reported once a
+  // live server is found, not before the loop, so a `wait` started just ahead of its `serve` still gets it across.
+  let reported = false;
+  while (true) {
+    const consumed = Number((await Deno.readTextFile(join(dir, "consumed")).catch(() => "0")).trim()) || 0;
+    const fresh = (await submissionNumbers(dir)).filter((n) => n > consumed);
+    if (fresh.length) {
+      const subs: Submission[] = [];
+      for (const n of fresh) {
+        subs.push((await readJson<Submission>(join(dir, "submissions", `${String(n).padStart(6, "0")}.json`)))!);
+      }
+      console.log(
+        opts.json ? JSON.stringify(subs, null, 2) : subs.map((s) => formatSubmission(s, pagePath)).join("\n\n"),
+      );
+      await writeAtomic(join(dir, "consumed"), String(fresh[fresh.length - 1]));
+      // The agent has the submission now; the page tells the user it is being read.
+      await reportStatus(pagePath, "thinking");
+      return 0;
+    }
+    if (!(await liveServer(dir))) {
+      // The server may have written a last submission between the listing above and this check.
+      if ((await submissionNumbers(dir)).some((n) => n > consumed)) continue;
+      const starting = Date.now() < graceUntil &&
+        !(await Deno.stat(join(dir, "server.json")).then(() => true, () => false));
+      if (starting && Date.now() <= deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+        continue;
+      }
+      console.error(
+        `interactive-artifact: no server is running for ${pagePath}; start one with: interactive-artifact serve ${pagePath}`,
+      );
+      return 4;
+    }
+    if (!reported) {
+      reported = true;
+      await reportStatus(pagePath, "listening");
+    }
+    if (Date.now() > deadline) {
+      console.error("interactive-artifact: timed out with no submission");
+      return 3;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/**
+ * Whether a URL is exactly what `serve` prints: http on 127.0.0.1, no userinfo, a token path. A prefix check would
+ * pass `http://127.0.0.1:1@elsewhere/`, whose host is `elsewhere`.
+ */
+export function isLocalServerUrl(text: string): boolean {
+  try {
+    const u = new URL(text);
+    return u.protocol === "http:" && u.hostname === "127.0.0.1" && !u.username && !u.password &&
+      /^\/[0-9a-f]{32}\/$/.test(u.pathname) && !u.search && !u.hash;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Make one sealed API call to the running server as the agent (`reply` and `anchor`). Everything about reaching the
+ * right server safely lives here: no proxies, the private-directory checks, the exact URL shape, no redirects, a
+ * timeout, and refusing an answer that does not open under the key.
+ */
+async function agentCall(
+  pagePath: string,
+  name: "agent" | "anchor" | "status",
+  body: unknown,
+  log: (msg: string) => void = console.error,
+  timeoutMs = 10_000,
+): Promise<number> {
+  // Deno's fetch honours proxy variables even for 127.0.0.1, and a proxy would see the tokened URL. Browsers never
+  // proxy loopback; this command must not either.
+  for (const v of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) {
+    Deno.env.delete(v);
+  }
+  await assertPrivateDirs(pagePath);
+  const info = await liveServer(stateDir(pagePath));
+  if (!info) {
+    log(`interactive-artifact: no server is running for ${pagePath}; replies and status updates go through the server`);
+    return 4;
+  }
+  if (!isLocalServerUrl(info.url)) {
+    log("interactive-artifact: server.json names a server that is not on 127.0.0.1; refusing to send anything there");
+    return 1;
+  }
+  const key = await importKey(fromB64(info.key));
+  const res = await fetch(`${info.url}${API}${name}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-interactive-artifact": "agent" },
+    body: JSON.stringify(await seal(key, `POST ${name}`, body)),
+    // A port holder that accepts and never answers must not hang the agent, nor redirect it anywhere.
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "error",
+  }).catch((e) => {
+    log(`interactive-artifact: could not reach the server: ${e.message}`);
+    return null;
+  });
+  if (!res) return 1;
+  // A response that does not open came from something other than our server, possibly an impostor that took the
+  // port; it gets no benefit of the doubt.
+  const reply = await res.json().then((env) => unseal(key, `response POST ${name}`, env)).catch(() => null) as
+    | { status: number; data: unknown }
+    | null;
+  if (!reply) {
+    log("interactive-artifact: the server's answer could not be verified; the server on that port is not ours");
+    return 1;
+  }
+  if (reply.status !== 200) {
+    log(`interactive-artifact: ${reply.data}`);
+    return 1;
+  }
+  return 0;
+}
+
+/**
+ * Tell the page what the agent's side is doing, from `wait`. Best effort: a page without a live server has no one to
+ * tell.
+ */
+function reportStatus(pagePath: string, state: "listening" | "thinking"): Promise<number> {
+  // Short timeout: this is a courtesy to the page and must not hold up `wait` itself, before or after its real work.
+  return agentCall(pagePath, "status", { state }, () => {}, 2_000);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------------------------------------------
+
+const USAGE = `usage:
+  interactive-artifact serve PAGE.html [--port 0] [--ttl 4h|0] [--title TEXT]
+  interactive-artifact wait PAGE.html [--json] [--timeout 0]
+  interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
+  interactive-artifact anchor PAGE.html ID --file PATH
+  interactive-artifact status PAGE.html working|done [--file PATH]`;
+
+/**
+ * The command line. `skillDir` is the skill's directory when the caller knows better than `import.meta.url`: the
+ * compiled helper's entrypoint passes it, derived from the executable's own path (see src/helpers.rs in the repo).
+ */
+export async function runCli(skillDir?: URL): Promise<void> {
+  if (skillDir) assetDir = new URL("assets/", skillDir);
+  const args = parseArgs(Deno.args, {
+    string: ["port", "ttl", "title", "timeout", "text", "file"],
+    boolean: ["help", "json", "resolve", "stdin"],
+    default: { port: "0", ttl: "4h", timeout: "0", text: "", file: "" },
+    unknown: (arg) => {
+      if (!arg.startsWith("-")) return true;
+      console.error(`interactive-artifact: unknown option ${arg}\n${USAGE}`);
+      Deno.exit(2);
+    },
+  });
+  const [cmd, page, ...rest] = args._.map(String);
+  const usage = () => {
+    console.error(USAGE);
+    Deno.exit(args.help ? 0 : 2);
+  };
+  if (args.help || !page) usage();
+  const pagePath = resolve(page);
+  const duration = (flag: string, value: string) => {
+    try {
+      return parseDuration(value);
+    } catch (e) {
+      console.error(`interactive-artifact: --${flag}: ${(e as Error).message}`);
+      Deno.exit(2);
+    }
+  };
+  if (cmd === "serve" && !rest.length) {
+    // setTimeout holds a signed 32-bit millisecond count; anything longer fires at once and would end the server.
+    if (duration("ttl", args.ttl) > 2 ** 31 - 1) {
+      console.error("interactive-artifact: --ttl can be at most 596h; use 0 for no limit");
+      Deno.exit(2);
+    }
+    await serve(pagePath, {
+      port: (() => {
+        const port = Number(args.port);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+          console.error(
+            `interactive-artifact: --port must be a number from 0 to 65535, not ${JSON.stringify(args.port)}`,
+          );
+          Deno.exit(2);
+        }
+        return port;
+      })(),
+      ttlMs: duration("ttl", args.ttl),
+      title: args.title,
+    });
+  } else if (cmd === "wait" && !rest.length) {
+    Deno.exit(await wait(pagePath, { json: args.json, timeoutMs: duration("timeout", args.timeout) }));
+  } else if (
+    cmd === "status" && rest.length === 1 && ["working", "done"].includes(rest[0]) &&
+    !args.text && !args.stdin && !args.resolve
+  ) {
+    // The optional message is agent text shown on the page, so it comes from a file like a reply does.
+    const message = args.file ? (await Deno.readTextFile(args.file)).trim() : "";
+    if (message.length > 500) {
+      console.error(`interactive-artifact: the status message is ${message.length} characters; the limit is 500`);
+      Deno.exit(2);
+    }
+    Deno.exit(await agentCall(pagePath, "status", { state: rest[0], message }));
+  } else if (cmd === "anchor" && rest.length === 1 && args.file && !args.text && !args.stdin && !args.resolve) {
+    // Page text, so it comes from a file like a reply does, never from the command line.
+    const quote = (await Deno.readTextFile(args.file)).trim();
+    if (quote.length > MAX_TEXT) {
+      console.error(`interactive-artifact: the quote is ${quote.length} characters; the limit is ${MAX_TEXT}`);
+      Deno.exit(2);
+    }
+    Deno.exit(await agentCall(pagePath, "anchor", { id: rest[0], quote }));
+  } else if (cmd === "reply" && rest.length && (args.text || args.file || args.stdin || args.resolve)) {
+    // Command lines are visible to every local user (ps, /proc). `--file` is the safe way to pass text: harnesses
+    // run shell commands as `bash -c '<the whole command>'`, so even a heredoc behind `--stdin` ends up in a
+    // command line, while a file the agent wrote with its own file tool never does.
+    if ([args.text, args.file, args.stdin].filter(Boolean).length > 1) {
+      console.error("interactive-artifact: give the reply text one way: --file, --stdin, or --text");
+      Deno.exit(2);
+    }
+    const text = args.file
+      ? (await Deno.readTextFile(args.file)).trim()
+      : args.stdin
+      ? (await new Response(Deno.stdin.readable).text()).trim()
+      : args.text;
+    // The server keeps at most MAX_TEXT characters of a message; refusing is better than a silently cut reply.
+    if (text.length > MAX_TEXT) {
+      console.error(`interactive-artifact: the reply is ${text.length} characters; the limit is ${MAX_TEXT}`);
+      Deno.exit(2);
+    }
+    Deno.exit(await agentCall(pagePath, "agent", { ids: [...new Set(rest)], text, resolve: args.resolve }));
+  } else usage();
+}
+
+if (import.meta.main) await runCli();
+
+// ---------------------------------------------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Agents pass whatever unit looks natural; a silent misparse would kill a server early or keep it for days. */
+Deno.test("parseDuration accepts s/m/h suffixes and bare seconds, rejects anything else", () => {
+  assertEquals(parseDuration("90"), 90_000);
+  assertEquals(parseDuration("30m"), 1_800_000);
+  assertEquals(parseDuration("4h"), 14_400_000);
+  assertEquals(parseDuration("0"), 0);
+  assertThrows(() => parseDuration("4 hours"));
+  assertThrows(() => parseDuration("-1"));
+});
+
+/** The title is interpolated into raw HTML, so each source must come out escaped exactly once. */
+Deno.test("pageTitle prefers explicit title, then first h1 text, then file name, escaping once", () => {
+  assertEquals(pageTitle("<h1>Ignored</h1>", "A <b>", "f.html"), "A &lt;b&gt;");
+  assertEquals(pageTitle('<p>x</p><h1 id="t">Q &amp; <em>A</em></h1>', undefined, "f.html"), "Q &amp; A");
+  assertEquals(pageTitle("<p>no heading</p>", undefined, "a&b.html"), "a&amp;b.html");
+});
+
+/** Nesting a whole document inside the shell breaks styling without any visible error, so it must refuse. */
+Deno.test("renderPage wraps fragments and rejects full documents", () => {
+  const html = renderPage("<p>hi</p>", "T");
+  assertEquals(html.includes('<main class="ia-page">\n<p>hi</p>\n</main>'), true);
+  assertThrows(() => renderPage("  <!DOCTYPE html><p>x</p>", "T"));
+  assertThrows(() => renderPage("<html><body></body></html>", "T"));
+  assertThrows(() => renderPage("<body><p>x</p></body>", "T"));
+});
+
+/** The guard is the only thing standing between a rebinding page and the served content. */
+Deno.test("hostAllowed accepts loopback names on any port and rejects everything else", () => {
+  assertEquals(hostAllowed("127.0.0.1:8123"), true);
+  assertEquals(hostAllowed("localhost:9000"), true);
+  assertEquals(hostAllowed("[::1]:80"), true);
+  assertEquals(hostAllowed("evil.example:8123"), false);
+  assertEquals(hostAllowed(null), false);
+});
+
+/** Each refusal closes a way for another local user to read the page or plant files the server would trust. */
+Deno.test("assertPrivate refuses non-directories, other owners, and group or world access", () => {
+  const info = (o: Partial<Deno.FileInfo>) => ({ isDirectory: true, uid: 501, mode: 0o40700, ...o }) as Deno.FileInfo;
+  assertPrivate(info({}), 501, "d");
+  assertPrivate(info({ mode: null, uid: null as unknown as number }), null, "d");
+  assertThrows(() => assertPrivate(info({ isDirectory: false }), 501, "d"));
+  assertThrows(() => assertPrivate(info({ uid: 0 }), 501, "d"));
+  assertThrows(() => assertPrivate(info({ mode: 0o40750 }), 501, "d"));
+  assertThrows(() => assertPrivate(info({ mode: 0o40701 }), 501, "d"));
+});
+
+/** The token is the only thing keeping other local users off the page, so near misses must all fail. */
+Deno.test("tokenPath accepts only the exact token as the first segment", () => {
+  const t = "0123456789abcdef0123456789abcdef";
+  assertEquals(tokenPath(`/${t}/`, t), "/");
+  assertEquals(tokenPath(`/${t}/__interactive-artifact/state`, t), "/__interactive-artifact/state");
+  assertEquals(tokenPath(`/${t}`, t), "");
+  for (
+    const bad of [
+      "/",
+      "/index.html",
+      "/__interactive-artifact/state",
+      `/${t}x/`,
+      `/${t.slice(1)}/`,
+      `//${t}/`,
+      `/x/${t}/`,
+    ]
+  ) {
+    assertEquals(tokenPath(bad, t), null, bad);
+  }
+  assertEquals(newToken().length, 32);
+});
+
+/** Encryption is what stops an impostor on the port, so every way of getting it wrong must fail to open. */
+Deno.test("seal and unseal round-trip, and refuse another key, another call, or a flipped bit", async () => {
+  const key = await importKey(crypto.getRandomValues(new Uint8Array(32)));
+  const other = await importKey(crypto.getRandomValues(new Uint8Array(32)));
+  const env = await seal(key, "POST submit", { note: "secret" });
+  assertEquals(env.ct.includes("secret"), false);
+  assertEquals(await unseal(key, "POST submit", env), { note: "secret" });
+  await assertRejects(() => unseal(other, "POST submit", env));
+  await assertRejects(() => unseal(key, "response POST submit", env));
+  const ct = fromB64(env.ct);
+  ct[0] ^= 1;
+  await assertRejects(() => unseal(key, "POST submit", { iv: env.iv, ct: toB64(ct) }));
+  await assertRejects(() => unseal(key, "POST submit", { note: "secret" }));
+  const big = "x".repeat(300_000);
+  assertEquals(await unseal(key, "GET state", await seal(key, "GET state", big)), big);
+});
+
+/** reply sends the agent's words to this URL, so a planted server.json must not be able to point it elsewhere. */
+Deno.test("isLocalServerUrl accepts only the exact shape serve prints", () => {
+  const t = "0123456789abcdef0123456789abcdef";
+  assertEquals(isLocalServerUrl(`http://127.0.0.1:4000/${t}/`), true);
+  for (
+    const bad of [
+      `http://127.0.0.1:1@evil.example/${t}/`,
+      `https://127.0.0.1:4000/${t}/`,
+      `http://127.0.0.2:4000/${t}/`,
+      `http://127.0.0.1:4000/${t}/x`,
+      `http://127.0.0.1:4000/`,
+      "not a url",
+    ]
+  ) assertEquals(isLocalServerUrl(bad), false, bad);
+});
+
+/** A forged submission would be acted on as if the user wrote it, so writes need proof of same origin. */
+Deno.test("writeAllowed requires the custom header and a matching Origin when one is sent", () => {
+  const h = (o: Record<string, string>) => new Headers({ host: "127.0.0.1:5000", ...o });
+  assertEquals(writeAllowed(h({ "x-interactive-artifact": "1" })), true);
+  assertEquals(writeAllowed(h({ "x-interactive-artifact": "1", origin: "http://127.0.0.1:5000" })), true);
+  assertEquals(writeAllowed(h({ origin: "http://127.0.0.1:5000" })), false);
+  assertEquals(writeAllowed(h({ "x-interactive-artifact": "1", origin: "https://evil.example" })), false);
+});
+
+function ann(id: string, over: Partial<Annotation> = {}): Record<string, unknown> {
+  return { id, quote: "old text", prefix: "", suffix: "", section: "Intro", replacement: "", draft: "", ...over };
+}
+
+/**
+ * The round trip the whole feature exists for: draft, submit, agent reply, user reply. Each step must report
+ * exactly what is new to the agent, and nothing twice.
+ */
+Deno.test("comment lifecycle: new, agent reply and resolve, user reply reopens, nothing resent", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("c1", { draft: "why?" })], picks: {} });
+  const first = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(first.items.map((i) => [i.id, i.event, i.text]), [["c1", "new", "why?"]]);
+  assertEquals(takeSubmission(st, "", "/p.html", new Date(0)), null);
+
+  assertEquals(applyAgentReply(st, ["c1"], "because", true), []);
+  assertEquals(st.annotations[0].resolved, true);
+  assertEquals(applyAgentReply(st, ["c9"], "x", false), ["c9"]);
+
+  // The browser's autosave must not wipe the server-owned thread or resolution.
+  mergeBrowserState(st, { annotations: [ann("c1", { draft: "no, really" })], picks: {} });
+  assertEquals(st.annotations[0].thread.map((m) => m.from), ["user", "agent"]);
+  const second = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(second.items.map((i) => [i.event, i.text]), [["reply", "no, really"]]);
+  assertEquals(st.annotations[0].resolved, false);
+});
+
+/** Suggestions carry their replacement once; afterwards the record of what the agent was told must not move. */
+Deno.test("suggestion is pending only if it changes the text, and its replacement freezes once sent", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("s1", { replacement: "old text" })], picks: {} });
+  assertEquals(takeSubmission(st, "", "/p.html", new Date(0)), null);
+  mergeBrowserState(st, { annotations: [ann("s1", { replacement: "new text" })], picks: {} });
+  const sub = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(sub.items[0].replacement, "new text");
+  mergeBrowserState(st, { annotations: [ann("s1", { replacement: "sneaky" })], picks: {} });
+  assertEquals(st.annotations[0].replacement, "new text");
+});
+
+/** Removing something the agent already saw has to reach it, or it keeps acting on a withdrawn request. */
+Deno.test("removal: unsent and resolved items vanish silently, sent ones are reported as withdrawn", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("c1", { draft: "a" }), ann("c2", { draft: "b" })], picks: {} });
+  takeSubmission(st, "", "/p.html", new Date(0));
+  applyAgentReply(st, ["c2"], "done", true);
+  mergeBrowserState(st, {
+    annotations: [ann("c1", { removed: true }), ann("c2", { removed: true }), ann("c3", { removed: true })],
+    picks: {},
+  });
+  assertEquals(st.annotations.map((a) => a.id), ["c1"]);
+  assertEquals(st.idFloor, 3);
+  const sub = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(sub.withdrawn, ["c1"]);
+  assertEquals(st.annotations, []);
+});
+
+/** A second tab, or a tab that loaded before an agent reply, must not delete what it does not know about. */
+Deno.test("mergeBrowserState keeps annotations the browser did not mention", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("c1", { draft: "a" })], picks: {} });
+  mergeBrowserState(st, { annotations: [ann("c2", { draft: "b" })], picks: {} });
+  assertEquals(st.annotations.map((a) => a.id).sort(), ["c1", "c2"]);
+});
+
+/** Picks are reported in full each time so the agent sees the whole answer, with changes flagged. */
+Deno.test("picks: changed ones make a submission pending, unchanged ones ride along, cleared ones report empty", () => {
+  const st = emptyState();
+  const pick = (values: string[], text = "") => ({
+    label: "Backend",
+    multiple: false,
+    values: values.map((v) => ({ value: v, label: v.toUpperCase() })),
+    text,
+  });
+  mergeBrowserState(st, { annotations: [], picks: { db: pick(["sqlite"]), extra: pick(["a"]) } });
+  const first = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(first.picks.map((p) => [p.id, p.changed]), [["db", true], ["extra", true]]);
+  assertEquals(takeSubmission(st, "", "/p.html", new Date(0)), null);
+  mergeBrowserState(st, { annotations: [], picks: { db: pick(["sqlite"], "with WAL"), extra: pick([]) } });
+  const second = takeSubmission(st, "", "/p.html", new Date(0))!;
+  assertEquals(second.picks.map((p) => [p.id, p.changed, p.values.length]), [["db", true, 1], ["extra", true, 0]]);
+});
+
+/** Re-pointing is how an open comment follows an edit the agent made to its own text, so it must stick. */
+Deno.test("applyAnchor re-points an open annotation, and a later autosave does not undo it", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("c1", { quote: "old words", prefix: "p", suffix: "s", draft: "x" })] });
+  const rev = st.rev;
+  assertEquals(applyAnchor(st, "c1", "new words"), true);
+  assertEquals([st.annotations[0].quote, st.annotations[0].prefix, st.rev > rev], ["new words", "", true]);
+  mergeBrowserState(st, { annotations: [ann("c1", { quote: "old words", draft: "y" })] });
+  assertEquals([st.annotations[0].quote, st.annotations[0].draft], ["new words", "y"]);
+  assertEquals([applyAnchor(st, "c9", "x"), applyAnchor(st, "c1", "")], [false, false]);
+});
+
+/** Answers to questions the agent removed would otherwise ride along in every submission, forever. */
+Deno.test("takeSubmission reports only pickers on the current page when the tab says which those are", () => {
+  const st = emptyState();
+  const pick = { label: "L", multiple: false, values: [{ value: "a", label: "A" }], text: "" };
+  mergeBrowserState(st, { annotations: [], picks: { old: pick, now: pick } });
+  const sub = takeSubmission(st, "", "/p.html", new Date(0), ["now"])!;
+  assertEquals(sub.picks.map((p) => p.id), ["now"]);
+  // The unreported answer stays pending, so it is reported once its picker is back on the page.
+  const later = takeSubmission(st, "", "/p.html", new Date(0), ["old", "now"])!;
+  assertEquals(later.picks.map((p) => [p.id, p.changed]), [["old", true], ["now", false]]);
+});
+
+/** The status is all the user sees of the agent between submits, so each step must land where it should. */
+Deno.test("applyStatus: listening means ready only after the agent was busy; reports set state and message", () => {
+  const st = emptyState();
+  assertEquals([applyStatus(st, "listening", ""), st.status.state], [false, "idle"]);
+  assertEquals([applyStatus(st, "thinking", ""), st.status.state], [true, "thinking"]);
+  assertEquals([applyStatus(st, "working", "on it"), st.status], [true, { state: "working", message: "on it" }]);
+  assertEquals([applyStatus(st, "listening", ""), st.status.state], [true, "ready"]);
+  assertEquals(applyStatus(st, "listening", ""), false);
+  assertEquals([applyStatus(st, "done", "bye"), st.status.state], [true, "done"]);
+  assertEquals(applyStatus(st, "bogus", ""), false);
+});
+
+/** Server-side ids are what keep two tabs from minting the same id and overwriting each other's annotation. */
+Deno.test("allocateId never repeats, even past ids the browser already used", () => {
+  const st = emptyState();
+  mergeBrowserState(st, { annotations: [ann("c7", { draft: "x" })] });
+  assertEquals([allocateId(st), allocateId(st), allocateId(st)], [8, 9, 10]);
+});
+
+/** A stale tab saving its own edit must not erase answers another tab gave since it loaded. */
+Deno.test("picks and the note merge per item instead of being replaced wholesale", () => {
+  const st = emptyState();
+  const pick = { label: "L", multiple: false, values: [{ value: "a", label: "A" }], text: "" };
+  mergeBrowserState(st, { annotations: [], picks: { one: pick }, note: "hello" });
+  mergeBrowserState(st, { annotations: [], picks: { two: pick } });
+  assertEquals([Object.keys(st.picks).sort(), st.note], [["one", "two"], "hello"]);
+});
+
+/** The note alone is a valid submission: sometimes the user just wants to say something. */
+Deno.test("a note alone submits, and the Markdown names every part the agent needs", () => {
+  const st = emptyState();
+  assertEquals(takeSubmission(st, "  ", "/p.html", new Date(0)), null);
+  mergeBrowserState(st, {
+    annotations: [ann("s1", { quote: "14.2", replacement: "14.3", draft: "typo" })],
+    picks: {},
+  });
+  const md = formatSubmission(takeSubmission(st, "ship it", "/d/p.html", new Date(0))!, "/d/p.html");
+  for (const want of ["## Note from the user", "> ship it", "## s1: new suggestion", "> 14.3", "> typo"]) {
+    assertEquals(md.includes(want), true, want);
+  }
+  assertEquals(md.includes("interactive-artifact reply /d/p.html ID... --file /d/reply.txt"), true);
+  assertEquals(md.includes("--stdin"), false);
+});
