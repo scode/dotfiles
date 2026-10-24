@@ -32,12 +32,14 @@ suggestions on the page and edit the page itself; the open tab follows along.
    the token gets a 404. Only one server runs per page; `serve` refuses to start a second one while the first is alive,
    so keep using the first (or stop it before starting another).
 4. Start `interactive-artifact wait <dir>/page.html` in the background the same way. It exits when the user submits,
-   printing the submission as Markdown. Handle it (see below), then start `wait` again. Keep one `wait` running for as
-   long as the page is in use, and only one per page.
+   printing the submission as Markdown. Handle it (see below), and only then start `wait` again: starting it is what
+   tells the page you are ready for the next submission, so starting it early would say so while you are still working.
+   Run only one `wait` per page at a time.
 5. To change the page, edit the file. The open tab reloads by itself within about a second and keeps everything the user
    has entered, so never restart the server for an edit.
-6. Stop the server when the user is done with the page. It also exits on its own after `--ttl` (default `4h`). A running
-   `wait` then exits with status 4.
+6. When you are finished with the page, say so first (`status ... done`, below), wait about five seconds, then stop
+   `wait` and the server. The tab then shows a calm "this page is finished" note instead of a warning. The server also
+   exits on its own after `--ttl` (default `4h`); a running `wait` then exits with status 4.
 
 If the user reports a red banner saying the page is locked, stop the server and start a new one, then give them the new
 URL (and the new tunnel command, if they use one). Never tell them to reload the locked tab. A lock means the tab talked
@@ -61,6 +63,25 @@ per server means a port someone tampered with before is not reused. There is no 
 encrypted with browser crypto that browsers offer only on `127.0.0.1` and `localhost`.
 
 ## Handling a submission
+
+The page tells the user what your side is doing, in a box at the bottom right. Right after they submit it says the
+submission is waiting for you; once `wait` hands it to you, it says you are reading it. Then decide, and say which:
+
+- **You will produce another version of the page.** Run `interactive-artifact status <dir>/page.html working` as soon as
+  you decide; the page says you are working on the submission. Do whatever the submission needs (which may be a lot of
+  work before the page itself changes), edit the page, reply on the page as below, then start `wait` again. Starting
+  `wait` tells the page you are ready for the next submission.
+- **You are done with the page**, and the user should go back to the chat. Run `interactive-artifact status
+  <dir>/page.html done` and continue in the conversation; the page tells the user to do the same. Then stop `wait` and
+  the server, but give the page about five seconds first: it checks for news once a second, and a page that sees the
+  server stop before it saw your "done" shows a warning instead of a calm "this page is finished".
+
+Either can carry a short line for the user (500 characters at most): write it to `<dir>/status.txt` with your file tool
+and pass `--file <dir>/status.txt`. With `working`, always include one when the work takes more than a moment, saying
+what you are actually doing, such as "Running the benchmarks you asked for, then updating the page". Otherwise the user
+sees only that you are busy and wonders why updating a page takes so long. Run `status working` again with a new line as
+the work moves from one step to the next. With `done`, say where things stand, such as "Going with option A; details in
+the chat".
 
 A submission lists, in this order: the user's note, the current answer of every picker on the current page they have
 touched (flagged `changed` or `unchanged` since their last submission), each new comment or suggestion with the text it

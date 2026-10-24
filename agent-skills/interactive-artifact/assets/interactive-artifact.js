@@ -3,8 +3,8 @@
  *
  * The server owns the durable state (see the `interactive-artifact` script); this file renders it and edits the parts
  * the browser owns. The sections below are, in order: theme button, state and server I/O, text anchoring, pickers,
- * annotation highlights, the comment sidebar, the selection toolbar with Copy as Markdown, the Submit dock, and the
- * poll loop that drives live reload and picks up agent replies.
+ * annotation highlights, the comment sidebar, the selection toolbar with Copy as Markdown, the Submit dock, the agent
+ * status box, and the poll loop that drives live reload and picks up agent replies and status changes.
  *
  * Two invariants hold throughout:
  *
@@ -140,21 +140,34 @@
 
   let locked = null;
   /** Stop all traffic for good and say why. Reloading would fetch the page from whatever holds the port now. */
-  const lock = (why) => {
+  // `stopped` is passed for a request that failed without timing out, normally a refused connection. When the agent
+  // had said it was done with the page, that is the expected end (it stopped its server), so the banner is a calm note
+  // rather than a warning. The lock is the same, and so is the advice not to reload: with the server gone, anyone can
+  // take the port, and a reload would load whatever they serve.
+  const lock = (why, stopped = false) => {
     if (locked) return;
     locked = why;
     clearTimeout(saveTimer);
     // Read-only from here: anything typed into a locked tab could never be saved, so it must not look as if it
     // could be. What is on screen stays selectable, so text in the last unsaved moments can still be copied.
     for (const t of document.querySelectorAll("textarea")) t.readOnly = true;
-    const banner = el("div", "ia-lock ia-ui");
-    banner.setAttribute("role", "alert");
-    banner.append(
-      el("strong", "", why),
-      " This tab is now read-only. Everything it saved is kept: ask the agent for a new link and it will be there. " +
-        "Do not reload this tab.",
-    );
+    const finished = stopped && agentState === "done";
+    const banner = el("div", `ia-lock ia-ui${finished ? " calm" : ""}`);
+    banner.setAttribute("role", finished ? "status" : "alert");
+    if (finished) {
+      banner.append(
+        el("strong", "", "This page is finished."),
+        " Its server has stopped; continue in the chat. Do not reload this tab.",
+      );
+    } else {
+      banner.append(
+        el("strong", "", why),
+        " This tab is now read-only. Everything it saved is kept: ask the agent for a new link and it will be there. " +
+          "Do not reload this tab.",
+      );
+    }
     document.body.append(banner);
+    statusPill.hidden = true;
     updateDock();
   };
 
@@ -183,6 +196,7 @@
             "server is stuck."
           : "The interactive-artifact server has stopped. Usually its time limit ran out, the agent stopped it, or an ssh " +
             "tunnel dropped.",
+        e.name !== "TimeoutError",
       );
       throw e;
     }
@@ -313,6 +327,7 @@
     annotations = next;
     picksSent = s.picksSent;
     serverRev = s.rev;
+    showStatus(s.status);
     if (all) {
       picks = Object.assign(Object.create(null), s.picks);
       noteInput.value = s.note || "";
@@ -1048,7 +1063,11 @@
   sendButton.append(el("span", "ia-icon", ""), "Submit", sendCount);
   bar.append(noteInput, sendButton);
   dock.append(launch, bar);
-  document.body.append(dock);
+  // The dock (left) and the agent status box (right) share one row along the bottom; when there is not room for both,
+  // the status box wraps above the dock instead of covering it.
+  const corner = el("div", "ia-corner ia-ui");
+  corner.append(dock);
+  document.body.append(corner);
 
   let noteOpen = false;
   launch.addEventListener("click", () => {
@@ -1137,6 +1156,48 @@
     if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.target.closest?.("textarea")) submit();
     if (ev.key === "Escape") toolbar.hidden = true;
   });
+
+  // -----------------------------------------------------------------------------------------------------------
+  // Agent status (bottom right): what the agent is doing about the latest submission, from the server's state.
+  // -----------------------------------------------------------------------------------------------------------
+
+  // deno-fmt-ignore
+  const STATUS = new Map([
+    ["sent", ["busy", "Sent. Waiting for the agent to pick it up."]],
+    ["thinking", ["busy", "The agent is reading your submission."]],
+    // Deliberately not "updating the page": the agent may be doing a lot of other work first (research, running code)
+    // before anything on the page changes. Its own status message says what.
+    ["working", ["busy", "The agent is working on your submission. The page reloads by itself when it changes."]],
+    ["ready", ["ready", "The agent is ready for your next submission."]],
+    ["done", ["done", "The agent is done with this page. Continue in the chat."]],
+  ]);
+  let agentState = "idle";
+  let statusTimer = null;
+  const statusPill = el("div", "ia-agent ia-ui");
+  statusPill.setAttribute("role", "status");
+  statusPill.hidden = true;
+  corner.append(statusPill);
+  /** Show the agent's status. "Ready" fades after a while; the others stay until the status changes. */
+  const showStatus = (st) => {
+    const state = st?.state || "idle";
+    const message = st?.message || "";
+    const shown = `${state}\n${message}`;
+    if (statusPill.dataset.shown === shown) return;
+    statusPill.dataset.shown = shown;
+    agentState = state;
+    clearTimeout(statusTimer);
+    const entry = STATUS.get(state);
+    if (!entry || locked) {
+      statusPill.hidden = true;
+      return;
+    }
+    const [kind, text] = entry;
+    statusPill.className = `ia-agent ia-ui ${kind}`;
+    statusPill.replaceChildren(el("span", "ia-agent-icon"), el("span", "ia-agent-text", text));
+    if (message) statusPill.append(el("span", "ia-agent-msg", message));
+    statusPill.hidden = false;
+    if (state === "ready") statusTimer = setTimeout(() => (statusPill.hidden = true), 10_000);
+  };
 
   const toaster = el("div", "ia-toast ia-ui");
   toaster.setAttribute("role", "status");

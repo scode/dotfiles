@@ -1638,11 +1638,23 @@ ins.ia-ins {
   font-size: 0.9em;
 }
 
-.ia-dock {
+/* The bottom row: the dock on the left, the agent status on the right. wrap-reverse puts the status above the dock
+   when the window is too narrow for both, so neither covers the other. The row itself lets clicks through. */
+.ia-corner {
   position: fixed;
   left: 1rem;
+  right: 1rem;
   bottom: 1rem;
   z-index: 50;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+.ia-corner > * {
+  pointer-events: auto;
 }
 .ia-launch {
   width: 2.6rem;
@@ -1779,6 +1791,79 @@ ins.ia-ins {
 .ia-lock strong {
   margin-right: 0.3rem;
 }
+/* Agent status, bottom right: the dock is bottom left and toasts are centered, so the three never overlap. "busy"
+   (sent, reading, updating) spins; "ready" and "done" show a fixed glyph. */
+.ia-agent {
+  margin-left: auto;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  align-items: center;
+  max-width: min(24rem, calc(100vw - 2rem));
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 30px rgb(16 16 20 / 0.16);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  animation: ia-pop 0.22s ease-out;
+}
+.ia-agent[hidden] {
+  display: none;
+}
+.ia-agent-icon {
+  width: 1rem;
+  height: 1rem;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.ia-agent.busy .ia-agent-icon {
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ia-spin 0.9s linear infinite;
+}
+.ia-agent.ready .ia-agent-icon::before {
+  content: "\f00c";
+  color: var(--tip);
+}
+.ia-agent.done .ia-agent-icon::before {
+  content: "\f11e"; /* nf-fa-flag_checkered */
+  color: var(--accent);
+}
+.ia-agent.done {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.ia-agent-msg {
+  grid-column: 2;
+  margin-top: 0.2rem;
+  color: var(--text-2);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@keyframes ia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ia-agent.busy .ia-agent-icon {
+    animation-duration: 3s;
+  }
+}
+
+/* The calm end of a page: the agent said it was done and then stopped its server. Still locked and read-only, but
+   nothing went wrong, so it is not dressed as a warning. */
+.ia-lock.calm {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
 .ia-toast.bad {
   background: var(--danger);
   color: #fff;

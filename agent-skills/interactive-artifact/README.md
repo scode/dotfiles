@@ -5,8 +5,8 @@ changing it.
 
 ## Layout
 
-- `interactive-artifact` is the Deno script: the server, the `wait`, `reply`, and `anchor` commands, the state rules,
-  and their unit tests.
+- `interactive-artifact` is the Deno script: the server, the `wait`, `reply`, `anchor`, and `status` commands, the state
+  rules, and their unit tests.
 - `assets/interactive-artifact.css` and `assets/interactive-artifact.js` are served to the page. The server reads them
   on every request, so edits show up on the next reload without restarting anything.
 - `examples/` holds the pages `SKILL.md` points agents at. `e2e_test.ts` uses `examples/interactive.html`, so changing
