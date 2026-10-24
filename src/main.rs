@@ -97,6 +97,7 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 /// fails CI rather than silently installing for some harnesses only.
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
+    "interactive-artifact",
     "jjstack",
     "persistent-review",
     "scode-agent-delegation",
@@ -604,6 +605,15 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
     .depends_on(&claude_skills_dir)
     .build();
     g.add(
+        "claude-skill-interactive-artifact",
+        PayloadSymlink::new(
+            "agent-skills/interactive-artifact",
+            "~/.claude/skills/interactive-artifact",
+        ),
+    )
+    .depends_on(&claude_skills_dir)
+    .build();
+    g.add(
         "claude-skill-sapling",
         PayloadSymlink::new("agent-skills/sapling", "~/.claude/skills/sapling"),
     )
@@ -880,6 +890,15 @@ fn add_codex_features(g: &mut FeatureGraph) {
     g.add(
         "codex-skill-jjstack",
         PayloadSymlink::new("agent-skills/jjstack", "~/.codex/skills/jjstack"),
+    )
+    .depends_on(&codex_skills_dir)
+    .build();
+    g.add(
+        "codex-skill-interactive-artifact",
+        PayloadSymlink::new(
+            "agent-skills/interactive-artifact",
+            "~/.codex/skills/interactive-artifact",
+        ),
     )
     .depends_on(&codex_skills_dir)
     .build();

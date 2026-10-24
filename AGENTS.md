@@ -115,6 +115,8 @@ The following must all pass before creating a PR or claiming work is done:
 - `cargo clippy -- -D warnings`
 - when anything under `agent-skills/jjstack/` changed, its unit and end-to-end tests (see
   `agent-skills/jjstack/AGENTS.md`)
+- when anything under `agent-skills/interactive-artifact/` changed, its unit and end-to-end tests (see
+  `agent-skills/interactive-artifact/README.md`)
 
 ## Chores
 

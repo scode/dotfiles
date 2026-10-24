@@ -1,0 +1,188 @@
+<h1>Build cache rollout, week 12</h1>
+<p>Where the remote build cache stands after twelve weeks, and the two decisions it needs from you.</p>
+
+<div class="tldr">
+  <p>Cold builds are down from <strong>14.2</strong> to <strong>8.7 minutes</strong> (39%). The remaining cost is
+    almost entirely the <code>proto-gen</code> step, which the cache cannot help with until its outputs are
+    deterministic. I'd like a call on <a href="#open-questions">two open questions</a> before starting phase 3.</p>
+</div>
+
+<h2>What changed this week</h2>
+
+<p>Most of the gain came from <em>finally</em> getting the test fixtures out of the action key. They were hashed
+  as inputs to every test target, so touching one fixture invalidated
+  <strong>all 1,400 test actions</strong> rather than the dozen that read it. Press <kbd>Shift</kbd>+<kbd>M</kbd>
+  on the build dashboard to see the per-target misses: they used to jump in lockstep with fixture edits. The old
+  workaround (<del>pinning fixtures to a release tag</del>) is gone.</p>
+
+<ul>
+  <li>Fixture hashing is now per target, keyed on the files a target actually opens.</li>
+  <li>Cache eviction moved from LRU to size-weighted LRU:
+    <ul>
+      <li>large link outputs are evicted first;</li>
+      <li>small compile outputs, which are the hit-rate workhorses, survive about 3x longer.</li>
+    </ul>
+  </li>
+  <li>CI now uploads on <code>main</code> only. Branch builds read but never write.</li>
+</ul>
+
+<p>The rollout order was:</p>
+
+<ol>
+  <li>Read-only cache for CI.</li>
+  <li>Read-write for <code>main</code>.</li>
+  <li>Read-only for developer machines <span class="badge amber">next</span></li>
+</ol>
+
+<figure class="chart">
+  <span class="chart-title" id="build-chart-title">Median build time</span>
+  <span class="chart-subtitle">Minutes per build, weekly median, weeks 1 to 12. Hover a point for its value.</span>
+  <ul class="legend">
+    <li><span class="key s1"></span>Cold build</li>
+    <li><span class="key s2"></span>Incremental</li>
+  </ul>
+  <svg viewBox="0 0 640 250" role="img" aria-labelledby="build-chart-title">
+    <line class="baseline" x1="36" x2="560" y1="220" y2="220"/>
+    <text class="tick" x="28" y="224" text-anchor="end">0</text>
+    <line class="gridline" x1="36" x2="560" y1="169" y2="169"/>
+    <text class="tick" x="28" y="173" text-anchor="end">4</text>
+    <line class="gridline" x1="36" x2="560" y1="118" y2="118"/>
+    <text class="tick" x="28" y="122" text-anchor="end">8</text>
+    <line class="gridline" x1="36" x2="560" y1="67" y2="67"/>
+    <text class="tick" x="28" y="71" text-anchor="end">12</text>
+    <line class="gridline" x1="36" x2="560" y1="16" y2="16"/>
+    <text class="tick" x="28" y="20" text-anchor="end">16</text>
+    <text class="tick" x="83.6" y="238" text-anchor="middle">W2</text>
+    <text class="tick" x="178.9" y="238" text-anchor="middle">W4</text>
+    <text class="tick" x="274.2" y="238" text-anchor="middle">W6</text>
+    <text class="tick" x="369.5" y="238" text-anchor="middle">W8</text>
+    <text class="tick" x="464.7" y="238" text-anchor="middle">W10</text>
+    <text class="tick" x="560" y="238" text-anchor="middle">W12</text>
+    <path class="line s1" d="M36 39 L83.6 44 L131.3 35.1 L178.9 53 L226.5 61.9 L274.2 55.5 L321.8 77.2 L369.5 82.3 L417.1 97.6 L464.7 93.8 L512.4 104 L560 109.1"/>
+    <g><title>W1 · Cold build: 14.2 min</title><circle class="hit" cx="36" cy="39" r="12"/><circle class="dot s1" cx="36" cy="39" r="0"/></g>
+    <g><title>W2 · Cold build: 13.8 min</title><circle class="hit" cx="83.6" cy="44" r="12"/><circle class="dot s1" cx="83.6" cy="44" r="0"/></g>
+    <g><title>W3 · Cold build: 14.5 min</title><circle class="hit" cx="131.3" cy="35.1" r="12"/><circle class="dot s1" cx="131.3" cy="35.1" r="0"/></g>
+    <g><title>W4 · Cold build: 13.1 min</title><circle class="hit" cx="178.9" cy="53" r="12"/><circle class="dot s1" cx="178.9" cy="53" r="0"/></g>
+    <g><title>W5 · Cold build: 12.4 min</title><circle class="hit" cx="226.5" cy="61.9" r="12"/><circle class="dot s1" cx="226.5" cy="61.9" r="0"/></g>
+    <g><title>W6 · Cold build: 12.9 min</title><circle class="hit" cx="274.2" cy="55.5" r="12"/><circle class="dot s1" cx="274.2" cy="55.5" r="0"/></g>
+    <g><title>W7 · Cold build: 11.2 min</title><circle class="hit" cx="321.8" cy="77.2" r="12"/><circle class="dot s1" cx="321.8" cy="77.2" r="0"/></g>
+    <g><title>W8 · Cold build: 10.8 min</title><circle class="hit" cx="369.5" cy="82.3" r="12"/><circle class="dot s1" cx="369.5" cy="82.3" r="0"/></g>
+    <g><title>W9 · Cold build: 9.6 min</title><circle class="hit" cx="417.1" cy="97.6" r="12"/><circle class="dot s1" cx="417.1" cy="97.6" r="0"/></g>
+    <g><title>W10 · Cold build: 9.9 min</title><circle class="hit" cx="464.7" cy="93.8" r="12"/><circle class="dot s1" cx="464.7" cy="93.8" r="0"/></g>
+    <g><title>W11 · Cold build: 9.1 min</title><circle class="hit" cx="512.4" cy="104" r="12"/><circle class="dot s1" cx="512.4" cy="104" r="0"/></g>
+    <g><title>W12 · Cold build: 8.7 min</title><circle class="hit" cx="560" cy="109.1" r="12"/><circle class="dot s1" cx="560" cy="109.1" r="4"/></g>
+    <text class="label" x="572" y="107.1">8.7 min</text>
+    <text class="label-2" x="572" y="121.1">Cold build</text>
+    <path class="line s2" d="M36 180.5 L83.6 181.8 L131.3 177.9 L178.9 183 L226.5 185.6 L274.2 184.3 L321.8 189.4 L369.5 190.7 L417.1 193.2 L464.7 191.9 L512.4 194.5 L560 195.8"/>
+    <g><title>W1 · Incremental: 3.1 min</title><circle class="hit" cx="36" cy="180.5" r="12"/><circle class="dot s2" cx="36" cy="180.5" r="0"/></g>
+    <g><title>W2 · Incremental: 3.0 min</title><circle class="hit" cx="83.6" cy="181.8" r="12"/><circle class="dot s2" cx="83.6" cy="181.8" r="0"/></g>
+    <g><title>W3 · Incremental: 3.3 min</title><circle class="hit" cx="131.3" cy="177.9" r="12"/><circle class="dot s2" cx="131.3" cy="177.9" r="0"/></g>
+    <g><title>W4 · Incremental: 2.9 min</title><circle class="hit" cx="178.9" cy="183" r="12"/><circle class="dot s2" cx="178.9" cy="183" r="0"/></g>
+    <g><title>W5 · Incremental: 2.7 min</title><circle class="hit" cx="226.5" cy="185.6" r="12"/><circle class="dot s2" cx="226.5" cy="185.6" r="0"/></g>
+    <g><title>W6 · Incremental: 2.8 min</title><circle class="hit" cx="274.2" cy="184.3" r="12"/><circle class="dot s2" cx="274.2" cy="184.3" r="0"/></g>
+    <g><title>W7 · Incremental: 2.4 min</title><circle class="hit" cx="321.8" cy="189.4" r="12"/><circle class="dot s2" cx="321.8" cy="189.4" r="0"/></g>
+    <g><title>W8 · Incremental: 2.3 min</title><circle class="hit" cx="369.5" cy="190.7" r="12"/><circle class="dot s2" cx="369.5" cy="190.7" r="0"/></g>
+    <g><title>W9 · Incremental: 2.1 min</title><circle class="hit" cx="417.1" cy="193.2" r="12"/><circle class="dot s2" cx="417.1" cy="193.2" r="0"/></g>
+    <g><title>W10 · Incremental: 2.2 min</title><circle class="hit" cx="464.7" cy="191.9" r="12"/><circle class="dot s2" cx="464.7" cy="191.9" r="0"/></g>
+    <g><title>W11 · Incremental: 2.0 min</title><circle class="hit" cx="512.4" cy="194.5" r="12"/><circle class="dot s2" cx="512.4" cy="194.5" r="0"/></g>
+    <g><title>W12 · Incremental: 1.9 min</title><circle class="hit" cx="560" cy="195.8" r="12"/><circle class="dot s2" cx="560" cy="195.8" r="4"/></g>
+    <text class="label" x="572" y="193.8">1.9 min</text>
+    <text class="label-2" x="572" y="207.8">Incremental</text>
+  </svg>
+  <details>
+    <summary>Data table</summary>
+    <table>
+      <thead><tr><th>Week</th><th class="num">Cold (min)</th><th class="num">Incremental (min)</th></tr></thead>
+      <tbody>
+        <tr><td>W1</td><td class="num">14.2</td><td class="num">3.1</td></tr>
+        <tr><td>W4</td><td class="num">13.1</td><td class="num">2.9</td></tr>
+        <tr><td>W8</td><td class="num">10.8</td><td class="num">2.3</td></tr>
+        <tr><td>W12</td><td class="num">8.7</td><td class="num">1.9</td></tr>
+      </tbody>
+    </table>
+  </details>
+</figure>
+
+<h2>Where the remaining time goes</h2>
+
+<table>
+  <thead>
+    <tr><th>Step</th><th class="num">Median</th><th class="num">Cache hit</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>proto-gen</code></td><td class="num">3m 40s</td><td class="num">0%</td><td>Embeds a timestamp; never hits</td></tr>
+    <tr><td>Compile</td><td class="num">2m 55s</td><td class="num">91%</td><td>Mostly downloads now</td></tr>
+    <tr><td>Link</td><td class="num">1m 10s</td><td class="num">64%</td><td>Large outputs, evicted early on purpose</td></tr>
+    <tr><td>Test</td><td class="num">55s</td><td class="num">88%</td><td>After the fixture fix</td></tr>
+  </tbody>
+  <caption>Cold build on a clean CI runner, week 12 median.</caption>
+</table>
+
+<p>The <code>proto-gen</code> fix is small. The generator writes the build time into a header comment, which
+  changes the output hash on every run:</p>
+
+<figure class="code">
+  <figcaption>tools/protogen/emit.rs</figcaption>
+  <pre><code><span class="k">fn</span> <span class="f">header</span>(out: &amp;<span class="k">mut</span> Writer) -&gt; io::Result&lt;()&gt; {
+    <span class="c">// Deterministic output is what makes this step cacheable at all.</span>
+    writeln!(out, <span class="s">"// generated by protogen {}"</span>, VERSION)?;
+    writeln!(out, <span class="s">"// do not edit"</span>)?;
+    <span class="f">Ok</span>(())
+}</code></pre>
+</figure>
+
+<blockquote>
+  <p>A cache that hits 90% of the time on the cheap steps and 0% on the expensive one is a cache that saves you
+    nothing where it counts.</p>
+  <cite>From the phase 2 retro</cite>
+</blockquote>
+
+<h3>Checklist for phase 3</h3>
+
+<ul class="tasks">
+  <li><input type="checkbox" checked disabled> Make <code>proto-gen</code> output deterministic</li>
+  <li><input type="checkbox" checked disabled> Size-weighted eviction</li>
+  <li><input type="checkbox" disabled> Developer read-only access behind a flag</li>
+  <li><input type="checkbox" disabled> Dashboard for per-target hit rate</li>
+</ul>
+
+<h3>Terms</h3>
+
+<dl>
+  <dt>Action key</dt>
+  <dd>The hash of an action's command line, environment, and input files. Two actions with the same key are
+    assumed to produce the same outputs.</dd>
+  <dt>Cold build</dt>
+  <dd>A build with an empty local cache. The remote cache may still serve it, which is the whole point.<sup><a
+        href="#fn1" id="ref1">1</a></sup></dd>
+</dl>
+
+<details>
+  <summary>Why not just use a bigger CI runner?</summary>
+  <p>We tried. Going from 16 to 32 cores took the cold build from 14.2 to 11.9 minutes, and the runner costs
+    twice as much. The cache got further for less money, and it also helps developer machines, which a bigger
+    runner never will.</p>
+</details>
+
+<h2 id="open-questions">Open questions</h2>
+
+<ol class="questions">
+  <li>
+    <span class="q">Should developer machines get write access, or read-only?</span>
+    <p>Write access makes the cache warmer for everyone but means trusting outputs from unmanaged machines.</p>
+    <span class="default">Read-only</span>
+  </li>
+  <li>
+    <span class="q">Is a 200 GB cache quota acceptable?</span>
+    <p>At the current eviction rate, 200 GB holds about two weeks of compile outputs.</p>
+    <span class="default">Yes, revisit at week 16</span>
+  </li>
+</ol>
+
+<hr>
+
+<p><small id="fn1"><sup>1</sup> On developer machines the local disk cache is still consulted first, so "cold"
+    there means both are empty. <a href="#ref1">Back</a></small></p>
+
+<p class="muted">Nerd Font glyphs render in monospace text: <code><span class="icon">&#xe0a0;</span> main</code>
+  <code><span class="icon">&#xf07c;</span> src/</code> <code><span class="icon">&#xf0e7;</span> fast path</code></p>
