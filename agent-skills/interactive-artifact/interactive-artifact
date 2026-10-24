@@ -17,13 +17,15 @@
  *   busy and no `wait` is running.
  * - `reply` posts the agent's answer (and optionally a resolution) to one or more threads through the running
  *   server, which is the only writer of the state file. `anchor` goes the same way, to point an open comment at new
- *   text after the agent rewrote the text it was on.
+ *   text after the agent rewrote the text it was on, and so does `status`, which tells the page whether the agent is
+ *   updating it or done with it (`wait` itself reports when it starts and when it hands over a submission).
  *
  * Usage:
  *   interactive-artifact serve PAGE.html [--port 0] [--ttl 4h] [--title TEXT]
  *   interactive-artifact wait PAGE.html [--json] [--timeout 0]
  *   interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
  *   interactive-artifact anchor PAGE.html ID --file PATH
+ *   interactive-artifact status PAGE.html working|done [--file PATH]
  */
 import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
 import { serveDir } from "jsr:@std/http@1.1.4/file-server";
@@ -40,7 +42,7 @@ const ROUTE = `/${API}`;
 /** Every API call by method and name. All of them are sealed both ways; see "Message encryption". */
 // deno-fmt-ignore
 const API_CALLS = new Set([
-  "GET version", "GET state", "PUT state", "POST id", "POST submit", "POST agent", "POST anchor",
+  "GET version", "GET state", "PUT state", "POST id", "POST submit", "POST agent", "POST anchor", "POST status",
 ]);
 // deno-fmt-ignore
 const ASSETS = new Map([
@@ -109,7 +111,17 @@ type State = {
   picks: Record<string, Pick>;
   /** Canonical form of each pick at the last submit; a pick whose canonical form differs is pending. */
   picksSent: Record<string, string>;
+  /** What the agent is doing about the user's latest submission, shown on the page; see applyStatus. */
+  status: AgentStatus;
 };
+
+/**
+ * The agent's side of the conversation, as the page shows it. After a submit: `sent` until `wait` hands the submission
+ * to the agent, then `thinking`. From there the agent either says `working` (it is updating the page) and later starts
+ * `wait` again, which shows as `ready`, or says `done` (it is finished with the page; the user goes back to the chat).
+ * `message` is an optional line from the agent shown with it.
+ */
+type AgentStatus = { state: "idle" | "sent" | "thinking" | "working" | "ready" | "done"; message: string };
 
 type SubmissionItem = {
   id: string;
@@ -133,7 +145,16 @@ type Submission = {
 };
 
 function emptyState(): State {
-  return { rev: 0, idFloor: 0, submissions: 0, note: "", annotations: [], picks: {}, picksSent: {} };
+  return {
+    rev: 0,
+    idFloor: 0,
+    submissions: 0,
+    note: "",
+    annotations: [],
+    picks: {},
+    picksSent: {},
+    status: { state: "idle", message: "" },
+  };
 }
 
 /**
@@ -288,6 +309,29 @@ export function takeSubmission(
   state.submissions += 1;
   state.rev += 1;
   return { seq: state.submissions, page, at: at.toISOString(), note, items, withdrawn, picks };
+}
+
+/**
+ * Apply a status report from the agent's side. `listening` is what `wait` sends when it starts: the agent is ready for
+ * more, which is news only after it has been reading or working (or had said it was done and changed its mind);
+ * otherwise, say before anything was submitted, nothing changes. The other states come from `wait` itself (`thinking`)
+ * or from the agent (`working`, `done`). Returns whether the shown status changed.
+ */
+export function applyStatus(state: State, report: string, message: string): boolean {
+  const cur = state.status ?? { state: "idle", message: "" };
+  let next: AgentStatus;
+  if (report === "listening") {
+    if (!["thinking", "working", "done"].includes(cur.state)) return false;
+    next = { state: "ready", message: "" };
+  } else if (report === "thinking" || report === "working" || report === "done") {
+    next = { state: report, message };
+  } else {
+    return false;
+  }
+  if (next.state === cur.state && next.message === cur.message) return false;
+  state.status = next;
+  state.rev += 1;
+  return true;
 }
 
 /**
@@ -743,6 +787,9 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
   // A crash between writing a submission and saving the state leaves the counter behind the files on disk; going
   // from the files keeps a new submission from overwriting one that `wait` has already consumed and would skip.
   state.submissions = Math.max(state.submissions, ...await submissionNumbers(dir));
+  // A status from an earlier server says nothing about this one: a stale "done" would tell the user to leave, and a
+  // stale "working" would never clear.
+  state.status = { state: "idle", message: "" };
 
   // All file writes go through one chain so a slow write can never land after a newer one. Each caller gets its
   // own write's outcome, while the chain itself swallows failures; otherwise one failed write would reject every
@@ -808,6 +855,7 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
         // and the worst case is the same items showing as unsent again.
         await enqueue(join(dir, "submissions", `${String(sub.seq).padStart(6, "0")}.json`), JSON.stringify(sub));
         Object.assign(state, next);
+        state.status = { state: "sent", message: "" };
         console.error(`interactive-artifact: submission ${sub.seq} received`);
         // The submission reached the agent, so this answers success even if saving the state fails; an error here
         // would make the tab keep the note and send it again. The in-memory state is right and the next save
@@ -825,6 +873,12 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
         }
         await persist();
         return [200, { ok: true }];
+      }
+      case "POST status": {
+        const report = str(body?.state, 20);
+        if (!["listening", "thinking", "working", "done"].includes(report)) return [400, `unknown status: ${report}`];
+        if (applyStatus(state, report, str(body?.message, 500))) await persist();
+        return [200, { status: state.status }];
       }
       case "POST anchor": {
         if (!applyAnchor(state, str(body?.id, 16), str(body?.quote))) {
@@ -1000,6 +1054,9 @@ async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }
   // no server.json, and that alone is not a reason to give up. The cost is that `wait` on a page whose server has
   // already stopped cleanly (which also removes server.json) takes this long to say so.
   const graceUntil = Date.now() + 5_000;
+  // Waiting is the agent saying it is ready for more; the page shows that once the agent has been busy. Reported once a
+  // live server is found, not before the loop, so a `wait` started just ahead of its `serve` still gets it across.
+  let reported = false;
   while (true) {
     const consumed = Number((await Deno.readTextFile(join(dir, "consumed")).catch(() => "0")).trim()) || 0;
     const fresh = (await submissionNumbers(dir)).filter((n) => n > consumed);
@@ -1012,6 +1069,8 @@ async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }
         opts.json ? JSON.stringify(subs, null, 2) : subs.map((s) => formatSubmission(s, pagePath)).join("\n\n"),
       );
       await writeAtomic(join(dir, "consumed"), String(fresh[fresh.length - 1]));
+      // The agent has the submission now; the page tells the user it is being read.
+      await reportStatus(pagePath, "thinking");
       return 0;
     }
     if (!(await liveServer(dir))) {
@@ -1027,6 +1086,10 @@ async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }
         `interactive-artifact: no server is running for ${pagePath}; start one with: interactive-artifact serve ${pagePath}`,
       );
       return 4;
+    }
+    if (!reported) {
+      reported = true;
+      await reportStatus(pagePath, "listening");
     }
     if (Date.now() > deadline) {
       console.error("interactive-artifact: timed out with no submission");
@@ -1055,7 +1118,13 @@ export function isLocalServerUrl(text: string): boolean {
  * right server safely lives here: no proxies, the private-directory checks, the exact URL shape, no redirects, a
  * timeout, and refusing an answer that does not open under the key.
  */
-async function agentCall(pagePath: string, name: "agent" | "anchor", body: unknown): Promise<number> {
+async function agentCall(
+  pagePath: string,
+  name: "agent" | "anchor" | "status",
+  body: unknown,
+  log: (msg: string) => void = console.error,
+  timeoutMs = 10_000,
+): Promise<number> {
   // Deno's fetch honours proxy variables even for 127.0.0.1, and a proxy would see the tokened URL. Browsers never
   // proxy loopback; this command must not either.
   for (const v of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) {
@@ -1064,15 +1133,11 @@ async function agentCall(pagePath: string, name: "agent" | "anchor", body: unkno
   await assertPrivateDirs(pagePath);
   const info = await liveServer(stateDir(pagePath));
   if (!info) {
-    console.error(
-      `interactive-artifact: no server is running for ${pagePath}; replies and anchors go through the server`,
-    );
+    log(`interactive-artifact: no server is running for ${pagePath}; replies and status updates go through the server`);
     return 4;
   }
   if (!isLocalServerUrl(info.url)) {
-    console.error(
-      "interactive-artifact: server.json names a server that is not on 127.0.0.1; refusing to send anything there",
-    );
+    log("interactive-artifact: server.json names a server that is not on 127.0.0.1; refusing to send anything there");
     return 1;
   }
   const key = await importKey(fromB64(info.key));
@@ -1081,10 +1146,10 @@ async function agentCall(pagePath: string, name: "agent" | "anchor", body: unkno
     headers: { "content-type": "application/json", "x-interactive-artifact": "agent" },
     body: JSON.stringify(await seal(key, `POST ${name}`, body)),
     // A port holder that accepts and never answers must not hang the agent, nor redirect it anywhere.
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(timeoutMs),
     redirect: "error",
   }).catch((e) => {
-    console.error(`interactive-artifact: could not reach the server: ${e.message}`);
+    log(`interactive-artifact: could not reach the server: ${e.message}`);
     return null;
   });
   if (!res) return 1;
@@ -1094,16 +1159,23 @@ async function agentCall(pagePath: string, name: "agent" | "anchor", body: unkno
     | { status: number; data: unknown }
     | null;
   if (!reply) {
-    console.error(
-      "interactive-artifact: the server's answer could not be verified; the server on that port is not ours",
-    );
+    log("interactive-artifact: the server's answer could not be verified; the server on that port is not ours");
     return 1;
   }
   if (reply.status !== 200) {
-    console.error(`interactive-artifact: ${reply.data}`);
+    log(`interactive-artifact: ${reply.data}`);
     return 1;
   }
   return 0;
+}
+
+/**
+ * Tell the page what the agent's side is doing, from `wait`. Best effort: a page without a live server has no one to
+ * tell.
+ */
+function reportStatus(pagePath: string, state: "listening" | "thinking"): Promise<number> {
+  // Short timeout: this is a courtesy to the page and must not hold up `wait` itself, before or after its real work.
+  return agentCall(pagePath, "status", { state }, () => {}, 2_000);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1114,7 +1186,8 @@ const USAGE = `usage:
   interactive-artifact serve PAGE.html [--port 0] [--ttl 4h|0] [--title TEXT]
   interactive-artifact wait PAGE.html [--json] [--timeout 0]
   interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
-  interactive-artifact anchor PAGE.html ID --file PATH`;
+  interactive-artifact anchor PAGE.html ID --file PATH
+  interactive-artifact status PAGE.html working|done [--file PATH]`;
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
@@ -1164,6 +1237,17 @@ if (import.meta.main) {
     });
   } else if (cmd === "wait" && !rest.length) {
     Deno.exit(await wait(pagePath, { json: args.json, timeoutMs: duration("timeout", args.timeout) }));
+  } else if (
+    cmd === "status" && rest.length === 1 && ["working", "done"].includes(rest[0]) &&
+    !args.text && !args.stdin && !args.resolve
+  ) {
+    // The optional message is agent text shown on the page, so it comes from a file like a reply does.
+    const message = args.file ? (await Deno.readTextFile(args.file)).trim() : "";
+    if (message.length > 500) {
+      console.error(`interactive-artifact: the status message is ${message.length} characters; the limit is 500`);
+      Deno.exit(2);
+    }
+    Deno.exit(await agentCall(pagePath, "status", { state: rest[0], message }));
   } else if (cmd === "anchor" && rest.length === 1 && args.file && !args.text && !args.stdin && !args.resolve) {
     // Page text, so it comes from a file like a reply does, never from the command line.
     const quote = (await Deno.readTextFile(args.file)).trim();
@@ -1412,6 +1496,18 @@ Deno.test("takeSubmission reports only pickers on the current page when the tab 
   // The unreported answer stays pending, so it is reported once its picker is back on the page.
   const later = takeSubmission(st, "", "/p.html", new Date(0), ["old", "now"])!;
   assertEquals(later.picks.map((p) => [p.id, p.changed]), [["old", true], ["now", false]]);
+});
+
+/** The status is all the user sees of the agent between submits, so each step must land where it should. */
+Deno.test("applyStatus: listening means ready only after the agent was busy; reports set state and message", () => {
+  const st = emptyState();
+  assertEquals([applyStatus(st, "listening", ""), st.status.state], [false, "idle"]);
+  assertEquals([applyStatus(st, "thinking", ""), st.status.state], [true, "thinking"]);
+  assertEquals([applyStatus(st, "working", "on it"), st.status], [true, { state: "working", message: "on it" }]);
+  assertEquals([applyStatus(st, "listening", ""), st.status.state], [true, "ready"]);
+  assertEquals(applyStatus(st, "listening", ""), false);
+  assertEquals([applyStatus(st, "done", "bye"), st.status.state], [true, "done"]);
+  assertEquals(applyStatus(st, "bogus", ""), false);
 });
 
 /** Server-side ids are what keep two tabs from minting the same id and overwriting each other's annotation. */

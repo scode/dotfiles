@@ -95,12 +95,12 @@ request.
   only when a file is created.
 - **Content never goes on a command line.** Command lines are visible to every local user (`ps`, and `/proc` unless it
   is mounted with `hidepid`). The only things interactive-artifact's commands take as arguments are paths, annotation
-  ids, and options. `reply --file PATH` reads the reply text from a file (as `anchor --file` does the quote), and
-  `SKILL.md` tells agents to write that file, and the page, with their harness's file tool. A heredoc is not enough:
-  harnesses run a shell command as `bash -c '<the whole command>'`, so the heredoc body is on that bash's command line.
-  `reply --stdin` and `--text TEXT`, and `serve --title TEXT`, still exist, for text that is not sensitive, and
-  `SKILL.md` says so. It also tells agents never to open the URL with a command (`xdg-open` and the like), since the
-  token would then be on a command line.
+  ids, and options. `reply --file PATH` reads the reply text from a file (as `anchor --file` does the quote, and `status
+  --file` the agent's message), and `SKILL.md` tells agents to write that file, and the page, with their harness's file
+  tool. A heredoc is not enough: harnesses run a shell command as `bash -c '<the whole command>'`, so the heredoc body
+  is on that bash's command line. `reply --stdin` and `--text TEXT`, and `serve --title TEXT`, still exist, for text
+  that is not sensitive, and `SKILL.md` says so. It also tells agents never to open the URL with a command (`xdg-open`
+  and the like), since the token would then be on a command line.
 - **`reply` ignores proxy settings and refuses redirects.** Deno's fetch would otherwise send the tokened URL through
   `HTTP_PROXY` and its relatives even for `127.0.0.1`, so `reply` drops them before connecting. Browsers never proxy
   loopback. Neither `reply` nor the page follows a redirect from the API.

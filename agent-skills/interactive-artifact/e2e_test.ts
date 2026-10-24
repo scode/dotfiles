@@ -267,7 +267,8 @@ Deno.test({
     const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-e2e-" });
     const pagePath = join(dir, "page.html");
     await Deno.copyFile(EXAMPLE, pagePath);
-    const { url, server } = await startServer(pagePath);
+    // Reassigned once, when the test restarts the server for the same page.
+    let { url, server } = await startServer(pagePath);
     const browser = await chromium.launch({ executablePath: chrome });
     try {
       const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
@@ -330,7 +331,11 @@ Deno.test({
       assertEquals(await sqlite.getAttribute("aria-pressed"), "true");
       assertEquals(await page.inputValue('[data-pick="rollout"] .ia-pick-text'), "one week of shadow is enough");
 
+      // The status pill follows the agent's side: sent at once, reading once `wait` hands the submission over,
+      // working once the agent says so, and ready again when it next waits.
+      const pill = page.locator(".ia-agent");
       await page.click(".ia-send");
+      await pill.filter({ hasText: "Waiting for the agent" }).waitFor();
       // Exact match: hasText is a case-insensitive substring match, and "Sent" also matches "Unsent reply".
       await page.locator(".ia-status", { hasText: /^Sent$/ }).nth(1).waitFor();
       const first = await cli("wait", pagePath, "--timeout", "5s");
@@ -345,8 +350,23 @@ Deno.test({
           "> noticeably",
         ]
       ) assertStringIncludes(first.out, want);
+      await pill.filter({ hasText: "reading your submission" }).waitFor();
+      assertEquals((await cli("status", pagePath, "working")).code, 0);
+      await pill.filter({ hasText: "working on your submission" }).waitFor();
+      // In a narrow window the status box must not cover the Submit dock: it wraps above it instead.
+      await page.setViewportSize({ width: 720, height: 900 });
+      await page.click(".ia-launch");
+      const sendIsOnTop = await page.evaluate(() => {
+        const b = document.querySelector(".ia-send")!.getBoundingClientRect();
+        return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest(".ia-send");
+      });
+      assertEquals(sendIsOnTop, true);
+      await page.keyboard.press("Escape");
+      await page.locator(".ia-note").blur();
+      await page.setViewportSize({ width: 1360, height: 900 });
       // Consumed submissions are not handed out twice.
       assertEquals((await cli("wait", pagePath, "--timeout", "1s")).code, 3);
+      await pill.filter({ hasText: "ready for your next submission" }).waitFor();
 
       // Typing into a card right after a submit, with no reload in between, must still count and be saved. An
       // earlier version swapped the annotation objects on submit and left every card editing a dead copy.
@@ -401,6 +421,23 @@ Deno.test({
       assertEquals(second.out.includes(sg), false);
 
       assertEquals(errors, []);
+
+      // The agent says it is done, with a message, and stops its server. The tab ends on a calm note rather than the
+      // impostor warning, read-only like any locked tab.
+      await Deno.writeTextFile(join(dir, "status.txt"), "Shipping option A; details in the chat.\n");
+      assertEquals((await cli("status", pagePath, "done", "--file", join(dir, "status.txt"))).code, 0);
+      await pill.filter({ hasText: "done with this page" }).filter({ hasText: "Shipping option A" }).waitFor();
+      server.kill("SIGTERM");
+      await server.status;
+      await page.locator(".ia-lock.calm", { hasText: "This page is finished" }).waitFor();
+
+      // A new server for the same page brings back everything the old tab saved, under a new link. The port takeover
+      // check below runs on that fresh tab.
+      ({ url, server } = await startServer(pagePath));
+      await page.goto(url);
+      await page.locator(`.ia-card[data-id="${c}"] .ia-msg.agent`).first().waitFor();
+      // The old server's "done" is not carried over: it would tell the user to leave a page the agent just reopened.
+      assertEquals(await pill.isVisible(), false);
 
       // Port takeover: the server exits and something else binds its port at once. The tab must lock, must not
       // reload into the impostor's page, and must never hand it anything readable, even as the user keeps typing.
