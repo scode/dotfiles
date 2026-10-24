@@ -2,7 +2,7 @@
 /// <reference lib="deno.ns" />
 /**
  * End-to-end test of an interactive-artifact page in a real browser: the server, the browser client, and the `wait` and
- * `reply` commands together. The unit tests in `interactive-artifact` cover the state rules; this covers what only a
+ * `reply` commands together. The unit tests in `interactive-artifact.ts` cover the state rules; this covers what only a
  * browser shows, such as text anchoring, focus surviving card layout, picks surviving a reload, and live updates.
  *
  * The browser test needs Chrome or Chromium. It looks in `$CHROME` and the usual install paths, and skips when

@@ -16,21 +16,26 @@ the same time.
 
 ## Optional Compiled Skill Helpers
 
-`build-helpers [--target DENO_TARGET]` builds only `persistent-review/evidence.ts` and does not construct or execute the
-installation feature graph. It rejects the install-only `--show-status` option. The default target matches the build
-host; explicit targets are Linux GNU x64/ARM64 and macOS x64/ARM64. CentOS Stream 9 and newer are the intended Linux
-baseline, not a separate compiler target or a claim that Ubuntu-only testing verifies CentOS.
+`build-helpers [--target DENO_TARGET]` builds the compiled helpers, `persistent-review/evidence.ts` and
+`interactive-artifact/interactive-artifact.ts`, and does not construct or execute the installation feature graph. A
+helper that fails to build keeps its previous binary and does not stop the others; the command fails if any did. It
+rejects the install-only `--show-status` option. The default target matches the build host; explicit targets are Linux
+GNU x64/ARM64 and macOS x64/ARM64. CentOS Stream 9 and newer are the intended Linux baseline, not a separate compiler
+target or a claim that Ubuntu-only testing verifies CentOS.
 
-Generated executables live under the Git-ignored `agent-skills/persistent-review/bin/<platform>/evidence`, inside the
-already-installed skill directory. Installation and uninstallation continue to manage that directory's symlink as a
-whole, without building, copying, or registering generated files individually. Copying skills to another machine must
-include the generated binary directory when compiled execution is wanted.
+Generated executables live under each skill's Git-ignored `bin/<platform>/`
+(`agent-skills/persistent-review/bin/<platform>/evidence` and
+`agent-skills/interactive-artifact/bin/<platform>/interactive-artifact`), inside the already-installed skill directory.
+Installation and uninstallation continue to manage that directory's symlink as a whole, without building, copying, or
+registering generated files individually. Copying skills to another machine must include the generated binary directory
+when compiled execution is wanted.
 
-The committed POSIX `evidence` launcher selects a matching binary by operating system and architecture. Only an absent
-matching artifact permits Deno source fallback. A dangling symlink, nonexecutable or broken binary, stale executable, or
-failed helper invocation never causes a second source invocation. If neither a matching binary nor Deno exists, the
-launcher exits nonzero with a build-before-copying diagnostic. Source fallback ignores ambient Deno configuration and
-lockfiles so the caller's project cannot change the helper's module resolution.
+Each skill's committed POSIX launcher (`evidence`, `interactive-artifact`), named like the binary, selects a matching
+binary by operating system and architecture; the launchers follow identical rules. Only an absent matching artifact
+permits Deno source fallback. A dangling symlink, nonexecutable or broken binary, stale executable, or failed helper
+invocation never causes a second source invocation. If neither a matching binary nor Deno exists, the launcher exits
+nonzero with a build-before-copying diagnostic. Source fallback ignores ambient Deno configuration and lockfiles so the
+caller's project cannot change the helper's module resolution.
 
 Installed skill-directory symlinks are resolved physically. Symlinks at `bin`, `bin/<platform>`, or the selected
 executable are rejected so a binary cannot validate source from another tree. Builds likewise refuse linked output
@@ -38,10 +43,13 @@ directories.
 
 Builds compile an isolated snapshot with its SHA-256 embedded in a generated entrypoint. They publish by same-filesystem
 rename only after successful compilation and confirmation that the checkout source still matches the snapshot. Failure
-preserves any prior binary. At startup, the compiled entrypoint checks the external `evidence.ts` relative to its own
-deployed executable path before importing the helper or executing a command; missing, unreadable, or different source
-exits nonzero with no command output. Freshness is checked at startup, not locked against later concurrent edits. It
-detects accidental source/binary drift, not malicious replacement of either artifact.
+preserves any prior binary. At startup, the compiled entrypoint checks the helper's external source (`evidence.ts`,
+`interactive-artifact.ts`) relative to its own deployed executable path before importing the helper or executing a
+command; missing, unreadable, or different source exits nonzero with no command output. Freshness is checked at startup,
+not locked against later concurrent edits. It detects accidental source/binary drift, not malicious replacement of
+either artifact. The interactive-artifact entrypoint also passes the skill directory, derived from the same executable
+path, to the helper, which reads the page's CSS and JS from `assets/` there at run time; those files are not compiled in
+and not covered by the digest.
 
 ## Installer Status Output
 

@@ -14,17 +14,21 @@ cargo run -p dotfiles -- uninstall
 ```
 
 Before copying skills to a Linux x64 host without Deno, run `cargo run -- build-helpers --target
-x86_64-unknown-linux-gnu`. This builds only the `persistent-review` helper, under
-`agent-skills/persistent-review/bin/linux-x64/evidence`. The directory is Git-ignored; copy it with the rest of the
-skill. Omit `--target` to build for the current host. Linux ARM64 and both macOS architectures are also supported.
+x86_64-unknown-linux-gnu`. This builds the `persistent-review` and `interactive-artifact` helpers, under each skill's
+`bin/linux-x64/` (`agent-skills/persistent-review/bin/linux-x64/evidence` and
+`agent-skills/interactive-artifact/bin/linux-x64/interactive-artifact`). Those directories are Git-ignored; copy them
+with the rest of each skill. Omit `--target` to build for the current host. Linux ARM64 and both macOS architectures are
+also supported.
 
-The skill uses its `evidence` shell launcher everywhere. It prefers a matching compiled helper, otherwise runs
-`evidence.ts` with Deno. A compiled helper refuses to run if its neighboring source changed or is missing: rebuild
-before copying the skill again. Broken executables fail rather than falling back. Ordinary installation does not build
-helpers.
+Each of these skills runs through its shell launcher everywhere (`evidence` for persistent-review,
+`interactive-artifact` for interactive-artifact). The launcher prefers a matching compiled helper, otherwise runs the
+skill's TypeScript source (`evidence.ts`, `interactive-artifact.ts`) with Deno. A compiled helper refuses to run if its
+neighboring source changed or is missing: rebuild before copying the skill again. Broken executables fail rather than
+falling back. Ordinary installation does not build helpers.
 
-The existing Linux CI job runs the source tests and a real helper build with startup freshness checks. Native macOS
-builds can be checked locally with `cargo test --test helper_launcher -- --ignored`.
+The existing Linux CI job runs both helpers' source unit tests and a real build of both helpers with startup freshness
+checks. The interactive-artifact browser tests are not part of CI. Native macOS builds can be checked locally with
+`cargo test --test helper_launcher -- --ignored`.
 
 Most install targets are intentionally conditional. Zed files are installed only when `~/.config/zed` already exists.
 Claude/Codex dot-directory files are installed only when `~/.claude` or `~/.codex` already exists. Agent skills are also

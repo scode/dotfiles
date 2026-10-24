@@ -4,6 +4,7 @@
 
 # Optional compiled skill helpers
 /agent-skills/persistent-review/bin/
+/agent-skills/interactive-artifact/bin/
 
 # Manual skill eval artifacts
 /eval-runs/

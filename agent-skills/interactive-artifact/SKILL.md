@@ -16,7 +16,10 @@ suggestions on the page and edit the page itself; the open tab follows along.
 
 ## Running a page
 
-`<skill-dir>/interactive-artifact` is the script; call it by absolute path.
+`<skill-dir>/interactive-artifact` is the command; call it by absolute path. It runs a compiled build of the skill when
+one exists for this machine and otherwise needs Deno. If it refuses with "Rebuild helpers", the compiled build is out of
+date: tell the user, who either rebuilds it with `cargo run -- build-helpers` in their dotfiles checkout or deletes the
+skill's `bin/` directory to go back to running from source.
 
 1. Make a fresh directory for the page with `mktemp -d`. The server refuses a directory that other users can access,
    serves every other file in it (that is how `<img src="shot.png">` works), and keeps its state in a
