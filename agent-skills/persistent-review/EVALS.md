@@ -31,6 +31,9 @@ Inspect the outcome independently:
 - Did every reviewer prompt tell the reviewer to read source itself rather than through subagents, while still allowing
   subagents for tests or builds? If a reviewer used a subagent to read anyway, did the parent treat those ranges as
   missing rather than delivered?
+- Did every initial and continuation prompt direct validation through source and contracts without reproducing bugs or
+  writing reproductions unless explicitly requested? A finding supported by source must not be rejected merely because
+  it was not executed, and reports must distinguish source analysis from observed execution.
 - Give an early planted defect and later source reads: was its finding appended before those later reads, rather than
   buffered to the turn boundary? Can the parent see the finding/count from artifacts while reviews are still running?
 - Do semantic groups run concurrently, with disjoint logs, genuine capacity constraints recorded, and observed counts
