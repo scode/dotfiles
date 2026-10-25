@@ -31,34 +31,49 @@ are assumed not to be writable by other users; they decide what runs, and the se
 
 ### What the skill guarantees
 
-- **The server answers only under a secret path.** Each `serve` start draws a fresh 128-bit random token, and every
-  page, asset, API endpoint, and sibling file lives under `/<token>/`. Any other request gets the same plain `404 not
-  found`, whatever its method, headers, or Host. The token check runs before anything else, so a probe cannot tell a
-  wrong token from a missing file or a refused write. The comparison does not exit early on the first mismatched
-  character.
+- **The server answers only under secret paths.** Each `serve` start draws independent random 128-bit tokens for the
+  initial page and sibling files, and for the encrypted API. The initial HTML carries the API path; reconnect traffic
+  never carries the file token. Neither token authorizes the other's routes. Any other request gets the same plain `404
+  not found`, whatever its method, headers, or Host. Token checks run before anything else, so a probe cannot tell a
+  wrong token from a missing file or a refused write. Comparisons do not exit early on the first mismatched character.
 - **The token never appears where other users can see it.** It is not on any command line. It is printed once on
-  `serve`'s stdout and stored in `.interactive-artifact/<page>/server.json` for `reply` to find.
-- **API messages are sealed with a second per-server secret.** Each `serve` start also draws a random 256-bit key. Every
-  API request and response, between the page and the server and between `reply` and the server, is sealed with
-  AES-256-GCM under it, with a fresh random 96-bit IV per message. GCM both encrypts and authenticates, so there is no
-  separate MAC. The additional data names the direction and the call (`POST submit`, `response GET state`), so a message
-  cannot be replayed as a response or moved to another endpoint. Response statuses travel inside the sealed payload, so
-  errors cannot be forged either. The server refuses unsealed or unopenable requests with a 400, even when they carry
-  the token.
+  `serve`'s stdout and stored, along with the separate API URL, in `.interactive-artifact/<page>/server.json` for
+  `reply` to find.
+- **API messages use a per-server encryption key.** Each `serve` start also draws a random 256-bit key. Every API
+  request and response, between the page and the server and between `reply` and the server, is sealed with AES-256-GCM
+  under it, with a fresh random 96-bit IV per message. GCM both encrypts and authenticates, so there is no separate MAC.
+  Requests carry an encrypted random client id and an increasing sequence number. The additional data names the
+  direction and call, and responses also bind the client id and sequence number, so a recorded response cannot answer a
+  fresh call or move to another endpoint. GET requests carry their envelope in the `x-interactive-artifact` header.
+  Response statuses travel inside the sealed payload, so errors cannot be forged either. The server refuses unsealed or
+  unopenable requests with a 400, even when they carry the token.
 - **The key is never sent where an impostor could see it.** It reaches the browser inside the page HTML, and `reply`
-  through `server.json`. Requests never carry it. That is why it is separate from the URL token: an impostor that takes
-  the port receives the token in every request path, but never the key.
-- **The tab locks itself rather than trust an unverified server.** The first API response that does not open under the
-  key, a refused connection, or a request with no answer within 10 seconds, locks the tab for good. It turns read-only
-  (so nothing typed afterwards can look saved), stops polling, saving, and submitting, and a banner tells the user not
-  to reload and to ask the agent for a new link. Server-side failures are answered sealed, so they show as errors rather
-  than tripping the lock. A locked tab does not reload itself. The automatic reload is triggered only by an
-  authenticated version response, and the tab checks again after the save that precedes the reload, since that save can
-  be what discovers the server is gone. `reply` likewise refuses a response it cannot open.
-- **A lock burns the token.** Whatever the tab reached instead of the server saw requests carrying the URL token, so the
-  token must be assumed known even if the real server is still running (a dropped ssh tunnel lets another user catch one
-  request on the local port and then let go). `SKILL.md` therefore tells agents to answer any lock by starting a new
-  server, which draws a new token and key, rather than having the user reload.
+  through `server.json`. Requests never carry it. **The server delivers the initial HTML exactly once**, claiming that
+  delivery before any asynchronous work. Both `/` and `/index.html` spend the same allowance; HEAD and other methods
+  cannot spend it. Later requests get 410, including after a failed initial delivery. Someone who learns the URL token
+  from an already loaded tab's traffic cannot fetch its key from the real server. A broken initial load, a manual
+  reload, or a second tab needs a new server and link.
+- **A loaded tab never fetches its executable shell again.** The initial response includes the skill's JavaScript and
+  CSS inline. Live edits arrive as encrypted, authenticated fragments through `GET page` and replace only the page
+  content inside the original document. Cards, drafts, note text, and the connection key stay in memory. The source page
+  is not available through the ordinary sibling-file route.
+- **Editing waits for the first state load.** The page, comments, and Submit dock stay inactive while saved answers
+  load, including through connection failures and authenticated server errors. A successful request alone does not
+  enable editing: the tab must first adopt and render that initial state, so its replacement cannot erase an edit made
+  while loading. A loading banner explains the pause.
+- **Connection failures reconnect; failed verification locks.** A refused connection or a ten-second timeout (including
+  while reading the body) shows a reconnecting banner and temporarily freezes edits. The tab retains unsaved work and
+  retries the same call with delays of one, two, four, then five seconds, capped at five seconds. Only a verified
+  response restores editing. It does not navigate, fetch a new key, or fall back to plaintext. A response that does not
+  open under the original key and this call's identity locks the tab permanently, stops traffic, and tells the user to
+  ask for a new link without reloading. Authenticated server errors show as errors. A connection failure after the
+  agent's authenticated `done` status instead ends the page calmly. `reply` refuses unverified responses too.
+- **Retries do not repeat operations.** Each browser serializes its API calls. The server keeps the last request and
+  answer for each client, returning a snapshot of that answer on an identical retry without repeating the action. Older,
+  changed, or out-of-order requests are refused. Entries last until server exit, with a limit of 1024 clients (each CLI
+  invocation counts as a new client); new clients are refused at capacity rather than evicting replay protection. An
+  outage never advances the browser's sequence until it receives an answer. A locked tab still needs a new server and
+  link: its token may have reached another listener, and a reload could load that listener's code.
 - **Pages work only in a secure context.** The browser offers Web Crypto only on pages it treats as secure.
   `http://127.0.0.1` and `http://localhost` qualify, including through an `ssh -L` tunnel; a LAN address would not,
   which is one reason the server has no option to listen on one. Without Web Crypto the page locks instead of falling
@@ -107,7 +122,8 @@ are assumed not to be writable by other users; they decide what runs, and the se
 - **`wait` and `reply` check the state directory before trusting it.** They read files that decide what the agent
   believes the user said (`submissions/`) and where its replies go (`server.json`), so they run the same ownership and
   mode checks as `serve` and refuse a directory another user could have planted files in. `reply` also refuses a
-  `server.json` whose URL is not exactly the shape `serve` writes (http, `127.0.0.1`, no user info, a token path).
+  `server.json` whose page and API URLs are not exactly the shape `serve` writes (http, `127.0.0.1`, no user info, a
+  token path), or whose origins differ.
 - **Served files are never sniffed into HTML, and never run on the page's origin.** Files from the page's directory go
   out with `Content-Security-Policy: sandbox`, so an HTML, SVG, XHTML, or XML file there runs in an opaque origin and
   cannot reach the key. They also carry `X-Content-Type-Options: nosniff`, and a file with no recognized type as
@@ -127,7 +143,7 @@ are assumed not to be writable by other users; they decide what runs, and the se
 
 Plain HTTP has no way to authenticate the page itself, only the messages after it. If the server has exited and another
 local user has bound its port, then reloading the tab by hand, or opening the old URL again, loads whatever that user
-serves. They learned the token from the tab's requests, so the URL works for them. Their page could look like the
+serves. An impostor can answer any path, even without knowing the original page token. Their page could look like the
 original and collect whatever the user types into it.
 
 The damage can outlast that page. `127.0.0.1` is a secure context, so the impostor's page can register a service worker
@@ -138,9 +154,9 @@ rewrite the page and remove that check. Ports normally differ between servers, w
 that reuses the server's own random port rather than a fixed one, and makes ssh fail when that port is taken.
 
 This is accepted. Closing it would take TLS with a certificate the browser trusts, which a short-lived local server
-cannot provide without much more machinery than the risk justifies. To be exposed, the user has to keep using a page
-after the agent has finished with it, and the locked tab's banner tells them not to reload. The automatic reload is not
-part of this risk, because it happens only on an authenticated signal from the real server.
+cannot provide without much more machinery than the risk justifies. Both the reconnecting and locked banners tell the
+user not to reload. Automatic updates do not navigate at all: they authenticate the new fragment inside the already
+loaded document.
 
 ### Known gaps
 
@@ -164,8 +180,8 @@ part of this risk, because it happens only on an authenticated signal from the r
     images.
   - The same with `img-src https:` added: external images work again, but an image request can carry data to a third
     party (CSS can choose which image to load), which reopens a path for leaking what is on the page.
-- **Several tabs on one page share it loosely.** Annotation ids come from the server, so tabs never collide. A tab sends
-  only the annotations, picks, and note it edited, and the server merges them per item, so a stale tab does not resend
-  drafts another tab submitted or undo its removals. A tab sees another tab's draft edits only once the server's state
-  changes for another reason (a submit, a reply, an annotation added or removed), or on reload. Two tabs editing the
-  same draft at once: the last save wins.
+- **Sibling files are ordinary HTTP resources.** Images and other files next to the page use the original page token,
+  which API polling and reconnects never expose. If a resource request itself reaches a port holder, it reveals that
+  file capability, and the port holder can replace the requested resource or read sibling files from the real server.
+  Knowing the file capability alone does not authorize API calls or another delivery of the key. The skill's own
+  executable shell is inline and never requested this way.
