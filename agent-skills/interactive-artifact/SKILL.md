@@ -38,11 +38,19 @@ skill's `bin/` directory to go back to running from source.
    printing the submission as Markdown. Handle it (see below), and only then start `wait` again: starting it is what
    tells the page you are ready for the next submission, so starting it early would say so while you are still working.
    Run only one `wait` per page at a time.
-5. To change the page, edit the file. The open tab reloads by itself within about a second and keeps everything the user
+5. To change the page, edit the file. The open tab updates by itself within about a second and keeps everything the user
    has entered, so never restart the server for an edit.
 6. When you are finished with the page, say so first (`status ... done`, below), wait about five seconds, then stop
    `wait` and the server. The tab then shows a calm "this page is finished" note instead of a warning. The server also
    exits on its own after `--ttl` (default `4h`); a running `wait` then exits with status 4.
+
+The link opens exactly once. The initial response carries the page, its code, and its encryption key; the server will
+not deliver that response to a second reader. Do not open the URL yourself to check it. A failed initial load, a manual
+reload, or opening another tab needs a new server and link. Live edits use the encrypted connection inside the loaded
+tab and never reload it.
+
+If the page says it is reconnecting, let it retry and restore the ssh tunnel if needed. It keeps unsaved work in the
+loaded tab and temporarily pauses editing until the original server answers. Never tell the user to reload it.
 
 If the user reports a red banner saying the page is locked, stop the server and start a new one, then give them the new
 URL (and the new tunnel command, if they use one). Never tell them to reload the locked tab. A lock means the tab talked

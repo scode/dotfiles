@@ -1771,8 +1771,8 @@ ins.ia-ins {
   opacity: 1;
   transform: translate(-50%, 0);
 }
-/* The page locked itself (see lock() in interactive-artifact.js). Fixed at the top and never dismissed: from here on
-   the tab is a read-only copy, and the user has to know before typing anything more into it. */
+/* Both a permanent lock and a recoverable outage pause editing. Keep the explanation above the page so the user
+   knows why typing stopped; only the outage banner is dismissed after the original server answers. */
 .ia-lock {
   position: fixed;
   top: 0.9rem;
@@ -1790,6 +1790,12 @@ ins.ia-ins {
 }
 .ia-lock strong {
   margin-right: 0.3rem;
+}
+/* An outage is a waiting state, distinct from the red banner for failed authentication. */
+.ia-lock.ia-reconnecting {
+  background: var(--warn-soft);
+  color: var(--warn);
+  border: 1px solid var(--warn);
 }
 /* Agent status, bottom right: the dock is bottom left and toasts are centered, so the three never overlap. "busy"
    (sent, reading, updating) spins; "ready" and "done" show a fixed glyph. */

@@ -4,12 +4,11 @@
  *
  * Here's the TLDR of the moving parts:
  *
- * - `serve` re-reads the page file on every request and wraps it in a fixed shell that loads
- *   `assets/interactive-artifact.css` and `assets/interactive-artifact.js`. The open tab polls a version endpoint and
- *   reloads when the file changes, so the agent edits the file instead of restarting anything. Other files in the
- *   page's directory are served as-is.
+ * - `serve` delivers a self-contained shell exactly once. The open tab polls a version endpoint and receives
+ *   authenticated fragments when the file changes, so the agent edits the file instead of restarting anything.
+ *   Other files in the page's directory are served as-is.
  * - The user's work lives in a state file under `.interactive-artifact/<page name>/` next to the page, owned by the
- *   server process, so it survives live reloads and server restarts. The browser saves its part as the user types.
+ *   server process, so it survives live edits and server restarts. The browser saves its part as the user types.
  * - Pressing Submit turns everything pending into one numbered submission file in the same directory. `wait`
  *   blocks until an unconsumed submission exists, prints it, and exits; that exit is how a backgrounded agent
  *   command learns the user said something. Submissions queue on disk, so nothing is lost while the agent is
@@ -33,15 +32,15 @@ import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.1
 
 /**
  * Everything the shell itself needs lives under this prefix, so it cannot collide with the page's own files. It
- * is relative because every URL the server answers sits under the per-server token (see `tokenPath`), and a
- * relative reference resolves under it without the token being written into the page.
+ * is appended to the API capability path in the initial page and server.json. The page/file capability is separate:
+ * reconnect traffic must not reveal a path that can retrieve those resources.
  */
 const API = "__interactive-artifact/";
 const ROUTE = `/${API}`;
 /** Every API call by method and name. All of them are sealed both ways; see "Message encryption". */
 // deno-fmt-ignore
 const API_CALLS = new Set([
-  "GET version", "GET state", "PUT state", "POST id", "POST submit", "POST agent", "POST anchor", "POST status",
+  "GET version", "GET page", "GET state", "PUT state", "POST id", "POST submit", "POST agent", "POST anchor", "POST status",
 ]);
 // deno-fmt-ignore
 const ASSETS = new Map([
@@ -49,7 +48,7 @@ const ASSETS = new Map([
   ["interactive-artifact.js", "text/javascript; charset=utf-8"],
 ]);
 /**
- * Where the page's CSS and JS are read from, on every request. Beside this file when run from source; a compiled
+ * Where the initial page's inline CSS and JS are read from. Beside this file when run from source; a compiled
  * binary sets it through `runCli`, because inside the binary `import.meta.url` names the build snapshot, not the skill.
  */
 let assetDir = new URL("./assets/", import.meta.url);
@@ -431,8 +430,10 @@ export function formatSubmission(s: Submission, pagePath: string): string {
 // response the tab accepts, and the tab locks itself on the first response it cannot open. GCM authenticates as
 // well as encrypts, so no separate MAC is needed.
 //
-// The additional data binds each message to its direction and call (`POST submit`, `response GET state`), so an
-// impostor cannot reflect a captured request back as a response or move a message to another endpoint. Web Crypto is
+// Request additional data binds the direction and call (`POST submit`); response additional data also includes the
+// encrypted request's client id and sequence. An impostor cannot reflect a request, move it to another endpoint, or
+// replay an old answer as fresh proof of the server. The HTML carrying the key is delivered exactly once, so a
+// token caught during a later outage cannot retrieve it from the real server. Web Crypto is
 // built into Deno and into browsers (in a secure context, which 127.0.0.1 and localhost are), so there are no
 // dependencies. assets/interactive-artifact.js has the browser half and must stay byte-compatible with this one.
 // ---------------------------------------------------------------------------------------------------------------
@@ -480,6 +481,33 @@ export async function unseal(key: CryptoKey, aad: string, env: unknown): Promise
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
+/**
+ * One ordered stream of calls per browser or CLI invocation. Keeping the last answer makes an ambiguous network
+ * failure safe to retry; retaining the sequence floor also prevents replaying an older save over newer work.
+ * Clients must serialize their calls and start at one; the caller must also serialize run() through the server's API
+ * queue, since this table does not lock across awaits. Entries live until this server exits, never get evicted, and
+ * are capped so somebody holding the key cannot grow the table without bound by inventing clients.
+ */
+export class RequestSessions {
+  private sessions = new Map<string, { seq: number; request: string; answer: [number, unknown] }>();
+
+  /** Run a new call once, or return an independent snapshot of its previous answer after a lost response. */
+  async run(
+    client: string,
+    seq: number,
+    request: string,
+    action: () => Promise<[number, unknown]>,
+  ): Promise<[number, unknown]> {
+    const last = this.sessions.get(client);
+    if (last && seq === last.seq && request === last.request) return structuredClone(last.answer);
+    if (seq !== (last?.seq ?? 0) + 1) return [409, "request sequence is stale or out of order"];
+    if (!last && this.sessions.size >= 1024) return [503, "too many clients; start a new server"];
+    const answer = structuredClone(await action());
+    this.sessions.set(client, { seq, request, answer });
+    return structuredClone(answer);
+  }
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Page shell
 // ---------------------------------------------------------------------------------------------------------------
@@ -508,7 +536,7 @@ export function pageTitle(fragment: string, explicit: string | undefined, fileNa
 }
 
 /**
- * Apply a saved theme before first paint, so a dark choice does not flash light on every live reload. The choice is a
+ * Apply a saved theme before first paint, so a dark choice does not flash light when a new page opens. The choice is a
  * cookie rather than localStorage because localStorage is per origin, and the origin includes the port: with a random
  * port per server, every new page would forget the choice. Cookies ignore the port, so one choice covers every
  * interactive-artifact page on this host. No cookie means "system", which needs no attribute at all.
@@ -522,9 +550,17 @@ const THEME_HEAD_SCRIPT =
  * interactive is built by `interactive-artifact.js` around `main.ia-page` and `aside.ia-notes`. `keyB64` is the message
  * key (see "Message encryption"); the page is the only thing that carries it to the browser. `version` is the page
  * file's version as rendered, so the tab compares later polls against what it shows rather than against what the file
- * was by the time it first asked.
+ * was by the time it first asked. The executable assets are inline: once this HTML has been delivered, the tab never
+ * fetches its shell again, including during recovery and live edits. Empty assets are useful only for validation.
  */
-export function renderPage(fragment: string, title: string, keyB64 = "", version = ""): string {
+export function renderPage(
+  fragment: string,
+  title: string,
+  keyB64 = "",
+  version = "",
+  assets = { css: "", js: "" },
+  apiPath = API,
+): string {
   if (/^\s*<(!doctype|html|head|body)\b/i.test(fragment)) {
     throw new Error("page must be a body fragment, not a full HTML document; drop <!doctype>, <html>, <head>, <body>");
   }
@@ -536,7 +572,7 @@ export function renderPage(fragment: string, title: string, keyB64 = "", version
 <meta name="referrer" content="no-referrer">
 <title>${title}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232a6fd6'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="${API}interactive-artifact.css">
+<style>${assets.css.replace(/<\/style/gi, "<\\/style")}</style>
 <script>${THEME_HEAD_SCRIPT}</script>
 </head>
 <body>
@@ -547,7 +583,9 @@ ${fragment}
 </main>
 <aside class="ia-notes" aria-label="Comments and suggestions"></aside>
 </div>
-<script src="${API}interactive-artifact.js" data-key="${keyB64}" data-version="${escapeHtml(version)}"></script>
+<script data-key="${keyB64}" data-version="${escapeHtml(version)}" data-api="${escapeHtml(apiPath)}">${
+    assets.js.replace(/<\/script/gi, "<\\/script")
+  }</script>
 </body>
 </html>
 `;
@@ -689,8 +727,8 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
-/** What `reply` needs to reach the server: the tokened URL and the message key. The file is 0600 like the rest. */
-type ServerInfo = { url: string; pid: number; at: number; key: string };
+/** The separate page and API URLs plus message key. `reply` uses only the API URL; this file is owner-only. */
+type ServerInfo = { url: string; apiUrl: string; pid: number; at: number; key: string };
 
 /**
  * The running server for a page, or null. A stale heartbeat alone does not mean dead: right after a laptop resumes,
@@ -786,6 +824,8 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
   renderPage(await Deno.readTextFile(pagePath), "");
   await ensurePrivateDirs(pagePath);
   const token = newToken();
+  // API paths are exposed during reconnect attempts. They must not grant access to the bootstrap or sibling files.
+  const apiToken = newToken();
   const rawKey = crypto.getRandomValues(new Uint8Array(32));
   const keyB64 = toB64(rawKey);
   const key = await importKey(rawKey);
@@ -830,9 +870,30 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
     return st ? `${st.mtime?.getTime()}:${st.size}` : "missing";
   };
 
+  /** A failed edit stays inside the authenticated channel, so fixing the file can repair the loaded tab. */
+  const readPage = async () => {
+    const page = await pageVersion();
+    try {
+      const fragment = await Deno.readTextFile(pagePath);
+      const title = pageTitle(fragment, opts.title, basename(pagePath));
+      renderPage(fragment, title);
+      return { fragment, title, page };
+    } catch (e) {
+      return {
+        fragment: `<div class="callout danger"><p>interactive-artifact could not render the page: ${
+          escapeHtml((e as Error).message)
+        }</p></div>`,
+        title: "interactive-artifact",
+        page,
+      };
+    }
+  };
+
   /** The API proper, on opened request bodies. Returns the status and payload that get sealed into the response. */
   const apiCall = async (call: string, body: Record<string, unknown>): Promise<[number, unknown]> => {
     switch (call) {
+      case "GET page":
+        return [200, await readPage()];
       case "GET version":
         return [200, { page: await pageVersion(), rev: state.rev }];
       case "GET state":
@@ -900,66 +961,94 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
     return [404, "not found"];
   };
 
+  const sessions = new RequestSessions();
+  // Claim before any await: two simultaneous first readers must not both receive the key. A broken initial
+  // delivery consumes the link too; only an already loaded tab can recover safely without a new server.
+  let delivered = false;
   const handler = async (req: Request): Promise<Response> => {
-    // The token check comes first so that without it every request, of any method and Host, gets the same 404.
-    const pathname = tokenPath(new URL(req.url).pathname, token);
+    // Capability checks come first so that without one every request, of any method and Host, gets the same 404.
+    const path = new URL(req.url).pathname;
+    const apiPath = tokenPath(path, apiToken);
+    const resourcePath = tokenPath(path, token);
+    const pathname = apiPath ?? resourcePath;
     if (pathname === null) return text("not found", 404);
+    // Each capability has one job. Knowing the reconnect path never authorizes a file or the initial HTML.
+    const isApi = apiPath !== null && API_CALLS.has(`${req.method} ${apiPath.slice(ROUTE.length)}`) &&
+      apiPath.startsWith(ROUTE);
+    if (apiPath !== null && !isApi) return text("not found", 404);
+    if (resourcePath?.startsWith(ROUTE) && API_CALLS.has(`${req.method} ${resourcePath.slice(ROUTE.length)}`)) {
+      return text("not found", 404);
+    }
     if (pathname === "") return new Response(null, { status: 308, headers: { ...noStore, location: `/${token}/` } });
     if (!hostAllowed(req.headers.get("host"))) return text("bad host", 421);
     const write = req.method !== "GET" && req.method !== "HEAD";
     if (write && !writeAllowed(req.headers)) return text("forbidden", 403);
 
     if (pathname === "/" || pathname === "/index.html") {
-      let html: string;
-      // Taken before reading, so an edit racing the read shows up as a newer version and reloads the tab again.
-      const version = await pageVersion();
-      try {
-        const fragment = await Deno.readTextFile(pagePath);
-        html = renderPage(fragment, pageTitle(fragment, opts.title, basename(pagePath)), keyB64, version);
-      } catch (e) {
-        // Errors render inside the shell, so the tab keeps polling and recovers by itself once the agent fixes the
-        // file. A bare error page has no script and would strand the tab until a manual reload.
-        const msg = escapeHtml((e as Error).message);
-        html = renderPage(
-          `<div class="callout danger"><p>interactive-artifact could not render the page: ${msg}</p></div>`,
-          "interactive-artifact",
-          keyB64,
-          version,
-        );
-      }
+      if (req.method !== "GET" || delivered) return text("this link has already been opened; ask for a new link", 410);
+      delivered = true;
+      const [view, css, js] = await Promise.all([
+        readPage(),
+        Deno.readTextFile(new URL("interactive-artifact.css", assetDir)),
+        Deno.readTextFile(new URL("interactive-artifact.js", assetDir)),
+      ]);
+      // No executable subresource fetches after this response: a later port holder must never supply code or CSS
+      // to a tab that already has its key. Live edits replace only the fragment through GET page.
+      const html = renderPage(view.fragment, view.title, keyB64, view.page, { css, js }, `/${apiToken}/${API}`);
       return new Response(html, { headers: { ...noStore, "content-type": "text/html; charset=utf-8" } });
     }
-    if (pathname.startsWith(ROUTE) && API_CALLS.has(`${req.method} ${pathname.slice(ROUTE.length)}`)) {
+    if (isApi) {
       const call = `${req.method} ${pathname.slice(ROUTE.length)}`;
-      let body: unknown = null;
-      if (req.method !== "GET") {
-        try {
-          body = await unseal(key, call, await req.json());
-        } catch {
-          return text("bad request", 400);
-        }
+      let opened: { client: string; seq: number; data: Record<string, unknown> };
+      try {
+        // GETs need proof too, including a fresh sequence number echoed in the response's additional data. A
+        // recorded version response must not be usable as proof that an impostor is the original server today.
+        const env = req.method === "GET"
+          ? JSON.parse(req.headers.get("x-interactive-artifact") || "")
+          : await req.json();
+        opened = await unseal(key, call, env) as typeof opened;
+        if (
+          !opened || !/^[0-9a-f]{32}$/.test(opened.client) || !Number.isSafeInteger(opened.seq) || opened.seq < 1
+        ) throw new Error("bad request identity");
+      } catch {
+        return text("bad request", 400);
       }
       // Failures are answered sealed too. An unsealed error would be indistinguishable from an impostor, and the
       // tab would lock with the wrong explanation.
-      const [status, data] = await serialized(() => apiCall(call, body as Record<string, unknown>)).catch((
-        e,
-      ): [number, unknown] => {
-        console.error(`interactive-artifact: ${call} failed: ${(e as Error).message}`);
-        return [500, `server error: ${(e as Error).message}`];
-      });
+      const { client, seq } = opened;
+      const [status, data] = await serialized(() =>
+        sessions.run(
+          client,
+          seq,
+          JSON.stringify([call, opened.data]),
+          () =>
+            apiCall(call, opened.data).catch((e): [number, unknown] => {
+              console.error(`interactive-artifact: ${call} failed: ${(e as Error).message}`);
+              return [500, `server error: ${(e as Error).message}`];
+            }),
+        )
+      );
       // The status travels inside the envelope, so an impostor cannot fake an error either.
-      return json(await seal(key, `response ${call}`, { status, data }));
+      return json(await seal(key, `response ${call} ${client} ${seq}`, { status, data }));
     }
     if (pathname.startsWith(ROUTE)) {
       const name = pathname.slice(ROUTE.length);
       const type = ASSETS.get(name);
       if (!type) return text("not found", 404);
-      // Read per request so styling and client edits show up without a restart, same as the page itself.
+      // Kept for asset diagnostics and the compiled-helper smoke test. Loaded tabs use their inline snapshot.
       const body = await Deno.readTextFile(new URL(name, assetDir));
       return new Response(body, { headers: { ...noStore, "content-type": type } });
     }
-    // Dot paths would expose .interactive-artifact/, which holds the user's comments and submissions.
-    if (pathname.split("/").some((seg) => seg.startsWith("."))) return text("not found", 404);
+    // Match serveDir's decoding before excluding private paths; percent-encoding must not bypass these checks.
+    let filePath: string;
+    try {
+      filePath = decodeURIComponent(pathname);
+    } catch {
+      return text("not found", 404);
+    }
+    if (filePath.split("/").some((seg) => seg.startsWith("."))) return text("not found", 404);
+    // The page source is private too. Once the initial link is consumed, GET page is the only way to read it.
+    if (resolve(pageDir, `.${filePath}`) === pagePath) return text("not found", 404);
     // serveDir confines paths to fsRoot, so `..` cannot reach outside the page's directory.
     const res = await serveDir(req, { fsRoot: pageDir, urlRoot: token, quiet: true, showDirListing: false });
     // Rebuilt rather than modified: serveDir's redirects come from Response.redirect, whose headers are immutable.
@@ -1003,12 +1092,13 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
   });
 
   const url = `http://127.0.0.1:${servers[0].addr.port}/${token}/`;
+  const apiUrl = `http://127.0.0.1:${servers[0].addr.port}/${apiToken}/`;
   console.log(url);
   const until = opts.ttlMs ? `until ${new Date(Date.now() + opts.ttlMs).toLocaleTimeString()}` : "until killed";
   console.error(`interactive-artifact: serving ${pagePath} ${until}`);
   console.error(`interactive-artifact: wait for the user with: interactive-artifact wait ${pagePath}`);
   const beat = () =>
-    enqueue(join(dir, "server.json"), JSON.stringify({ url, pid: Deno.pid, at: Date.now(), key: keyB64 }))
+    enqueue(join(dir, "server.json"), JSON.stringify({ url, apiUrl, pid: Deno.pid, at: Date.now(), key: keyB64 }))
       .catch((e) => console.error(`interactive-artifact: heartbeat write failed: ${e.message}`));
   beat();
   const heartbeat = setInterval(beat, HEARTBEAT_MS);
@@ -1142,15 +1232,19 @@ async function agentCall(
     log(`interactive-artifact: no server is running for ${pagePath}; replies and status updates go through the server`);
     return 4;
   }
-  if (!isLocalServerUrl(info.url)) {
+  if (
+    !isLocalServerUrl(info.url) || !isLocalServerUrl(info.apiUrl) ||
+    new URL(info.url).origin !== new URL(info.apiUrl).origin
+  ) {
     log("interactive-artifact: server.json names a server that is not on 127.0.0.1; refusing to send anything there");
     return 1;
   }
   const key = await importKey(fromB64(info.key));
-  const res = await fetch(`${info.url}${API}${name}`, {
+  const client = newToken();
+  const res = await fetch(`${info.apiUrl}${API}${name}`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-interactive-artifact": "agent" },
-    body: JSON.stringify(await seal(key, `POST ${name}`, body)),
+    body: JSON.stringify(await seal(key, `POST ${name}`, { client, seq: 1, data: body })),
     // A port holder that accepts and never answers must not hang the agent, nor redirect it anywhere.
     signal: AbortSignal.timeout(timeoutMs),
     redirect: "error",
@@ -1161,7 +1255,9 @@ async function agentCall(
   if (!res) return 1;
   // A response that does not open came from something other than our server, possibly an impostor that took the
   // port; it gets no benefit of the doubt.
-  const reply = await res.json().then((env) => unseal(key, `response POST ${name}`, env)).catch(() => null) as
+  const reply = await res.json().then((env) => unseal(key, `response POST ${name} ${client} 1`, env)).catch(() =>
+    null
+  ) as
     | { status: number; data: unknown }
     | null;
   if (!reply) {
@@ -1310,6 +1406,37 @@ Deno.test("pageTitle prefers explicit title, then first h1 text, then file name,
   assertEquals(pageTitle("<h1>Ignored</h1>", "A <b>", "f.html"), "A &lt;b&gt;");
   assertEquals(pageTitle('<p>x</p><h1 id="t">Q &amp; <em>A</em></h1>', undefined, "f.html"), "Q &amp; A");
   assertEquals(pageTitle("<p>no heading</p>", undefined, "a&b.html"), "a&amp;b.html");
+});
+
+Deno.test("request retries return snapshots without repeating work or replaying old writes", async () => {
+  // A lost Submit answer must not produce another submission, and a cached state answer must not track later
+  // mutations to the server's live state. An older sequence must stay spent after the next call completes.
+  const sessions = new RequestSessions();
+  const state = { submissions: 0 };
+  const submit = (): Promise<[number, unknown]> => Promise.resolve([200, { submissions: ++state.submissions }]);
+  const first = await sessions.run("browser", 1, "submit", submit);
+  (first[1] as typeof state).submissions = 99;
+  assertEquals(await sessions.run("browser", 1, "submit", submit), [200, { submissions: 1 }]);
+  assertEquals(state.submissions, 1);
+  assertEquals((await sessions.run("browser", 1, "changed body", submit))[0], 409);
+  assertEquals((await sessions.run("browser", 3, "submit", submit))[0], 409);
+  assertEquals(await sessions.run("browser", 2, "state", () => Promise.resolve([200, state])), [200, {
+    submissions: 1,
+  }]);
+  state.submissions = 2;
+  assertEquals(await sessions.run("browser", 2, "state", submit), [200, { submissions: 1 }]);
+  assertEquals((await sessions.run("browser", 1, "submit", submit))[0], 409);
+  assertEquals(state.submissions, 2);
+});
+
+Deno.test("request session capacity never evicts replay protection for an existing client", async () => {
+  // Eviction would let an old sequence become a new client and repeat its write. At capacity the server must
+  // refuse new clients while continuing to answer retries from existing ones.
+  const sessions = new RequestSessions();
+  const answer = (): Promise<[number, unknown]> => Promise.resolve([200, "ok"]);
+  for (let n = 0; n < 1024; n++) assertEquals((await sessions.run(String(n), 1, "id", answer))[0], 200);
+  assertEquals((await sessions.run("new", 1, "id", answer))[0], 503);
+  assertEquals(await sessions.run("0", 1, "id", answer), [200, "ok"]);
 });
 
 /** Nesting a whole document inside the shell breaks styling without any visible error, so it must refuse. */

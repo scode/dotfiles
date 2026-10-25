@@ -4,7 +4,7 @@
  * The server owns the durable state (see the `interactive-artifact` script); this file renders it and edits the parts
  * the browser owns. The sections below are, in order: theme button, state and server I/O, text anchoring, pickers,
  * annotation highlights, the comment sidebar, the selection toolbar with Copy as Markdown, the Submit dock, the agent
- * status box, and the poll loop that drives live reload and picks up agent replies and status changes.
+ * status box, and the poll loop that drives live updates and picks up agent replies and status changes.
  *
  * Two invariants hold throughout:
  *
@@ -17,8 +17,6 @@
 (() => {
   "use strict";
 
-  /** Relative, so requests stay under the server token in the page URL. */
-  const API = "__interactive-artifact/";
   const page = document.querySelector(".ia-page");
   const notes = document.querySelector(".ia-notes");
   /** Elements whose text is not part of the page as written: our own insertions and form fields. */
@@ -94,13 +92,15 @@
 
   // Message encryption: the browser half of "Message encryption" in the interactive-artifact script, which explains the
   // threat (an impostor binding the port after the server exits). Every request is sealed with the per-server key the
-  // page was served with, every response must open under it, and the first one that does not, or a server that stops
-  // answering, locks the page for good: nothing more is saved or sent. Envelopes and additional data must stay
-  // byte-compatible with the server.
+  // page was served with, and every response must open under it for this particular call. A failed connection retries
+  // without fetching code or dropping edits; a response that cannot be verified locks the page for good. Envelopes
+  // and additional data must stay byte-compatible with the server.
   //
   // Read through the prototype's getter: an element in the page with name="currentScript" would otherwise shadow it
   // (document's named properties win over its own), and the client would die before it could show any banner.
   const me = Object.getOwnPropertyDescriptor(Document.prototype, "currentScript").get.call(document);
+  /** A separate capability from the page URL: reconnect traffic must never authorize file or key retrieval. */
+  const API = me?.dataset.api;
   const keyB64 = me?.dataset.key || "";
   /** The page file's version as the server rendered it, or "missing"; see renderPage in the server. */
   const renderedVersion = me?.dataset.version;
@@ -139,14 +139,48 @@
   };
 
   let locked = null;
+  // The first state snapshot replaces browser-owned fields. Editing must stay blocked until it is adopted, even
+  // if transport recovery has already authenticated a response and hidden the reconnecting warning.
+  let loading = true;
+  let reconnecting = false;
+  const loadingMessage = "Loading your saved answers. Editing will be available when loading finishes.";
+  const connectionBanner = el("div", "ia-lock ia-ui ia-reconnecting");
+  connectionBanner.setAttribute("role", "status");
+  connectionBanner.textContent = loadingMessage;
+  document.body.append(connectionBanner);
+  /** Inputs freeze temporarily so an outage cannot build an unbounded queue of save snapshots in memory. */
+  const frozenInputs = new Map();
+  const connectionLost = () => {
+    if (locked || reconnecting) return;
+    reconnecting = true;
+    connectionBanner.hidden = false;
+    connectionBanner.textContent =
+      "Connection lost. Reconnecting automatically; your unsaved work is kept in this tab. Do not reload.";
+    for (const t of document.querySelectorAll("textarea")) {
+      frozenInputs.set(t, t.readOnly);
+      t.readOnly = true;
+    }
+    updateDock();
+  };
+  /** Restore only the input permissions the outage changed; a pending Submit still owns its own freeze. */
+  const connectionRestored = () => {
+    if (locked || !reconnecting) return;
+    reconnecting = false;
+    connectionBanner.hidden = !loading;
+    if (loading) connectionBanner.textContent = loadingMessage;
+    for (const [t, readOnly] of frozenInputs) t.readOnly = readOnly;
+    frozenInputs.clear();
+    updateDock();
+  };
   /** Stop all traffic for good and say why. Reloading would fetch the page from whatever holds the port now. */
-  // `stopped` is passed for a request that failed without timing out, normally a refused connection. When the agent
-  // had said it was done with the page, that is the expected end (it stopped its server), so the banner is a calm note
-  // rather than a warning. The lock is the same, and so is the advice not to reload: with the server gone, anyone can
-  // take the port, and a reload would load whatever they serve.
+  // After an authenticated "done", a transport failure is the expected end (the agent stopped its server), so the
+  // banner is calm. Reloading is still unsafe: with the server gone, anyone can take its port and serve a new page.
   const lock = (why, stopped = false) => {
     if (locked) return;
     locked = why;
+    connectionBanner.hidden = true;
+    // A permanent lock permits copying visible content. The edit guards and read-only inputs still prevent writes.
+    page.inert = notes.inert = dock.inert = false;
     clearTimeout(saveTimer);
     // Read-only from here: anything typed into a locked tab could never be saved, so it must not look as if it
     // could be. What is on screen stays selectable, so text in the last unsaved moments can still be copied.
@@ -171,39 +205,53 @@
     updateDock();
   };
 
-  // keepalive lets a save started as the page unloads (a manual reload) finish after the page is gone.
-  const api = async (path, method = "GET", body, keepalive = false) => {
+  // Calls are one ordered stream. Reusing the same identity until its answer arrives lets the server replay the
+  // answer, rather than repeat a Submit or id allocation whose first response disappeared with the connection.
+  const client = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
+  let sequence = 0;
+  let calls = Promise.resolve();
+  const api = (path, method = "GET", body = {}) => {
+    const result = calls.then(() => request(path, method, body));
+    calls = result.catch(() => {});
+    return result;
+  };
+  /** Retry transport failures with the original identity, accepting only a response bound to this call. */
+  const request = async (path, method, body) => {
     if (locked) throw new Error(locked);
     const call = `${method} ${path}`;
+    const seq = ++sequence;
+    const sealed = JSON.stringify(await seal(call, { client, seq, data: body }));
     // Never follow a redirect: only this page's own server may answer, and it never redirects an API call.
-    const init = { method, cache: "no-store", keepalive, redirect: "error" };
-    if (method !== "GET") {
-      init.headers = { "content-type": "application/json", "x-interactive-artifact": "browser" };
-      init.body = JSON.stringify(await seal(call, body));
-      // Browsers refuse keepalive bodies over 64 KB; a refusal would read as a dead server and lock the tab.
-      if (init.body.length > 60_000) init.keepalive = false;
-    }
-    // A timeout matters as much as a refused connection: a port holder that accepts and never answers would
-    // otherwise hang the tab with no banner, and a user who thinks it is stuck reloads into whatever holds the port.
-    init.signal = AbortSignal.timeout(10_000);
-    let res;
-    try {
-      res = await fetch(API + path, init);
-    } catch (e) {
-      lock(
-        e.name === "TimeoutError"
-          ? "The interactive-artifact server stopped responding. Usually the computer slept, an ssh tunnel stalled, or the " +
-            "server is stuck."
-          : "The interactive-artifact server has stopped. Usually its time limit ran out, the agent stopped it, or an ssh " +
-            "tunnel dropped.",
-        e.name !== "TimeoutError",
-      );
-      throw e;
+    const init = {
+      method,
+      cache: "no-store",
+      redirect: "error",
+      headers: { "content-type": "application/json", "x-interactive-artifact": method === "GET" ? sealed : "browser" },
+      ...(method !== "GET" ? { body: sealed } : {}),
+    };
+    let res, text;
+    for (let delay = 1000;; delay = Math.min(delay * 2, 5000)) {
+      if (locked) throw new Error(locked);
+      try {
+        // The timeout covers the body too: a peer that sends headers and then stalls must also show reconnecting.
+        res = await fetch(API + path, { ...init, signal: AbortSignal.timeout(10_000) });
+        text = await res.text();
+        break;
+      } catch (e) {
+        if (agentState === "done") {
+          lock("The interactive-artifact server has stopped.", true);
+          throw e;
+        }
+        connectionLost();
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
     let reply;
     try {
       if (!res.ok) throw new Error(String(res.status));
-      reply = await unseal(`response ${call}`, await res.json());
+      reply = await unseal(`response ${call} ${client} ${seq}`, JSON.parse(text));
     } catch {
       lock(
         "This page's server could not be verified. Possible causes: a proxy or browser extension rewriting " +
@@ -211,6 +259,8 @@
       );
       throw new Error(locked);
     }
+    if (locked) throw new Error(locked);
+    connectionRestored();
     if (reply.status !== 200) {
       const err = new Error(String(reply.data));
       err.status = reply.status;
@@ -235,7 +285,7 @@
   let saving = Promise.resolve(true);
 
   /** Send the browser-owned state now. Every save is chained, so a later save never lands before an earlier one. */
-  const flush = (keepalive = false) => {
+  const flush = () => {
     clearTimeout(saveTimer);
     if (locked) return Promise.resolve(false);
     saveTimer = null;
@@ -250,6 +300,7 @@
       ...(noteDirty ? { note: noteInput.value } : {}),
     };
     const sent = [...[...dirtyAnns].map((id) => `a:${id}`), ...[...dirtyPicks].map((id) => `p:${id}`)];
+    const sentNote = noteDirty;
     for (const key of sent) inflight.set(key, (inflight.get(key) || 0) + 1);
     dirtyPicks.clear();
     dirtyAnns.clear();
@@ -260,15 +311,25 @@
         else inflight.delete(key);
       }
     };
-    // Resolves to whether the save went through, so a reload can refuse to discard what did not.
-    saving = saving.then(() => api("state", "PUT", body, keepalive)).then((r) => {
+    // Submit must not run if its prerequisite save failed. Keep failed fields dirty so a later save sends their
+    // current values, including any edits made while this request was in flight.
+    saving = saving.then(() => api("state", "PUT", body)).then((r) => {
       settle();
       const kept = new Set(r.ids);
       annotations = annotations.filter((a) => !a.removed || kept.has(a.id));
       return true;
     }).catch((e) => {
       settle();
-      if (!locked) toast(`Could not save: ${e.message}`, true);
+      if (!locked) {
+        for (const field of sent) {
+          if (field.startsWith("a:")) dirtyAnns.add(field.slice(2));
+          else dirtyPicks.add(field.slice(2));
+        }
+        noteDirty ||= sentNote;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flush, 2000);
+        toast(`Could not save: ${e.message}`, true);
+      }
       return false;
     });
     return saving;
@@ -436,7 +497,7 @@
 
   // "__proto__" is refused by the server (it would set an object's prototype), so it is not a picker here either;
   // otherwise its answer would count as pending forever.
-  const pickers = [...page.querySelectorAll("[data-pick]")].filter((p) => p.dataset.pick !== "__proto__");
+  let pickers = [];
   const choicesOf = (p) => [...p.querySelectorAll("[data-value]")].filter((c) => c.closest("[data-pick]") === p);
   // The picker's own question, not a heading inside one of its choices (an option card's <h3> is the choice's name).
   const pickerLabel = (p) => {
@@ -462,7 +523,7 @@
 
   const toggleChoice = (p, c) => {
     // Frozen during a submit, like the cards (see submit()), and for good once the tab locks.
-    if (submitting || locked) return;
+    if (loading || submitting || locked || reconnecting) return;
     const on = !c.classList.contains("ia-selected");
     if (!("multiple" in p.dataset)) { for (const o of choicesOf(p)) o.classList.remove("ia-selected"); }
     c.classList.toggle("ia-selected", on);
@@ -470,38 +531,43 @@
     readPicker(p);
   };
 
-  for (const p of pickers) {
-    p.classList.add("ia-picker");
-    p.setAttribute("role", "group");
-    p.setAttribute("aria-label", pickerLabel(p));
-    for (const c of choicesOf(p)) {
-      c.classList.add("ia-choice");
-      c.tabIndex = 0;
-      c.setAttribute("role", "button");
-      c.setAttribute("aria-pressed", "false");
-      c.addEventListener("click", (ev) => {
-        // A drag that selected text inside a choice is the start of a comment, not a pick; links keep working.
-        if (!getSelection().isCollapsed || ev.target.closest("a, textarea, input")) return;
-        toggleChoice(p, c);
-      });
-      c.addEventListener("keydown", (ev) => {
-        if (ev.target === c && (ev.key === "Enter" || ev.key === " ")) {
-          ev.preventDefault();
+  /** Bind each newly received fragment once. The shell, cards, drafts, and connection key stay in this document. */
+  const initPickers = () => {
+    pickers = [...page.querySelectorAll("[data-pick]")].filter((p) => p.dataset.pick !== "__proto__");
+    for (const p of pickers) {
+      p.classList.add("ia-picker");
+      p.setAttribute("role", "group");
+      p.setAttribute("aria-label", pickerLabel(p));
+      for (const c of choicesOf(p)) {
+        c.classList.add("ia-choice");
+        c.tabIndex = 0;
+        c.setAttribute("role", "button");
+        c.setAttribute("aria-pressed", "false");
+        c.addEventListener("click", (ev) => {
+          // A drag that selected text inside a choice is the start of a comment, not a pick; links keep working.
+          if (!getSelection().isCollapsed || ev.target.closest("a, textarea, input")) return;
           toggleChoice(p, c);
-        }
-      });
+        });
+        c.addEventListener("keydown", (ev) => {
+          if (ev.target === c && (ev.key === "Enter" || ev.key === " ")) {
+            ev.preventDefault();
+            toggleChoice(p, c);
+          }
+        });
+      }
+      if (!("noText" in p.dataset)) {
+        const t = el("textarea", "ia-pick-text ia-input");
+        t.rows = 1;
+        t.placeholder = p.dataset.placeholder || "Add a note (optional)";
+        t.addEventListener("input", () => {
+          autoGrow(t);
+          readPicker(p);
+        });
+        p.append(t);
+      }
     }
-    if (!("noText" in p.dataset)) {
-      const t = el("textarea", "ia-pick-text ia-input");
-      t.rows = 1;
-      t.placeholder = p.dataset.placeholder || "Add a note (optional)";
-      t.addEventListener("input", () => {
-        autoGrow(t);
-        readPicker(p);
-      });
-      p.append(t);
-    }
-  }
+  };
+  initPickers();
 
   const applyPicks = () => {
     for (const p of pickers) {
@@ -594,8 +660,8 @@
   };
 
   const remove = (a) => {
-    // Nothing on a locked tab can be saved, so nothing may look changed either.
-    if (locked) return;
+    // Removal is an edit too; it must respect the same freezes as typing and choosing a picker.
+    if (loading || locked || reconnecting || submitting) return;
     a.removed = true;
     if (activeId === a.id) activeId = null;
     renderAll();
@@ -679,7 +745,7 @@
     c.querySelector(".ia-quote").textContent = truncate(collapse(a.quote), 180);
     const r = c.querySelector(".ia-repl");
     if (r) {
-      r.readOnly = a.sentOnce || !!locked;
+      r.readOnly = a.sentOnce || !!locked || reconnecting;
       if (document.activeElement !== r) r.value = a.replacement;
       autoGrow(r);
     }
@@ -690,6 +756,7 @@
       return msg;
     }));
     const d = c.querySelector(".ia-draft");
+    d.readOnly = !!locked || reconnecting;
     d.placeholder = a.sentOnce
       ? (a.resolved ? "Reply to reopen" : "Reply")
       : a.kind === "comment"
@@ -778,7 +845,7 @@
   WIDE.addEventListener("change", requestLayout);
   addEventListener("resize", requestLayout);
   document.fonts?.ready.then(requestLayout);
-  for (const img of page.querySelectorAll("img")) img.addEventListener("load", requestLayout);
+  page.addEventListener("load", requestLayout, true);
 
   const renderAll = () => {
     renderMarks();
@@ -848,7 +915,7 @@
   /** The anchor is taken synchronously, before the selection can change. */
   const annotate = async (kind) => {
     const r = selectedRange();
-    if (!r || submitting || locked) return;
+    if (!r || loading || submitting || locked || reconnecting) return;
     const idx = textIndex();
     let start = toOffset(idx, r.startContainer, r.startOffset);
     let end = toOffset(idx, r.endContainer, r.endOffset);
@@ -1110,7 +1177,7 @@
   const updateDock = () => {
     const n = pendingCount();
     sendCount.textContent = String(n);
-    sendButton.disabled = !n || submitting || !!locked;
+    sendButton.disabled = !n || loading || submitting || !!locked || reconnecting;
     const open = n > 0 || noteOpen || document.activeElement === noteInput;
     if (open && !dock.classList.contains("open")) dock.classList.add("pop");
     dock.classList.toggle("open", open);
@@ -1119,7 +1186,7 @@
   dock.addEventListener("animationend", () => dock.classList.remove("pop"));
 
   const submit = async () => {
-    if (submitting || locked || !pendingCount()) return;
+    if (loading || submitting || locked || reconnecting || !pendingCount()) return;
     submitting = true;
     updateDock();
     // Nothing is editable while a submit is in flight: not the cards, the note, the pickers, or their text fields. Text
@@ -1130,7 +1197,7 @@
     noteInput.readOnly = true;
     for (const t of page.querySelectorAll(".ia-pick-text")) t.readOnly = true;
     try {
-      await flush();
+      if (!await flush()) throw new Error("Your changes could not be saved; nothing was submitted.");
       // The pickers on this page, so the submission leaves out answers to questions the agent has since removed.
       const s = await api("submit", "POST", { note: noteInput.value, pickers: pickers.map((p) => p.dataset.pick) });
       adopt(s, true);
@@ -1144,7 +1211,7 @@
     } finally {
       submitting = false;
       notes.inert = false;
-      // A submit that locked the tab (a timeout, say) must leave it read-only, as lock() made it.
+      // Failed verification during Submit must leave the tab read-only, as lock() made it.
       if (!locked) {
         noteInput.readOnly = false;
         for (const t of page.querySelectorAll(".ia-pick-text")) t.readOnly = false;
@@ -1167,7 +1234,7 @@
     ["thinking", ["busy", "The agent is reading your submission."]],
     // Deliberately not "updating the page": the agent may be doing a lot of other work first (research, running code)
     // before anything on the page changes. Its own status message says what.
-    ["working", ["busy", "The agent is working on your submission. The page reloads by itself when it changes."]],
+    ["working", ["busy", "The agent is working on your submission. The page updates by itself when it changes."]],
     ["ready", ["ready", "The agent is ready for your next submission."]],
     ["done", ["done", "The agent is done with this page. Continue in the chat."]],
   ]);
@@ -1212,7 +1279,7 @@
   };
 
   // -----------------------------------------------------------------------------------------------------------
-  // Startup and the poll loop. One request a second tells us both whether the page file changed (reload) and
+  // Startup and the poll loop. One request a second tells us both whether the page file changed and
   // whether the server changed its state (an agent reply, or a submit from another tab).
   // -----------------------------------------------------------------------------------------------------------
 
@@ -1221,20 +1288,43 @@
    * between the render and that poll would otherwise become the baseline and never be shown.
    */
   let pageVersion = renderedVersion || undefined;
+
+  /**
+   * Replace only authenticated page content, never the document or its executable shell. Browser-owned drafts stay
+   * in memory through the edit; the focused picker recovers its caret even though its markup had to be replaced.
+   */
+  const updatePage = (view) => {
+    const focused = document.activeElement;
+    const pickerId = focused?.closest("[data-pick]")?.dataset.pick;
+    const selection = pickerId && focused.matches("textarea")
+      ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection]
+      : null;
+    toolbar.hidden = true;
+    getSelection().removeAllRanges();
+    page.innerHTML = view.fragment;
+    // pageTitle returns HTML-safe text for the initial <title>; document.title takes decoded text instead.
+    const title = el("textarea");
+    title.innerHTML = view.title;
+    document.title = title.value;
+    pageVersion = view.page;
+    initPickers();
+    applyPicks();
+    renderAll();
+    if (selection) {
+      const t = pickers.find((p) => p.dataset.pick === pickerId)?.querySelector(":scope > .ia-pick-text");
+      if (t) {
+        t.focus({ preventScroll: true });
+        t.setSelectionRange(...selection);
+      }
+    }
+  };
   const poll = async () => {
     try {
       const v = await api("version");
-      // A page file that is momentarily missing (an editor saving by delete-and-rename) is not worth a reload.
-      if (pageVersion !== undefined && v.page !== pageVersion && v.page !== "missing") {
-        // The flush can be what discovers the server is gone; a locked tab must never reload into the port. A
-        // save that failed for another reason keeps the tab as it is, and the next poll tries again.
-        if (await flush()) {
-          location.reload();
-          return;
-        }
-        if (locked) return;
-        setTimeout(poll, 2000);
-        return;
+      // An editor's delete-and-rename is not an edit worth showing. Submit owns the picker list until it finishes.
+      if (!submitting && pageVersion !== undefined && v.page !== pageVersion && v.page !== "missing") {
+        const view = await api("page");
+        if (!locked && !submitting && view.page !== "missing") updatePage(view);
       }
       if (pageVersion === undefined) pageVersion = v.page;
       // serverRev is null only if the first state load failed; fetching now is how such a tab catches up.
@@ -1247,7 +1337,7 @@
       setTimeout(poll, 1000);
     } catch {
       // A lock ends polling for good; api() has put up the banner. Anything else is a server-side error, so keep
-      // polling, or live reload and agent replies would stop with no sign of it.
+      // polling, or live updates and agent replies would stop with no sign of it.
       if (!locked) setTimeout(poll, 2000);
     }
   };
@@ -1256,7 +1346,7 @@
     lock("This page needs to be opened through 127.0.0.1 or localhost.");
     return;
   }
-  if (!keyB64) {
+  if (!keyB64 || !API) {
     lock("This page is missing its key; something in the page interferes with interactive-artifact.");
     return;
   }
@@ -1267,20 +1357,28 @@
     lock("A service worker that interactive-artifact did not install controls this page.");
     return;
   }
-  api("state").then((s) => {
-    adopt(s, true);
-    applyPicks();
-    renderAll();
-    autoGrow(noteInput);
-    reserve().catch(() => {});
-    poll();
-  }).catch((e) => {
-    if (locked) return;
-    toast(`Could not load state: ${e.message}`, true);
-    // Keep following the page anyway, so an edit by the agent can still fix things and reload the tab.
-    poll();
-  });
-  addEventListener("pagehide", () => {
-    if (saveTimer) flush(true);
-  });
+  // Block native typing and picker clicks before the first asynchronous request. Reconnecting authenticates the
+  // connection, but only adopting this snapshot makes it safe to accept edits. Server errors retry startup too.
+  page.inert = notes.inert = dock.inert = true;
+  /** Adopt and display saved answers before enabling editing; server errors leave startup blocked for another try. */
+  const loadState = async () => {
+    try {
+      const s = await api("state");
+      adopt(s, true);
+      applyPicks();
+      renderAll();
+      autoGrow(noteInput);
+      loading = false;
+      page.inert = notes.inert = dock.inert = false;
+      connectionBanner.hidden = true;
+      updateDock();
+      reserve().catch(() => {});
+      poll();
+    } catch (e) {
+      if (locked) return;
+      toast(`Could not load state: ${e.message}`, true);
+      setTimeout(loadState, 2000);
+    }
+  };
+  loadState();
 })();

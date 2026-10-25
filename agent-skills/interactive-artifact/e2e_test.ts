@@ -36,21 +36,32 @@ async function cli(...args: string[]): Promise<{ code: number; out: string }> {
   return { code: r.code, out: new TextDecoder().decode(r.stdout) };
 }
 
-/** The message key from a running server's server.json, the same way `reply` gets it. */
+const testApiUrls = new WeakMap<CryptoKey, string>();
+
+/** The message key and matching API capability from server.json, the same way `reply` gets them. */
 async function testKey(stateDir: string): Promise<CryptoKey> {
-  const { key } = JSON.parse(await Deno.readTextFile(join(stateDir, "server.json")));
+  const { key, apiUrl } = JSON.parse(await Deno.readTextFile(join(stateDir, "server.json")));
   const raw = Uint8Array.from(atob(key), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+  const imported = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+  testApiUrls.set(imported, apiUrl);
+  return imported;
 }
 
 /** Make one sealed API call and open the sealed answer, the way the page does. */
 async function testCall(url: string, key: CryptoKey, method: string, name: string, body?: unknown) {
+  const client = crypto.randomUUID().replaceAll("-", "");
+  const sealed = JSON.stringify(await testSeal(key, `${method} ${name}`, { client, seq: 1, data: body ?? {} }));
   const init: RequestInit = { method, headers: { "x-interactive-artifact": "1", "content-type": "application/json" } };
-  if (method !== "GET") init.body = JSON.stringify(await testSeal(key, `${method} ${name}`, body));
-  const env = await (await fetch(`${url}__interactive-artifact/${name}`, init)).json();
+  if (method !== "GET") init.body = sealed;
+  else init.headers = { "x-interactive-artifact": sealed };
+  const env = await (await fetch(`${testApiUrls.get(key) ?? url}__interactive-artifact/${name}`, init)).json();
   const from = (t: string) => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
   const plain = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: from(env.iv), additionalData: new TextEncoder().encode(`response ${method} ${name}`) },
+    {
+      name: "AES-GCM",
+      iv: from(env.iv),
+      additionalData: new TextEncoder().encode(`response ${method} ${name} ${client} 1`),
+    },
     key,
     from(env.ct),
   );
@@ -131,9 +142,36 @@ Deno.test({
           const res = await fetch(origin + path, init);
           assertEquals([path, res.status, await res.text()], [path, 404, "not found\n"]);
         }
-        const ok = await fetch(url);
+        // HEAD cannot spend the one delivery. Concurrent GETs must claim it before awaiting file reads, including
+        // when one uses the index.html alias; only one reader may ever receive the symmetric key.
+        assertEquals((await fetch(url, { method: "HEAD" })).status, 410);
+        const firstReaders = await Promise.all([fetch(url), fetch(`${url}index.html`)]);
+        assertEquals(firstReaders.map((r) => r.status).sort(), [200, 410]);
+        const ok = firstReaders.find((r) => r.status === 200)!;
+        await firstReaders.find((r) => r.status === 410)!.body?.cancel();
         assertEquals(ok.headers.get("referrer-policy"), "no-referrer");
-        assertStringIncludes(await ok.text(), "for your eyes only");
+        const initial = await ok.text();
+        assertStringIncludes(initial, "for your eyes only");
+        assertEquals(initial.includes("<script src="), false);
+        for (const path of ["", "index.html", "?retry=1"]) {
+          const spent = await fetch(url + path);
+          assertEquals(spent.status, 410);
+          assertEquals((await spent.text()).includes("data-key"), false);
+        }
+        for (const source of ["page.html", "%70age.html", "page.html/"]) {
+          const hidden = await fetch(url + source);
+          assertEquals(hidden.status, 404);
+          await hidden.body?.cancel();
+        }
+        const state = join(dir, ".interactive-artifact", "page.html");
+        const key = await testKey(state);
+        const apiUrl = testApiUrls.get(key)!;
+        // A token exposed by reconnect traffic grants no access to the one-time bootstrap or ordinary files.
+        for (const resource of ["", "index.html", "page.html", "build-log"]) {
+          const denied = await fetch(apiUrl + resource);
+          assertEquals(denied.status, 404);
+          await denied.body?.cancel();
+        }
         const bare = await fetch(origin + `/${token}`, { redirect: "manual" });
         assertEquals([bare.status, bare.headers.get("location")], [308, `/${token}/`]);
         // A sibling file with no known type must not be sniffed into HTML that runs on the page's origin.
@@ -148,11 +186,10 @@ Deno.test({
           ],
           ["application/octet-stream", "nosniff", "sandbox"],
         );
-        // A page that cannot render still comes back inside the shell, so an open tab keeps polling and recovers.
+        // Later page contents require the key, even when the token is known. Bad edits stay in the sealed channel.
         await Deno.writeTextFile(pagePath, "<!doctype html><p>oops</p>");
-        const broken = await fetch(url).then((r) => r.text());
-        assertStringIncludes(broken, "interactive-artifact could not render the page");
-        assertStringIncludes(broken, "__interactive-artifact/interactive-artifact.js");
+        const broken = await testCall(url, key, "GET", "page");
+        assertStringIncludes(String(broken.data.fragment), "interactive-artifact could not render the page");
         await Deno.writeTextFile(pagePath, "<h1>Secret plans</h1><p>for your eyes only</p>");
 
         // serveDir's own redirects (a file asked for with a trailing slash) used to crash the handler.
@@ -172,24 +209,30 @@ Deno.test({
         await Deno.chmod(dir, 0o700);
 
         // Owner-only on disk: directories 0700, files 0600, including the one holding the tokened URL.
-        const state = join(dir, ".interactive-artifact", "page.html");
         for (const d of [join(dir, ".interactive-artifact"), state, join(state, "submissions")]) {
           assertEquals([d, Deno.statSync(d).mode! & 0o777], [d, 0o700]);
         }
         // Even with the token, the API takes only sealed requests and answers only sealed responses.
         const put = (body: unknown) =>
-          fetch(`${url}__interactive-artifact/state`, {
+          fetch(`${apiUrl}__interactive-artifact/state`, {
             method: "PUT",
             headers: { "x-interactive-artifact": "1", "content-type": "application/json" },
             body: JSON.stringify(body),
           });
         const plain = await put({ annotations: [], picks: {}, note: "planted" });
         assertEquals([plain.status, await plain.text()], [400, "bad request\n"]);
-        const key = await testKey(state);
-        const sealed = await put(await testSeal(key, "PUT state", { annotations: [], picks: {}, note: "hush" }));
+        const sealed = await put(
+          await testSeal(key, "PUT state", {
+            client: crypto.randomUUID().replaceAll("-", ""),
+            seq: 1,
+            data: { annotations: [], picks: {}, note: "hush" },
+          }),
+        );
         const env = await sealed.json();
         assertEquals(Object.keys(env).sort(), ["ct", "iv"]);
-        const got = await fetch(`${url}__interactive-artifact/state`).then((r) => r.text());
+        const unauthenticated = await fetch(`${apiUrl}__interactive-artifact/state`);
+        assertEquals(unauthenticated.status, 400);
+        const got = await unauthenticated.text();
         assertEquals([got.includes("hush"), got.includes("planted")], [false, false]);
         for (const f of ["server.json", "state.json"]) {
           assertEquals([f, Deno.statSync(join(state, f)).mode! & 0o777], [f, 0o600]);
@@ -232,6 +275,97 @@ Deno.test({
   },
 });
 
+/**
+ * Initial state replaces the browser's empty model. A slow or retried first read must not accept edits that this
+ * replacement would erase; editing becomes available only after the saved note and picks are on screen.
+ */
+Deno.test({
+  name: "startup keeps editing blocked through an initial connection failure",
+  ignore: !chrome,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-startup-" });
+    const pagePath = join(dir, "page.html");
+    await Deno.copyFile(EXAMPLE, pagePath);
+    const { url, server } = await startServer(pagePath);
+    const browser = await chromium.launch({ executablePath: chrome });
+    const failFirst = Promise.withResolvers<void>();
+    const finishRetry = Promise.withResolvers<void>();
+    try {
+      const page = await browser.newPage();
+      const key = await testKey(join(dir, ".interactive-artifact", "page.html"));
+      assertEquals((await testCall(url, key, "PUT", "state", { note: "saved before opening" })).status, 200);
+      let reads = 0;
+      await page.route("**/__interactive-artifact/state", async (route) => {
+        if (route.request().method() === "GET") {
+          reads++;
+          if (reads === 1) {
+            await failFirst.promise;
+            await route.abort("connectionreset");
+            return;
+          }
+          if (reads === 2) {
+            await finishRetry.promise;
+          }
+        }
+        await route.continue();
+      });
+      const stateRead = () => page.waitForRequest((r) => r.method() === "GET" && r.url().endsWith("/state"));
+      const firstRead = stateRead();
+      await page.goto(url);
+      await firstRead;
+      await page.locator(".ia-reconnecting", { hasText: "Loading your saved answers" }).waitFor();
+      assertEquals(
+        await page.locator(".ia-page, .ia-notes, .ia-dock").evaluateAll((es) =>
+          es.every((e) => (e as HTMLElement).inert)
+        ),
+        true,
+      );
+
+      // Exercise both the native focus barrier and the event guard. Synthetic clicks bypass inert, but must not
+      // mutate picker state either; no queued edit may survive invisibly behind the saved startup snapshot.
+      const note = page.locator(".ia-note");
+      await note.evaluate((t: HTMLTextAreaElement) => t.focus());
+      await page.keyboard.type("too early");
+      await page.locator('[data-value="sqlite"] h3').dispatchEvent("click");
+      assertEquals(await note.inputValue(), "");
+      assertEquals(await page.locator('[data-value="sqlite"]').getAttribute("aria-pressed"), "false");
+      const retriedRead = stateRead();
+      failFirst.resolve();
+      await page.locator(".ia-reconnecting", { hasText: "Connection lost" }).waitFor();
+      await retriedRead;
+      assertEquals(await page.locator(".ia-dock").evaluate((e: HTMLElement) => e.inert), true);
+
+      finishRetry.resolve();
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+      assertEquals(await note.inputValue(), "saved before opening");
+      assertEquals(
+        await page.locator(".ia-page, .ia-notes, .ia-dock").evaluateAll((es) =>
+          es.some((e) => (e as HTMLElement).inert)
+        ),
+        false,
+      );
+      await note.fill("written after loading");
+      await page.locator('[data-value="sqlite"] h3').click();
+      await page.locator(".ia-send").click();
+      await page.locator(".ia-agent", { hasText: "Waiting for the agent" }).waitFor();
+      const submission = await cli("wait", pagePath, "--timeout", "5s");
+      assertEquals(submission.code, 0);
+      assertStringIncludes(submission.out, "written after loading");
+      assertStringIncludes(submission.out, "SQLite queue");
+      assertEquals(submission.out.includes("too early"), false);
+    } finally {
+      failFirst.resolve();
+      finishRetry.resolve();
+      await browser.close();
+      server.kill("SIGTERM");
+      await server.status;
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
 /** Select the first occurrence of `needle` in the page text, as a user drag would, and wait for the toolbar. */
 async function select(page: Page, needle: string) {
   await page.evaluate((needle) => {
@@ -254,7 +388,7 @@ async function select(page: Page, needle: string) {
 
 /**
  * The whole round trip in one test, because every step depends on the state the previous one left: a user
- * picks, comments, suggests, copies, reloads, and submits; the agent reads the submission, edits the page, and
+ * picks, comments, suggests, copies, reconnects, and submits; the agent reads the submission, edits the page, and
  * replies; the open tab follows along without losing anything.
  */
 Deno.test({
@@ -323,19 +457,87 @@ Deno.test({
       );
       await page.evaluate(() => getSelection()!.removeAllRanges());
 
-      // Everything lives on the server, so a reload loses nothing. Let the autosave debounce run first.
+      // A live edit must not navigate or replace the executable shell. It must retain unsaved work and rebind the
+      // pickers, even when it lands while the user is typing in a picker note.
       assertEquals(await page.textContent(".ia-count"), "4");
-      await page.waitForTimeout(600);
-      await page.reload();
-      await page.locator(".ia-card").nth(1).waitFor();
+      await page.evaluate(() => ((globalThis as unknown as { marker: number }).marker = 1));
+      const pickerNote = page.locator('[data-pick="rollout"] .ia-pick-text');
+      await pickerNote.focus();
+      await pickerNote.evaluate((t: HTMLTextAreaElement) => t.setSelectionRange(5, 9));
+      await Deno.writeTextFile(pagePath, (await Deno.readTextFile(pagePath)) + "<p>Live edit arrived.</p>");
+      await page.locator(".ia-page", { hasText: "Live edit arrived." }).waitFor();
+      assertEquals(await page.evaluate(() => (globalThis as unknown as { marker: number }).marker), 1);
+      assertEquals(
+        await pickerNote.evaluate((
+          t: HTMLTextAreaElement,
+        ) => [document.activeElement === t, t.selectionStart, t.selectionEnd]),
+        [true, 5, 9],
+      );
       assertEquals(await sqlite.getAttribute("aria-pressed"), "true");
       assertEquals(await page.inputValue('[data-pick="rollout"] .ia-pick-text'), "one week of shadow is enough");
+
+      // A refused request is recoverable. The original unsaved note is retried after the connection returns, with
+      // no reload and no permission to type more edits that could look saved during the outage.
+      let disconnected = true;
+      const apiPattern = "**/__interactive-artifact/**";
+      await page.route(apiPattern, async (route) => {
+        if (disconnected) await route.abort("connectionrefused");
+        else await route.continue();
+      });
+      await page.locator(".ia-note").fill("keep this unsaved note");
+      await page.locator(".ia-reconnecting:not([hidden])").waitFor();
+      assertEquals(await page.locator(".ia-note").inputValue(), "keep this unsaved note");
+      assertEquals(await page.locator(".ia-note").evaluate((t: HTMLTextAreaElement) => t.readOnly), true);
+      assertEquals(await page.locator(".ia-lock:not(.ia-reconnecting)").count(), 0);
+      disconnected = false;
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+      await page.waitForFunction(() => !(document.querySelector(".ia-note") as HTMLTextAreaElement).readOnly);
+      const key = await testKey(join(dir, ".interactive-artifact", "page.html"));
+      // Drain the save stream before observing durable state: a version poll may have been the first retried call.
+      await page.waitForTimeout(600);
+      assertEquals((await testCall(url, key, "GET", "state")).data.note, "keep this unsaved note");
+      await page.locator(".ia-note").fill("");
+      await page.waitForTimeout(400);
+      await page.unroute(apiPattern);
+
+      // A request that never produces a response must recover too, after the real ten-second request timeout.
+      let stalled = false;
+      await page.route(apiPattern, async (route) => {
+        if (!stalled && route.request().url().endsWith("/version")) {
+          stalled = true;
+          await page.waitForTimeout(11_000);
+          await route.abort().catch(() => {});
+        } else await route.continue();
+      });
+      await page.locator(".ia-reconnecting:not([hidden])").waitFor({ timeout: 15_000 });
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+      await page.unroute(apiPattern);
+
+      // Losing a Submit response is ambiguous: the server may already have queued it. Execute the first request
+      // and discard only its response, so the browser must retry without producing a second submission.
+      let lostSubmit = false;
+      let submitAttempts = 0;
+      await page.route(apiPattern, async (route) => {
+        if (route.request().url().endsWith("/submit")) {
+          submitAttempts++;
+          if (!lostSubmit) {
+            lostSubmit = true;
+            await route.fetch();
+            await route.abort("connectionreset");
+            return;
+          }
+        }
+        await route.continue();
+      });
 
       // The status pill follows the agent's side: sent at once, reading once `wait` hands the submission over,
       // working once the agent says so, and ready again when it next waits.
       const pill = page.locator(".ia-agent");
       await page.click(".ia-send");
       await pill.filter({ hasText: "Waiting for the agent" }).waitFor();
+      assertEquals(submitAttempts, 2);
+      assertEquals((await testCall(url, key, "GET", "state")).data.submissions, 1);
+      await page.unroute(apiPattern);
       // Exact match: hasText is a case-insensitive substring match, and "Sent" also matches "Unsent reply".
       await page.locator(".ia-status", { hasText: /^Sent$/ }).nth(1).waitFor();
       const first = await cli("wait", pagePath, "--timeout", "5s");
@@ -439,25 +641,29 @@ Deno.test({
       // The old server's "done" is not carried over: it would tell the user to leave a page the agent just reopened.
       assertEquals(await pill.isVisible(), false);
 
-      // Port takeover: the server exits and something else binds its port at once. The tab must lock, must not
+      // Port takeover: even an authentic recorded reply is not fresh proof of the server. Capture a version answer
+      // and have the impostor replay it for a later call; the tab must lock and must not
       // reload into the impostor's page, and must never hand it anything readable, even as the user keeps typing.
       await page.evaluate(() => ((globalThis as unknown as { marker: number }).marker = 1));
+      const captured = await page.waitForResponse((r) => r.url().endsWith("/version"));
+      const replay = await captured.text();
       server.kill("SIGTERM");
       await server.status;
       const seen: string[] = [];
+      let referrerLeaked = false;
       const impostor = Deno.serve(
         { hostname: "127.0.0.1", port: Number(new URL(url).port), onListen() {} },
         async (r) => {
+          referrerLeaked ||= r.headers.has("referer");
           seen.push(`${r.method} ${new URL(r.url).pathname} ${await r.text()}`);
-          return Response.json({ page: "changed", rev: 999, status: 200, data: { page: "changed", rev: 999 } });
+          return new Response(replay, { headers: { "content-type": "application/json" } });
         },
       );
-      // Usually the tab's next poll reaches the impostor and fails verification; if it lands in the moment the port
-      // is free, it fails to connect instead. Both must end the same way, so the test holds either outcome to it.
+      // A poll in the free-port window reconnects; the next attempt reaches the impostor and fails verification.
       try {
         // With the server gone, nobody can submit, so wait must not block forever.
         assertEquals((await cli("wait", pagePath, "--timeout", "1s")).code, 4);
-        await page.locator(".ia-lock").waitFor();
+        await page.locator(".ia-lock:not(.ia-reconnecting)").waitFor();
         // A locked tab is read-only, so nothing typed after the lock can be silently lost. Typing goes nowhere; the
         // set value stands in for text the user had on screen anyway, and Submit must still send nothing.
         const box = page.locator(`.ia-card[data-id="${c}"] .ia-draft`);
@@ -473,6 +679,10 @@ Deno.test({
         assertEquals(await box.evaluate((t: HTMLTextAreaElement) => t.readOnly), true);
         await page.waitForTimeout(1500);
         assertEquals(await page.evaluate(() => (globalThis as unknown as { marker?: number }).marker), 1);
+        assertEquals(seen.length > 0, true);
+        assertEquals(seen.every((line) => line.includes("/__interactive-artifact/")), true);
+        assertEquals(seen.some((line) => line.includes(new URL(url).pathname)), false);
+        assertEquals(referrerLeaked, false);
         assertEquals(seen.filter((line) => line.includes("launch codes") || line.includes("ship it")), []);
       } finally {
         await impostor.shutdown();
