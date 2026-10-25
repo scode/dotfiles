@@ -35,6 +35,11 @@ progress file, with the immediate-recording instruction below copied into every 
 each reviewer to finish its assigned pass after recording a finding; finding an issue or reaching a particular count is
 not a reason to end the pass early.
 
+Include this instruction in every initial and continuation prompt: validate findings through source and contract
+analysis. Do not reproduce bugs or write reproductions unless the caller explicitly requests that work. Existing tests
+and builds remain allowed, but execution is not required to substantiate a finding. Distinguish conclusions supported by
+source from behavior observed during execution. The same rule applies to the orchestrator's candidate checks.
+
 This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
 rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
 shellout defaults requiring a hard deadline do not apply to this protocol; retain their monitoring and termination

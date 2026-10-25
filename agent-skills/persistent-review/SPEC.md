@@ -15,6 +15,10 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   supplies no review lenses, panel, finding taxonomy, automatic-fix policy, or VCS range.
 - Reviewed inputs stay read-only unless edits are separately authorized; requested results and private run artifacts may
   be written. Findings do not authorize fixes.
+- Every initial and continuation prompt directs reviewers to validate findings through source and contract analysis.
+  Reviewers and the orchestrator do not reproduce bugs or write reproductions unless the caller explicitly requests that
+  work. Existing tests and builds remain allowed; execution is not required to substantiate a finding. Reports
+  distinguish source-supported conclusions from behavior observed during execution.
 - Codex and Claude reviewers are supported. Other reviewer backends are reported unsupported without substitution.
   Installation remains shared across all seven caller harnesses.
 
