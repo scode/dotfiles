@@ -1343,7 +1343,11 @@
   };
 
   if (!crypto.subtle) {
-    lock("This page needs to be opened through 127.0.0.1 or localhost.");
+    // An encrypted tunnel does not make its HTTP origin a browser secure context; HTTPS does.
+    lock(
+      "Browser encryption is unavailable. This page requires HTTPS or a loopback address (127.0.0.1 or localhost). " +
+        "Plain HTTP over Tailscale does not qualify.",
+    );
     return;
   }
   if (!keyB64 || !API) {
