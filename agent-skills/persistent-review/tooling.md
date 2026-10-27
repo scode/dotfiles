@@ -155,8 +155,20 @@ Use the same local ID for revisions and `state: "withdrawn"` for a retraction; i
 erase the original event. This format supplies persistence and identity, not a review lens or severity taxonomy. Save
 unresolved leads and current progress separately; do not count leads as completed findings.
 
-The counter reports active and withdrawn counts and active IDs, summaries, locations, and log paths. It counts the
-latest state of each ID per log. These are observed counts before semantic deduplication: the orchestrator reads finding
-details to determine whether two reviewers found the same defect. Empty initialized logs count as zero; missing logs or
-malformed events fail. If polling catches an unfinished append, retry after the write completes and report counts as
-temporarily unavailable rather than silently skipping the record. Every log has exactly one writer.
+For a concern retained as **unverified after investigation**, put that label in `summary` and its investigation record
+in `detail`: source basis, suspected consequence, checks actually performed and results, missing premise, why available
+checks cannot settle it, and what evidence would. Keep `state: "open"`; open/withdrawn tracks retention, not confidence.
+Revise an existing finding under its original ID when its verification status changes. This uses the existing event
+schema. The orchestrator requests these writes from the owning reviewer and confirms the append; it never appends to a
+reviewer's log itself. Cross-group duplicates retain each original record's owner and ID. A lead that has not received
+actual verification work stays in progress notes until investigated or rejected.
+
+The counter reports active and withdrawn counts and active IDs, summaries, locations, and log paths. It counts every
+reviewer-open record, regardless of the orchestrator's disposition: verified findings, concerns unverified after
+investigation, duplicates, rejected claims, and candidates still under investigation may all be present. Per-kind counts
+come from the orchestrator's reconciled dispositions after semantic deduplication, not label absence or subtraction from
+this raw count. It counts the latest state of each ID per log. These are observed counts before semantic deduplication:
+the orchestrator reads finding details to determine whether two reviewers found the same defect. Empty initialized logs
+count as zero; missing logs or malformed events fail. If polling catches an unfinished append, retry after the write
+completes and report counts as temporarily unavailable rather than silently skipping the record. Every log has exactly
+one writer.

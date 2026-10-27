@@ -30,10 +30,10 @@ Recover settled inputs from the caller's request and session context. Ask only f
 
 Keep reviewed inputs read-only unless the caller separately authorizes edits; writing the requested result and private
 run artifacts is allowed. A finding is not permission to fix it. Give the reviewer a self-contained charter, scope,
-constraints, result destination, and the persistence requirements below. Give each reviewer its own findings log and
-progress file, with the immediate-recording instruction below copied into every initial and continuation prompt. Tell
-each reviewer to finish its assigned pass after recording a finding; finding an issue or reaching a particular count is
-not a reason to end the pass early.
+constraints, result destination, and the persistence and investigation requirements below. Give each reviewer its own
+findings log and progress file, with the immediate-recording instruction below copied into every initial and
+continuation prompt. Tell each reviewer to finish its assigned pass after recording a finding; finding an issue or
+reaching a particular count is not a reason to end the pass early.
 
 This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
 rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
@@ -206,37 +206,76 @@ findings and relevant cross-group duplicates so it can distinguish a new defect 
 Use a continuation with this substance, plus the immediate-recording instruction:
 
 > Your earlier findings are recorded. Reuse your existing context and review the assigned group again under the original
-> charter, looking beyond the issues already found. Report only new, independently actionable findings; do not repeat or
-> rephrase known findings, broaden the scope, or invent issues to keep producing. Record each completed finding
-> immediately before further analysis or reads. An empty result is valid. At the end, briefly identify what you checked
-> and any unresolved substantive leads; do not provide private reasoning.
+> charter, looking beyond the issues already found. Report new verified findings and concrete leads that need
+> investigation; do not repeat or rephrase known findings, broaden the scope, or invent issues to keep producing. Record
+> each completed finding immediately before further analysis or reads. An empty result is valid. At the end, briefly
+> identify what you checked and any unresolved substantive leads. A concern that remains unverified after actual
+> investigation needs that label and a record of the checks and missing premise; an uninvestigated lead still needs
+> work. Do not provide private reasoning.
 
 After each search turn, inspect the findings log and the short work/lead summary. Verify candidates against the pinned
 source and applicable contract, using focused source excerpts as needed. Check novelty against findings already known
-across the run, not merely that reviewer's local IDs. Record each candidate as retained, duplicate, rejected with a
-reason, or unresolved; preserve its original log and identity. New IDs, extra event records, restatements, speculative
-claims, and findings outside the charter do not count as discovery progress. Do not impose a severity threshold from
-another review workflow; actionability follows the caller's charter.
+across the run, not merely that reviewer's local IDs. Record each candidate as verified, unverified after investigation,
+duplicate, rejected with a reason, or still under investigation; preserve its original log and identity. New IDs, extra
+event records, restatements, speculation without a concrete source basis, and findings outside the charter do not count
+as discovery progress. Do not impose a severity threshold from another review workflow; actionability follows the
+caller's charter.
 
-Resolve a candidate's missing premise or an open substantive lead with focused source checks or a targeted clarification
-from the same reviewer before judging that pass. Do not count an unresolved claim as a verified finding or treat an
-unfinished investigation as an empty completed search. If the investigation is stuck, retain it as unresolved and stop
-the affected group incomplete rather than starting endless nominally new search passes.
+### Investigate before retaining uncertainty
 
-If at least one genuinely new, credible, independently actionable finding is verified, save it and send another search
-continuation to that same reviewer. Name the newly recorded findings and direct attention beyond them. Continue while
-these passes produce verified new findings; there is no default pass cap or elapsed-time limit. Independent groups'
-searches remain concurrent within actual capacity.
+Apply these dispositions to candidates from every review phase, including initial review, synthesis, and cross-group
+questions.
 
-Finish discovery only after a properly executed search pass explicitly reports no new findings, with a credible work
-summary and no unresolved substantive lead. A bare empty list, refusal, unreadable input, blocked tool, duplicate-only
-reply, or drift is not that stopping condition. If a reviewer is stuck, only repeating findings, producing unsupported
-claims without useful progress, or leaving its charter, stop the affected group incomplete and preserve the findings and
-reason. Do not keep demanding a higher count. A caller-imposed limit may also stop a run; if it prevents the final empty
-search pass, disclose that discovery ended before this condition was met.
+Pursue missing premises and substantive leads with focused source checks and targeted clarification from the same
+reviewer. Continue while concrete next checks can establish the suspected defect, refute it, or narrow the missing
+premise. Do not require proof of a suspicion's absence before rejecting it, and do not treat an uninvestigated suspicion
+as a completed finding.
 
-Keep search-pass counts, newly verified finding IDs, and the final empty-pass or failure reason in the group's progress
-notes. An observed empty pass establishes this stopping condition, not proof that every defect has been found.
+Available evidence includes readable context and permitted tests under the charter, even outside the mandatory
+inventory; exploratory context does not expand mandatory scope. Pursue relevant accessible evidence, including through
+existing reviewers for cross-group questions, before calling a premise unavailable. Assess the investigation record
+against source and observable check results. A list of claimed checks without useful results, or a premise that remains
+readily checkable, needs a targeted continuation rather than acceptance of the label.
+
+When available checks cannot establish or refute a concrete concern and further work would repeat those checks or
+require unavailable evidence, record it as **unverified after investigation**. This requires actual verification work,
+not a disclaimer attached to a first impression. Record the source basis, suspected consequence, checks actually
+performed and their results, the exact premise still missing, why available checks cannot resolve it, and what evidence
+would settle it. Use that label in the findings log and caller-visible result; a private progress note alone is
+insufficient. If the caller's format cannot hold it, provide an accompanying note. Preserve the same finding ID when
+revising an existing claim, and distinguish observed behavior from the suspected consequence.
+
+The orchestrator decides the disposition and asks the owning reviewer to append any required finding or revision under
+the original ID; it does not write that reviewer's log. Confirm the append before crediting the disposition as recorded.
+Cross-group duplicates keep their original owners and IDs; reconcile conflicting verification claims through the
+existing synthesis step and retain the reconciled disposition in the orchestrator's notes.
+
+This disposition finishes the investigation for this review without declaring the suspicion true or false. It does not
+make the group or overall review incomplete or require failure status under this protocol. A caller's requirement for a
+complete review therefore does not by itself require these concerns to be settled before advancing its checkpoint; honor
+an explicitly stricter caller acceptance condition. An open lead that has not received this investigation still needs
+work. Missing required source delivery, unusable continuation, or an unperformed review pass remains a protocol gap;
+labeling a concern cannot repair those gaps.
+
+If a pass produces a genuinely new verified finding or a distinct concrete concern retained as unverified after
+investigation, save it and send another search continuation to that same reviewer. Name both kinds of recorded findings
+and direct attention beyond them. Repeating a known uncertainty is not new progress; reopen it only when new evidence
+offers a useful check. Continue while these passes produce new findings of either kind; there is no default pass cap or
+elapsed-time limit. Independent groups' searches remain concurrent within actual capacity.
+
+Finish discovery only after a properly executed search pass explicitly reports no new findings of either kind, with a
+credible work summary and every substantive lead verified, rejected, deduplicated, or recorded as unverified after
+investigation. Known findings of either kind may remain. A bare empty list, refusal, unreadable required input, blocked
+review pass, duplicate-only reply, or drift is not that stopping condition. Distinguish an investigation that has
+reached the documented uncertainty disposition from a reviewer that cannot perform its assigned pass. The latter stops
+the affected group incomplete, as does a reviewer that only repeats findings, produces unsupported claims without useful
+progress, or leaves its charter instead of performing the requested search. Preserve findings and the reason. Do not
+keep demanding a higher count or renewed proof of known uncertainties. A caller-imposed limit may also stop a run; if it
+prevents the final empty search pass or required investigation, disclose the unfinished work.
+
+Keep search-pass counts, newly verified and unverified-after-investigation finding IDs separately, and the final
+empty-pass or failure reason in the group's progress notes. An observed empty pass establishes this stopping condition,
+not proof that every defect has been found.
 
 ## Stop and report
 
@@ -246,8 +285,9 @@ does not. Retain the existing findings and last verified coverage. Do not start 
 describe it as the same persistent review. Apply this rule per group; keep other progressing groups running.
 
 Coverage repair and finding discovery have separate progress criteria. Delivery of previously missing required text
-advances coverage repair; verified new actionable findings advance discovery. Neither substitutes for the other. Do not
-turn a search limit, an empty search, or productive finding count into evidence that unread scope was covered.
+advances coverage repair; new verified findings or concrete concerns retained after investigation advance discovery.
+Neither substitutes for the other. Do not turn a search limit, an empty search, or productive finding count into
+evidence that unread scope was covered.
 
 At the caller's result destination, preserve the findings in the requested format and include a compact completion
 record (or an accompanying note if the format cannot hold it):
@@ -257,8 +297,13 @@ record (or an accompanying note if the format cannot hold it):
 - Verified delivery with evidence references; exact missing or uncertain material on an incomplete run.
 - Whether later-turn synthesis occurred and which evidence supports the final audit.
 - Active and deduplicated findings counts, original findings-log references, and cross-group synthesis status.
-- Discovery pass counts, newly verified findings per pass, and evidence of the final empty search or incomplete stop.
+- Separate verified and unverified-after-investigation findings and counts, with the investigation record for each
+  uncertainty. Derive these counts after semantic deduplication from the orchestrator's reconciled dispositions, never
+  from a missing label or by subtracting from the helper's raw active count. Open reviewer records may also be rejected,
+  duplicate, or still under investigation.
+- Discovery pass counts, new findings of each kind per pass, and evidence of the final empty search or incomplete stop.
 
 “Complete” means this protocol's delivery, persistence, synthesis, and final empty-search requirements were met. It does
-not certify the findings or prove attention, understanding, correctness, or saturation. An incomplete run with no
+not certify the findings or prove attention, understanding, correctness, or saturation. A review may be complete with
+unverified-after-investigation findings; say so and surface them alongside verified findings. An incomplete run with no
 findings is not a clean review; say both that it returned no findings and why it remains incomplete.

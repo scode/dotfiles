@@ -123,22 +123,51 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   unresolved lead exists. The reviewer reuses context, known findings, and durable artifacts, searches beyond earlier
   issues under the original charter, records findings immediately, and may legitimately return empty.
 - The orchestrator verifies candidates against pinned source and applicable contracts and checks novelty across the
-  whole run. It accounts for retained, duplicate, rejected, and unresolved candidates without erasing source records.
-  New IDs, event counts, restatements, speculation, and scope drift do not establish discovery progress. No severity or
-  lens-specific gate is imported; actionability follows the caller's charter.
-- Missing premises or open substantive leads receive focused verification or same-reviewer clarification before the pass
-  is judged. They count as neither verified progress nor a completed empty search. Stuck investigations stop the group
-  incomplete with the uncertainty retained, not an endless sequence of new search passes.
-- A verified new credible, independently actionable finding requires another search continuation on that same session.
-  There is no default pass cap or elapsed-time limit. Searches across independent groups remain concurrent up to actual
-  capacity. Prompts explicitly allow no findings and do not require a quota or automatic scope expansion.
-- Discovery completes after a properly executed search explicitly reports no new findings, with a credible short work
-  summary and no unresolved substantive leads. Bare empty replies, refusals, blocked tools, duplicate-only outputs,
-  unproductive unsupported claims and drift cannot establish that condition. Stuck/repeating/drifting reviewers stop
-  incomplete with retained findings and the reason, rather than receiving pressure to increase their count.
-- Caller-imposed limits are honored; stopping before the final empty pass is disclosed as incomplete discovery. Group
-  progress retains search-pass counts, new verified finding IDs and empty-pass/failure evidence. An empty pass
-  establishes the operational stopping condition, not proof of exhaustive review.
+  whole run. It accounts for verified, unverified-after-investigation, duplicate, rejected, and still-open candidates
+  without erasing source records. New IDs, event counts, restatements, speculation without a concrete source basis, and
+  scope drift do not establish discovery progress. No severity or lens-specific gate is imported; actionability follows
+  the caller's charter.
+- Missing premises or open substantive leads receive focused verification and same-reviewer clarification as needed.
+  These dispositions apply to candidates from every review phase, including initial review and cross-group synthesis.
+  Concrete next checks are pursued while they can establish, refute, or narrow the suspected defect. Rejecting a
+  suspicion does not require proof of its absence. Uninvestigated leads cannot count as completed findings.
+- Available evidence includes readable context and permitted tests under the charter, even outside mandatory scope;
+  exploration does not expand mandatory inventory. Relevant accessible evidence and cross-group clarification are
+  pursued before declaring a premise unavailable. The orchestrator assesses investigation records against source and
+  observable check results. Claimed checks without useful results or readily checkable missing premises require a
+  targeted continuation.
+- A concrete concern that available checks cannot establish or refute is retained as **unverified after investigation**
+  once further work would repeat checks or require unavailable evidence. Its finding record and caller-visible result
+  name the source basis, suspected consequence, checks actually performed and results, exact missing premise, why
+  available checks cannot resolve it, and what evidence would settle it. A private progress note or an unverified label
+  without actual investigation is insufficient. Existing claims retain their IDs when revised. Certainty is recorded in
+  the summary/detail using the existing event schema, separately from open/withdrawn lifecycle state.
+- The orchestrator decides dispositions and requests any finding/revision from its owning reviewer under the original
+  ID, confirming the append before crediting it as recorded. It never writes the reviewer's log. Cross-group duplicates
+  retain original owners and IDs; conflicting verification claims receive synthesis and a reconciled disposition in the
+  orchestrator's notes.
+- Retaining an investigated uncertainty settles its review disposition without proving or disproving the suspected bug.
+  It does not make a group or review incomplete or require failure status under this protocol. A generic caller
+  requirement for a complete review does not add a requirement to settle these concerns before advancing a checkpoint;
+  explicitly stricter caller acceptance conditions still apply. It cannot excuse missing mandatory delivery, unusable
+  continuation, unperformed passes, or uninvestigated leads.
+- A new verified finding or distinct concrete concern retained as unverified after investigation requires another search
+  continuation on that same session. There is no default pass cap or elapsed-time limit. Searches across independent
+  groups remain concurrent up to actual capacity. Prompts explicitly allow no findings and do not require a quota or
+  automatic scope expansion.
+- Known uncertainties do not count as new progress and are reopened only when new evidence offers a useful check.
+  Discovery completes after a properly executed search explicitly reports no new findings of either kind, with a
+  credible short work summary and every substantive lead verified, rejected, deduplicated, or recorded as unverified
+  after investigation. Known findings of either kind may remain. Bare empty replies, refusals, unreadable required
+  input, blocked review passes, duplicate-only outputs and drift cannot establish that condition. Reviewers unable to
+  perform their assigned pass stop incomplete with retained findings and the reason; an investigated uncertainty alone
+  is not such a failure. Reviewers that only repeat findings, produce unsupported claims without useful progress, or
+  leave their charter instead of performing the requested search also stop incomplete. Neither finding quotas nor
+  renewed proof of known uncertainties may be demanded.
+- Caller-imposed limits are honored; stopping before the final empty pass or required investigation is disclosed as
+  incomplete discovery. Group progress retains search-pass counts, new finding IDs separated by verification status and
+  empty-pass/failure evidence. An empty pass establishes the operational stopping condition, not proof of exhaustive
+  review.
 
 ## Stopping and reporting
 
@@ -149,14 +178,19 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   make no verified coverage progress. Progress means delivery of previously missing mandatory content, not new findings.
   A successful repair resets the counter. Do not replace the reviewer identity to bypass a failed run. Termination uses
   the selected mechanism's facilities. These conditions apply per group; other progressing groups continue.
-- Coverage repair and discovery have separate progress criteria: newly delivered required text and verified new
-  actionable findings, respectively. Neither criterion substitutes for the other. Empty searches or caller search limits
-  never establish delivery of unread scope.
+- Coverage repair and discovery have separate progress criteria: newly delivered required text and new verified or
+  unverified-after-investigation findings, respectively. Neither criterion substitutes for the other. Empty searches or
+  caller search limits never establish delivery of unread scope.
 - Preserve findings on every stop. The result includes completion status and reason, stable scope, backend/model/effort,
   per-group session identities and actual turn counts, verified delivery references, exact missing or uncertain
   material, later-turn/cross-group synthesis status, raw and deduplicated finding counts, and original finding-log
-  references. It also records discovery-pass counts, new verified findings per pass, and final empty-pass or incomplete
-  stop evidence. Use an accompanying completion note when the caller's format requires it.
+  references. Verified and unverified-after-investigation findings and counts are reported separately, with the latter's
+  investigation records. Per-kind counts come from reconciled orchestrator dispositions after semantic deduplication,
+  never label absence or subtraction from raw active counts. The helper counts every reviewer-open record, including
+  duplicates, rejected claims and candidates still under investigation, and does not certify defects. Discovery-pass
+  counts record new findings of each kind per pass and final empty-pass or incomplete stop evidence. Use an accompanying
+  note when the caller's format requires it. A review meeting the protocol may complete with investigated uncertainties;
+  completion and confidence in individual findings remain separate.
 - Delivery proves neither attention nor understanding, correctness, or saturation. Hidden chain of thought is neither
   inspected nor required. Findings stay grounded in reviewed artifacts. No findings plus incomplete evidence is an
   incomplete review, never a clean completion.

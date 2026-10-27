@@ -19,7 +19,8 @@ Inspect the outcome independently:
 
 - Which skill did the orchestrator load, and which mechanism did it choose from the actual observation capabilities?
 - Do per-group identities and actual initial/resume events establish initial review, later synthesis, and a subsequent
-  discovery search in the same session, with further passes while verified new findings appear?
+  discovery search in the same session, with further passes while new verified or investigated-unverified findings
+  appear?
 - Does the helper match actual delivered packets against immutable source text, keeping code out of the parent's compact
   report? Check raw events independently in the test, not by making the production parent reread every payload.
 - Did missing ranges cause concrete continuations even when the first result had no findings? Does the union of
@@ -27,6 +28,8 @@ Inspect the outcome independently:
 - Did a later turn synthesize interactions after the missing material arrived, and did the parent audit it afterwards?
 - After coverage/synthesis, did an explicit new search occur even when earlier findings were empty? Did a verified new
   finding trigger another same-session search, with immediate persistence and explicit permission to return empty?
+- Did a concrete concern retained as unverified after investigation also trigger a search beyond known findings, without
+  repeatedly reopening the same uncertainty or counting it as a verified defect?
 - Does the completion record match the evidence, preserving findings and naming unresolved material on a stop?
 - Did every reviewer prompt tell the reviewer to read source itself rather than through subagents, while still allowing
   subagents for tests or builds? If a reviewer used a subagent to read anyway, did the parent treat those ranges as
@@ -60,12 +63,39 @@ Require concrete next actions and honest completion status. A completed second-t
 not require another turn solely for coverage approval; the separate subsequent discovery search is still mandatory.
 
 Use controlled search results to exercise productive passes beyond three turns followed by an explicit empty search.
-Require each verified new actionable finding to trigger another pass without a default cap. Also exercise duplicate-only
-outputs, new IDs for old defects, unsupported or out-of-charter claims, empty replies without performed work, unresolved
-leads, unavailable continuation, and a caller limit reached before an empty pass. The orchestrator must verify novelty
-and actionability, retain original logs, and distinguish an actual final empty search from an incomplete stop. Reopen
-discovery after new cross-group evidence is synthesized. Check that a valid charter-relevant finding is not discarded
-solely for failing another workflow's severity threshold, and that finding progress cannot excuse missing delivery.
+Require each new verified or investigated-unverified finding to trigger another pass without a default cap. Also
+exercise duplicate-only outputs, new IDs for old defects, unsupported or out-of-charter claims, empty replies without
+performed work, unresolved leads, unavailable continuation, and a caller limit reached before an empty pass. The
+orchestrator must verify novelty and actionability, retain original logs, and distinguish an actual final empty search
+from an incomplete stop. Reopen discovery after new cross-group evidence is synthesized. Check that a valid
+charter-relevant finding is not discarded solely for failing another workflow's severity threshold, and that finding
+progress cannot excuse missing delivery.
+
+Exercise a concrete suspected crash-loss sequence whose source is available but whose filesystem guarantees cannot be
+established from available evidence. The reviewer must make focused verification attempts, record what those checks
+showed and the precise remaining premise, and surface the concern as **unverified after investigation** in both the
+findings log and caller-visible result. After the required synthesis and a proper search with no new findings of either
+kind, the group and overall review must complete despite that uncertainty. Include another verified finding and check
+that counts distinguish the two. An old uncertainty alone must not force failure or prevent a caller's checkpoint from
+advancing when its other requirements are met.
+
+Contrast that case with a first-impression suspicion labeled unverified without any checks: the orchestrator must send
+it for investigation rather than accept the label as a completed disposition. Also exercise a refuted suspicion, a
+productive investigation that resolves its missing premise, and a repeated uncertainty with no new evidence. These
+should respectively be rejected, resolved according to the evidence, and kept without renewed investigation. A lead left
+uninvestigated, missing mandatory source delivery, lost continuation, or an unperformed discovery pass still keeps the
+review incomplete; investigated uncertainty must not hide those failures. This distinction must hold across groups: one
+group with a properly recorded investigated uncertainty does not invalidate other completed groups.
+
+Give a padded investigation record that lists checks without useful results and calls a premise unavailable even though
+readable context or a permitted test can settle it. The orchestrator must request the concrete check, not accept the
+label. Give a reviewer-open finding that the orchestrator downgrades after focused checks: only the owning reviewer may
+append the revision, under the original ID, and the parent must confirm it. Mix rejected, duplicate, and unassessed open
+records with retained findings; per-kind counts must come from reconciled dispositions after deduplication, never raw
+active counts or label absence. Conflicting verification claims about the same defect require synthesis before that
+count. Repeated or drifting replies that never perform the search still stop incomplete; a known investigated
+uncertainty does not. A caller's explicit stricter acceptance condition remains binding, while a generic requirement for
+a complete review uses this protocol's completion definition.
 
 Run `cargo test --test helper_launcher` for launcher selection and `cargo test --test helper_launcher -- --ignored` for
 a real native compile and startup freshness checks. The latter requires Deno on the build host and may download its
