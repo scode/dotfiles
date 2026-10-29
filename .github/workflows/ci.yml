@@ -76,6 +76,8 @@ jobs:
         run: deno test --no-config --no-lock -A agent-skills/persistent-review/evidence.ts
       - name: Test interactive-artifact source helper
         run: deno test --no-config --no-lock -A agent-skills/interactive-artifact/interactive-artifact.ts
+      - name: Test farhelm-plan-status collector
+        run: deno test --no-config --no-lock -A agent-skills/farhelm-plan-status/scripts/collect
       # Exercise the real builder and compiled freshness checks on the existing Linux runner, for every helper.
       - name: Build and test compiled helpers
         run: cargo test --test helper_launcher -- --ignored

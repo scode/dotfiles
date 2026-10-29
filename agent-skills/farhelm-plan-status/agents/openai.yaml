@@ -1,0 +1,4 @@
+interface:
+  display_name: "farhelm plan status"
+  short_description: "Report the farhelm plan executors, landing monitor, and queue on this host"
+  default_prompt: "Use $farhelm-plan-status to check the farhelm plan status."
