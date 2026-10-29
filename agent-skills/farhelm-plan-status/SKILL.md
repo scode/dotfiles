@@ -9,14 +9,18 @@ description: >
 # farhelm-plan-status
 
 [farhelm](https://github.com/scode/farhelm) drains its plan queue (`plans/queue/INDEX.md` on main) with agent sessions
-on one host. This skill assumes it runs on that host, with this layout:
+on one host. This skill assumes it runs on that host, with checkouts in either of two layouts, and looks for both:
 
-- Executors work in `~/git/farhelm-fh-exec-N`, each driven by an interactive Claude Code or Codex session. Either
-  harness can drive any checkout, and a checkout can switch between them.
-- The landing monitor works in `~/git/farhelm-fh-complete-monitor` and logs each round to
-  `~/git/farhelm-plans-monitor-log.md`.
-- Executors keep their own logs beside the checkouts: `~/git/farhelm-plans-log-farhelm-fh-exec-N.md`, and one per plan
-  as `~/git/farhelm-plan-<plan>-log.md`.
+| Layout  | Executors           | Landing monitor               |
+| ------- | ------------------- | ----------------------------- |
+| `~/git` | `farhelm-fh-exec-N` | `farhelm-fh-complete-monitor` |
+| `~`     | `fh-exec-N`         | `fh-complete-monitor`         |
+
+- Each executor is driven by an interactive Claude Code or Codex session. Either harness can drive any checkout, and a
+  checkout can switch between them.
+- The monitor logs each round to `farhelm-plans-monitor-log.md` beside the checkouts.
+- Executors keep their own logs beside the checkouts too: `farhelm-plans-log-<checkout>.md`, and one per plan as
+  `farhelm-plan-<plan>-log.md`.
 
 ## Hard rule: hands off the checkouts
 
@@ -36,8 +40,9 @@ Run `scripts/collect` from this skill's directory. It is a read-only Deno script
   it prints `QUEUE unavailable` and carries on with the sessions.
 - For the landing monitor and each executor, the live interactive Claude and Codex processes in that checkout, then for
   each session driving it a line `[harness] <id> state=<state> live|NO LIVE PROCESS last write …`, the transcript path,
-  which active claims the session mentions (that is how a plan maps to an executor), its latest assistant messages and
-  tool calls, and for the monitor the newest entries of its log.
+  which active claims the session mentions and how often, its latest assistant messages and tool calls, and for the
+  monitor the newest entries of its log. The counts map a plan to its executor: the owner names its claim constantly,
+  while other executors mention it a few times in passing ("another executor holds …").
 
 Turn states are `running`, `idle`, `aborted at …`, `error=<kind> at …`, and `unknown` (nothing to decide from). An idle
 executor is normal; executors sleep on a queue watcher between plans. `NO LIVE PROCESS` means no interactive process of
@@ -71,8 +76,8 @@ converts what it prints. Write:
 1. A heading `## Executor status, HH:MM <zone>` and one bolded lead sentence with the most important news.
 2. A worker table with columns Worker | Plan | On plan for | State. The first row is always `landing`, then one row per
    executor. Use `—` for an idle worker's plan.
-   - Plan: the active claim the executor's session mentions; when it mentions none, take the plan from its latest
-     messages.
+   - Plan: the active claim the executor's session mentions far more often than the others do; when that is unclear,
+     take the plan from its latest messages.
    - On plan for: that claim's time from the collector and the elapsed time since, for example `since 06:39 (2h10m)`.
    - The landing row's plan and stage come from the monitor log (round start, review, checks, merging), not from
      `INDEX.md`: a plan reads `[complete]` there until the monitor writes `landing` after its checks pass. The monitor's
