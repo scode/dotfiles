@@ -1,0 +1,471 @@
+#!/usr/bin/env -S deno run -A
+// Read-only status collector for the farhelm plan queue on this host: the queue on GitHub main, its recent events and
+// claim times, and for the landing monitor and every executor checkout the agent session driving it (Claude Code or
+// Codex), whether a live process backs it, its turn state, the claims it mentions, and its latest messages and tool
+// calls. Judgment is left to the reader.
+//
+// It never touches a checkout: queue state comes from GitHub main, session state from the harness transcripts under
+// ~/.claude/projects and ~/.codex/sessions, and liveness from /proc. All times print in the host's local zone.
+//
+// Usage: collect            full report input
+//        collect --states   one line per session with its state (no GitHub calls; for confirming a nudge took)
+
+import $ from "jsr:@david/dax@0.50.1";
+
+const HOME = Deno.env.get("HOME")!;
+const GIT = `${HOME}/git`;
+const MONITOR = `${GIT}/farhelm-fh-complete-monitor`;
+const MONITOR_LOG = `${GIT}/farhelm-plans-monitor-log.md`;
+const REPO = "scode/farhelm";
+/** Only this much of a transcript's end is read; recent state is all the report needs. */
+const TAIL_BYTES = 4 << 20;
+
+/** A harness session for one checkout. `live` means an interactive process of that harness runs in the checkout. */
+type Session = { harness: "claude" | "codex"; id: string; path: string; mtime: Date; live: boolean };
+type Procs = { claude: string[]; codex: Map<string, string[]> };
+
+// ---- Formatting
+
+const fmt = new Intl.DateTimeFormat("sv-SE", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+/** "MM-DD HH:MM" in the host's local zone, for an ISO timestamp or Date. */
+export function local(t: string | Date): string {
+  const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return `${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+const zone = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date())
+  .find((p) => p.type === "timeZoneName")?.value ?? "";
+const oneLine = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n);
+
+// ---- Turn state and recent activity, per harness
+
+function parse(lines: string[]): any[] {
+  return lines.flatMap((l) => {
+    try {
+      return [JSON.parse(l)];
+    } catch {
+      return []; // the first line of a tail is usually cut mid-record
+    }
+  });
+}
+
+/**
+ * State of a Codex session from its newest turn boundary: `running`, `idle`, `aborted at …`, `error=<kind> at …`, or
+ * `unknown` when the tail holds no boundary. Codex does not retry a failed turn, so an error state means the executor
+ * is stalled until something messages it.
+ */
+export function codexState(events: any[]): string {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i], t = e.payload?.type;
+    if (e.type !== "event_msg") continue;
+    if (t === "task_started") return "running";
+    if (t === "turn_aborted") return `aborted at ${local(e.timestamp)}`;
+    if (t !== "task_complete") continue;
+    const info = e.payload?.error?.codex_error_info;
+    if (!info) return "idle";
+    return `error=${typeof info === "string" ? info : Object.keys(info)[0]} at ${local(e.timestamp)}`;
+  }
+  return "unknown";
+}
+
+/**
+ * State of a Claude Code session from its newest user or assistant entry: `idle` after an end_turn reply,
+ * `error=<kind> at …` after an API error reply, `aborted at …` after an Esc interrupt (Claude writes a user entry
+ * "[Request interrupted by user…" and nothing more), `unknown` when the tail has no entry, and otherwise `running`.
+ */
+export function claudeState(events: any[]): string {
+  const last = events.findLast((e) => e.type === "user" || e.type === "assistant");
+  if (!last) return "unknown";
+  if (last.type === "user") {
+    const c = last.message?.content;
+    const text = typeof c === "string" ? c : (c ?? []).map((x: any) => x.text ?? "").join(" ");
+    return text.startsWith("[Request interrupted by user") ? `aborted at ${local(last.timestamp)}` : "running";
+  }
+  if (last.isApiErrorMessage) return `error=${last.error ?? "api_error"} at ${local(last.timestamp)}`;
+  return last.message?.stop_reason === "end_turn" ? "idle" : "running";
+}
+
+/** Latest assistant texts and tool calls, as "HH:MM text" lines. */
+function recent(harness: Session["harness"], events: any[]): { messages: string[]; tools: string[] } {
+  const messages: string[] = [], tools: string[] = [];
+  for (const e of events) {
+    const at = e.timestamp ? local(e.timestamp).slice(6) : "?";
+    if (harness === "codex" && e.type === "response_item") {
+      const p = e.payload;
+      if (p.type === "message" && p.role === "assistant") {
+        messages.push(`${at} ${oneLine(p.content.map((c: any) => c.text ?? "").join(" "), 400)}`);
+      } else if (p.type === "function_call" || p.type === "custom_tool_call") {
+        tools.push(`${at} ${p.name} ${oneLine(String(p.arguments ?? p.input ?? ""), 160)}`);
+      }
+    } else if (harness === "claude" && e.type === "assistant") {
+      for (const c of e.message?.content ?? []) {
+        if (c.type === "text" && c.text.trim()) messages.push(`${at} ${oneLine(c.text, 400)}`);
+        if (c.type === "tool_use") {
+          const i = c.input ?? {};
+          tools.push(
+            `${at} ${c.name} ${oneLine(String(i.description ?? i.command ?? i.prompt ?? JSON.stringify(i)), 160)}`,
+          );
+        }
+      }
+    }
+  }
+  return { messages: messages.slice(-4), tools: tools.slice(-3) };
+}
+
+// ---- Finding sessions and processes
+
+async function readTail(path: string): Promise<string[]> {
+  using f = await Deno.open(path);
+  const size = (await f.stat()).size;
+  await f.seek(Math.max(0, size - TAIL_BYTES), Deno.SeekMode.Start);
+  const buf = new Uint8Array(Math.min(TAIL_BYTES, size));
+  let off = 0;
+  for (let n; off < buf.length && (n = await f.read(buf.subarray(off))) !== null;) off += n;
+  return new TextDecoder().decode(buf.subarray(0, off)).split("\n");
+}
+
+/** A file's first line, read in chunks: Codex's session_meta line embeds the instructions and can run to megabytes. */
+async function firstLine(path: string): Promise<string> {
+  using f = await Deno.open(path);
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  for (let total = 0; total < 32 << 20;) {
+    const buf = new Uint8Array(1 << 20);
+    const n = await f.read(buf);
+    if (n === null) break;
+    const nl = buf.subarray(0, n).indexOf(10);
+    chunks.push(buf.subarray(0, nl < 0 ? n : nl));
+    total += n;
+    if (nl >= 0) break;
+  }
+  return new TextDecoder().decode(await new Blob(chunks).bytes());
+}
+
+/** A Codex rollout's session_meta payload, or undefined when the file is gone or still being written. */
+async function codexMeta(path: string): Promise<any> {
+  try {
+    return JSON.parse(await firstLine(path)).payload ?? {};
+  } catch (e) {
+    if (e instanceof SyntaxError || e instanceof Deno.errors.NotFound) return undefined;
+    throw e;
+  }
+}
+
+/** Claude Code's project directory for a cwd: it replaces every character other than a letter or digit with `-`. */
+export function claudeProjectDir(cwd: string): string {
+  return `${HOME}/.claude/projects/${cwd.replace(/[^a-zA-Z0-9]/g, "-")}`;
+}
+
+/**
+ * The newest interactive Claude Code session for a checkout, by last write; `claude -p` delegates (entrypoint
+ * sdk-cli) share the directory and are skipped. Claude does not hold its transcript open, so unlike Codex a live
+ * process cannot be tied to one file; a short side session started in the checkout would win here.
+ */
+async function claudeSession(cwd: string, live: boolean): Promise<Session | undefined> {
+  const dir = claudeProjectDir(cwd);
+  const files: { path: string; mtime: Date }[] = [];
+  try {
+    for await (const d of Deno.readDir(dir)) {
+      if (!d.name.endsWith(".jsonl")) continue;
+      try {
+        files.push({ path: `${dir}/${d.name}`, mtime: (await Deno.stat(`${dir}/${d.name}`)).mtime! });
+      } catch (e) {
+        if (!(e instanceof Deno.errors.NotFound)) throw e;
+      }
+    }
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return undefined;
+    throw e;
+  }
+  for (const f of files.sort((a, b) => b.mtime.getTime() - a.mtime.getTime())) {
+    let text;
+    try {
+      using h = await Deno.open(f.path);
+      const head = new Uint8Array(256 << 10);
+      text = new TextDecoder().decode(head.subarray(0, (await h.read(head)) ?? 0));
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) continue;
+      throw e;
+    }
+    if (parse(text.split("\n")).find((e) => e.entrypoint)?.entrypoint !== "cli") continue;
+    return {
+      harness: "claude",
+      id: f.path.split("/").pop()!.replace(/\.jsonl$/, ""),
+      path: f.path,
+      mtime: f.mtime,
+      live,
+    };
+  }
+}
+
+/**
+ * Codex sessions for a checkout. A live interactive Codex process holds its own rollout open, so its sessions are read
+ * from /proc/<pid>/fd whatever their age; sub-agent rollouts it also holds carry a non-"cli" source and are skipped.
+ * Only without a live process does this fall back to the newest-started interactive rollout of the last four days,
+ * which is then marked not live.
+ */
+async function codexSessions(cwd: string, procs: Procs, recentByCwd: Map<string, string>): Promise<Session[]> {
+  const out: Session[] = [];
+  for (const paths of procs.codex.values()) {
+    for (const path of paths) {
+      const meta = await codexMeta(path);
+      if (meta?.source !== "cli" || meta.cwd !== cwd || out.some((s) => s.id === meta.id)) continue;
+      out.push({ harness: "codex", id: meta.id, path, mtime: (await Deno.stat(path)).mtime!, live: true });
+    }
+  }
+  const fallback = recentByCwd.get(cwd);
+  if (out.length === 0 && fallback) {
+    const meta = await codexMeta(fallback);
+    if (meta) {
+      out.push({
+        harness: "codex",
+        id: meta.id,
+        path: fallback,
+        mtime: (await Deno.stat(fallback)).mtime!,
+        live: false,
+      });
+    }
+  }
+  return out;
+}
+
+/** Newest-started interactive Codex rollout per cwd among rollouts written in the last four days. */
+async function recentCodexRollouts(): Promise<Map<string, string>> {
+  const best = new Map<string, { path: string; started: string }>();
+  const cutoff = Date.now() - 4 * 86400_000;
+  async function* walk(dir: string): AsyncGenerator<string> {
+    let entries;
+    try {
+      entries = await Array.fromAsync(Deno.readDir(dir));
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) return;
+      throw e;
+    }
+    for (const d of entries) {
+      if (d.isDirectory) yield* walk(`${dir}/${d.name}`);
+      else if (d.name.startsWith("rollout-") && d.name.endsWith(".jsonl")) yield `${dir}/${d.name}`;
+    }
+  }
+  for await (const path of walk(`${HOME}/.codex/sessions`)) {
+    let mtime;
+    try {
+      mtime = (await Deno.stat(path)).mtime!;
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) continue;
+      throw e;
+    }
+    if (mtime.getTime() < cutoff) continue;
+    const meta = await codexMeta(path);
+    if (meta?.source !== "cli" || !meta.cwd) continue;
+    const prev = best.get(meta.cwd);
+    if (!prev || prev.started < meta.timestamp) best.set(meta.cwd, { path, started: meta.timestamp });
+  }
+  return new Map([...best].map(([cwd, v]) => [cwd, v.path]));
+}
+
+/** Whether an agent process's argv is a one-shot delegate or service rather than an interactive worker. */
+export function isDelegate(comm: string, argv: string[]): boolean {
+  if (comm === "claude") return argv.includes("-p") || argv.includes("--print");
+  return argv.slice(1).some((a) => a === "exec" || a === "app-server" || a === "mcp-server");
+}
+
+/** Live interactive agent processes whose cwd is the checkout, with the Codex rollouts each holds open. */
+async function liveProcs(cwd: string): Promise<Procs> {
+  const res: Procs = { claude: [], codex: new Map() };
+  for await (const d of Deno.readDir("/proc")) {
+    if (!/^\d+$/.test(d.name)) continue;
+    try {
+      const comm = (await Deno.readTextFile(`/proc/${d.name}/comm`)).trim();
+      if ((comm !== "claude" && comm !== "codex") || (await Deno.readLink(`/proc/${d.name}/cwd`)) !== cwd) continue;
+      if (isDelegate(comm, (await Deno.readTextFile(`/proc/${d.name}/cmdline`)).split("\0"))) continue;
+      if (comm === "claude") {
+        res.claude.push(d.name);
+        continue;
+      }
+      const rollouts: string[] = [];
+      for await (const fd of Deno.readDir(`/proc/${d.name}/fd`)) {
+        const target = await Deno.readLink(`/proc/${d.name}/fd/${fd.name}`).catch(() => "");
+        if (/\/rollout-[^/]*\.jsonl$/.test(target)) rollouts.push(target);
+      }
+      res.codex.set(d.name, rollouts);
+    } catch {
+      continue; // the process exited meanwhile or belongs to another user
+    }
+  }
+  return res;
+}
+
+// ---- Queue on GitHub main
+
+/** In-flight or landing claims from INDEX.md lines, as claim id -> plan name. */
+export function activeClaims(index: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const m of index.matchAll(/^- \[(?:in-flight|landing) ([0-9a-f]{6,})\] `([^`]+)\.md`/gm)) out.set(m[1], m[2]);
+  return out;
+}
+
+/** Prints the queue and its recent events; returns the active claims, or an empty map when GitHub is unreachable. */
+async function printQueue(): Promise<Map<string, string>> {
+  try {
+    const index = await $`gh api repos/${REPO}/contents/plans/queue/INDEX.md -H ${"Accept: application/vnd.github.raw"}`
+      .text();
+    const commits = await $`gh api ${`repos/${REPO}/commits?path=plans/queue/INDEX.md&per_page=100`}`.json();
+    console.log("== QUEUE (main)");
+    for (const l of index.split("\n")) if (l.startsWith("- [")) console.log(oneLine(l, 220));
+    const claims = activeClaims(index);
+    console.log("== ACTIVE CLAIMS (claim time)");
+    for (const [id, plan] of claims) {
+      const c = commits.find((c: any) => c.commit.message.includes(`claim ${plan}`) && c.commit.message.includes(id));
+      console.log(`${id} ${plan} claimed ${c ? local(c.commit.committer.date) : "before the last 100 queue commits"}`);
+    }
+    console.log("== QUEUE EVENTS (newest first)");
+    for (const c of commits.slice(0, 15)) {
+      console.log(`${local(c.commit.committer.date)} ${c.commit.message.split("\n")[0]}`);
+    }
+    return claims;
+  } catch (e) {
+    console.log(`== QUEUE unavailable: ${oneLine(String(e), 300)}`);
+    return new Map();
+  }
+}
+
+// ---- Main
+
+async function checkouts(): Promise<[string, string][]> {
+  const execs: string[] = [];
+  for await (const d of Deno.readDir(GIT)) if (/^farhelm-fh-exec-\d+$/.test(d.name)) execs.push(d.name);
+  execs.sort((a, b) => Number(a.split("-").pop()) - Number(b.split("-").pop()));
+  return [["landing", MONITOR], ...execs.map((n): [string, string] => [n.replace("farhelm-fh-", ""), `${GIT}/${n}`])];
+}
+
+/** The sessions worth showing: every live one, else only the most recently written candidate (marked not live). */
+export function driving(found: Session[]): Session[] {
+  const live = found.filter((s) => s.live);
+  return live.length > 0 ? live : found.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, 1);
+}
+
+if (import.meta.main) {
+  const statesOnly = Deno.args.includes("--states");
+  console.log(`NOW ${local(new Date())} ${zone}`);
+  const claims = statesOnly ? new Map<string, string>() : await printQueue();
+  const recentCodex = await recentCodexRollouts();
+  for (const [label, cwd] of await checkouts()) {
+    const procs = await liveProcs(cwd);
+    const claude = await claudeSession(cwd, procs.claude.length > 0);
+    const found = [...(claude ? [claude] : []), ...await codexSessions(cwd, procs, recentCodex)];
+    if (!statesOnly) {
+      console.log(`\n######## ${label}  ${cwd.replace(HOME, "~")}`);
+      console.log(
+        `live: claude pids ${procs.claude.join(" ") || "none"} | codex pids ${
+          [...procs.codex.keys()].join(" ") || "none"
+        }`,
+      );
+    }
+    if (found.length === 0) console.log(`${statesOnly ? `${label} ` : ""}no session found`);
+    for (const s of driving(found)) {
+      const lines = await readTail(s.path);
+      const events = parse(lines);
+      const state = s.harness === "codex" ? codexState(events) : claudeState(events);
+      const ago = Math.round((Date.now() - s.mtime.getTime()) / 60000);
+      const liveness = s.live ? "live" : "NO LIVE PROCESS";
+      console.log(
+        `${statesOnly ? `${label} ` : ""}[${s.harness}] ${s.id} state=${state} ${liveness} last write ${ago}m ago`,
+      );
+      if (statesOnly) continue;
+      console.log(`transcript ${s.path.replace(HOME, "~")}`);
+      const text = lines.join("\n");
+      const held = [...claims].filter(([id]) => text.includes(id)).map(([id, plan]) => `${id} (${plan})`);
+      if (held.length > 0) console.log(`mentions active claims: ${held.join(", ")}`);
+      const r = recent(s.harness, events);
+      for (const m of r.messages) console.log(`  msg ${m}`);
+      for (const t of r.tools) console.log(`  tool ${t}`);
+    }
+    if (!statesOnly && label === "landing") {
+      try {
+        const log = (await Deno.readTextFile(MONITOR_LOG)).split("\n").filter((l) => l.startsWith("- "));
+        for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
+      } catch (e) {
+        if (!(e instanceof Deno.errors.NotFound)) throw e;
+      }
+    }
+  }
+}
+
+// ---- Tests
+
+const T = "2026-01-01T00:00:00Z";
+
+Deno.test("codexState reads the newest turn boundary", () => {
+  const ev = (p: object) => ({ timestamp: T, type: "event_msg", payload: p });
+  const overloaded = ev({ type: "task_complete", error: { codex_error_info: "server_overloaded" } });
+  const cases: [any[], RegExp][] = [
+    [[ev({ type: "task_started" }), overloaded, ev({ type: "token_count" })], /^error=server_overloaded at /],
+    [[overloaded, ev({ type: "task_started" })], /^running$/],
+    [[ev({ type: "task_complete" })], /^idle$/],
+    [[ev({ type: "task_complete", error: { codex_error_info: { http_connection_failed: {} } } })], /^error=http_conn/],
+    [[ev({ type: "turn_aborted" })], /^aborted at /],
+    [[], /^unknown$/],
+  ];
+  for (const [events, want] of cases) {
+    const got = codexState(events);
+    if (!want.test(got)) throw new Error(`got ${got}, want ${want}`);
+  }
+});
+
+Deno.test("claudeState distinguishes idle, running, interrupts and API errors", () => {
+  const a = (extra: object) => ({ type: "assistant", timestamp: T, ...extra });
+  const u = (content: unknown) => ({ type: "user", timestamp: T, message: { content } });
+  const cases: [any[], RegExp][] = [
+    [[a({ message: { stop_reason: "end_turn" } }), { type: "system" }], /^idle$/],
+    [[a({ message: { stop_reason: "tool_use" } })], /^running$/],
+    [[a({ message: { stop_reason: "end_turn" } }), u([{ type: "tool_result" }])], /^running$/],
+    [[u([{ type: "text", text: "[Request interrupted by user for tool use]" }])], /^aborted at /],
+    [[u("[Request interrupted by user]")], /^aborted at /],
+    [[a({ isApiErrorMessage: true, error: "server_error", message: {} })], /^error=server_error at /],
+    [[], /^unknown$/],
+  ];
+  for (const [events, want] of cases) {
+    const got = claudeState(events);
+    if (!want.test(got)) throw new Error(`got ${got}, want ${want}`);
+  }
+});
+
+Deno.test("claudeProjectDir replaces every non-alphanumeric character", () => {
+  const got = claudeProjectDir("/x/my_git/farhelm-fh-exec-1");
+  if (!got.endsWith("/.claude/projects/-x-my-git-farhelm-fh-exec-1")) throw new Error(got);
+});
+
+Deno.test("isDelegate skips one-shot and service invocations only", () => {
+  const cases: [string, string[], boolean][] = [
+    ["claude", ["claude", "--resume", "x"], false],
+    ["claude", ["claude", "-p", "hi"], true],
+    ["claude", ["claude", "--print", "hi"], true],
+    ["codex", ["codex", "--yolo", "-c", "x=1"], false],
+    ["codex", ["codex", "-m", "m", "exec", "hi"], true],
+    ["codex", ["codex", "app-server"], true],
+  ];
+  for (const [comm, argv, want] of cases) if (isDelegate(comm, argv) !== want) throw new Error(argv.join(" "));
+});
+
+Deno.test("activeClaims reads in-flight and landing lines only", () => {
+  const index = "- [in-flight 9648c5] `a.md` — x\n- [landing 036692] `b.md` — y\n- [pending] `c.md` — z\n";
+  const got = JSON.stringify([...activeClaims(index)]);
+  if (got !== '[["9648c5","a"],["036692","b"]]') throw new Error(got);
+});
+
+Deno.test("driving prefers live sessions and otherwise shows only the newest", () => {
+  const s = (id: string, live: boolean, t: number): Session => ({
+    harness: "codex",
+    id,
+    path: id,
+    mtime: new Date(t),
+    live,
+  });
+  const ids = (x: Session[]) => x.map((v) => v.id).join(",");
+  if (ids(driving([s("old", false, 1), s("live", true, 0)])) !== "live") throw new Error("live first");
+  if (ids(driving([s("old", false, 1), s("new", false, 2)])) !== "new") throw new Error("newest fallback");
+});
