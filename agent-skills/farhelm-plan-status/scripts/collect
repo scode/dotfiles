@@ -13,9 +13,15 @@
 import $ from "jsr:@david/dax@0.50.1";
 
 const HOME = Deno.env.get("HOME")!;
-const GIT = `${HOME}/git`;
-const MONITOR = `${GIT}/farhelm-fh-complete-monitor`;
-const MONITOR_LOG = `${GIT}/farhelm-plans-monitor-log.md`;
+/**
+ * The two checkout layouts in use, as [directory, name prefix]: executors are `<prefix>exec-N` and the landing monitor
+ * is `<prefix>complete-monitor`, with the monitor's log `farhelm-plans-monitor-log.md` beside them. Both are searched.
+ */
+// deno-fmt-ignore
+const LAYOUTS: [string, string][] = [
+  [`${HOME}/git`, "farhelm-fh-"],
+  [HOME, "fh-"],
+];
 const REPO = "scode/farhelm";
 /** Only this much of a transcript's end is read; recent state is all the report needs. */
 const TAIL_BYTES = 4 << 20;
@@ -119,11 +125,12 @@ function recent(harness: Session["harness"], events: any[]): { messages: string[
 
 // ---- Finding sessions and processes
 
-async function readTail(path: string): Promise<string[]> {
+/** The last `bytes` of a file (all of it for Infinity), split into lines. */
+async function readTail(path: string, bytes = TAIL_BYTES): Promise<string[]> {
   using f = await Deno.open(path);
   const size = (await f.stat()).size;
-  await f.seek(Math.max(0, size - TAIL_BYTES), Deno.SeekMode.Start);
-  const buf = new Uint8Array(Math.min(TAIL_BYTES, size));
+  await f.seek(Math.max(0, size - Math.min(bytes, size)), Deno.SeekMode.Start);
+  const buf = new Uint8Array(Math.min(bytes, size));
   let off = 0;
   for (let n; off < buf.length && (n = await f.read(buf.subarray(off))) !== null;) off += n;
   return new TextDecoder().decode(buf.subarray(0, off)).split("\n");
@@ -335,11 +342,36 @@ async function printQueue(): Promise<Map<string, string>> {
 
 // ---- Main
 
-async function checkouts(): Promise<[string, string][]> {
-  const execs: string[] = [];
-  for await (const d of Deno.readDir(GIT)) if (/^farhelm-fh-exec-\d+$/.test(d.name)) execs.push(d.name);
-  execs.sort((a, b) => Number(a.split("-").pop()) - Number(b.split("-").pop()));
-  return [["landing", MONITOR], ...execs.map((n): [string, string] => [n.replace("farhelm-fh-", ""), `${GIT}/${n}`])];
+/** A checkout to report on; the monitor's carries the path of its round log. */
+type Checkout = { label: string; cwd: string; log?: string };
+
+/**
+ * Every monitor and executor checkout under the known layouts, monitors first. A layout that does not exist on this
+ * host contributes nothing, and when both exist both are listed, each under its own path.
+ */
+async function checkouts(): Promise<Checkout[]> {
+  const monitors: Checkout[] = [], execs: (Checkout & { n: number })[] = [];
+  for (const [dir, prefix] of LAYOUTS) {
+    let names;
+    try {
+      names = (await Array.fromAsync(Deno.readDir(dir))).map((d) => d.name);
+    } catch (e) {
+      if (e instanceof Deno.errors.NotFound) continue;
+      throw e;
+    }
+    if (names.includes(`${prefix}complete-monitor`)) {
+      monitors.push({
+        label: "landing",
+        cwd: `${dir}/${prefix}complete-monitor`,
+        log: `${dir}/farhelm-plans-monitor-log.md`,
+      });
+    }
+    for (const name of names) {
+      const m = name.match(new RegExp(`^${prefix}exec-(\\d+)$`));
+      if (m) execs.push({ label: `exec-${m[1]}`, cwd: `${dir}/${name}`, n: Number(m[1]) });
+    }
+  }
+  return [...monitors, ...execs.sort((a, b) => a.n - b.n)];
 }
 
 /** The sessions worth showing: every live one, else only the most recently written candidate (marked not live). */
@@ -353,7 +385,7 @@ if (import.meta.main) {
   console.log(`NOW ${local(new Date())} ${zone}`);
   const claims = statesOnly ? new Map<string, string>() : await printQueue();
   const recentCodex = await recentCodexRollouts();
-  for (const [label, cwd] of await checkouts()) {
+  for (const { label, cwd, log: monitorLog } of await checkouts()) {
     const procs = await liveProcs(cwd);
     const claude = await claudeSession(cwd, procs.claude.length > 0);
     const found = [...(claude ? [claude] : []), ...await codexSessions(cwd, procs, recentCodex)];
@@ -367,9 +399,14 @@ if (import.meta.main) {
     }
     if (found.length === 0) console.log(`${statesOnly ? `${label} ` : ""}no session found`);
     for (const s of driving(found)) {
-      const lines = await readTail(s.path);
-      const events = parse(lines);
-      const state = s.harness === "codex" ? codexState(events) : claudeState(events);
+      // A long turn can push its own start out of the default tail; read the whole file before calling it unknown.
+      const stateOf = (ev: any[]) => s.harness === "codex" ? codexState(ev) : claudeState(ev);
+      const tail = await readTail(s.path);
+      const events = parse(tail);
+      let state = stateOf(events);
+      if (state === "unknown") {
+        state = stateOf(parse(await readTail(s.path, Infinity)));
+      }
       const ago = Math.round((Date.now() - s.mtime.getTime()) / 60000);
       const liveness = s.live ? "live" : "NO LIVE PROCESS";
       console.log(
@@ -377,16 +414,19 @@ if (import.meta.main) {
       );
       if (statesOnly) continue;
       console.log(`transcript ${s.path.replace(HOME, "~")}`);
-      const text = lines.join("\n");
-      const held = [...claims].filter(([id]) => text.includes(id)).map(([id, plan]) => `${id} (${plan})`);
+      // Other executors name a claim in passing ("another executor holds …"); its owner names it constantly. Counted over
+      // the same fixed tail for every session, so the counts compare.
+      const text = tail.join("\n");
+      const held = [...claims].map(([id, plan]) => [`${id} (${plan})`, text.split(id).length - 1] as const)
+        .filter(([, n]) => n > 0).map(([c, n]) => `${c} x${n}`);
       if (held.length > 0) console.log(`mentions active claims: ${held.join(", ")}`);
       const r = recent(s.harness, events);
       for (const m of r.messages) console.log(`  msg ${m}`);
       for (const t of r.tools) console.log(`  tool ${t}`);
     }
-    if (!statesOnly && label === "landing") {
+    if (!statesOnly && monitorLog) {
       try {
-        const log = (await Deno.readTextFile(MONITOR_LOG)).split("\n").filter((l) => l.startsWith("- "));
+        const log = (await Deno.readTextFile(monitorLog)).split("\n").filter((l) => l.startsWith("- "));
         for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
       } catch (e) {
         if (!(e instanceof Deno.errors.NotFound)) throw e;
