@@ -70,7 +70,7 @@ jobs:
       - run: cargo test
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.9.7
+          deno-version: v2.9.8
           cache: true
       - name: Test persistent-review source helper
         run: deno test --no-config --no-lock -A agent-skills/persistent-review/evidence.ts
