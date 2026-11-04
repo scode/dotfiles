@@ -25,6 +25,11 @@ const HELPERS: &[Helper] = &[
         source: "evidence.ts",
     },
     Helper {
+        skill: "persistent-review",
+        launcher: "schedule",
+        source: "schedule.ts",
+    },
+    Helper {
         skill: "interactive-artifact",
         launcher: "interactive-artifact",
         source: "interactive-artifact.ts",
@@ -220,6 +225,8 @@ fn helper_checkout() -> TempDir {
     for file in [
         "persistent-review/evidence",
         "persistent-review/evidence.ts",
+        "persistent-review/schedule",
+        "persistent-review/schedule.ts",
         "interactive-artifact/interactive-artifact",
         "interactive-artifact/interactive-artifact.ts",
         "interactive-artifact/assets/interactive-artifact.css",
@@ -288,6 +295,27 @@ fn compiled_helper_checks_deployed_source_without_a_deno_on_path() {
     assert!(missing.stdout.is_empty());
     fs::write(skill.join("evidence.ts"), &source).unwrap();
     assert!(run().status.success());
+
+    // The scheduler is a second compiled helper in the same skill and must be just as fresh-checked. A status call on
+    // a directory with no schedule reaches the CLI and fails with its own refusal, which proves the binary started.
+    let schedule = || {
+        Command::new(installed.join("schedule"))
+            .args(["status", "/nonexistent-schedule-dir"])
+            .current_dir("/")
+            .env_clear()
+            .env("PATH", &tools)
+            .output()
+            .unwrap()
+    };
+    let fresh = schedule();
+    assert_eq!(fresh.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&fresh.stderr).contains("run init first"));
+    let schedule_source = fs::read(skill.join("schedule.ts")).unwrap();
+    fs::write(skill.join("schedule.ts"), "changed").unwrap();
+    let stale = schedule();
+    assert_eq!(stale.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("Rebuild helpers"));
+    fs::write(skill.join("schedule.ts"), schedule_source).unwrap();
 }
 
 /// The interactive-artifact counterpart of the test above, opt-in for the same reason. Beyond the freshness check, it

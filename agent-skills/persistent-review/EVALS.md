@@ -175,6 +175,13 @@ must stay visible in the consolidated view. Leave one registered log out of `con
 produce a clean draft. The parent's consolidated draft should exist and be current before the last discovery pass ends,
 not be assembled afterwards.
 
+For scheduling, run `deno check` and `deno test -A` on `schedule.ts`, and in a live run check that the orchestrator
+queues every turn through `schedule ready` after judging the previous one, raises or lowers capacity with `schedule cap`
+instead of starting a second runner, and wakes from `schedule wait` rather than polling replies. Kill the daemon while
+turns are running and start it again: the turns must keep running and their ends must be recorded. With no daemon alive,
+`schedule wait` must exit at once rather than wait. Free slots next to queued turns in `schedule status` should prompt
+the orchestrator to check the daemon.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.

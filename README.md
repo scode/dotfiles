@@ -15,18 +15,19 @@ cargo run -p dotfiles -- uninstall
 
 Before copying skills to a Linux x64 host without Deno, run `cargo run -- build-helpers --target
 x86_64-unknown-linux-gnu`. This builds the `persistent-review` and `interactive-artifact` helpers, under each skill's
-`bin/linux-x64/` (`agent-skills/persistent-review/bin/linux-x64/evidence` and
+`bin/linux-x64/` (`agent-skills/persistent-review/bin/linux-x64/evidence`,
+`agent-skills/persistent-review/bin/linux-x64/schedule` and
 `agent-skills/interactive-artifact/bin/linux-x64/interactive-artifact`). Those directories are Git-ignored; copy them
 with the rest of each skill. Omit `--target` to build for the current host. Linux ARM64 and both macOS architectures are
 also supported.
 
-Each of these skills runs through its shell launcher everywhere (`evidence` for persistent-review,
+Each of these skills runs through its shell launcher everywhere (`evidence` and `schedule` for persistent-review,
 `interactive-artifact` for interactive-artifact). The launcher prefers a matching compiled helper, otherwise runs the
-skill's TypeScript source (`evidence.ts`, `interactive-artifact.ts`) with Deno. A compiled helper refuses to run if its
-neighboring source changed or is missing: rebuild before copying the skill again. Broken executables fail rather than
-falling back. Ordinary installation does not build helpers.
+skill's TypeScript source (`evidence.ts`, `schedule.ts`, `interactive-artifact.ts`) with Deno. A compiled helper refuses
+to run if its neighboring source changed or is missing: rebuild before copying the skill again. Broken executables fail
+rather than falling back. Ordinary installation does not build helpers.
 
-The existing Linux CI job runs both helpers' source unit tests and a real build of both helpers with startup freshness
+The existing Linux CI job runs every helper's source unit tests and a real build of every helper with startup freshness
 checks. The interactive-artifact browser tests are not part of CI. Native macOS builds can be checked locally with
 `cargo test --test helper_launcher -- --ignored`.
 

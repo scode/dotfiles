@@ -95,10 +95,16 @@ reason when the group count is well above that minimum. Launch without waiting f
 approve the plan.
 
 Launch all independent ready groups concurrently by default, subject to actual harness slots and resource capacity.
-Queue remaining groups and start them as capacity becomes available; record the capacity constraint instead of silently
-serializing. Honor an explicitly requested concurrency restriction. Each group gets a separate resumable reviewer
-identity, manifest, findings log, progress file, and transcript paths. Reviewers share stable inputs read-only and never
-write another reviewer's artifacts. A large scope creates more bounded groups, not one enormous first pass.
+Honor an explicitly requested concurrency restriction. Each group gets a separate resumable reviewer identity, manifest,
+findings log, progress file, and transcript paths. Reviewers share stable inputs read-only and never write another
+reviewer's artifacts. A large scope creates more bounded groups, not one enormous first pass.
+
+Run every reviewer turn through the bundled scheduler; read `scheduling.md` before the first launch. It holds the queue,
+the concurrency limit (change it with `schedule cap` when capacity changes, never by starting a second runner), and the
+one-live-turn rule, and it starts queued turns as slots free up. You write each turn's launch script from the shellout
+harness file and queue it with `schedule ready` only after judging the previous turn; the scheduler never advances a
+group on its own. Learn of ended turns from `schedule wait`, and read `schedule status` for run state instead of
+reconstructing it from reply files. Do not hand-roll batch runners or fixed identity lists.
 
 The persistence, coverage, and discovery requirements apply independently to every group, and each group advances on its
 own. Move a group from initial review to synthesis as soon as its own audit allows, and from synthesis to discovery
@@ -356,10 +362,10 @@ resumed session; if it does, use each session's latest value. Cost is reported a
 progressing review early.
 
 Keep one current-state file in the run directory, rewritten in place before you act on each decision. It holds pending
-parent decisions, pending cross-group input, and the paths of the run's records, including any tool that already tracks
-group states, rather than a copy of that tool's state. After a compaction or resume, read it first instead of
-reconstructing state from notes, replies, or the transcript, and check any group recorded as running against the actual
-process and session state.
+parent decisions, pending cross-group input, and the paths of the run's records, including the schedule directory, whose
+`schedule status` is the authority on group states. After a compaction or resume, read it and `schedule status` first
+instead of reconstructing state from notes, replies, or the transcript; the scheduler, not your memory, says which turns
+are running.
 
 ## Stop and report
 

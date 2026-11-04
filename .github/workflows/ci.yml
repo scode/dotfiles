@@ -74,6 +74,8 @@ jobs:
           cache: true
       - name: Test persistent-review source helper
         run: deno test --no-config --no-lock -A agent-skills/persistent-review/evidence.ts
+      - name: Test persistent-review scheduler
+        run: deno test --no-config --no-lock -A agent-skills/persistent-review/schedule.ts
       - name: Test interactive-artifact source helper
         run: deno test --no-config --no-lock -A agent-skills/interactive-artifact/interactive-artifact.ts
       - name: Test farhelm-plan-status collector
