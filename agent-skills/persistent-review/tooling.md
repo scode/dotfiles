@@ -77,8 +77,9 @@ The report separates what it could not use, so silence never stands in for a cla
 - `unfinished_calls` counts calls that have no result yet, usually because the turn is still running. Re-audit after the
   turn boundary.
 - `ignored` counts skipped records of kinds known to carry no delivery: Codex lifecycle records, messages, reasoning,
-  agent messages and server-side searches; Claude hooks, task notices, turn results, thinking, synthetic user text, and
-  subagent records; image and ToolSearch result blocks. These need no attention.
+  agent messages, server-side searches and tool definitions (`additional_tools`, seen from 0.166.0); Claude hooks, task
+  notices, turn results, thinking, synthetic user text, and subagent records; image and ToolSearch result blocks. These
+  need no attention.
 - `unrecognized` counts skipped records and result blocks of any other kind. They earn nothing, even when they quote a
   complete packet. A non-empty `unrecognized` means the harness wrote something this helper has not seen. Judge whether
   it could hold reads the audit missed: if the missing ranges match reads the reviewer reports making and an
@@ -131,8 +132,9 @@ successful current audit.
 
 ## Record and count findings
 
-Each reviewer owns one append-only JSONL file, initialized empty before reading source. Once a finding is ready, write
-its event to a private JSON file and append it immediately with the command below, before further analysis or reads:
+Each reviewer owns one append-only JSONL file, initialized empty before reading source. Once a record is ready (a
+finding, a candidate ruled out, or a lead), write its event to a private JSON file and append it immediately with the
+command below, before further analysis or reads:
 
 ```json
 {
@@ -151,24 +153,104 @@ its event to a private JSON file and append it immediately with the command belo
 /skill/evidence findings /run/group/findings.jsonl /run/other-group/findings.jsonl
 ```
 
-Use the same local ID for revisions and `state: "withdrawn"` for a retraction; include the reason in `detail`. Never
-erase the original event. This format supplies persistence and identity, not a review lens or severity taxonomy. Save
-unresolved leads and current progress separately; do not count leads as completed findings.
+Use the same local ID for revisions; include the reason in `detail`. Never erase the original event. This format
+supplies persistence and identity, not a review lens or severity taxonomy.
+
+`kind` is one of three values sharing one ID space per log:
+
+- `finding`: a reported finding.
+- `candidate`: considered and deliberately not reported. `detail` holds the reason in the caller's format: refuted (with
+  the source location that refutes it), covered (naming and quoting the cover), or proposed for dropping.
+- `lead`: unresolved and still needing work. Close it with a later event under the same ID that changes its kind: to
+  `finding`, or to `candidate` with what the checks showed.
+
+An ID may change kind over its history; the latest event wins. `open` means the record stands as its current kind;
+`state: "withdrawn"` retracts the record itself, with the reason in `detail`. Leads are not completed findings, and an
+open lead keeps its group's discovery unfinished.
 
 For a concern retained as **unverified after investigation**, put that label in `summary` and its investigation record
 in `detail`: source basis, suspected consequence, checks actually performed and results, missing premise, why available
 checks cannot settle it, and what evidence would. Keep `state: "open"`; open/withdrawn tracks retention, not confidence.
 Revise an existing finding under its original ID when its verification status changes. This uses the existing event
 schema. The orchestrator requests these writes from the owning reviewer and confirms the append; it never appends to a
-reviewer's log itself. Cross-group duplicates retain each original record's owner and ID. A lead that has not received
-actual verification work stays in progress notes until investigated or rejected.
+reviewer's log itself. Cross-group duplicates retain each original record's owner and ID.
 
-The counter reports active and withdrawn counts and active IDs, summaries, locations, and log paths. It counts every
-reviewer-open record, regardless of the orchestrator's disposition: verified findings, concerns unverified after
-investigation, duplicates, rejected claims, and candidates still under investigation may all be present. Per-kind counts
-come from the orchestrator's reconciled dispositions after semantic deduplication, not label absence or subtraction from
-this raw count. It counts the latest state of each ID per log. These are observed counts before semantic deduplication:
-the orchestrator reads finding details to determine whether two reviewers found the same defect. Empty initialized logs
-count as zero; missing logs or malformed events fail. If polling catches an unfinished append, retry after the write
-completes and report counts as temporarily unavailable rather than silently skipping the record. Every log has exactly
-one writer.
+The counter reports `active` and `withdrawn` for reported findings only, `open_candidates` and `open_leads` separately,
+and lists open records by kind (`findings`, `candidates`, `leads`) with ID, summary, location, and log path. `active`
+counts every reviewer-open finding, regardless of the orchestrator's disposition: verified findings, concerns unverified
+after investigation, duplicates, rejected claims, and possible findings still under investigation may all be present.
+Per-kind counts come from the orchestrator's reconciled dispositions after semantic deduplication, not label absence or
+subtraction from this raw count. It counts the latest state of each ID per log. These are observed counts before
+semantic deduplication: the orchestrator reads finding details to determine whether two reviewers found the same defect.
+Empty initialized logs count as zero; missing logs or malformed events fail. If polling catches an unfinished append,
+retry after the write completes and report counts as temporarily unavailable rather than silently skipping the record.
+Every log has exactly one writer.
+
+## Read one turn's records
+
+```text
+/skill/evidence events /run/group/findings.jsonl --after 12
+```
+
+Lists every event appended after physical line 12, with its line, ID, kind, state, summary, and location, and returns
+`last_line`, the log's current physical line count, as the offset for the next turn. Start a reviewer at `--after 0`. An
+offset past the end of the log fails, since it would hide every later event; it usually means another reviewer's offset.
+Read this delta and the reviewer's delta reply after each turn instead of rereading whole earlier replies. Fetch a
+record's `detail` from the log itself when a decision needs it.
+
+## Record dispositions and consolidate
+
+The orchestrator owns one append-only disposition log per run, created empty at run start. It never writes a reviewer's
+log, and reviewers never write this one. Register each reviewer's findings log when its group is created:
+
+```text
+/skill/evidence register /run/dispositions.jsonl /run/a/findings.jsonl
+```
+
+A disposition event names the reviewer record and the exact event it judged:
+
+```json
+{
+  "version": 1,
+  "kind": "disposition",
+  "log": "/run/group/findings.jsonl",
+  "id": "f1",
+  "line": 12,
+  "disposition": "verified",
+  "group": "socket-name-collision",
+  "reason": "Source route checked at module.rs:40-77."
+}
+```
+
+```text
+/skill/evidence dispose /run/dispositions.jsonl /run/disposition-event.json
+/skill/evidence consolidate /run/dispositions.jsonl /run/a/findings.jsonl /run/b/findings.jsonl
+/skill/evidence consolidate --markdown /run/dispositions.jsonl /run/a/findings.jsonl /run/b/findings.jsonl
+```
+
+`disposition` is `verified`, `unverified-after-investigation`, `under-investigation`, `duplicate`, `rejected`, or
+`excluded` (a `candidate` whose reason for not being reported the orchestrator accepts). `line` is the physical line of
+the reviewer event being judged, as `events` reports it; `dispose` refuses an unregistered log or a line that does not
+hold an event for that ID, so a typo cannot wedge later consolidations. `group` is the deduplication key: every member
+of a group is the same underlying defect, and a `duplicate` member points at the group rather than at another ID. A
+later disposition for the same record replaces the earlier one. A `candidate` whose concern another record already
+carries joins that record's group as `duplicate`, with the reasoning in `reason`; `excluded` is for a candidate that
+stands in a group of its own, and an `excluded` member next to a `verified` one is reported as a conflict.
+
+`consolidate` needs exactly the registered reviewer logs, so a forgotten log fails instead of producing a clean-looking
+draft. It refuses a disposition naming a record no supplied log contains, and reports:
+
+- `groups`, each with a disposition derived from its non-duplicate members: one shared value, `conflict` when they
+  disagree, `duplicate-only` when every member is a duplicate, or `stale` when any member was revised after its
+  decision. Majority does not resolve a conflict; synthesis does.
+- `counts` of groups per disposition. Once no group is `stale` or `conflict`, these are the deduplicated counts for the
+  completion record.
+- `undispositioned`: open reviewer records of any kind with no decision yet.
+- `stale`: records the reviewer revised after the line the decision judged.
+- `open_leads`: leads still open.
+- `withdrawn`: records reviewers retracted, with whether any decision covers them, so a retraction stays visible to
+  checks the caller runs on dropped findings.
+
+`--markdown` renders the same view as a private draft of the result, with open problems first, then each group's detail,
+then withdrawn records. It is a working draft for incremental consolidation, not the caller's format and not a
+publication step.

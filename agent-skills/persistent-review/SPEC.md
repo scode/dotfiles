@@ -105,19 +105,41 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   run-wide phase barrier. A group's discovery waits for synthesis, or an incomplete stop, in the interface groups
   recorded in its group notes, and for nothing else. Each group is tracked as queued, running, awaiting a parent
   decision, complete, or stopped incomplete.
-- Every initial and continuation prompt instructs immediate recording: once a substantive finding is ready, append it
-  before further analysis or reads, never waiting for a checkpoint, batch end, turn end, final report, or compaction.
-  Findings and progress artifacts are initialized before source reads. No finding quota is imposed. Recording a finding
-  does not end the assigned pass; reviewers continue that pass instead of stopping at a count.
+- Every initial and continuation prompt instructs immediate recording: once a substantive finding, a decision not to
+  report something considered, or an unsettled lead is ready, append it as a `finding`, `candidate` or `lead` before
+  further analysis or reads, never waiting for a checkpoint, batch end, turn end, final report, or compaction. Findings
+  and progress artifacts are initialized before source reads. No finding quota is imposed. Recording a finding does not
+  end the assigned pass; reviewers continue that pass instead of stopping at a count.
 - Reviewer prompts tell reviewers to read source themselves, not through subagents, whose reads reach only the subagent
   and earn no coverage. Subagents remain allowed for non-reading work such as running tests or builds.
-- Versioned finding events carry a stable local ID, open/withdrawn state, summary, original location and complete detail
-  in the caller's format. Revisions/retractions append under the same ID and preserve history. Unresolved leads are
-  saved as they arise and in boundary progress summaries, independently of immediate finding writes.
+- Versioned reviewer events carry a stable local ID, kind, open/withdrawn state, summary, original location and complete
+  detail in the caller's format. Kinds are `finding`, `candidate` (considered and not reported, with the reason and
+  cited text), and `lead` (unresolved), sharing one ID space; an ID may change kind, and the latest event wins. A lead
+  closes by changing kind to `finding` or `candidate`; `withdrawn` retracts a record itself. Revisions/retractions
+  append under the same ID and preserve history. The log, not reply prose, is the reviewer's complete record; the
+  discovery prompt asks for records and their IDs rather than prose lists.
+- First replies follow the caller's format; later replies report only that turn's changes (checks and results, IDs
+  appended or revised, IDs of leads still open, and for discovery an explicit statement of whether anything was new) and
+  reference unchanged records by ID. The brief carries this reply contract. A caller format requiring cumulative replies
+  is honored, with its cost in the launch plan.
 - The orchestrator polls finding logs and progress without reading transcripts. The helper counts latest states per
-  reviewer log, preserving source ownership and distinguishing empty logs from missing/malformed ones. Polling during an
-  unfinished append may be retried; counts are unavailable until parsing succeeds. Raw counts remain distinct from
-  semantic deduplication by underlying defect/location. Original reviewer IDs and evidence survive deduplication.
+  reviewer log, keeping reported findings (counts and list) separate from open candidates and leads, preserving source
+  ownership and distinguishing empty logs from missing/malformed ones. Polling during an unfinished append may be
+  retried; counts are unavailable until parsing succeeds. Raw counts remain distinct from semantic deduplication by
+  underlying defect/location. Original reviewer IDs and evidence survive deduplication.
+- After each turn the orchestrator reads the events appended since that reviewer's previous offset plus the delta reply,
+  not whole earlier replies. An offset past the end of a log is refused. A reply mentioning a new or revised record, or
+  a closed lead, without a matching event in that range requires a continuation asking the reviewer to record it.
+  Reviewer offsets and the disposition log path live in the current-state file.
+- The orchestrator creates an append-only disposition log at run start, registers every reviewer log in it, and records
+  each disposition there, naming the reviewer log, ID, judged physical line, disposition (`verified`,
+  `unverified-after-investigation`, `under-investigation`, `duplicate`, `rejected`, `excluded`), deduplication group and
+  reason. Recording refuses an unregistered log or a judged line holding no event for that ID. Consolidation requires
+  exactly the registered logs, refuses decisions naming unknown records, derives each group's disposition from its
+  non-duplicate members (reporting `stale`, `conflict` and `duplicate-only` instead of resolving them), and lists
+  undecided open records, stale decisions on later-revised records, open leads, and withdrawn records. The consolidated
+  draft is kept current as decisions are made and stays private until the caller's recording checks.
+
 - Group completion does not prove cross-group correctness. The orchestrator deduplicates as results arrive, reconciles
   conflicts, and sends concrete interface questions back to the relevant reviewers for synthesis, batched into each
   reviewer's next continuation. An incomplete group keeps the overall run incomplete. New evidence or findings go to
@@ -154,15 +176,15 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   from a group outside the recorded interfaces, the interface is added to both groups' notes. A pass whose only new
   items are confirmed such duplicates counts as reporting no new findings, and its work summary and leads must still
   meet the stopping condition; a reply that only restates findings it was shown does not.
-- The orchestrator verifies candidates against pinned source and applicable contracts and checks novelty across the
-  whole run. It accounts for verified, unverified-after-investigation, duplicate, rejected, and still-open candidates
-  without erasing source records. New IDs, event counts, restatements, speculation without a concrete source basis, and
-  scope drift do not establish discovery progress. No severity or lens-specific gate is imported; actionability follows
-  the caller's charter.
+- The orchestrator verifies new records against pinned source and applicable contracts and checks novelty across the
+  whole run. It accounts for verified, unverified-after-investigation, duplicate, rejected, excluded, and still-open
+  records without erasing source records. New IDs, event counts, restatements, speculation without a concrete source
+  basis, and scope drift do not establish discovery progress. No severity or lens-specific gate is imported;
+  actionability follows the caller's charter.
 - Missing premises or open substantive leads receive focused verification and same-reviewer clarification as needed.
-  These dispositions apply to candidates from every review phase, including initial review and cross-group synthesis.
-  Concrete next checks are pursued while they can establish, refute, or narrow the suspected defect. Rejecting a
-  suspicion does not require proof of its absence. Uninvestigated leads cannot count as completed findings.
+  These dispositions apply to possible findings from every review phase, including initial review and cross-group
+  synthesis. Concrete next checks are pursued while they can establish, refute, or narrow the suspected defect.
+  Rejecting a suspicion does not require proof of its absence. Uninvestigated leads cannot count as completed findings.
 - Available evidence includes readable context and permitted tests under the charter, even outside mandatory scope;
   exploration does not expand mandatory inventory. Relevant accessible evidence and cross-group clarification are
   pursued before declaring a premise unavailable. The orchestrator assesses investigation records against source and
@@ -177,7 +199,7 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - The orchestrator decides dispositions and requests any finding/revision from its owning reviewer under the original
   ID, confirming the append before crediting it as recorded. It never writes the reviewer's log. Cross-group duplicates
   retain original owners and IDs; conflicting verification claims receive synthesis and a reconciled disposition in the
-  orchestrator's notes.
+  disposition log.
 - Retaining an investigated uncertainty settles its review disposition without proving or disproving the suspected bug.
   It does not make a group or review incomplete or require failure status under this protocol. A generic caller
   requirement for a complete review does not add a requirement to settle these concerns before advancing a checkpoint;
@@ -232,9 +254,10 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   per-group session identities and actual turn counts, verified delivery references, exact missing or uncertain
   material, later-turn/cross-group synthesis status and quiescence, raw and deduplicated finding counts, and original
   finding-log references. Verified and unverified-after-investigation findings and counts are reported separately, with
-  the latter's investigation records. Per-kind counts come from reconciled orchestrator dispositions after semantic
-  deduplication, never label absence or subtraction from raw active counts. The helper counts every reviewer-open
-  record, including duplicates, rejected claims and candidates still under investigation, and does not certify defects.
+  the latter's investigation records. Per-kind counts come from the per-group dispositions consolidation derives after
+  semantic deduplication, never label absence or subtraction from raw active counts. Undecided, stale or conflicting
+  records and open leads mean decisions are still owed. The helper counts every reviewer-open finding, including
+  duplicates, rejected claims and possible findings still under investigation, and does not certify defects.
   Discovery-pass counts record new findings of each kind per pass and final empty-pass or incomplete stop evidence. Use
   an accompanying note when the caller's format requires it. A review meeting the protocol may complete with
   investigated uncertainties; completion and confidence in individual findings remain separate.
