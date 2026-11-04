@@ -29,11 +29,17 @@ Recover settled inputs from the caller's request and session context. Ask only f
 - Any selected launch mechanism or explicit caller constraints on execution or further searching.
 
 Keep reviewed inputs read-only unless the caller separately authorizes edits; writing the requested result and private
-run artifacts is allowed. A finding is not permission to fix it. Give the reviewer a self-contained charter, scope,
-constraints, result destination, and the persistence and investigation requirements below. Give each reviewer its own
-findings log and progress file, with the immediate-recording instruction below copied into every initial and
-continuation prompt. Tell each reviewer to finish its assigned pass after recording a finding; finding an issue or
-reaching a particular count is not a reason to end the pass early.
+run artifacts is allowed. A finding is not permission to fix it.
+
+Reviewers do not load this skill. Write each reviewer a self-contained brief file: the charter, its group's scope and
+interfaces, constraints, the caller's finding format, the exact `evidence read` and `evidence record` commands with
+absolute paths, the finding-event format and the reviewer-facing read rules from `tooling.md`, its own findings log and
+progress file, and the persistence and investigation requirements below. Copy the immediate-recording instruction below
+into every initial and continuation prompt. Tell each reviewer to finish its assigned pass after recording a finding;
+finding an issue or reaching a particular count is not a reason to end the pass early. A same-session continuation
+carries only what is new for that turn (named gaps, questions, cross-group input, the next pass's instruction), the
+immediate-recording instruction, and the brief's absolute path with an instruction to reread it if the reviewer's
+context was compacted. Do not paste the brief again.
 
 This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
 rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
@@ -48,16 +54,24 @@ agreed old and new content, not a moving working-tree command. Full files are ma
 requires them. Context the reviewer explores on its own does not silently expand the mandatory inventory.
 
 Record the run's unique identity, absolute artifact paths, reviewer session handle, findings, and coverage notes in
-session-private scratch space. Use the per-reviewer manifests and finding events described in `tooling.md`; ordinary
-notes are sufficient for the other coordination state. Avoid fixed paths that concurrent reviews could overwrite. Keep
-the raw evidence available behind compact references so the audit can be checked without copying whole transcripts into
-the report.
+session-private scratch space. Use the per-reviewer manifests and finding events described in `tooling.md`, and keep the
+other coordination state in the current-state file described under "Keep the run moving and visible". Avoid fixed paths
+that concurrent reviews could overwrite. Keep the raw evidence available behind compact references so the audit can be
+checked without copying whole transcripts into the report.
 
 Do not combine delivery evidence from different text versions. If the input changes, continue against the retained
 version or explicitly reconcile the inventory and re-audit affected material; never silently claim the new version was
 covered.
 
 ## Group by behavior and launch concurrently
+
+This protocol governs review groups: delegated work that must deliver a mandatory inventory of reviewed text. A focused
+task that judges named claims from the review's own output, such as verifying a finding or adjudicating a proposed
+exclusion, using only the excerpts needed for those claims, is not a group. It inherits no persistence, delivery audit,
+synthesis, or discovery requirement unless the caller explicitly asks for one; put its inputs in its prompt and follow
+the caller's process for it. Work asked to search for new defects or assigned a range to cover is a group, whatever it
+is called, and a group launched as a review group stays one. Record a focused task's verdicts durably when it returns; a
+new defect it reports goes to the owning group's reviewer as cross-group input.
 
 The orchestrator chooses coherent functional groups: a subsystem, feature path, state transition, or lifecycle, with the
 contracts, callers, and tests needed to understand it. Record each group's purpose, required ranges, and interfaces with
@@ -66,8 +80,19 @@ belong to a group; necessary context may overlap.
 
 Default to at most 2,000 mandatory source lines and 64 KiB of source text per group, whichever is reached first,
 including required context. Split larger subsystems at meaningful behavior boundaries; use named phases within a large
-file when necessary. Treat these as ceilings, not targets. If essential context cannot fit, explain the boundary issue
-and obtain a caller-approved adjustment rather than silently assigning an enormous group.
+file when necessary. Do not pad a group to reach the ceilings, and do not split one behavior below them. If essential
+context cannot fit, explain the boundary issue and obtain a caller-approved adjustment rather than silently assigning an
+enormous group.
+
+Every group costs at least three turns, the reviewer's setup reading, and an audit and parent decision per turn,
+whatever its size. Keep adjacent phases of one behavior in one group. Many small self-contained changes may share a
+group when the group notes list each with its purpose.
+
+Before launching, report a launch plan to the caller in an interim message: group count against the minimum the ceilings
+imply (total mandatory lines divided by 2,000), the distribution of mandatory lines, the minimum turn count (three per
+group), concurrency, and any reading every reviewer must do besides its source, which is paid once per group. Give a
+reason when the group count is well above that minimum. Launch without waiting for a reply unless the caller asked to
+approve the plan.
 
 Launch all independent ready groups concurrently by default, subject to actual harness slots and resource capacity.
 Queue remaining groups and start them as capacity becomes available; record the capacity constraint instead of silently
@@ -75,12 +100,21 @@ serializing. Honor an explicitly requested concurrency restriction. Each group g
 identity, manifest, findings log, progress file, and transcript paths. Reviewers share stable inputs read-only and never
 write another reviewer's artifacts. A large scope creates more bounded groups, not one enormous first pass.
 
-The persistence, coverage, and discovery requirements apply independently to every group. Record queued, running, and
-audited group states. After group reviews, deduplicate equivalent findings by underlying defect and location, retaining
-all original reviewer IDs and evidence. Keep distinct defects separate. Reconcile conflicting claims and send concrete
-cross-group interface questions to the relevant existing reviewers for synthesis; do not assume isolated group
-completion proves integration correctness. Resume the discovery cycle after synthesis of new cross-group evidence or
-findings; an earlier empty pass does not close questions introduced later. Any incomplete group keeps the overall review
+The persistence, coverage, and discovery requirements apply independently to every group, and each group advances on its
+own. Move a group from initial review to synthesis as soon as its own audit allows, and from synthesis to discovery
+without waiting for unrelated groups. A group's discovery waits for synthesis, or an incomplete stop, in the interface
+groups recorded in its group notes, and for nothing else. Track each group as queued, running, awaiting a parent
+decision, complete, or stopped incomplete.
+
+Deduplicate equivalent findings by underlying defect and location as results arrive, retaining all original reviewer IDs
+and evidence. Keep distinct defects separate. Reconcile conflicting claims and send concrete cross-group interface
+questions to the relevant existing reviewers for synthesis, batched into each reviewer's next continuation rather than
+one turn per question. Do not assume isolated group completion proves integration correctness. Send new evidence or
+findings to every group whose behavior or interfaces they bear on; until sent, they count as pending cross-group input.
+Input that reaches a group after its discovery pass reopens it: one continuation synthesizes the input and then searches
+again. An earlier empty pass does not close questions introduced later. The overall review is complete when it is
+quiescent: every group meets its completion requirements, no cross-group input is pending, and each group's last
+discovery pass ran after the last cross-group input sent to it. Any incomplete group keeps the overall review
 incomplete.
 
 ## Record findings immediately
@@ -200,8 +234,9 @@ review without findings persistence and later-turn synthesis.
 ## Continue productive discovery
 
 After verified coverage and synthesis, require a separate search turn from each group's same reviewer. This is required
-even without a concrete unresolved lead. Reuse its context and durable findings/progress artifacts. Give it the known
-findings and relevant cross-group duplicates so it can distinguish a new defect from a restatement.
+even without a concrete unresolved lead. Reuse its context and durable findings/progress artifacts. Give it its own
+recorded findings and those of its named interface neighbours so it can distinguish a new defect from a restatement. Do
+not send every reviewer a catalog of the whole run.
 
 Use a continuation with this substance, plus the immediate-recording instruction:
 
@@ -215,11 +250,12 @@ Use a continuation with this substance, plus the immediate-recording instruction
 
 After each search turn, inspect the findings log and the short work/lead summary. Verify candidates against the pinned
 source and applicable contract, using focused source excerpts as needed. Check novelty against findings already known
-across the run, not merely that reviewer's local IDs. Record each candidate as verified, unverified after investigation,
-duplicate, rejected with a reason, or still under investigation; preserve its original log and identity. New IDs, extra
-event records, restatements, speculation without a concrete source basis, and findings outside the charter do not count
-as discovery progress. Do not impose a severity threshold from another review workflow; actionability follows the
-caller's charter.
+across the run, not merely that reviewer's local IDs. A new item that duplicates a finding the reviewer was never shown
+is a duplicate, not new progress; when that finding came from a group outside its recorded interfaces, add the interface
+to both groups' notes. Record each candidate as verified, unverified after investigation, duplicate, rejected with a
+reason, or still under investigation; preserve its original log and identity. New IDs, extra event records,
+restatements, speculation without a concrete source basis, and findings outside the charter do not count as discovery
+progress. Do not impose a severity threshold from another review workflow; actionability follows the caller's charter.
 
 ### Investigate before retaining uncertainty
 
@@ -265,17 +301,40 @@ elapsed-time limit. Independent groups' searches remain concurrent within actual
 
 Finish discovery only after a properly executed search pass explicitly reports no new findings of either kind, with a
 credible work summary and every substantive lead verified, rejected, deduplicated, or recorded as unverified after
-investigation. Known findings of either kind may remain. A bare empty list, refusal, unreadable required input, blocked
-review pass, duplicate-only reply, or drift is not that stopping condition. Distinguish an investigation that has
-reached the documented uncertainty disposition from a reviewer that cannot perform its assigned pass. The latter stops
-the affected group incomplete, as does a reviewer that only repeats findings, produces unsupported claims without useful
-progress, or leaves its charter instead of performing the requested search. Preserve findings and the reason. Do not
-keep demanding a higher count or renewed proof of known uncertainties. A caller-imposed limit may also stop a run; if it
-prevents the final empty search pass or required investigation, disclose the unfinished work.
+investigation. Known findings of either kind may remain. A pass whose only new items are confirmed duplicates of
+findings the reviewer was not shown counts as reporting no new findings; its work summary and leads must still meet this
+condition. A bare empty list, refusal, unreadable required input, blocked review pass, reply that only restates findings
+it was shown, or drift is not that stopping condition. Distinguish an investigation that has reached the documented
+uncertainty disposition from a reviewer that cannot perform its assigned pass. The latter stops the affected group
+incomplete, as does a reviewer that only repeats findings, produces unsupported claims without useful progress, or
+leaves its charter instead of performing the requested search. Preserve findings and the reason. Do not keep demanding a
+higher count or renewed proof of known uncertainties. A caller-imposed limit may also stop a run; if it prevents the
+final empty search pass or required investigation, disclose the unfinished work.
 
 Keep search-pass counts, newly verified and unverified-after-investigation finding IDs separately, and the final
 empty-pass or failure reason in the group's progress notes. An observed empty pass establishes this stopping condition,
 not proof that every defect has been found.
+
+## Keep the run moving and visible
+
+A caller's question about progress, cost, or problems is not a request to stop, and neither is a side request made
+during the run. Do not end the coordinating turn while work can advance and the harness will not wake you when a
+reviewer turn ends: answer in an interim message and keep coordinating. A question this protocol requires you to ask the
+caller also goes in an interim message where the harness allows one, while unaffected groups keep running. End the turn
+at completion, at an incomplete stop, on the caller's explicit pause or cancel, or when nothing can advance until the
+caller answers.
+
+Progress updates report groups by state, idle capacity against the concurrency limit, the oldest pending parent
+decision, completed turns against the planned minimum, and reviewer and orchestrator token totals when the backend
+exposes them. Before summing a backend's per-turn usage, check whether it already includes the earlier turns of a
+resumed session; if it does, use each session's latest value. Cost is reported as a fact; it does not license ending a
+progressing review early.
+
+Keep one current-state file in the run directory, rewritten in place before you act on each decision. It holds pending
+parent decisions, pending cross-group input, and the paths of the run's records, including any tool that already tracks
+group states, rather than a copy of that tool's state. After a compaction or resume, read it first instead of
+reconstructing state from notes, replies, or the transcript, and check any group recorded as running against the actual
+process and session state.
 
 ## Stop and report
 
@@ -296,14 +355,16 @@ record (or an accompanying note if the format cannot hold it):
 - Stable scope references, group assignments, reviewer backend/model/effort, session identities, and actual turn counts.
 - Verified delivery with evidence references; exact missing or uncertain material on an incomplete run.
 - Whether later-turn synthesis occurred and which evidence supports the final audit.
-- Active and deduplicated findings counts, original findings-log references, and cross-group synthesis status.
+- Active and deduplicated findings counts, original findings-log references, and cross-group synthesis status, including
+  whether the run was quiescent.
 - Separate verified and unverified-after-investigation findings and counts, with the investigation record for each
   uncertainty. Derive these counts after semantic deduplication from the orchestrator's reconciled dispositions, never
   from a missing label or by subtracting from the helper's raw active count. Open reviewer records may also be rejected,
   duplicate, or still under investigation.
 - Discovery pass counts, new findings of each kind per pass, and evidence of the final empty search or incomplete stop.
 
-“Complete” means this protocol's delivery, persistence, synthesis, and final empty-search requirements were met. It does
-not certify the findings or prove attention, understanding, correctness, or saturation. A review may be complete with
-unverified-after-investigation findings; say so and surface them alongside verified findings. An incomplete run with no
-findings is not a clean review; say both that it returned no findings and why it remains incomplete.
+“Complete” means this protocol's delivery, persistence, synthesis, and final empty-search requirements were met and the
+run was quiescent, with no cross-group input pending. It does not certify the findings or prove attention,
+understanding, correctness, or saturation. A review may be complete with unverified-after-investigation findings; say so
+and surface them alongside verified findings. An incomplete run with no findings is not a clean review; say both that it
+returned no findings and why it remains incomplete.
