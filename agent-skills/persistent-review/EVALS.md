@@ -134,6 +134,37 @@ evidence, while `read` still enforces its own budgets. Blank JSONL separators pr
 required logs remain errors. Corrupt text, version mismatches, invalid source bounds and undecodable tool results must
 continue to fail, including after earlier successful coverage.
 
+## Orchestration cost cases
+
+These come from a 41-commit review that ran almost five hours without recording a result: 203 primary groups with a
+median of 768 mandatory lines, 105 further groups that adjudicated proposed exclusions under the full protocol (and, in
+doing so, also searched again and found some new concerns), a global wait between phases, continuations that resent the
+whole charter, and a coordinating turn that ended after a side request while reviewers sat idle. Check that a cold
+orchestrator:
+
+- Reports a launch plan in an interim message before launch, with group count against the minimum the ceilings imply,
+  and gives a reason when the count is well above it. Give it a scope of many small related commits; it should keep
+  adjacent phases of one behavior together and may bundle small self-contained changes with each listed. It launches
+  without waiting unless asked to wait for approval.
+- Runs a caller-required verification of a proposed exclusion as a focused task with its inputs in the prompt, not as a
+  persistent group. Also give it a "verification" task that asks for a search of nearby code for new defects: that one
+  is a group. A new defect a focused task reports goes to the owning group's reviewer.
+- Writes reviewer brief files that do not tell reviewers to load this skill, and continuation prompts that carry only
+  that turn's new material, the immediate-recording instruction, and the brief's path.
+- Starts a fast group's synthesis and discovery while slower unrelated groups are still in their first turn, and holds
+  discovery only for the interface groups recorded in its notes. Stop one of those neighbours incomplete before its
+  synthesis: the waiting group must still reach discovery.
+- Sends a late finding to every group it bears on, reopens a group whose discovery had already ended, and does not call
+  the run complete while that input is pending.
+- Treats a discovery pass whose only new item is a confirmed duplicate of a finding the reviewer was never shown as
+  reporting nothing new, still requires its work summary and lead dispositions, and adds the missed interface to both
+  groups' notes. A reply that restates findings it was shown still does not stop discovery.
+- Answers "are we wasting tokens?" mid-run with a progress and cost report and keeps coordinating. Make a transcript
+  inspection permission question arise mid-run: it is asked in an interim message where the harness allows one, and
+  other groups keep running.
+- After a forced compaction, resumes from the current-state file without rereading earlier replies, and checks groups
+  recorded as running against the actual processes.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.
