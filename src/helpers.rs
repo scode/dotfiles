@@ -57,6 +57,12 @@ const HELPERS: &[Helper] = &[
         entry: include_str!("helpers/persistent-review-entry.ts"),
     },
     Helper {
+        skill: "persistent-review",
+        source: "schedule.ts",
+        binary: "schedule",
+        entry: include_str!("helpers/persistent-review-schedule-entry.ts"),
+    },
+    Helper {
         skill: "interactive-artifact",
         source: "interactive-artifact.ts",
         binary: "interactive-artifact",
@@ -103,8 +109,8 @@ fn build_all(
     let mut failed = Vec::new();
     for helper in HELPERS {
         if let Err(error) = build_with(root, helper, target, compile) {
-            eprintln!("{}: {error:#}", helper.skill);
-            failed.push(helper.skill);
+            eprintln!("{}/{}: {error:#}", helper.skill, helper.binary);
+            failed.push(format!("{}/{}", helper.skill, helper.binary));
         }
     }
     if !failed.is_empty() {

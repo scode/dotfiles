@@ -27,10 +27,11 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 
 ## Stable scope and evidence
 
-- All helper commands use the bundled POSIX `evidence` launcher. It prefers a matching compiled executable and permits
-  Deno source fallback only when that executable is absent. Stale, missing-source, broken, or nonexecutable compiled
-  deployments fail without running the command through source as a fallback. Compiled helpers embed their source hash
-  and check the neighboring `evidence.ts` at startup. This is a freshness check, not a lock against later edits.
+- All helper commands use the bundled POSIX `evidence` and `schedule` launchers. Each prefers a matching compiled
+  executable and permits Deno source fallback only when that executable is absent. Stale, missing-source, broken, or
+  nonexecutable compiled deployments fail without running the command through source as a fallback. Compiled helpers
+  embed their source hash and check the neighboring `evidence.ts` or `schedule.ts` at startup. This is a freshness
+  check, not a lock against later edits.
 
 - Before launch the orchestrator establishes a mandatory inventory of stable text and ranges. Full files are required
   only when agreed. Discretionary exploration does not expand the inventory. Diff scope preserves its agreed old/new
@@ -101,6 +102,23 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - Independent ready groups run concurrently by default, up to actual harness/resource capacity, with explicit queued
   states for the remainder. Caller concurrency restrictions prevail. Each group has its own resumable reviewer and
   private writable artifacts; shared input snapshots stay read-only. Reviewers cannot consume other groups on their own.
+- Every reviewer turn runs through the bundled `schedule` helper, a separate tool from `evidence`. It owns only the
+  queue of ready turns, the concurrency limit (adjustable while running), and one live turn per identity. It runs an
+  orchestrator-written launch script per turn, records launch, exit status and the findings-log line counts at start and
+  end, and parks the identity awaiting a parent decision. It never builds launch commands, reads transcripts or findings
+  content, audits delivery, or queues a next turn; only the orchestrator's `ready` after judging a turn does, and
+  `cancel` takes back a turn that has not started. Its state is one atomically replaced file guarded by an exclusive
+  lock, and a launch is committed to it before the process exists, so a crash never leaves a started turn recorded as
+  queued. Each turn runs in its own process group under a wrapper that records its pid and, last, the script's exit
+  status; a turn ends when that exit file exists and is `lost` only when its group is gone with no exit status after a
+  second look, or it never started within a grace period. A restarted daemon recovers turns its predecessor launched,
+  and neither stopping the daemon nor signalling its process group kills turns. A second live daemon is refused. The
+  journal that `wait` follows is repaired from state after a crash, and readers ignore a partial last line. `wait`
+  blocks until a turn ends and exits instead of hanging when no daemon is alive; daemon liveness needs a fresh heartbeat
+  and a live pid, never command-line matching. `status` gives the journal position, counts by state, free slots,
+  awaiting identities oldest first with exit, a compact audit summary and findings offsets, and running turns with pids
+  and output files. Unknown CLI options are refused. Terminal states are `complete` and `stopped-incomplete`, set by the
+  orchestrator between turns.
 - Groups advance independently: synthesis follows a group's own audit, and discovery follows its synthesis without a
   run-wide phase barrier. A group's discovery waits for synthesis, or an incomplete stop, in the interface groups
   recorded in its group notes, and for nothing else. Each group is tracked as queued, running, awaiting a parent
@@ -234,9 +252,9 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   minimum turns, and token totals when exposed. Per-turn usage that already includes a resumed session's earlier turns
   is taken at its latest value, never summed. Cost reporting never licenses ending a progressing review.
 - One current-state file in the run directory, rewritten in place before each decision is acted on, holds pending
-  decisions, pending cross-group input, and run-record paths, pointing at any tool that tracks group states rather than
-  copying it. Recovery after compaction or resume starts from it rather than from chronological notes, replies or
-  transcripts, and checks groups recorded as running against actual process and session state.
+  decisions, pending cross-group input, and run-record paths, pointing at the schedule directory for group states rather
+  than copying them. Recovery after compaction or resume starts from it and `schedule status` rather than from
+  chronological notes, replies or transcripts.
 
 ## Stopping and reporting
 
