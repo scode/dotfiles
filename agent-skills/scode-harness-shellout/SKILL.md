@@ -173,9 +173,9 @@ the monitoring obligations below or any more frequent resource checks the caller
   using whatever timer, scheduled wake-up, or bounded-wait mechanism your harness offers. Failing all else, cap each
   blocking wait at 30 minutes and re-check between waits. In a fan-out, check every member at each wake-up: the batch is
   only done when its slowest member is, and one hung member silently holds the whole batch.
-- Check known hang signatures first; they are cheap and decisive. Each harness file names its own (codex's stdin line
-  with no version header after it, for example); when one matches, kill and relaunch with the corrected invocation,
-  since more waiting cannot help.
+- Check known hang signatures first; they are cheap and decisive. Each harness file names its own, which may depend on
+  the output mode (codex's differs with and without `--json`, for example); when one matches, kill and relaunch with the
+  corrected invocation, since more waiting cannot help.
 - Otherwise weigh the evidence by what the tool shows. Harnesses that stream a transcript or event log while working
   give you something to compare against the last check's baseline; record the new observation for the next one. New
   output proves activity, not necessarily useful progress; a log that has not grown across a full interval is a reason

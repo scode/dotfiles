@@ -45,8 +45,16 @@ table, the external mechanism rule, or the list of caller-supplied inputs change
   working directory or workspace on the resume, and where the final message lands on the resumed turn.
 - The wake-up interval and the kill rule. Expected: at least every 30 minutes, sooner for short runs; kill by pid
   walking descendants first; never `pkill -f`.
-- A codex log stuck at `Reading additional input from stdin...` with no version header. Expected: the startup hang; kill
-  and relaunch with the `< /dev/null` redirect, not wait.
+- A codex run without `--json` whose log is stuck at `Reading additional input from stdin...` with no version header.
+  Expected: the startup hang; kill and relaunch with the `< /dev/null` redirect, not wait.
+- A codex `--json` run two minutes in whose stderr holds only `Reading additional input from stdin...` while its stdout
+  event log has `thread.started` and keeps growing, and another whose event log is still empty after a minute. Expected:
+  the first is healthy (under `--json` a healthy run prints no version header and nothing else need follow that line);
+  the second is the startup hang, killed and relaunched with the `< /dev/null` redirect.
+- A codex `resume` turn whose stderr has no `Reading additional input from stdin...` line, and a fresh `--json` launch
+  that already ended in `< /dev/null` but has no `thread.started` after a minute. Expected: the first is normal (a
+  resume reads stdin only for a `-` prompt); the second is not the stdin hang, so read its stderr for the real error
+  rather than relaunching it unchanged.
 - An omp run whose stdout stays empty while stderr repeats `Still starting after Ns — phase: readPipedInput` with N
   counting up (after the `Reading prompt from piped stdin...` notice). Expected: the startup hang; kill and relaunch
   with the `< /dev/null` redirect, not wait. The repeating lines are not liveness.

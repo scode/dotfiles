@@ -10,21 +10,31 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-6.1-sol -o <scratch-file
   `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra`. A request that names only a model line and an effort ("a sol high
   agent") means that line's id in this list; an explicitly versioned id ("gpt-6-sol") is passed as written.
 - Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
-  pass it explicitly rather than relying on the user's config default; the startup header echoes the effective
-  `reasoning effort:` if you need to confirm.
+  pass it explicitly rather than relying on the user's config default; without `--json`, the startup header echoes the
+  effective `reasoning effort:` if you need to confirm.
 - `-o` writes the agent's final message to a file; read that file for the result instead of parsing stdout.
-- Always keep the trailing `< /dev/null`. Given a prompt argument and a non-TTY stdin, `codex exec` reads stdin to EOF
-  before starting work (its `Reading additional input from stdin...` startup line is that read), so a stdin that never
-  delivers EOF blocks it at startup indefinitely. At least one agent harness omits its own stdin redirect from the
-  wrapper exactly when the command text contains a heredoc, handing the child a pipe that never closes — the hang
-  strikes only sometimes and is indistinguishable from a slow run except by its log. The explicit redirect holds even
-  then.
+- Always keep the trailing `< /dev/null`. Given a prompt argument and a non-TTY stdin, a fresh `codex exec` launch reads
+  stdin to EOF before starting work and appends what it read to the prompt as a `<stdin>` block (its `Reading additional
+  input from stdin...` startup line is that read), so a stdin that never delivers EOF blocks it at startup indefinitely.
+  A `resume` turn reads stdin only when its prompt is `-`; keep the redirect there anyway, since it costs nothing. At
+  least one agent harness omits its own stdin redirect from the wrapper exactly when the command text contains a
+  heredoc, handing the child a pipe that never closes — the hang strikes only sometimes and is indistinguishable from a
+  slow run except by its log. The explicit redirect holds even then.
 - Keep heredocs out of the command that launches codex; a heredoc anywhere in the command text is the known trigger for
   that dropped redirect. Build the prompt in its own earlier command — write it to a scratch file — and pass it as
   `"$(cat <file>)"`.
-- Treat a background run whose log stays at `Reading additional input from stdin...` and never reaches the version
-  header as this startup hang, not a slow model. Kill it and relaunch with the redirect instead of waiting for a
-  completion that will never come; a healthy run prints the header immediately after that line.
+- Recognize this startup hang by the signature for the run's output mode, and kill it and relaunch with the redirect
+  instead of waiting for a completion that will never come. It applies to a fresh launch whose process is still alive
+  and whose command lacked the redirect; a launch that already ended in `< /dev/null` cannot be in this hang, so read
+  its stderr for the real error instead of relaunching it unchanged. Every fresh launch prints `Reading additional input
+  from stdin...` to stderr, healthy or not; what follows it differs (a `resume` turn prints no such line). Without
+  `--json`, a healthy run prints the version header (`OpenAI Codex v...`) to stderr about a second after that line, so a
+  stderr log that never gets past the stdin line is the hang. With `--json` there is no version header at all, and in
+  the healthy runs checked stderr held nothing after the stdin line for the whole run, so a stderr log stuck at that
+  line proves nothing; a healthy run writes `thread.started` to its stdout event log within a few seconds, so an event
+  log with no `thread.started` after a minute is the hang. Both were checked on codex 0.166.0 by holding stdin open for
+  20 seconds: each mode sat at the stdin line, with no header or event, until stdin closed, and started about a second
+  later.
 - A zero exit status is necessary but not sufficient. `codex exec` does return nonzero when the turn itself fails, but a
   turn that completes normally exits 0 even when its final message declines the task, reports a tool or sandbox failure
   the agent could not work around, or gives status instead of the work. Judge the `-o` file against the task's explicit
@@ -57,14 +67,11 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-6.1-sol -o <scratch-file
   rollout's `token_count` `info.total_token_usage` at that point. The last `turn.completed` of a launch and its resumes
   is therefore the run's total, and summing them counts earlier turns again (2-3 times the real figure in three-turn
   checks). A single turn's usage is the difference from the previous turn's `turn.completed`. Verified on codex 0.166.0
-  with two independent three-turn runs whose one-word turns reported the earlier turns' output tokens plus about 5. One
-  thing the eval did not check: whether the stdin-hang signature above (the `Reading additional input from stdin...`
-  line with no version header after it) looks the same under `--json`. Until someone confirms, treat a `--json` run
-  whose event log has no `thread.started` event after a minute as the same hang.
+  with two independent three-turn runs whose one-word turns reported the earlier turns' output tokens plus about 5.
 - Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them per `SKILL.md`;
-  use a foreground timeout only when it is shorter than the monitoring interval. `codex exec` streams a transcript while
-  working, so a log that keeps growing is a liveness signal, and one stuck at `Reading additional input from stdin...`
-  is the startup hang above.
+  use a foreground timeout only when it is shorter than the monitoring interval. `codex exec` streams its progress while
+  working, to stderr as a transcript without `--json` and to the stdout event log with it, so the stream for the run's
+  mode growing is a liveness signal. A run stuck at startup is the hang above, judged by the signature for its mode.
 
 ## Inspecting delivered tool results
 
