@@ -119,20 +119,41 @@ incomplete.
 
 ## Record findings immediately
 
-Tell every reviewer: **As soon as you have a substantive finding, append it to your findings log before any further
-analysis or read. Do not buffer findings until a batch ends, a turn ends, a checkpoint, a final response, or anticipated
-compaction.** Preserve the caller's finding format in the record's detail. Do not invent findings to show activity.
+Tell every reviewer: **Your findings log is your complete record. As soon as you have a substantive finding, decide not
+to report something you considered, or find a lead you cannot settle yet, append it as a `finding`, `candidate`, or
+`lead` before any further analysis or read. Do not buffer records until a batch ends, a turn ends, a checkpoint, a final
+response, or anticipated compaction; anything that exists only in your reply is lost.** Preserve the caller's finding
+format in the record's detail. Do not invent findings to show activity.
 
 Before reading source, create an empty findings log and a progress file naming the assigned group and current state. Use
-the event format and append command in `tooling.md`. Each finding has a stable reviewer-local ID, summary, location,
-detail, and open/withdrawn state. Append revisions or withdrawals with that same ID and the reason; never erase the
-original. Record unresolved leads in the progress file as they arise. At each group/turn boundary, save remaining leads,
-interface assumptions, and the next action before returning. This boundary summary never delays a completed finding.
+the event format and append command in `tooling.md`. Each record has a stable reviewer-local ID, kind, summary,
+location, detail, and open/withdrawn state. A `candidate` holds the reason it was not reported (refuted, covered by an
+accepted limitation, or proposed for dropping) and the cited text. A `lead` is closed by a later event under the same ID
+that changes its kind: to `finding`, or to `candidate` with what the checks showed. Append revisions with the same ID
+and the reason; `withdrawn` retracts a record entirely; never erase the original. At each group/turn boundary, save
+interface assumptions and the next action in the progress file before returning. This boundary summary never delays a
+completed record.
+
+Reviewers' first replies follow the caller's reporting format. Later replies report only what changed in that turn: the
+checks run and their results, the IDs appended or revised, the IDs of leads still open, and, for a discovery pass, an
+explicit statement of whether it found anything new. Unchanged records are referenced by ID, not restated. Put this
+reply contract in the brief. Honor a caller format that requires cumulative replies, and state its cost in the launch
+plan.
 
 The orchestrator polls findings/progress artifacts while reviewers run and reports observed active findings separately
-from the deduplicated total. Use `evidence findings` for counts and pointers; inspect finding details directly from the
-findings logs, not transcripts. An initialized empty log means zero findings so far, not a clean review. Missing logs,
-stale progress, and unfinished writes require investigation; do not credit advertised counts without records.
+from the deduplicated total. Use `evidence findings` for counts and pointers. After each turn, read that turn's records
+with `evidence events` from the offset the previous turn ended at, together with the delta reply. A reply that mentions
+a new or revised record, or a closed lead, with no matching event in that range needs a continuation asking the reviewer
+to record it. Inspect record details from the findings logs, not transcripts or earlier replies. An initialized empty
+log means zero findings so far, not a clean review. Missing logs, stale progress, and unfinished writes require
+investigation; do not credit advertised counts without records.
+
+Create an empty disposition log at run start and register each reviewer's findings log in it with `evidence register`
+when its group is created. Record every disposition the orchestrator decides there with `evidence dispose`, naming the
+reviewer record, the log line it judged, and a deduplication group. Keep a consolidated draft of the result current with
+`evidence consolidate` as decisions are made rather than assembling it at the end; it stays private until the caller's
+recording checks. Its report of undecided, stale, and conflicting records and open leads is the list of decisions still
+owed. Keep each reviewer's current offset and the disposition log's path in the current-state file.
 
 ## Establish observable delegation
 
@@ -241,26 +262,30 @@ not send every reviewer a catalog of the whole run.
 Use a continuation with this substance, plus the immediate-recording instruction:
 
 > Your earlier findings are recorded. Reuse your existing context and review the assigned group again under the original
-> charter, looking beyond the issues already found. Report new verified findings and concrete leads that need
-> investigation; do not repeat or rephrase known findings, broaden the scope, or invent issues to keep producing. Record
-> each completed finding immediately before further analysis or reads. An empty result is valid. At the end, briefly
-> identify what you checked and any unresolved substantive leads. A concern that remains unverified after actual
-> investigation needs that label and a record of the checks and missing premise; an uninvestigated lead still needs
-> work. Do not provide private reasoning.
+> charter, looking beyond the issues already found. Record new verified findings, things you considered and ruled out,
+> and concrete leads that need investigation in your findings log as you reach them, and cite their IDs in your reply;
+> do not repeat or rephrase known findings, broaden the scope, or invent issues to keep producing. An empty result is
+> valid. At the end, briefly identify what you checked and the IDs of any leads still open. A concern that remains
+> unverified after actual investigation needs that label and a record of the checks and missing premise; an
+> uninvestigated lead still needs work. Do not provide private reasoning.
 
-After each search turn, inspect the findings log and the short work/lead summary. Verify candidates against the pinned
+After each search turn, inspect the findings log and the short work/lead summary. Verify new records against the pinned
 source and applicable contract, using focused source excerpts as needed. Check novelty against findings already known
 across the run, not merely that reviewer's local IDs. A new item that duplicates a finding the reviewer was never shown
 is a duplicate, not new progress; when that finding came from a group outside its recorded interfaces, add the interface
-to both groups' notes. Record each candidate as verified, unverified after investigation, duplicate, rejected with a
-reason, or still under investigation; preserve its original log and identity. New IDs, extra event records,
-restatements, speculation without a concrete source basis, and findings outside the charter do not count as discovery
-progress. Do not impose a severity threshold from another review workflow; actionability follows the caller's charter.
+to both groups' notes. Record a disposition for each new record in the disposition log: verified, unverified after
+investigation, duplicate, rejected with a reason, excluded (a `candidate` whose reason for not being reported the
+orchestrator accepts), or still under investigation; preserve its original log and identity. When the orchestrator
+disagrees with a `candidate`'s reason, it asks the owning reviewer to revise the record, or, if another reviewer already
+reports the defect, records the candidate as a duplicate in that group with the disagreement in the reason. New IDs,
+extra event records, restatements, speculation without a concrete source basis, and findings outside the charter do not
+count as discovery progress. Do not impose a severity threshold from another review workflow; actionability follows the
+caller's charter.
 
 ### Investigate before retaining uncertainty
 
-Apply these dispositions to candidates from every review phase, including initial review, synthesis, and cross-group
-questions.
+Apply these dispositions to possible findings from every review phase, including initial review, synthesis, and
+cross-group questions.
 
 Pursue missing premises and substantive leads with focused source checks and targeted clarification from the same
 reviewer. Continue while concrete next checks can establish the suspected defect, refute it, or narrow the missing
@@ -284,7 +309,7 @@ revising an existing claim, and distinguish observed behavior from the suspected
 The orchestrator decides the disposition and asks the owning reviewer to append any required finding or revision under
 the original ID; it does not write that reviewer's log. Confirm the append before crediting the disposition as recorded.
 Cross-group duplicates keep their original owners and IDs; reconcile conflicting verification claims through the
-existing synthesis step and retain the reconciled disposition in the orchestrator's notes.
+existing synthesis step and record the reconciled disposition in the disposition log.
 
 This disposition finishes the investigation for this review without declaring the suspicion true or false. It does not
 make the group or overall review incomplete or require failure status under this protocol. A caller's requirement for a
@@ -358,9 +383,9 @@ record (or an accompanying note if the format cannot hold it):
 - Active and deduplicated findings counts, original findings-log references, and cross-group synthesis status, including
   whether the run was quiescent.
 - Separate verified and unverified-after-investigation findings and counts, with the investigation record for each
-  uncertainty. Derive these counts after semantic deduplication from the orchestrator's reconciled dispositions, never
-  from a missing label or by subtracting from the helper's raw active count. Open reviewer records may also be rejected,
-  duplicate, or still under investigation.
+  uncertainty. Derive these counts from the per-group dispositions `evidence consolidate` reports, never from a missing
+  label or by subtracting from the helper's raw active count. Open reviewer records may also be rejected, excluded,
+  duplicate, or still under investigation; a run with undecided, stale, or conflicting records has decisions owed.
 - Discovery pass counts, new findings of each kind per pass, and evidence of the final empty search or incomplete stop.
 
 “Complete” means this protocol's delivery, persistence, synthesis, and final empty-search requirements were met and the

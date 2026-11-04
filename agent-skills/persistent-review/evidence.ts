@@ -27,7 +27,7 @@ const CODEX_MAX_DELIVERED_BYTES = 40000;
 /** Keep the skipped-kind reports compact even when a transcript invents many record kinds. */
 const MAX_IGNORED_KINDS = 64;
 /**
- * Skipped record kinds checked to carry no delivery, from Codex 0.153.4-0.163.0 rollouts and a Claude Code
+ * Skipped record kinds checked to carry no delivery, from Codex 0.153.4-0.166.0 rollouts and a Claude Code
  * 2.1.308 verbose stream. This list only decides which report bucket a skipped kind lands in: known kinds go
  * to `ignored`, anything else to `unrecognized`, where the orchestrator judges whether a read may have been
  * missed. It never decides whether the audit runs, so leaving a kind off it costs a judgment call, not an abort.
@@ -36,7 +36,7 @@ const MAX_IGNORED_KINDS = 64;
 const KNOWN_SKIPPED = new Set([
   "event_msg", "world_state", "turn_context", "token_usage_record", "compacted", "inter_agent_communication_metadata",
   "response_item:message", "response_item:reasoning", "response_item:agent_message", "response_item:compaction",
-  "response_item:web_search_call",
+  "response_item:web_search_call", "response_item:additional_tools",
   "system:thinking_tokens", "system:hook_started", "system:hook_progress", "system:hook_response",
   "system:task_started", "system:task_progress", "system:task_updated", "system:task_notification",
   "system:background_tasks_changed", "system:compact_boundary",
@@ -427,25 +427,98 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
   };
 }
 
-/** Read one single-writer log per reviewer; count current findings without trusting an advertised total. */
-async function findings(paths: string[]) {
-  const entries = new Map<string, ObjectValue>();
+// ---------------------------------------------------------------------------------------------------------------
+// Reviewer records and orchestrator dispositions
+//
+// A reviewer's log holds three kinds of event under one ID space: `finding` (reported), `candidate` (considered and
+// deliberately not reported, with the reason), and `lead` (unresolved, still needing work). One ID may change kind
+// over its history, so a lead can become a finding or a refuted candidate, and a finding can be demoted to a proposed
+// drop, without losing its provenance. `open` means the record's current kind stands; `withdrawn` is a retraction of
+// the record itself. Continuation replies only report what changed, so these logs are the complete record of what a
+// reviewer concluded; a candidate that lived only in reply prose would silently vanish from the result.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Event kinds a reviewer log may hold. Anything else is a malformed write, not a harness change. */
+const RECORD_KINDS = ["finding", "candidate", "lead"];
+
+/** The latest event per ID in one reviewer log, with the physical line it was read from. */
+type Entry = { row: ObjectValue; line: number; log: string };
+
+/** Physical line number of a `records` reference (`path:line`); the path itself may contain colons. */
+function lineOf(ref: string): number {
+  return Number(ref.slice(ref.lastIndexOf(":") + 1));
+}
+
+/** Latest state of every ID per log, keyed by `log\0id`. Each log has one writer, so order is append order. */
+async function latest(paths: string[]): Promise<Map<string, Entry>> {
+  const entries = new Map<string, Entry>();
   for await (const { row, path, ref } of records(paths, true)) {
     validateFinding(row, ref);
-    const id = string(row.id);
-    entries.set(`${path}\0${id}`, { ...row, reviewer_log: path });
+    entries.set(`${path}\0${string(row.id)}`, { row, line: lineOf(ref), log: path });
   }
-  const active = [...entries.values()].filter((entry) => entry.state === "open");
+  return entries;
+}
+
+/** The pointer fields the parent needs to decide whether to open a record's detail. */
+function pointer(entry: Entry) {
   return {
-    active: active.length,
-    withdrawn: entries.size - active.length,
-    findings: active.map(({ id, summary, location, reviewer_log }) => ({ id, summary, location, reviewer_log })),
+    id: entry.row.id,
+    kind: entry.row.kind,
+    summary: entry.row.summary,
+    location: entry.row.location,
+    reviewer_log: entry.log,
   };
+}
+
+/**
+ * Count current reviewer records without trusting an advertised total. `active`, `withdrawn` and the `findings`
+ * list cover reported findings only, exactly as before candidates and leads existed, so a progress report cannot
+ * start counting refuted candidates as findings. Open candidates and leads are counted and listed separately.
+ */
+async function findings(paths: string[]) {
+  const entries = [...(await latest(paths)).values()];
+  const open = (kind: string) => entries.filter((e) => e.row.state === "open" && e.row.kind === kind);
+  const findingCount = entries.filter((e) => e.row.kind === "finding").length;
+  return {
+    active: open("finding").length,
+    withdrawn: findingCount - open("finding").length,
+    open_candidates: open("candidate").length,
+    open_leads: open("lead").length,
+    findings: open("finding").map(pointer),
+    candidates: open("candidate").map(pointer),
+    leads: open("lead").map(pointer),
+  };
+}
+
+/** Physical line count, matching what a scheduler counting newlines records as a turn's starting offset. */
+async function physicalLines(path: string): Promise<number> {
+  const bytes = await Deno.readFile(path);
+  const newlines = bytes.reduce((n, b) => n + (b === 10 ? 1 : 0), 0);
+  return newlines + (bytes.length && bytes[bytes.length - 1] !== 10 ? 1 : 0);
+}
+
+/**
+ * List the events one reviewer appended after physical line `after`: the per-turn delta the orchestrator reads
+ * instead of a whole cumulative reply. `last_line` is the offset to pass next time. An offset beyond the end of the
+ * log is refused, because it would silently hide every later event (typically another reviewer's offset). A trailing
+ * unfinished write fails like any malformed line; retry after the writer reaches a boundary.
+ */
+async function events(path: string, after: number) {
+  const total = await physicalLines(path);
+  requireThat(after <= total, `Offset ${after} is past the end of ${path} (${total} lines)`);
+  const rows = [];
+  for await (const { row, ref } of records([path], true)) {
+    validateFinding(row, ref);
+    const line = lineOf(ref);
+    if (line <= after) continue;
+    rows.push({ line, id: row.id, kind: row.kind, state: row.state, summary: row.summary, location: row.location });
+  }
+  return { log: path, after, last_line: total, events: rows };
 }
 
 /** Validate before appending so a malformed new event cannot wedge subsequent progress polls. */
 function validateFinding(row: ObjectValue, ref: string) {
-  requireThat(row.version === 1 && row.kind === "finding", `Unsupported finding event: ${ref}`);
+  requireThat(row.version === 1 && RECORD_KINDS.includes(row.kind as string), `Unsupported finding event: ${ref}`);
   requireThat(
     string(row.id).length && ["open", "withdrawn"].includes(string(row.state)),
     `Invalid finding state: ${ref}`,
@@ -453,6 +526,167 @@ function validateFinding(row: ObjectValue, ref: string) {
   for (const field of ["summary", "detail", "location"]) {
     requireThat(string(row[field]).trim(), `Empty ${field}: ${ref}`);
   }
+}
+
+/**
+ * Orchestrator judgments about reviewer records. `duplicate` means another member of the same `group` carries the
+ * defect; `excluded` means the orchestrator accepts a reviewer's reason for not reporting a candidate. The other
+ * values follow the skill's dispositions for findings and concerns.
+ */
+const DISPOSITIONS = [
+  "verified",
+  "unverified-after-investigation",
+  "under-investigation",
+  "duplicate",
+  "rejected",
+  "excluded",
+];
+
+/**
+ * The disposition log holds two event kinds. `reviewer-log` registers a reviewer's findings log for the run, so a
+ * consolidation that forgets a log fails instead of showing a clean draft. `disposition` names the exact reviewer
+ * event it judged (`log`, `id`, `line`), so a reviewer revision appended after the judgment shows up as stale
+ * instead of inheriting a verdict about different text; `group` is the deduplication key, and members of one group
+ * are one underlying defect.
+ */
+function validateDisposition(row: ObjectValue, ref: string) {
+  requireThat(row.version === 1, `Unsupported disposition event: ${ref}`);
+  requireThat(string(row.log).startsWith("/"), `Reviewer log must be an absolute path: ${ref}`);
+  if (row.kind === "reviewer-log") return;
+  requireThat(row.kind === "disposition", `Unsupported disposition event: ${ref}`);
+  requireThat(string(row.id).length, `Empty id: ${ref}`);
+  requireThat(Number.isSafeInteger(row.line) && (row.line as number) >= 1, `Invalid line: ${ref}`);
+  requireThat(DISPOSITIONS.includes(string(row.disposition)), `Unknown disposition: ${ref}`);
+  for (const field of ["group", "reason"]) requireThat(string(row[field]).trim(), `Empty ${field}: ${ref}`);
+}
+
+/**
+ * Check a new disposition against the reviewer log before it is appended: the named line must hold an event for
+ * that ID. Consolidation refuses dispositions naming unknown records, and the log is append-only, so one bad
+ * append would otherwise wedge every later consolidation.
+ */
+async function checkJudgedEvent(row: ObjectValue) {
+  if (row.kind !== "disposition") return;
+  for await (const { row: event, ref } of records([string(row.log)], true)) {
+    if (lineOf(ref) === row.line) {
+      requireThat(event.id === row.id, `Line ${row.line} of ${row.log} is ${event.id}, not ${row.id}`);
+      return;
+    }
+  }
+  throw new EvidenceError(`No event at line ${row.line} of ${row.log}`);
+}
+
+/**
+ * Join the orchestrator's disposition log with the reviewer logs into one consolidated view. It certifies nothing:
+ * it shows which open records still lack a decision, which decisions went stale after a reviewer revision, which
+ * deduplication groups disagree, which leads are still open, and what reviewers withdrew, so the parent fixes those
+ * instead of rediscovering them at recording time. Per-group dispositions are what the skill's deduplicated counts
+ * come from; a group with a stale member has no settled disposition until it is judged again.
+ */
+async function consolidate(dispositionLog: string, logs: string[]) {
+  requireThat(
+    await Deno.stat(dispositionLog).catch(() => null),
+    `Missing disposition log ${dispositionLog}; create it empty and register reviewer logs at run start`,
+  );
+  const judged = new Map<string, { row: ObjectValue; ref: string }>();
+  const registered = new Set<string>();
+  const decisions: { row: ObjectValue; ref: string }[] = [];
+  for await (const { row, ref } of records([dispositionLog], true)) {
+    validateDisposition(row, ref);
+    if (row.kind === "reviewer-log") registered.add(string(row.log));
+    else decisions.push({ row, ref });
+  }
+  const supplied = new Set(logs);
+  for (const log of registered) requireThat(supplied.has(log), `Registered reviewer log not supplied: ${log}`);
+  for (const log of supplied) requireThat(registered.has(log), `Reviewer log was never registered: ${log}`);
+  const reviewer = await latest(logs);
+  for (const { row, ref } of decisions) {
+    const key = `${string(row.log)}\0${string(row.id)}`;
+    requireThat(reviewer.has(key), `Disposition names an unknown record ${row.log}#${row.id}: ${ref}`);
+    judged.set(key, { row, ref });
+  }
+  const groups = new Map<string, ObjectValue[]>();
+  const undispositioned = [], stale = [], withdrawn = [], openLeads = [];
+  for (const [key, entry] of reviewer) {
+    const member = {
+      log: entry.log,
+      id: entry.row.id,
+      kind: entry.row.kind,
+      state: entry.row.state,
+      line: entry.line,
+      summary: entry.row.summary,
+      location: entry.row.location,
+      detail: entry.row.detail,
+    };
+    const decision = judged.get(key);
+    if (entry.row.state === "withdrawn") withdrawn.push({ ...member, judged: Boolean(decision) });
+    else if (entry.row.kind === "lead") openLeads.push(member);
+    if (!decision) {
+      if (entry.row.state === "open") undispositioned.push(member);
+      continue;
+    }
+    const isStale = (decision.row.line as number) !== entry.line;
+    if (isStale) stale.push({ ...member, judged_line: decision.row.line, disposition_ref: decision.ref });
+    const group = string(decision.row.group);
+    groups.set(group, [
+      ...(groups.get(group) ?? []),
+      { ...member, disposition: decision.row.disposition, reason: decision.row.reason, stale: isStale },
+    ]);
+  }
+  const counts: Record<string, number> = {};
+  const rendered = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([group, members]) => {
+    // A group's disposition comes from its non-duplicate members. Stale members void it, all-duplicate groups point
+    // at nothing, and disagreeing members need synthesis; each is reported rather than resolved by majority.
+    const values = new Set(members.map((m) => m.disposition as string).filter((d) => d !== "duplicate"));
+    const disposition = members.some((m) => m.stale)
+      ? "stale"
+      : values.size === 1
+      ? [...values][0]
+      : values.size
+      ? "conflict"
+      : "duplicate-only";
+    counts[disposition] = (counts[disposition] ?? 0) + 1;
+    return { group, disposition, members };
+  });
+  return { counts, groups: rendered, undispositioned, stale, open_leads: openLeads, withdrawn };
+}
+
+/** Keep reviewer-supplied text on one line, so a newline in a summary cannot forge a heading in the draft. */
+function inline(value: unknown): string {
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+/** Readable private draft of the consolidated result; problems that block a clean record come first. */
+function markdown(view: Awaited<ReturnType<typeof consolidate>>): string {
+  const out: string[] = ["# Consolidated review draft", ""];
+  const ref = (m: ObjectValue) => `${m.log}#${m.id} (${m.kind}, ${m.state}, line ${m.line})`;
+  const attention = [
+    ...view.undispositioned.map((m) => `- No disposition: ${ref(m)}: ${inline(m.summary)}`),
+    ...view.stale.map((m) => `- Stale disposition (judged line ${m.judged_line}): ${ref(m)}: ${inline(m.summary)}`),
+    ...view.open_leads.map((m) => `- Open lead: ${ref(m)}: ${inline(m.summary)}`),
+    ...view.groups.filter((g) => ["conflict", "duplicate-only", "stale"].includes(g.disposition)).map((g) =>
+      `- Group ${inline(g.group)} is ${g.disposition}`
+    ),
+  ];
+  if (attention.length) out.push("## Needs attention", "", ...attention, "");
+  const sections = [...DISPOSITIONS.filter((d) => d !== "duplicate"), "stale", "conflict", "duplicate-only"];
+  for (const disposition of sections) {
+    const groups = view.groups.filter((g) => g.disposition === disposition);
+    if (!groups.length) continue;
+    out.push(`## ${disposition} (${groups.length})`, "");
+    for (const group of groups) {
+      const lead = group.members.find((m) => m.disposition !== "duplicate") ?? group.members[0];
+      out.push(`### ${inline(group.group)}: ${inline(lead.summary)}`, "", `Location: ${inline(lead.location)}`, "");
+      for (const m of group.members) out.push(`- ${ref(m)}: ${m.disposition}. ${inline(m.reason)}`);
+      out.push("", String(lead.detail), "");
+    }
+  }
+  if (view.withdrawn.length) {
+    out.push("## Withdrawn by reviewers", "");
+    for (const m of view.withdrawn) out.push(`- ${ref(m)}: ${inline(m.summary)}. ${inline(m.detail)}`);
+    out.push("");
+  }
+  return out.join("\n");
 }
 
 /** CLI errors remain nonzero and never print a plausible partial coverage report to stdout. */
@@ -494,7 +728,44 @@ async function main(args: string[]) {
     await Deno.writeTextFile(rest[0], JSON.stringify(row) + "\n", { append: true, mode: 0o600 });
     return;
   }
-  throw new EvidenceError("Usage: evidence manifest|read|audit|record|findings ...; see tooling.md");
+  if (command === "events") {
+    requireThat(rest.length === 3 && rest[1] === "--after" && /^\d+$/.test(rest[2]), "events LOG --after LINE");
+    console.log(JSON.stringify(await events(rest[0], integer(Number(rest[2])))));
+    return;
+  }
+  if (command === "register") {
+    requireThat(rest.length === 2, "register DISPOSITION_LOG REVIEWER_LOG");
+    const row = { version: 1, kind: "reviewer-log", log: rest[1] };
+    validateDisposition(row, rest[1]);
+    await Deno.writeTextFile(rest[0], JSON.stringify(row) + "\n", { append: true, mode: 0o600 });
+    return;
+  }
+  if (command === "dispose") {
+    requireThat(rest.length === 2, "dispose DISPOSITION_LOG EVENT_JSON_FILE");
+    const row = parse(await Deno.readTextFile(rest[1]));
+    validateDisposition(row, rest[1]);
+    requireThat(row.kind === "disposition", "dispose records dispositions; use register for reviewer logs");
+    // An unregistered log would pass the line check and then make every later consolidation fail.
+    let registered = false;
+    for await (const { row: entry } of records([rest[0]], true)) {
+      if (entry.kind === "reviewer-log" && entry.log === row.log) registered = true;
+    }
+    requireThat(registered, `Reviewer log ${row.log} is not registered in ${rest[0]}; register it first`);
+    await checkJudgedEvent(row);
+    await Deno.writeTextFile(rest[0], JSON.stringify(row) + "\n", { append: true, mode: 0o600 });
+    return;
+  }
+  if (command === "consolidate") {
+    const asMarkdown = rest[0] === "--markdown";
+    const [dispositionLog, ...logs] = asMarkdown ? rest.slice(1) : rest;
+    requireThat(dispositionLog && logs.length, "consolidate [--markdown] DISPOSITION_LOG LOG...");
+    const view = await consolidate(dispositionLog, logs);
+    console.log(asMarkdown ? markdown(view) : JSON.stringify(view));
+    return;
+  }
+  throw new EvidenceError(
+    "Usage: evidence manifest|read|audit|record|findings|events|register|dispose|consolidate ...; see tooling.md",
+  );
 }
 
 /** Share diagnostics and exit semantics between direct source execution and the generated compiled entrypoint. */
@@ -995,7 +1266,8 @@ Deno.test("Codex late results for a yielded exec cell are delivered evidence, no
     equal((await audit("codex", "session", "/repo", [item], [path])).rejected.length, 1);
   }));
 
-// Agent messages, inter-agent metadata and server-side web searches appear in ordinary 0.163.0 rollouts.
+// Agent messages, inter-agent metadata and server-side web searches appear in ordinary 0.163.0 rollouts, and
+// 0.166.0 adds an `additional_tools` record holding tool definitions.
 // They carry no call_id-paired local tool output and must neither abort nor credit an audit.
 Deno.test("Codex non-tool response items and lifecycle records are skipped and counted", () =>
   fixture(async (root, item) => {
@@ -1006,6 +1278,7 @@ Deno.test("Codex non-tool response items and lifecycle records are skipped and c
       { type: "inter_agent_communication_metadata", payload: {} },
       { type: "response_item", payload: { type: "agent_message", content: packet(item, 1, 3) } },
       { type: "response_item", payload: { type: "web_search_call", action: {}, status: "completed" } },
+      { type: "response_item", payload: { type: "additional_tools", role: "developer", tools: [] } },
     ]);
     const report = await audit("codex", "session", "/repo", [item], [path]);
     equal(report.status, "complete");
@@ -1013,6 +1286,7 @@ Deno.test("Codex non-tool response items and lifecycle records are skipped and c
     equal(Object.keys(report.ignored), [
       "event_msg",
       "inter_agent_communication_metadata",
+      "response_item:additional_tools",
       "response_item:agent_message",
       "response_item:web_search_call",
     ]);
@@ -1091,4 +1365,157 @@ Deno.test("record appends immediately without overwriting an earlier finding", (
     await main(["record", log, event]);
     equal((await findings([log])).withdrawn, 1);
     equal((await Deno.readTextFile(log)).trim().split("\n").length, 2);
+  }));
+
+/** A minimal reviewer event; tests override the fields they exercise. */
+function reviewerEvent(fields: ObjectValue): ObjectValue {
+  return {
+    version: 1,
+    kind: "finding",
+    id: "f1",
+    state: "open",
+    summary: "bug",
+    location: "a:1",
+    detail: "why",
+    ...fields,
+  };
+}
+
+/** A minimal disposition; tests override the fields they exercise. */
+function dispositionEvent(fields: ObjectValue): ObjectValue {
+  return { version: 1, kind: "disposition", disposition: "verified", group: "g", reason: "checked", ...fields };
+}
+
+/** A disposition log registering each reviewer log, followed by the given dispositions. */
+function decisionLog(logs: string[], dispositions: ObjectValue[]): ObjectValue[] {
+  return [...logs.map((log) => ({ version: 1, kind: "reviewer-log", log })), ...dispositions];
+}
+
+/**
+ * Candidates and leads exist so that what a reviewer decided not to report survives delta replies. The counts and
+ * the `findings` list that meant "reported findings" before these kinds existed must keep that meaning, or progress
+ * reports would silently start counting refuted candidates as findings.
+ */
+Deno.test("findings keep reported findings separate from candidates and leads, and follow kind changes", () =>
+  fixture(async (root) => {
+    const log = `${root}/log`;
+    await saveLog(log, [
+      reviewerEvent({ id: "f1" }),
+      reviewerEvent({ id: "c1", kind: "candidate", detail: "refuted at a:9" }),
+      reviewerEvent({ id: "l1", kind: "lead" }),
+      // A lead closes by changing kind; a promoted candidate keeps its ID and history.
+      reviewerEvent({ id: "l1", kind: "candidate", detail: "checked, no route" }),
+      reviewerEvent({ id: "c2", kind: "candidate" }),
+      reviewerEvent({ id: "c2", kind: "finding" }),
+      reviewerEvent({ id: "l2", kind: "lead" }),
+    ]);
+    const report = await findings([log]);
+    equal([report.active, report.withdrawn, report.open_candidates, report.open_leads], [2, 0, 2, 1]);
+    equal(report.findings.map((f) => f.id), ["f1", "c2"]);
+    equal(report.candidates.map((f) => f.id), ["c1", "l1"]);
+    equal(report.leads.map((f) => f.id), ["l2"]);
+    await saveLog(log, [reviewerEvent({ kind: "note" })]);
+    await fails(() => findings([log]), "Unsupported finding event");
+  }));
+
+/**
+ * The per-turn delta replaces rereading whole cumulative replies, so it must return exactly the events appended
+ * after the offset, keep physical line numbers across blank separators, hand back the next offset, and refuse an
+ * offset past the end, which would otherwise hide every later event without an error.
+ */
+Deno.test("events lists only records after the offset and refuses offsets past the end", () =>
+  fixture(async (root) => {
+    const log = `${root}/log`;
+    await Deno.writeTextFile(log, "");
+    equal(await events(log, 0), { log, after: 0, last_line: 0, events: [] });
+    await Deno.writeTextFile(
+      log,
+      [reviewerEvent({ id: "f1" }), {}, reviewerEvent({ id: "c1", kind: "candidate" })]
+        .map((row) => Object.keys(row).length ? JSON.stringify(row) : "").join("\n") + "\n",
+    );
+    const delta = await events(log, 1);
+    equal(delta.last_line, 3);
+    equal(delta.events.map((e) => [e.line, e.id, e.kind]), [[3, "c1", "candidate"]]);
+    equal((await events(log, 3)).events.length, 0);
+    await fails(() => events(log, 4), "past the end");
+    await fails(() => main(["events", log, "--after", ""]), "events LOG --after LINE");
+    await Deno.writeTextFile(log, "{", { append: true });
+    await fails(() => events(log, 3), "Malformed");
+  }));
+
+/**
+ * The consolidated view is where the parent finds what still needs a decision, and a downstream recording step may
+ * render its result from it. Nothing a reviewer wrote may vanish from it: undecided records, decisions made before a
+ * later revision, disagreeing groups, open leads, and withdrawn records must all be visible, and a stale decision
+ * must not keep counting toward the group's old verdict.
+ */
+Deno.test("consolidate surfaces undecided, stale, conflicting, open and withdrawn records", () =>
+  fixture(async (root) => {
+    const a = `${root}/a`, b = `${root}/b`, decisions = `${root}/decisions`;
+    await saveLog(a, [
+      reviewerEvent({ id: "f1" }),
+      reviewerEvent({ id: "f2", summary: "later revised" }),
+      reviewerEvent({ id: "c1", kind: "candidate" }),
+      reviewerEvent({ id: "f2", summary: "revised", detail: "new text" }),
+      reviewerEvent({ id: "c9", kind: "candidate", state: "withdrawn", detail: "entered in error" }),
+    ]);
+    await saveLog(b, [reviewerEvent({ id: "f9" }), reviewerEvent({ id: "l1", kind: "lead" })]);
+    await saveLog(
+      decisions,
+      decisionLog([a, b], [
+        dispositionEvent({ log: a, id: "f1", line: 1, group: "race" }),
+        dispositionEvent({ log: b, id: "f9", line: 1, group: "race", disposition: "duplicate" }),
+        dispositionEvent({ log: a, id: "f2", line: 2, group: "leak", disposition: "rejected" }),
+        dispositionEvent({ log: a, id: "c1", line: 3, group: "drop", disposition: "excluded" }),
+      ]),
+    );
+    const view = await consolidate(decisions, [a, b]);
+    equal(view.counts, { excluded: 1, stale: 1, verified: 1 });
+    equal(view.groups.find((g) => g.group === "race")?.members.length, 2);
+    equal(view.undispositioned.map((m) => m.id), ["l1"]);
+    equal(view.stale.map((m) => [m.id, m.judged_line, m.line]), [["f2", 2, 4]]);
+    equal(view.open_leads.map((m) => m.id), ["l1"]);
+    equal(view.withdrawn.map((m) => [m.id, m.judged]), [["c9", false]]);
+    const draft = markdown(view);
+    for (const text of ["## Needs attention", "Open lead:", "Group leak is stale", "## Withdrawn by reviewers"]) {
+      requireThat(draft.includes(text), `draft lacks ${text}`);
+    }
+
+    await saveLog(
+      decisions,
+      decisionLog([a, b], [
+        dispositionEvent({ log: a, id: "f1", line: 1, group: "race" }),
+        dispositionEvent({ log: b, id: "f9", line: 1, group: "race", disposition: "rejected" }),
+        dispositionEvent({ log: a, id: "c1", line: 3, group: "x\n## injected", disposition: "duplicate" }),
+      ]),
+    );
+    const conflicted = await consolidate(decisions, [a, b]);
+    equal(conflicted.counts, { conflict: 1, "duplicate-only": 1 });
+    requireThat(!markdown(conflicted).includes("\n## injected"), "a group name forged a heading");
+
+    await fails(() => consolidate(decisions, [a]), "Registered reviewer log not supplied");
+    await saveLog(decisions, decisionLog([a], []));
+    await fails(() => consolidate(decisions, [a, b]), "never registered");
+    await fails(() => consolidate(`${root}/missing`, [a]), "create it empty");
+  }));
+
+/**
+ * The disposition log is append-only and consolidation refuses decisions about unknown records, so `dispose` must
+ * check the judged event before appending; otherwise one typo would wedge every later consolidation.
+ */
+Deno.test("dispose refuses a decision about an unregistered log, or a record or line the log does not hold", () =>
+  fixture(async (root) => {
+    const a = `${root}/a`, decisions = `${root}/decisions`, event = `${root}/event`;
+    await saveLog(a, [reviewerEvent({ id: "f1" }), reviewerEvent({ id: "f2" })]);
+    await Deno.writeTextFile(decisions, "");
+    await Deno.writeTextFile(event, JSON.stringify(dispositionEvent({ log: a, id: "f1", line: 1 })));
+    await fails(() => main(["dispose", decisions, event]), "is not registered");
+    await main(["register", decisions, a]);
+    for (const [fields, reason] of [[{ id: "f9", line: 1 }, "is f1, not f9"], [{ id: "f1", line: 7 }, "No event"]]) {
+      await Deno.writeTextFile(event, JSON.stringify(dispositionEvent({ log: a, ...(fields as ObjectValue) })));
+      await fails(() => main(["dispose", decisions, event]), reason as string);
+    }
+    await Deno.writeTextFile(event, JSON.stringify(dispositionEvent({ log: a, id: "f2", line: 2 })));
+    await main(["dispose", decisions, event]);
+    equal((await consolidate(decisions, [a])).counts, { verified: 1 });
   }));

@@ -165,6 +165,16 @@ orchestrator:
 - After a forced compaction, resumes from the current-state file without rereading earlier replies, and checks groups
   recorded as running against the actual processes.
 
+For the record kinds and dispositions, check that reviewers append a refuted or covered possibility as a `candidate`
+event when they decide not to report it, including during discovery passes, and open `lead` events that they later close
+by changing the kind. Their second and later replies should report deltas and cite record IDs without restating
+unchanged findings. Give a reply that mentions a ruled-out possibility or a revision the log does not contain: the
+parent must ask for the event rather than accept the prose. Revise a finding after the parent has judged it: the
+consolidated view must show the decision and its group as stale. Have a reviewer withdraw a possibly serious finding: it
+must stay visible in the consolidated view. Leave one registered log out of `consolidate`: it must fail rather than
+produce a clean draft. The parent's consolidated draft should exist and be current before the last discovery pass ends,
+not be assembled afterwards.
+
 Scenarios may be combined; do not spend a separate live run on each assertion. The real exercises prove the operational
 path, while fixtures cover stopping cases without waiting for a stalled run. Validate helper code behavior if any is
 added, and run the repository checks. Matching instruction text is not a behavioral test.
