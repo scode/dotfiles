@@ -52,11 +52,15 @@ codex -c model_reasoning_effort=high exec --yolo -m gpt-6.1-sol -o <scratch-file
   `-m`, `-c`, and `-C` go before `resume`, `-o` after it; getting that order wrong is the one way this was observed to
   fail. Pass `-C` again for a delegate in an isolated tree — whether `resume` restores the original directory on its own
   is unverified, and the failure mode is an editing turn under `--yolo` in the wrong tree. The final message is in the
-  `-o` file on both turns. Verified on codex 0.151.0. `turn.completed` usage in the JSON stream is per turn, so summing
-  across launch and resumes gives the run's total. One thing the eval did not check: whether the stdin-hang signature
-  above (the `Reading additional input from stdin...` line with no version header after it) looks the same under
-  `--json`. Until someone confirms, treat a `--json` run whose event log has no `thread.started` event after a minute as
-  the same hang.
+  `-o` file on both turns. Verified on codex 0.151.0. `turn.completed` usage in the JSON stream is the thread's running
+  total, not that turn's own usage: a resume carries every earlier turn's tokens forward, and each value equals the
+  rollout's `token_count` `info.total_token_usage` at that point. The last `turn.completed` of a launch and its resumes
+  is therefore the run's total, and summing them counts earlier turns again (2-3 times the real figure in three-turn
+  checks). A single turn's usage is the difference from the previous turn's `turn.completed`. Verified on codex 0.166.0
+  with two independent three-turn runs whose one-word turns reported the earlier turns' output tokens plus about 5. One
+  thing the eval did not check: whether the stdin-hang signature above (the `Reading additional input from stdin...`
+  line with no version header after it) looks the same under `--json`. Until someone confirms, treat a `--json` run
+  whose event log has no `thread.started` event after a minute as the same hang.
 - Long tasks can exceed your shell tool's default timeout. Run them in the background and monitor them per `SKILL.md`;
   use a foreground timeout only when it is shorter than the monitoring interval. `codex exec` streams a transcript while
   working, so a log that keeps growing is a liveness signal, and one stuck at `Reading additional input from stdin...`
