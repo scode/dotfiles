@@ -133,7 +133,7 @@ Skills and shell aliases in this repo name specific models, and nothing updates 
 release. For each model line the repo names, find the newest release upstream and update every reference that is behind.
 The lines are:
 
-- GPT: sol, luna, astra.
+- GPT: sol, terra, luna, astra.
 - Claude: haiku, sonnet, opus, fable.
 - Muse: muse-spark.
 - GLM: glm-flash.
@@ -142,8 +142,9 @@ Search `agent-skills/` and `payload/` for the current names; `lore/` is history 
 carry model names are the `scode-model-routing` tables (`SKILL.md`, `inventory.md`, and the eval tables in its
 `AGENTS.md`), the `scode-harness-shellout` harness files (the codex launch template and its list of current ids, the
 claude alias list, the muse and opencode model ids), the `scode-build-goal` review defaults in `SKILL.md` and `SPEC.md`,
-the example run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, and the codex
-launchers in `payload/shellrc`.
+the example run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, the `scode-shepherd`
+worker and reviewer defaults (in `scripts/shepherd`, `SKILL.md`, `SPEC.md`, and the smoke run in `AGENTS.md`) and its
+list of current ids in `SKILL.md`, and the codex launchers in `payload/shellrc`.
 
 The work differs by family. GPT, Muse, and GLM ids are passed to their CLIs literally, so a stale one keeps launching
 the old model, and bumping the id is the fix. Claude models are named everywhere by their plain harness alias (`haiku`,

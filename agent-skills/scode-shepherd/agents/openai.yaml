@@ -1,0 +1,8 @@
+# Display metadata for Codex only. Deliberately no `policy: allow_implicit_invocation: false`
+# block: Muse Code reads this file too and maps that policy to "user-invocable-only", under which
+# its read_skill tool refuses to load the skill for the model (verified on Muse Code 1.0.2 for
+# scode-galaxy-brain).
+interface:
+  display_name: "Shepherd"
+  short_description: "Plan a PR stack, then let a cheap worker build it under a runner and strong review"
+  default_prompt: "Use $scode-shepherd to plan and build the stack of PRs I describe."
