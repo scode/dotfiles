@@ -68,6 +68,14 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
 10. **Timeouts hold.** Every child (worker, check, reviewer) runs in its own process group, and a deadline or a stop
     kills the whole group. Killing only the direct child was not enough: a grandchild kept the output pipe open, and the
     runner waited on it indefinitely.
+11. **Checks run unattended, and the worker is told how.** The runner runs each check with no terminal and no input. The
+    worker's own shell is an interactive terminal, where a test that prompts for input passes if the worker answers it;
+    on a saltybox run (2026-11-05) a pre-existing manual test passed that way for the worker, failed in the runner, and
+    led one worker to edit the test to skip itself and another to escalate. The fix is not a terminal for the runner,
+    since nobody is there to answer and the test would wait out the check deadline. Instead the worker prompt and every
+    failed-check message say how the runner runs checks, the worker is told to run them that way and to report replan
+    for a check that cannot pass unattended rather than change tests, and the supervisor is told to leave manual tests
+    out of the plan's checks.
 
 ## The supervisor channel
 

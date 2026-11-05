@@ -206,7 +206,10 @@ an item over, work in pieces that each fit in a turn, and write `run` once the `
 - `context`: the design every item shares: the approach, the interfaces and invariants items rely on, the decisions you
   settled, and what is out of scope for the whole goal. A worker sees only this, its own item, and the stack's titles.
 - `checks`: shell commands that must pass at every PR's head, run from the repository root, for example the gates the
-  repository's `AGENTS.md` or CI requires. Keep them to what each PR must pass on its own.
+  repository's `AGENTS.md` or CI requires. Keep them to what each PR must pass on its own. The runner runs them
+  unattended, with no terminal and no input, so leave out anything that needs a person: a test suite's manual or
+  interactive tests, which `cargo test -- --ignored` and similar "run everything" flags tend to include. Skip those by
+  name, or leave the flag out.
 - `worker`, `reviewer`: optional `{"model": ..., "effort": ...}` overrides.
 - `limits`: optional overrides of `sessionsPerItem` (6), `reviewRounds` (3), `stopBlocks` (3), `workerMinutes` (120),
   `reviewerMinutes` (45), and `checkMinutes` (45).

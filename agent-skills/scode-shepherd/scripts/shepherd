@@ -379,6 +379,17 @@ export function channelParagraph(nonce: string): string {
     `exact prefix.`;
 }
 
+/**
+ * How the runner runs checks, stated to the worker in its prompt and again with every failed check. The worker's own
+ * shell (Codex's) is an interactive terminal, so a test that prompts for input can pass there when the worker answers
+ * it, and then fail in the runner, which has no terminal and no input. That happened on a saltybox run on 2026-11-05:
+ * a pre-existing manual test failed only in the runner, and the worker edited it to skip itself. Giving the runner a
+ * terminal would not help, since nobody is there to type and the test would wait out the check deadline; the worker
+ * reproducing the runner's conditions does.
+ */
+export const UNATTENDED_CHECKS = "The runner runs every check unattended, with no terminal and no input, as " +
+  "`setsid sh -c '<check>' < /dev/null` from the repository root.";
+
 export function workerPrompt(c: PromptCtx): string {
   const it = c.plan.items[c.index], s = c.states[c.index];
   const base = expectedBase(c.plan, c.states, c.index);
@@ -407,6 +418,9 @@ export function workerPrompt(c: PromptCtx): string {
         : "") +
       `- Before reporting done, run these checks and make them pass:\n` +
       c.plan.checks.map((k) => `  - \`${k}\``).join("\n") + "\n" +
+      `- ${UNATTENDED_CHECKS} Run each check that way yourself before reporting done, not in your interactive ` +
+      `shell, where a test that waits for input can pass because you answered it. If a check cannot pass unattended ` +
+      `(a test that needs a person, say), report replan with the reason; do not change tests to get around it.\n` +
       `- Stay inside this item's scope and do not start later items. If the item cannot be done as specified, or the ` +
       `plan looks wrong, do not improvise around it: report blocked or replan as described below.\n` +
       `- Your claims are checked independently. The checks are re-run at the PR's pushed head, and a reviewer reviews ` +
@@ -760,7 +774,7 @@ async function verify(
   if (!checks.ok) {
     return {
       problem: `\`${checks.command}\` fails at the PR's pushed head ${pr.head} (full log: ${checks.logPath}). ` +
-        `Last lines:\n\n${checks.tail}`,
+        `${UNATTENDED_CHECKS} Last lines:\n\n${checks.tail}`,
     };
   }
   s.pr = pr, s.baseSha = tree.baseSha, s.prNumber = pr.number;
@@ -1899,6 +1913,20 @@ Deno.test("failing checks at the PR head send the worker back with the log tail,
   assertEq(await w.run(), { done: true });
   assertEq(w.calls, ["worker p1#1", "tree sha1", "checks sha1", "worker p1#2", "tree sha1", "checks sha1", "review"]);
   assertIncludes(w.files.get("prompt:p1#2"), "boom");
+});
+
+Deno.test("the worker is told checks run unattended, up front and again with a failed check", async () => {
+  // A worker that runs checks in its interactive shell can answer a test's prompt and pass a check the runner fails;
+  // both messages must say how the runner runs checks, so the worker can reproduce it and recognize that failure.
+  const plan = testPlan(1);
+  let n = 0;
+  const w = fakeWorld(plan, { worker: () => done(1), checksOk: () => ++n > 1, reviews: [approve] });
+  await w.run();
+  assertIncludes(w.files.get("prompt:p1#1"), "< /dev/null");
+  assertIncludes(w.files.get("prompt:p1#1"), "report replan");
+  // Only the feedback section: "How to work" repeats the same sentence, which would hide a missing one here.
+  const feedback = w.files.get("prompt:p1#2")!.split("## Address this first")[1].split("## How to work")[0];
+  assertIncludes(feedback, "no terminal and no input");
 });
 
 Deno.test("worker-fixable PR problems go back to the worker before any tree work", async () => {
