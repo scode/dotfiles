@@ -907,9 +907,19 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
       return r.code === 0 ? r.stdout.trim() : { error: `gh repo view failed: ${r.stderr.trim()}` };
     },
 
+    /**
+     * Reads a PR as `gh pr view <number> -R <owner/repo>` rather than by URL, and builds the URL itself. Both forms
+     * work against GitHub; this one also works against the model of GitHub in jjstack's end-to-end tests
+     * (`agent-skills/jjstack/tests/fake-gh.ts`), which scode/my-bench uses as the GitHub its sandboxed runs talk to,
+     * and which models exactly the `gh` surface jjstack needs.
+     */
     async prInfo(url) {
-      const r = await $`gh pr view ${url} --json url,number,state,isDraft,headRefName,headRefOid,baseRefName`.cwd(repo)
-        .noThrow().stdout("piped").stderr("piped");
+      const m = PR_URL_RE.exec(url);
+      if (!m) return { error: `${url} is not a PR URL`, notFound: true };
+      const [, prRepo, number] = m;
+      const r =
+        await $`gh pr view ${number} -R ${prRepo} --json number,state,isDraft,headRefName,headRefOid,baseRefName`
+          .cwd(repo).noThrow().stdout("piped").stderr("piped");
       if (r.code !== 0) {
         const error = r.stderr.trim() || `gh exited ${r.code}`;
         // gh 2.45's wording for a PR number that does not exist in an existing repository.
@@ -917,9 +927,9 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
       }
       const j = JSON.parse(r.stdout);
       return {
-        url: j.url,
+        url: `https://github.com/${prRepo}/pull/${j.number}`,
         number: j.number,
-        repo: PR_URL_RE.exec(j.url)?.[1] ?? "",
+        repo: prRepo,
         state: j.state,
         isDraft: j.isDraft,
         headRef: j.headRefName,
