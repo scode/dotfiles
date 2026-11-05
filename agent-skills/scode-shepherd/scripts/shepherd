@@ -25,6 +25,10 @@
  *   shepherd status <run-dir>               compact summary for the supervisor
  *   shepherd adopt <run-dir> <item> <pr>    hand an item's PR (made by someone else) to verification and review
  *   shepherd hook <run-dir>                 hook handler; reads hook JSON on stdin
+ *   shepherd drive <run-dir> ...            run the supervisor headless (see `cmdDrive`)
+ *
+ * `drive` is the headless alternative to an interactive supervisor: it runs the supervisor itself with `codex exec`,
+ * resumes its thread for every event (an answer, the runner's exit), and acts on the `next.json` each turn ends with.
  */
 import $ from "jsr:@david/dax@0.50.2";
 
@@ -1060,21 +1064,21 @@ async function ownedAlive(pid: number | undefined, runDir: string): Promise<bool
 }
 
 /** Takes the run's lock, created exclusively so two runners started together cannot both get it. */
-async function takeLock(p: Paths, runDir: string) {
+async function takeLock(lock: string, runDir: string, what: string) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const f = await Deno.open(p.lock, { write: true, createNew: true });
+      const f = await Deno.open(lock, { write: true, createNew: true });
       await f.write(new TextEncoder().encode(String(Deno.pid)));
       f.close();
       return;
     } catch (e) {
       if (!(e instanceof Deno.errors.AlreadyExists)) throw e;
-      const holder = Number(await Deno.readTextFile(p.lock).catch(() => "")) || undefined;
-      if (await ownedAlive(holder, runDir)) fail(3, `another runner (pid ${holder}) is active for this run`);
-      await Deno.remove(p.lock).catch(() => {}); // stale: its runner is gone
+      const holder = Number(await Deno.readTextFile(lock).catch(() => "")) || undefined;
+      if (await ownedAlive(holder, runDir)) fail(3, `another ${what} (pid ${holder}) is active for this run`);
+      await Deno.remove(lock).catch(() => {}); // stale: its holder is gone
     }
   }
-  fail(3, `could not take ${p.lock}`);
+  fail(3, `could not take ${lock}`);
 }
 
 async function cmdInit(runDir: string) {
@@ -1095,7 +1099,7 @@ async function cmdInit(runDir: string) {
 
 async function cmdRun(runDir: string): Promise<number> {
   const p = pathsFor(runDir);
-  await takeLock(p, runDir);
+  await takeLock(p.lock, runDir, "runner");
   const plan = await loadPlan(p);
   const state = await readJson<State>(p.state);
   const rec = reconcile(plan, state);
@@ -1150,7 +1154,7 @@ async function cmdRun(runDir: string): Promise<number> {
   return 0;
 }
 
-export function statusText(plan: Plan, state: State, escalation: string | undefined): string {
+export function statusText(plan: Plan, state: State, escalation: string | undefined, supervisor?: Usage): string {
   const lines = state.items.map((s, i) => {
     const w = s.usage.worker, r = s.usage.reviewer;
     return `${i + 1}. ${s.id} [${s.phase}] sessions=${s.sessions} reviews=${s.reviewRounds} ` +
@@ -1159,6 +1163,11 @@ export function statusText(plan: Plan, state: State, escalation: string | undefi
       `reviewer=${r.input}in/${r.cachedInput}cached/${r.output}out`;
   });
   if (state.current) lines.push(`current: ${state.current.item} session ${state.current.session}`);
+  if (supervisor) {
+    lines.push(
+      `supervisor tokens (headless): ${supervisor.input}in/${supervisor.cachedInput}cached/${supervisor.output}out`,
+    );
+  }
   if (escalation) lines.push(`open escalation: ${escalation.trim()}`);
   return `${plan.items.length} items\n${lines.join("\n")}`;
 }
@@ -1167,7 +1176,8 @@ async function cmdStatus(runDir: string) {
   const p = pathsFor(runDir);
   const plan = await loadPlan(p);
   const state = await readJson<State>(p.state);
-  console.log(statusText(plan, state, await Deno.readTextFile(p.escalation).catch(() => undefined)));
+  const driver = await readJson<DriverState>(`${runDir}/driver.json`).catch(() => undefined);
+  console.log(statusText(plan, state, await Deno.readTextFile(p.escalation).catch(() => undefined), driver?.usage));
 }
 
 async function cmdAdopt(runDir: string, id: string, url: string) {
@@ -1238,16 +1248,436 @@ async function cmdHook(runDir: string) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Headless driver: runs the supervisor itself instead of waking an interactive session
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * What a headless supervisor asks for when its turn ends, read from `<run-dir>/next.json`. Every place where the skill
+ * would ask the user, arm the runner, or report in an interactive session, a headless supervisor writes one of these
+ * and ends its turn instead.
+ */
+type NextAction =
+  | { action: "ask"; question: string }
+  | { action: "run" }
+  | { action: "done"; report: string }
+  | { action: "stop"; reason: string };
+
+/** Parses `next.json`, or says what is wrong with it in words the supervisor can act on. */
+export function parseNext(text: string | undefined): NextAction | string {
+  if (text === undefined) return "next.json does not exist";
+  let n: Record<string, unknown>;
+  try {
+    n = JSON.parse(text);
+  } catch {
+    return "next.json is not valid JSON";
+  }
+  // A Map, not an object literal: a lookup in a plain object also finds inherited keys, so an action such as
+  // "toString" would otherwise count as valid.
+  const field = new Map([["ask", "question"], ["done", "report"], ["stop", "reason"]]);
+  if (n?.action === "run") return { action: "run" };
+  const need = typeof n?.action === "string" ? field.get(n.action) : undefined;
+  if (need === undefined) return 'action must be "ask", "run", "done", or "stop"';
+  if (typeof n[need] !== "string" || (n[need] as string).trim() === "") return `a "${n.action}" needs a "${need}"`;
+  return { action: n.action, [need]: n[need] } as NextAction;
+}
+
+/**
+ * The next thing the driver has to do. It is saved before the driver starts doing it, so a driver that dies at any
+ * point (killed, out of memory, a closed terminal) can be started again and pick up exactly there: re-send a turn's
+ * message, ask a question again, or deal with the runner. Nothing a turn produced is lost in between, because the
+ * driver saves the following step before it acts on the previous one.
+ */
+type Pending =
+  | { kind: "turn"; message: string }
+  | { kind: "answer"; question: string }
+  /** `started` is set just before the runner is launched; see `runRunner` for what a restart does with it. */
+  | { kind: "runner"; started?: string };
+
+/** The driver's own state, `<run-dir>/driver.json`. */
+type DriverState = {
+  version: 1;
+  repo: string;
+  model: string;
+  effort: string;
+  thread?: string;
+  turns: number;
+  /** The cap on supervisor turns for the whole run; `--max-turns` raises it for a run that should go on. */
+  maxTurns: number;
+  /** The answerer program, kept so a restart need not repeat `--answerer`. */
+  answerer?: string;
+  /** Undefined only when the supervisor finished or stopped. */
+  pending?: Pending;
+  /** The supervisor thread's running token total, from the latest turn that recorded one. */
+  usage: Usage;
+};
+
+/** How the runner came out, in a sentence for the supervisor, plus `shepherd status` at that point. */
+type RunnerResult = { summary: string; status: string };
+
+/** Everything the drive loop does to the outside world; tests use fakes. */
+interface DriverOps {
+  /**
+   * Starts the supervisor when `thread` is undefined, otherwise resumes that thread with `message`. `usage` is the
+   * thread's token total when the turn recorded one; a turn that failed early records none.
+   */
+  supervisorTurn(message: string, thread: string | undefined, turn: number): Promise<
+    { thread?: string; code: number; timedOut: boolean; usage?: Usage }
+  >;
+  /** Reads the `next.json` the turn just wrote, and moves it aside so the next turn starts without one. */
+  takeNext(turn: number): Promise<string | undefined>;
+  /**
+   * Runs the runner and reports how it came out. `started` is set when an earlier driver had already launched it and
+   * died; `markStarted` must be called (and awaited) just before launching.
+   */
+  runRunner(started: string | undefined, markStarted: () => Promise<void>): Promise<RunnerResult>;
+  /** The answer to a supervisor question, or none (with `error` set when the answerer itself failed). */
+  answer(question: string): Promise<{ answer?: string; error?: string }>;
+}
+
+/** A supervisor that needs more turns than this is not converging; the driver stops rather than spend on. */
+const DEFAULT_MAX_TURNS = 40;
+
+/** Exit codes of `drive`, beyond 0 (done), 2 (usage), and 3 (refused). */
+const DRIVE_WAITING = 20, DRIVE_STOPPED = 21, DRIVE_PROTOCOL = 22;
+
+/** The message that hands the supervisor the user's answer. */
+export function answerMessage(answer: string) {
+  return `The user's answer to your question:\n\n${answer.trim()}\n\nContinue as the skill says, then write next.json ` +
+    `and end your turn.`;
+}
+
+/** The message that takes the place of the wake callback, telling the supervisor how the runner came out. */
+export function runnerMessage(r: RunnerResult) {
+  return `${r.summary}\n\nshepherd status:\n\n${r.status.trim()}\n\nHandle this as the skill's "When the runner ` +
+    `exits" section says (there is no wake callback to acknowledge), then write next.json and end your turn.`;
+}
+
+/**
+ * The skill's own `SKILL.md`: the one next to this script. Named in the first message because the supervisor should
+ * follow the copy of the skill its driver belongs to, and because that copy need not be installed where the harness
+ * looks for skills (one supervisor, not finding it in its catalog, stopped rather than search).
+ */
+const SKILL_MD = decodeURIComponent(new URL("../SKILL.md", import.meta.url).pathname);
+
+/** The message that starts the supervisor: the skill, headless mode, where everything is, and the goal. */
+export function firstMessage(repo: string, runDir: string, goal: string, skill = SKILL_MD) {
+  return `Use the scode-shepherd skill to achieve the goal below. Read its SKILL.md at ${skill} in full, and resolve ` +
+    `the files it mentions relative to that directory.\n\nYou are running headless under \`shepherd drive\`, so ` +
+    `follow the skill's "Headless mode" ` +
+    `section. The checkout is ${repo}. The run directory is ${runDir}: it already exists, holds the goal as goal.md, ` +
+    `and is the one to use.\n\nThe goal:\n\n${goal.trim()}\n`;
+}
+
+/**
+ * Works off `ds.pending` until the supervisor is done, stops, asks a question nobody can answer now, breaks the
+ * protocol, or reaches the turn cap.
+ *
+ * Each supervisor turn ends with its `next.json`, which becomes the next pending step: a question to answer, or the
+ * runner to run, whose outcome in turn becomes the next turn's message. A missing or malformed `next.json` gets one
+ * nudge; two in a row end the drive. Every return leaves `pending` saved as what a restart should do next (undefined
+ * after done or stop), so no exit, including the turn cap, discards an answer or a runner result.
+ */
+export async function driveLoop(ds: DriverState, ops: DriverOps, save: () => Promise<void>): Promise<
+  { code: number; message: string }
+> {
+  let nudges = 0;
+  for (;;) {
+    const p = ds.pending;
+    if (p === undefined) return { code: DRIVE_PROTOCOL, message: "nothing is pending" };
+    if (p.kind === "answer") {
+      const a = await ops.answer(p.question);
+      if (a.answer === undefined) {
+        const why = a.error === undefined ? "" : `\n\n(The answerer failed: ${a.error})`;
+        return { code: DRIVE_WAITING, message: p.question + why };
+      }
+      ds.pending = { kind: "turn", message: answerMessage(a.answer) };
+      await save();
+      continue;
+    }
+    if (p.kind === "runner") {
+      const r = await ops.runRunner(p.started, async () => {
+        ds.pending = { kind: "runner", started: new Date().toISOString() };
+        await save();
+      });
+      ds.pending = { kind: "turn", message: runnerMessage(r) };
+      await save();
+      continue;
+    }
+    if (ds.turns >= ds.maxTurns) {
+      return {
+        code: DRIVE_PROTOCOL,
+        message: `the supervisor has used ${ds.turns} turns; pass a higher --max-turns if it should go on`,
+      };
+    }
+    ds.turns++;
+    await save();
+    const t = await ops.supervisorTurn(p.message, ds.thread, ds.turns);
+    ds.thread ??= t.thread;
+    if (t.usage) ds.usage = t.usage;
+    await save();
+    const next = parseNext(await ops.takeNext(ds.turns));
+    if (typeof next === "string") {
+      const codex = t.code !== 0 || t.timedOut
+        ? ` (codex exited ${t.code}${t.timedOut ? " at the turn time limit" : ""})`
+        : "";
+      // Without a thread, the pending first message stays as it is, so a restart starts the supervisor afresh.
+      if (ds.thread === undefined) return { code: DRIVE_PROTOCOL, message: `the supervisor did not start${codex}` };
+      if (++nudges > 1) {
+        return {
+          code: DRIVE_PROTOCOL,
+          message: `two turns in a row ended without a usable next.json: ${next}${codex}`,
+        };
+      }
+      ds.pending = {
+        kind: "turn",
+        message: `Your turn ended without a usable next.json: ${next}. Write it as the skill's "Headless mode" ` +
+          `section says, then end your turn.`,
+      };
+      await save();
+      continue;
+    }
+    nudges = 0;
+    if (next.action === "done" || next.action === "stop") {
+      ds.pending = undefined;
+      await save();
+      return next.action === "done" ? { code: 0, message: next.report } : { code: DRIVE_STOPPED, message: next.reason };
+    }
+    ds.pending = next.action === "ask" ? { kind: "answer", question: next.question } : { kind: "runner" };
+    await save();
+  }
+}
+
+/** The supervisor's thread id, from the first `thread.started` among the turns' event logs, if any turn got that far. */
+async function recoverThread(dir: string): Promise<string | undefined> {
+  const entries = await Array.fromAsync(Deno.readDir(dir)).catch(() => [] as Deno.DirEntry[]);
+  const names = entries.map((e) => e.name).filter((n) => /^turn-\d+\.events\.jsonl$/.test(n));
+  names.sort((a, b) => Number(a.split("-")[1].split(".")[0]) - Number(b.split("-")[1].split(".")[0]));
+  for (const n of names) {
+    try {
+      const t = JSON.parse((await Deno.readTextFile(`${dir}/${n}`)).split("\n")[0]).thread_id;
+      if (typeof t === "string") return t;
+    } catch { /* no thread.started in this one */ }
+  }
+  return undefined;
+}
+
+/**
+ * The real driver operations. Each supervisor turn is `codex exec` (or `exec resume` on the recorded thread) with
+ * the message on stdin, under a 180-minute limit; its prompt, events, final message, and stderr are kept in
+ * `<run-dir>/supervisor/` by turn number. A stale `next.json` is removed before every turn, so only what this turn
+ * writes can answer for it.
+ *
+ * The runner runs under `setsid`, in its own session, so it survives a driver killed by anything but the signals the
+ * driver handles; `runRunner` deals with that runner when a later driver finds it (see there). Runs of the runner are
+ * numbered `runner-<n>.log` (stdout) and `runner-<n>.log.stderr`.
+ */
+function realDriverOps(runDir: string, ds: DriverState): DriverOps {
+  const dir = `${runDir}/supervisor`, nextPath = `${runDir}/next.json`;
+  const nextNumber = async (re: RegExp) =>
+    (await Array.fromAsync(Deno.readDir(dir))).filter((e) => re.test(e.name)).length + 1;
+  const status = async () => {
+    const st = await $`${SELF} status ${runDir}`.noThrow().stdout("piped").stderr("piped");
+    return st.code === 0 ? st.stdout : `(status failed: ${st.stderr.trim()})`;
+  };
+  return {
+    async supervisorTurn(message, thread, turn) {
+      await Deno.mkdir(dir, { recursive: true });
+      await Deno.remove(nextPath).catch(() => {}); // a stale file must not answer for this turn
+      await Deno.writeTextFile(`${dir}/turn-${turn}.prompt.md`, message);
+      const head = ["codex", "-c", `model_reasoning_effort=${ds.effort}`, "exec", "--yolo", "-m", ds.model, "--json"];
+      const cmd = thread === undefined
+        ? [...head, "-C", ds.repo, "-o", `${dir}/turn-${turn}.md`, "-"]
+        : [...head, "-C", ds.repo, "resume", thread, "-o", `${dir}/turn-${turn}.md`, "-"];
+      const events = `${dir}/turn-${turn}.events.jsonl`;
+      const r = await runLogged(cmd, {
+        cwd: ds.repo,
+        stdin: message,
+        stdout: events,
+        stderr: `${dir}/turn-${turn}.stderr.log`,
+        minutes: 180,
+      });
+      const text = await Deno.readTextFile(events).catch(() => "");
+      let started: string | undefined;
+      try {
+        started = JSON.parse(text.split("\n")[0]).thread_id;
+      } catch { /* no thread.started: the launch failed */ }
+      // A turn that failed before completing records no usage; reporting zeros would erase the thread's real total.
+      const usage = text.includes('"turn.completed"') ? codexUsage(text) : undefined;
+      return { thread: thread ?? started, code: r.code, timedOut: r.timedOut, usage };
+    },
+
+    async takeNext(turn) {
+      const text = await Deno.readTextFile(nextPath).catch(() => undefined);
+      if (text !== undefined) await Deno.rename(nextPath, `${dir}/next-${turn}.json`);
+      return text;
+    },
+
+    /**
+     * With `started` set, an earlier driver launched the runner and died, and that runner may still be running on its
+     * own. Starting another would only hit the runner's lock, and an escalation the orphan already wrote would be
+     * archived unseen by the new runner's start. So this waits for any live runner of this run to exit, then reports
+     * what it left behind: an escalation written after `started`, or every item approved. Only a runner that died
+     * with no outcome is run again.
+     */
+    async runRunner(started, markStarted) {
+      if (started !== undefined) {
+        const p = pathsFor(runDir);
+        for (;;) {
+          const holder = Number(await Deno.readTextFile(p.lock).catch(() => "")) || undefined;
+          if (!(await ownedAlive(holder, runDir))) break;
+          await new Promise((r) => setTimeout(r, 30_000));
+        }
+        const unseen = `The runner a previous driver started at ${started} ran on after that driver died, so its ` +
+          `output was not captured.`;
+        const esc = await readJson<Escalation>(p.escalation).catch(() => undefined);
+        if (esc !== undefined && esc.at > started) {
+          return { summary: `${unseen} It stopped with an escalation (exit 10).`, status: await status() };
+        }
+        const state = await readJson<State>(p.state).catch(() => undefined);
+        if (state !== undefined && state.items.every((i) => i.phase === "approved")) {
+          return { summary: `${unseen} It finished with every item approved (exit 0).`, status: await status() };
+        }
+      }
+      await markStarted();
+      const log = `${dir}/runner-${await nextNumber(/^runner-\d+\.log$/)}.log`;
+      // The runner bounds its own steps; this outer deadline only catches a runner that wedged entirely.
+      const r = await runLogged([SELF, "run", runDir], {
+        cwd: ds.repo,
+        stdout: log,
+        stderr: `${log}.stderr`,
+        minutes: 7 * 24 * 60,
+      });
+      return {
+        summary: `The runner exited with code ${r.code} (its output is in ${log}, its errors in ${log}.stderr).`,
+        status: await status(),
+      };
+    },
+
+    /**
+     * The answerer contract: `ds.answerer` is one executable path, run with the question's file path as its only
+     * argument. Its stdout, trimmed, is the answer. A nonzero exit is a failure, and an empty stdout means it has no
+     * answer; either way the driver stops with the question pending. Its stderr goes to the driver's stderr, and it
+     * has no time limit.
+     */
+    async answer(question) {
+      if (ds.answerer === undefined) return {};
+      const n = await nextNumber(/^question-\d+\.md$/);
+      const qPath = `${dir}/question-${n}.md`;
+      await Deno.writeTextFile(qPath, question);
+      const r = await $`${ds.answerer} ${qPath}`.noThrow().stdout("piped").stderr("inherit");
+      if (r.code !== 0) return { error: `${ds.answerer} exited ${r.code}` };
+      const a = r.stdout.trim();
+      if (a === "") return {};
+      await Deno.writeTextFile(`${dir}/answer-${n}.md`, a);
+      return { answer: a };
+    },
+  };
+}
+
+/** The value of `--name value` in `args`, or undefined when the flag is absent; a flag without a value is a usage error. */
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  if (i === -1) return undefined;
+  const v = args[i + 1];
+  if (v === undefined || v.startsWith("--")) fail(2, `${name} needs a value`);
+  return v;
+}
+
+/**
+ * `shepherd drive`: starts a headless run, or continues one.
+ *
+ * A first call needs `--repo` and `--goal-file`, and takes `--model`, `--effort` (the supervisor's), `--answerer`, and
+ * `--max-turns`. A later call continues from whatever `driver.json` says is pending: it re-sends an interrupted turn,
+ * deals with a runner an earlier driver left behind, or, when the driver stopped on a question, takes the answer from
+ * `--answer-file` (or the answerer). `--message-file` replaces a pending turn's message, or starts a new turn after the
+ * supervisor stopped or finished; it is refused while the runner is pending. The other flags given on a later call
+ * replace their recorded values.
+ *
+ * The lock and the signal handlers come first, before the driver acts on anything, so that two drivers never act on
+ * one run and a driver interrupted at any point leaves no unsupervised child of its own behind.
+ */
+async function cmdDrive(runDir: string, args: string[]): Promise<number> {
+  const statePath = `${runDir}/driver.json`, lock = `${runDir}/driver.pid`;
+  await Deno.mkdir(runDir, { recursive: true });
+  await takeLock(lock, runDir, "driver");
+  const kill = () => {
+    for (const g of liveGroups) killGroup(g, "SIGTERM");
+    try {
+      Deno.removeSync(lock);
+    } catch { /* already gone */ }
+    Deno.exit(143);
+  };
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) Deno.addSignalListener(sig, kill);
+  const readArg = async (name: string) => {
+    const f = flag(args, name);
+    return f === undefined ? undefined : await Deno.readTextFile(f);
+  };
+  const maxTurns = flag(args, "--max-turns");
+  if (maxTurns !== undefined && !(Number(maxTurns) >= 1)) fail(2, "--max-turns needs a positive number");
+
+  let ds = await readJson<DriverState>(statePath).catch(() => undefined);
+  if (ds === undefined) {
+    const repo = flag(args, "--repo"), goal = await readArg("--goal-file");
+    if (!repo?.startsWith("/") || goal === undefined) {
+      fail(2, "a new drive needs --repo <absolute-checkout> --goal-file <file>");
+    }
+    await Deno.writeTextFile(`${runDir}/goal.md`, goal);
+    ds = {
+      version: 1,
+      repo,
+      model: flag(args, "--model") ?? DEFAULT_REVIEWER.model,
+      effort: flag(args, "--effort") ?? DEFAULT_REVIEWER.effort,
+      turns: 0,
+      maxTurns: Number(maxTurns ?? DEFAULT_MAX_TURNS),
+      answerer: flag(args, "--answerer"),
+      pending: { kind: "turn", message: firstMessage(repo, runDir, goal) },
+      usage: { input: 0, cachedInput: 0, output: 0 },
+    };
+  } else {
+    ds.model = flag(args, "--model") ?? ds.model;
+    ds.effort = flag(args, "--effort") ?? ds.effort;
+    ds.answerer = flag(args, "--answerer") ?? ds.answerer;
+    ds.maxTurns = Number(maxTurns ?? ds.maxTurns ?? DEFAULT_MAX_TURNS);
+    // A turn killed after codex started the thread but before the driver saved its id: resume that thread rather
+    // than start another with no memory of the first.
+    ds.thread ??= await recoverThread(`${runDir}/supervisor`);
+    const answer = await readArg("--answer-file"), extra = await readArg("--message-file");
+    if (answer !== undefined) {
+      if (ds.pending?.kind !== "answer") fail(3, "the supervisor is not waiting for an answer");
+      ds.pending = { kind: "turn", message: answerMessage(answer) };
+    } else if (extra !== undefined) {
+      if (ds.pending?.kind === "runner") fail(3, "the runner is pending; run drive without --message-file first");
+      ds.pending = { kind: "turn", message: extra };
+    } else if (ds.pending === undefined) {
+      fail(3, "nothing is pending; pass --message-file to tell the supervisor something");
+    }
+  }
+  const save = () => writeAtomic(statePath, JSON.stringify(ds, null, 2));
+  await save();
+  const out = await driveLoop(ds, realDriverOps(runDir, ds), save);
+  await Deno.remove(lock).catch(() => {});
+  const label = { 0: "DONE", [DRIVE_WAITING]: "QUESTION", [DRIVE_STOPPED]: "STOPPED", [DRIVE_PROTOCOL]: "FAILED" };
+  console.log(`${label[out.code as keyof typeof label]}: ${out.message}`);
+  const u = ds.usage;
+  console.log(`supervisor tokens: ${u.input}in/${u.cachedInput}cached/${u.output}out over ${ds.turns} turns`);
+  return out.code;
+}
+
 if (import.meta.main) {
   const [cmd, runDir, ...rest] = Deno.args;
   if (!cmd || !runDir || !runDir.startsWith("/")) {
-    fail(2, "usage: shepherd init|run|status|hook <absolute-run-dir>, or shepherd adopt <run-dir> <item> <pr-url>");
+    fail(
+      2,
+      "usage: shepherd init|run|status|hook|drive <absolute-run-dir> ..., or shepherd adopt <run-dir> <item> <pr>",
+    );
   }
   if (cmd === "init") await cmdInit(runDir);
   else if (cmd === "run") Deno.exit(await cmdRun(runDir));
   else if (cmd === "status") await cmdStatus(runDir);
   else if (cmd === "hook") await cmdHook(runDir);
   else if (cmd === "adopt" && rest.length === 2) await cmdAdopt(runDir, rest[0], rest[1]);
+  else if (cmd === "drive") Deno.exit(await cmdDrive(runDir, rest));
   else fail(2, `unknown command or wrong arguments: ${cmd}`);
 }
 
@@ -1651,4 +2081,155 @@ Deno.test("codexUsage takes the last turn.completed, which is the thread's runni
     '{"type":"turn.compl',
   ].join("\n");
   assertEq(codexUsage(ev), { input: 9, cachedInput: 3, output: 4 });
+});
+
+/**
+ * A scripted headless supervisor. `nexts` is what each turn leaves in next.json (undefined: nothing); `answers` is
+ * consumed by the answerer (undefined: nobody can answer). Every supervisor message is kept in `messages`, and every
+ * saved `pending` in `saved`, so tests can pin that each step was persisted before it was acted on.
+ */
+function fakeDrive(nexts: (string | undefined)[], answers: (string | undefined)[] = []) {
+  const messages: string[] = [], calls: string[] = [], saved: (Pending | undefined)[] = [];
+  const queue = [...nexts], aq = [...answers];
+  const ds: DriverState = {
+    version: 1,
+    repo: "/repo",
+    model: "m",
+    effort: "e",
+    turns: 0,
+    maxTurns: DEFAULT_MAX_TURNS,
+    pending: { kind: "turn", message: "go" },
+    usage: { input: 0, cachedInput: 0, output: 0 },
+  };
+  const ops: DriverOps = {
+    supervisorTurn(message, thread, turn) {
+      messages.push(message);
+      calls.push(thread === undefined ? "start" : "resume");
+      return Promise.resolve({
+        thread: "t1",
+        code: 0,
+        timedOut: false,
+        usage: { input: turn * 100, cachedInput: 0, output: turn },
+      });
+    },
+    takeNext: () => Promise.resolve(queue.shift()),
+    async runRunner(started, markStarted) {
+      calls.push(started === undefined ? "runner" : `runner after ${started}`);
+      await markStarted();
+      return { summary: "The runner exited with code 10.", status: "1. p1 [working]" };
+    },
+    answer(q) {
+      calls.push(`answer ${q}`);
+      return Promise.resolve({ answer: aq.shift() });
+    },
+  };
+  const save = () => {
+    saved.push(structuredClone(ds.pending));
+    return Promise.resolve();
+  };
+  return { ds, ops, messages, calls, saved, drive: () => driveLoop(ds, ops, save) };
+}
+
+const nx = (o: unknown) => JSON.stringify(o);
+
+Deno.test("drive: a question is answered, the runner's exit is reported back, and done ends the drive", async () => {
+  const d = fakeDrive(
+    [nx({ action: "ask", question: "approve?" }), nx({ action: "run" }), nx({ action: "done", report: "R" })],
+    ["yes"],
+  );
+  assertEq(await d.drive(), { code: 0, message: "R" });
+  assertEq(d.calls, ["start", "answer approve?", "resume", "runner", "resume"]);
+  assertIncludes(d.messages[1], "yes");
+  assertIncludes(d.messages[2], "exited with code 10");
+  assertIncludes(d.messages[2], "1. p1 [working]");
+  assertEq([d.ds.thread, d.ds.turns, d.ds.usage.input, d.ds.pending], ["t1", 3, 300, undefined]);
+});
+
+Deno.test("drive: every step is saved as pending before the driver acts on it", async () => {
+  const d = fakeDrive([nx({ action: "run" }), nx({ action: "done", report: "R" })]);
+  await d.drive();
+  const kinds = d.saved.map((p) =>
+    p === undefined ? "none" : p.kind === "runner" && p.started ? "runner-started" : p.kind
+  );
+  // The turn is saved (turn count) before it runs; the runner is saved as pending, then as started just before it
+  // launches; its result is saved as the next turn's message before that turn runs.
+  assertEq(kinds, ["turn", "turn", "runner", "runner-started", "turn", "turn", "turn", "none"]);
+});
+
+Deno.test("drive: a restarted driver with a started runner hands its start time to the runner", async () => {
+  const d = fakeDrive([nx({ action: "done", report: "R" })]);
+  d.ds.pending = { kind: "runner", started: "2026-11-05T00:00:00.000Z" };
+  d.ds.thread = "t1";
+  assertEq(await d.drive(), { code: 0, message: "R" });
+  assertEq(d.calls, ["runner after 2026-11-05T00:00:00.000Z", "resume"]);
+});
+
+Deno.test("drive: a question nobody can answer stops the drive with the question pending", async () => {
+  const d = fakeDrive([nx({ action: "ask", question: "which crate?" })], [undefined]);
+  assertEq(await d.drive(), { code: DRIVE_WAITING, message: "which crate?" });
+  assertEq(d.ds.pending, { kind: "answer", question: "which crate?" });
+});
+
+Deno.test("drive: an answerer that fails says so, and the question stays pending", async () => {
+  const d = fakeDrive([nx({ action: "ask", question: "q?" })]);
+  d.ops.answer = () => Promise.resolve({ error: "/bin/answer exited 2" });
+  const out = await d.drive();
+  assertEq(out.code, DRIVE_WAITING);
+  assertIncludes(out.message, "/bin/answer exited 2");
+  assertEq(d.ds.pending, { kind: "answer", question: "q?" });
+});
+
+Deno.test("drive: a missing next.json gets one nudge; two in a row end the drive with the nudge still pending", async () => {
+  const ok = fakeDrive([undefined, nx({ action: "done", report: "R" })]);
+  assertEq(await ok.drive(), { code: 0, message: "R" });
+  assertIncludes(ok.messages[1], "next.json does not exist");
+  const bad = fakeDrive([undefined, "{not json"]);
+  assertEq((await bad.drive()).code, DRIVE_PROTOCOL);
+  assertEq(bad.ds.pending?.kind, "turn");
+});
+
+Deno.test("drive: stop ends the drive with the supervisor's reason", async () => {
+  const d = fakeDrive([nx({ action: "stop", reason: "goal is contradictory" })]);
+  assertEq(await d.drive(), { code: DRIVE_STOPPED, message: "goal is contradictory" });
+});
+
+Deno.test("drive: the turn cap stops before a turn, keeps what is pending, and a raised cap continues", async () => {
+  const d = fakeDrive([nx({ action: "run" }), nx({ action: "done", report: "R" })]);
+  d.ds.maxTurns = 1;
+  assertEq((await d.drive()).code, DRIVE_PROTOCOL);
+  // The runner's result was not thrown away: it is the pending turn.
+  assertEq(d.ds.pending?.kind, "turn");
+  assertIncludes((d.ds.pending as { message: string }).message, "exited with code 10");
+  d.ds.maxTurns = 5;
+  assertEq(await d.drive(), { code: 0, message: "R" });
+});
+
+Deno.test("drive: a turn that records no usage keeps the earlier total, and a failed codex is named", async () => {
+  const d = fakeDrive([undefined, undefined]);
+  let n = 0;
+  d.ops.supervisorTurn = () =>
+    Promise.resolve(
+      ++n === 1
+        ? { thread: "t1", code: 0, timedOut: false, usage: { input: 500, cachedInput: 0, output: 5 } }
+        : { thread: "t1", code: 1, timedOut: false },
+    );
+  const out = await d.drive();
+  assertEq(d.ds.usage.input, 500);
+  assertIncludes(out.message, "codex exited 1");
+});
+
+Deno.test("drive: a supervisor that never starts leaves the first message pending for a restart", async () => {
+  const d = fakeDrive([undefined]);
+  d.ops.supervisorTurn = () => Promise.resolve({ code: 1, timedOut: false });
+  const out = await d.drive();
+  assertEq(out.code, DRIVE_PROTOCOL);
+  assertEq(d.ds.pending, { kind: "turn", message: "go" });
+});
+
+Deno.test("parseNext accepts the four actions and explains anything else, inherited keys included", () => {
+  assertEq(parseNext(nx({ action: "run" })), { action: "run" });
+  assertEq(parseNext(nx({ action: "ask", question: "q" })), { action: "ask", question: "q" });
+  assertIncludes(parseNext(nx({ action: "ask" })) as string, '"question"');
+  assertIncludes(parseNext(nx({ action: "wait" })) as string, "must be");
+  assertIncludes(parseNext(nx({ action: "toString" })) as string, "must be");
 });

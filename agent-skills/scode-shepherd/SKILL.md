@@ -11,8 +11,9 @@ description: >
 
 # Scode Shepherd
 
-NOTE: v1 works only when this session is interactive Codex (not `codex exec`), because the runner wakes you through
-`codex queue`, and only with Codex workers and reviewers. In any other harness, say so in a line and stop.
+NOTE: v1 works only with Codex workers and reviewers, and only in two kinds of supervisor session: interactive Codex
+(not `codex exec`), where the runner wakes you through `codex queue`, or headless under `shepherd drive`, which says so
+when it starts you (see Headless mode). In any other harness, say so in a line and stop.
 
 ## Premise
 
@@ -158,8 +159,8 @@ paths that matter: a worker session lives in `<run-dir>/items/<id>/session-<n>/`
 | `verify-infra-failed`                           | `gh` or `git` failed on the runner's side (auth, network, a remote that is not `origin`: set `remote` in `plan.json`). Fix it and run again                                                                                                                                                        |
 | `approved-history-changed`                      | an approved PR was rewritten or its branch moved. Have a sub agent find out what changed and why. Ask the user how to proceed: re-approving changed history is not yours to decide alone                                                                                                           |
 | `reviewer-failed`                               | have a sub agent read that review directory's `stderr.log`; fix an environmental cause and run again, otherwise ask the user                                                                                                                                                                       |
-| exit 3                                          | another runner is active (reconcile its watcher once, as the skillette says), or your plan edit touched an approved item: undo that part                                                                                                                                                           |
-| exit 1 or any other code                        | read the watcher's stderr, fix the cause, and run again. The same failure twice means asking the user                                                                                                                                                                                              |
+| exit 3                                          | another runner is active (reconcile its watcher once, as the skillette says; headless, the driver already waited out any runner it left behind, so stop with the reason rather than run again), or your plan edit touched an approved item: undo that part                                         |
+| exit 1 or any other code                        | read the runner's stderr (the watcher's, or headless the `.stderr` file the driver's message names), fix the cause, and run again. The same failure twice means asking the user                                                                                                                    |
 
 To take an item over, do the work yourself in the checkout while the runner is stopped, following the plan's workflow,
 then `shepherd adopt <run-dir> <item> <pr-url>` and run again, so that your PR gets the same verification and review as
@@ -167,6 +168,29 @@ the worker's. When one item has escalated three times (`status` shows the count)
 running again: by then, more budget is not what is missing.
 
 Append the decision to the journal, arm a fresh wake directory, and end your turn.
+
+## Headless mode
+
+When the message that starts you says you run headless under `shepherd drive`, nobody reads your chat and nothing wakes
+you through the skillette. The driver starts your turns and acts on what you leave behind: end every turn by writing
+`<run-dir>/next.json`, holding exactly one of these JSON objects.
+
+- `{"action": "ask", "question": "..."}` wherever this skill says to ask the user or wait for their approval. The person
+  or program answering sees only the question, so make it complete: for plan approval, the whole summary step 6 lists.
+  The answer arrives as your next message.
+- `{"action": "run"}` wherever this skill says to arm the runner. The driver runs `shepherd run` and starts your next
+  turn with its exit code and `status`. That message takes the place of the wake callback; there is nothing to
+  acknowledge.
+- `{"action": "done", "report": "..."}` with the final report from Finishing.
+- `{"action": "stop", "reason": "..."}` when you cannot go on and no answer from the user would change that.
+
+Everything else in this skill holds, with three differences. Use the run directory the starting message names (it
+already exists and holds the goal as `goal.md`) instead of choosing one. Do not load the skillette or keep a `wakes/`
+directory. And when the user's answer to an approval question asks for changes, revise and ask again; only an answer
+that approves lets you run `init`.
+
+Each of your turns is cut off after three hours, and a cut-off turn counts as one that wrote no `next.json`. If you take
+an item over, work in pieces that each fit in a turn, and write `run` once the `adopt` is done.
 
 ## The plan
 
@@ -205,7 +229,8 @@ stay drafts; publishing them is the user's call. Leave the run directory in plac
 
 If your context mentions a shepherd run, this skill still governs it. Re-read this file, read the run's journal and
 `shepherd status`, and reconcile the last recorded watcher once as the skillette says before arming anything, so that
-two runners never drive one checkout.
+two runners never drive one checkout. Headless, there is no watcher to reconcile: the driver owns the runner, and the
+runner's own lock keeps a second one from starting.
 
 ## Other orchestration skills
 

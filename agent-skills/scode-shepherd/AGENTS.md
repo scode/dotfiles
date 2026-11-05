@@ -44,6 +44,12 @@ Expected: both files exist; the message moved to the session's `inbox-delivered/
 10 with a `sessions-exhausted` escalation whose detail says the PR does not exist. Changes to verification or review
 need a real stack, on `scode/repotesting` or a repository the user names.
 
+After changing `cmdDrive`, `realDriverOps`, or the "Headless mode" section of `SKILL.md`, also drive one small goal
+headless on a fresh jj clone of `scode/repotesting`: a one-PR goal file, and an answerer script that approves whatever
+it is asked and keeps a copy of each question. Expected: the first question is a complete plan summary; the drive ends
+with `DONE` and the final report; one draft PR exists; and `supervisor/` holds one `next-<n>.json` per turn. This puts
+up a real draft PR on that repository, which exists for this kind of testing.
+
 ## Evaluating skill text
 
 After changing `SKILL.md`, eval it with fresh-context sub agents before calling the change done: tell each only where
@@ -51,17 +57,20 @@ After changing `SKILL.md`, eval it with fresh-context sub agents before calling 
 situation says otherwise, the session is interactive Codex on gpt-6.1-sol high, the skill was invoked with a goal in a
 Git repository with a GitHub remote, and no models were named.
 
-| Situation                                                          | Expected answer                                                                                                                          |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| invoked with "build a stack of 5 PRs adding X"                     | run directory next to the checkout, plan written, stack shown to the user and approval awaited before `init`                             |
-| invoked with a path to a goal file the user wrote                  | the same, including waiting for approval                                                                                                 |
-| the session is Claude Code                                         | says v1 needs a Codex session and stops                                                                                                  |
-| the plan is approved                                               | `init`, journal started, runner armed under codex-wake-on-exit with a fresh wake directory, turn ended; no polling                       |
-| woken with exit 10, `review-rounds-exhausted` on item 3            | status read; a read-only sub agent investigates the review and sessions; guidance written, model changed, takeover, or user asked; rearm |
-| woken with `replan`: the worker says item 4 should be split in two | the split is a change to the stack's shape, so the user approves it before `plan.json` is edited and the runner restarted                |
-| the user asks mid-run to tell the worker to use a different crate  | status checked; message names the item, written elsewhere and renamed into `inbox/`; user told it reaches the next tool call, once       |
-| the supervisor wants to fix one item itself                        | waits for the runner to stop, does the work, `shepherd adopt`, runs again                                                                |
-| item 2 has escalated for the third time                            | asks the user instead of running again                                                                                                   |
-| the runner exited 0                                                | final report with PRs, sessions, rounds, escalations, tokens, minor findings, run directory; PRs left as drafts                          |
-| scode-powerhorse is active when the skill is invoked               | says so and asks which one governs                                                                                                       |
-| after compaction, the summary mentions a shepherd run directory    | rereads the skill, the journal, and status; reconciles the last watcher before arming anything                                           |
+| Situation                                                                   | Expected answer                                                                                                                          |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| invoked with "build a stack of 5 PRs adding X"                              | run directory next to the checkout, plan written, stack shown to the user and approval awaited before `init`                             |
+| invoked with a path to a goal file the user wrote                           | the same, including waiting for approval                                                                                                 |
+| the session is Claude Code                                                  | says v1 needs a Codex session and stops                                                                                                  |
+| the plan is approved                                                        | `init`, journal started, runner armed under codex-wake-on-exit with a fresh wake directory, turn ended; no polling                       |
+| woken with exit 10, `review-rounds-exhausted` on item 3                     | status read; a read-only sub agent investigates the review and sessions; guidance written, model changed, takeover, or user asked; rearm |
+| woken with `replan`: the worker says item 4 should be split in two          | the split is a change to the stack's shape, so the user approves it before `plan.json` is edited and the runner restarted                |
+| the user asks mid-run to tell the worker to use a different crate           | status checked; message names the item, written elsewhere and renamed into `inbox/`; user told it reaches the next tool call, once       |
+| the supervisor wants to fix one item itself                                 | waits for the runner to stop, does the work, `shepherd adopt`, runs again                                                                |
+| item 2 has escalated for the third time                                     | asks the user instead of running again                                                                                                   |
+| the runner exited 0                                                         | final report with PRs, sessions, rounds, escalations, tokens, minor findings, run directory; PRs left as drafts                          |
+| scode-powerhorse is active when the skill is invoked                        | says so and asks which one governs                                                                                                       |
+| after compaction, the summary mentions a shepherd run directory             | rereads the skill, the journal, and status; reconciles the last watcher before arming anything                                           |
+| headless: started by `shepherd drive` with a goal and a run dir             | uses that run directory; after planning writes `next.json` with an `ask` holding the full plan summary, ends the turn; no skillette      |
+| headless: the answer to the approval question asks for a change             | revises the plan and asks again with another `ask`; no `init` until an answer approves                                                   |
+| headless: the runner exited 10 with `blocked` the supervisor cannot resolve | writes an `ask` with the worker's question and the context needed to answer it; ends the turn; nothing to acknowledge                    |
