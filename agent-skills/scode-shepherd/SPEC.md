@@ -99,8 +99,9 @@ take the supervisor's message or be pushed to write the item's report.
 
 v1 supports a Codex supervisor and Codex workers and reviewers only.
 
-- The supervisor wakes through the `codex-wake-on-exit` skillette, which queues a message to an interactive Codex
-  session when the runner exits. A `codex exec` supervisor cannot receive it.
+- An interactive supervisor wakes through the `codex-wake-on-exit` skillette, which queues a message to an interactive
+  Codex session when the runner exits. A `codex exec` supervisor cannot receive that, which is what headless mode
+  (below) is for.
 - Hooks are installed per worker session with `codex exec -c 'hooks.PostToolUse=[...]' -c 'hooks.Stop=[...]'
   --dangerously-bypass-hook-trust`, so the user's Codex configuration is never edited. Verified on codex-cli 0.166.0.
 - The reviewer runs with `--yolo`, not in Codex's read-only sandbox, because that sandbox does not start on every host
@@ -114,13 +115,52 @@ v1 supports a Codex supervisor and Codex workers and reviewers only.
 - `gh` 2.45 has no `baseRefOid` field, so the runner fetches the base branch to find the commit to diff against, or uses
   the previous item's verified head.
 
+## Headless mode
+
+`shepherd drive` runs the supervisor itself, with `codex exec`, and resumes the supervisor's thread for each event,
+instead of the runner waking an interactive session. It exists so that a run needs no person at a terminal: the eval
+harness in scode/my-bench drives runs this way, and so can unattended use. The wake mechanism and headless mode are two
+transports for the same skill; everything the skill says about planning, approval, escalations, and finishing holds in
+both.
+
+The contract between them is `next.json`. Every supervisor turn ends by writing one action there (`ask`, `run`, `done`,
+or `stop`), and the driver acts on it. A file and an exit code were chosen over parsing the supervisor's final message,
+because a model asked to end its reply in a fixed format drifts from it; a missing or malformed `next.json` gets one
+nudge, and a second ends the drive (exit 22). Each supervisor turn is cut off after 180 minutes, which then counts as a
+turn without a `next.json`.
+
+A question goes to the answerer program given with `--answerer`: one executable path, run with the path of a file
+holding the question as its only argument. Its stdout, trimmed, is the answer; an empty stdout means no answer, and a
+nonzero exit is a failure the driver reports. Either way the driver exits 20 with the question pending, and `drive
+--answer-file` continues the run later. The answerer has no time limit, because it may be a person.
+
+The driver keeps its state in `driver.json`, and the state always says what to do next: send a turn (with its message),
+answer a question, or deal with the runner. Each of those is saved before the driver starts on it, and the outcome is
+saved as the following step before anything else happens, so a driver that dies at any point can be started again and
+loses nothing: an interrupted turn is sent again, under a new turn number so no turn's files are overwritten, and a
+supervisor thread that started but was never recorded is recovered from the turn's event log. The driver takes its lock
+and installs its handlers for SIGTERM, SIGINT, and SIGHUP before it acts on anything.
+
+The runner runs in its own session, so it survives a driver that dies from a signal the driver cannot handle (SIGKILL,
+the out-of-memory killer). A restarted driver that finds the runner was already started waits for any live runner of the
+run to exit, then reports an escalation written since the start, or a finished stack, to the supervisor as the runner's
+outcome. It runs the runner again only when the earlier one died with no outcome. Starting a second runner straight away
+would hit the first one's lock, and the new runner's start would archive an escalation nobody saw.
+
+The driver stops after 40 supervisor turns for the run, since a supervisor that needs that many is not converging; the
+pending step is kept, and `--max-turns` raises the cap for a run that should go on. It records the supervisor thread's
+token total from the latest turn that reported one, which `status` reports next to the worker's and the reviewer's,
+because measuring what each role costs is the point of evaluating this skill.
+
 ## Run directory
 
 The run directory lives next to the checkout, never inside it, so nothing the run writes shows up in the worker's
 working copy. It holds `plan.json` (the supervisor's), `state.json`, `events.jsonl`, `escalation.json` and the archived
 `escalations/` (the runner's), `journal.md` and `wakes/` (the supervisor's), `inbox/` (the supervisor writes, the hook
 consumes), the verification worktree, and one directory per item with its guidance file, its worker sessions, its check
-logs, and its reviews.
+logs, and its reviews. A headless run adds `goal.md`, `driver.json`, the transient `next.json`, and `supervisor/` (each
+supervisor turn's prompt, events, and final message, the archived `next.json` files, questions and answers, and the
+runner's output per run).
 
 ## Testing
 
@@ -128,6 +168,9 @@ The runner's decisions are unit-tested with fakes behind its `Ops` interface: se
 sessions, failing checks, a wrong base, a non-draft or closed PR, a PR in another repository, and a second PR for one
 item; escalation for crashes, infrastructure failures, changed history, and every cap; feedback that survives a lost
 session; resume preparation; replan reconciliation; verdict derivation; and the hook's replies, including its thread
-filter. What the real operations do (codex, gh, git, process groups, the lock, `cmdHook`'s file handling) is not
-unit-tested; it is exercised by the manual smoke run in `AGENTS.md` and by real runs. Tests do not modify the
-environment of the test process.
+filter. The drive loop is unit-tested the same way, behind `DriverOps`: answered, unanswered, and failed questions, the
+runner's result reaching the supervisor, every step saved before it is acted on, a restart handing the runner its start
+time, the nudge for a missing `next.json`, stop, the turn cap keeping what is pending, and usage surviving a failed
+turn. What the real operations do (codex, gh, git, process groups, the locks, `cmdHook`'s file handling, `cmdDrive`'s
+flag handling, and `runRunner`'s wait for a runner left behind) is not unit-tested; it is exercised by the manual smoke
+run in `AGENTS.md` and by real runs. Tests do not modify the environment of the test process.
