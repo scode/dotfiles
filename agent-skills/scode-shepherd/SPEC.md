@@ -27,7 +27,8 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
 ## Requirements
 
 1. **Plan approval.** The supervisor shows the user the planned stack and waits for approval before `init`, every time,
-   including when the goal comes from a file. A later change to the stack's shape or scope also goes to the user.
+   including when the goal comes from a file. A later change to the stack's shape or scope also goes to the user. The
+   one exception is a goal file `scode-build-goal` wrote for shepherd mode (see "Goal files from scode-build-goal").
 2. **One fresh worker session per unit of work.** Every attempt at an item, including each fix round, is a new session
    anchored on the plan and the feedback. Long sessions that compact are where cheap models were expected to drift most,
    and a fresh session also makes recovery from any failure the ordinary path.
@@ -168,11 +169,51 @@ carries three such fields.
 - An item's `checks` run after the plan-wide checks at that item's head and at every later item's head, because a later
   PR is stacked on it and could break them.
 
-The user sees all three at plan approval. A plan that sets none of them gets exactly the worker and reviewer prompts,
-and exactly the checks, it got before the fields existed. That was checked byte for byte against the previous runner
-when they were added, and a unit test pins the whole default review section, so a direct shepherd run does not change
-when a goal-file run supplies policy. The one change that reaches such runs too is the unparseable-review rule above,
-which only turns a self-contradictory review from an approval into a retry.
+The user sees all three at plan approval (for a goal-file run that needs none, in the journal and the start message). A
+plan that sets none of them gets exactly the worker and reviewer prompts, and exactly the checks, it got before the
+fields existed. That was checked byte for byte against the previous runner when they were added, and a unit test pins
+the whole default review section, so a direct shepherd run does not change when a goal-file run supplies policy. The one
+change that reaches such runs too is the unparseable-review rule above, which only turns a self-contradictory review
+from an approval into a retry.
+
+## Goal files from scode-build-goal
+
+`scode-build-goal` plans a goal with the user and writes a self-contained goal file for an unattended run; its shepherd
+mode hands that goal file to this skill. The rules for such a run live in `goal-file.md`, which `SKILL.md` loads only
+when the goal file says it was written by `scode-build-goal` in shepherd mode. Every other goal, including a
+`scode-build-goal` goal file for another mode, gets the ordinary flow and none of `goal-file.md`, so those runs do not
+change.
+
+- **No second approval without a departure.** The user settled the decisions, the outline (already checked by a
+  fresh-context scope review), the reviewer, and the worker when the goal was written, and chose a run that does not
+  wait on them. Asking again would stop an unattended run at its first step for a plan the user has in effect already
+  approved. The detailed decomposition into PRs is the supervisor's at execution time, because `scode-build-goal`
+  deliberately plans no deeper than an outline.
+- **One definition of a departure, at planning and at every replan.** The goal file keeps the user's requirements and
+  decisions, the repository's constraints, and the planner's choices apart, and only the first two bind. A departure
+  leaves a user requirement or constraint uncovered, contradicts a decision, expands scope materially, weakens a stated
+  guarantee, or needs a demand the run cannot honor; it goes to the user unless the goal file agreed a fallback.
+  Everything else, from the cut into items to changing or dropping a planner choice, is the supervisor's, logged as a
+  DECISION in the journal; this replaces requirement 1's rule that a stack-shape change goes to the user. Using one
+  definition for both keeps an item from being forbidden at planning and allowed at a replan, and keeps the supervisor
+  from stopping the run over a planner choice the goal file's own fallback says to drop when unneeded.
+- **The goal file's policy becomes plan fields.** Its review gate charter becomes `reviewCharter` verbatim, its PR
+  discipline and unattended fallback become `workerRules`, and the validation it cites becomes `checks` (see "Goal-file
+  policy"). Its reviewer and worker demands become `reviewer` and `worker`. v1 reviews through `codex exec`, so a demand
+  for a model Codex does not serve, or for a swarm, is not substituted; the supervisor asks. The models the goal file
+  demands are the user's choices, so changing one mid-run, which a direct run leaves to the supervisor, goes to the user
+  too.
+- **The goal file's supervisor rules bind the supervisor.** It runs the goal file's scope reassessment before replanning
+  around a substantial new mechanism and before rerunning an item that exhausted its review rounds, logs consequential
+  choices as DECISION entries, and keeps to the goal file's decision boundary. Approved PRs stay frozen: a correction to
+  one goes into a later item, because the goal file's "restructure the stack" cannot reach approved history.
+- **The run's own machinery replaces three of the goal file's requirements.** The run directory the goal file names, its
+  journal, and `status` are the resume record instead of an `agent-resumeable` log, and invoking the skill again on the
+  same goal file resumes that run rather than starting another. The supervisor uses the named directory only when it is
+  outside the checkout and new or this goal's (its journal opens with the goal file's path), because the name could
+  collide with a direct run's directory, and resuming someone else's run is worse than asking. The runner's resource
+  guard (requirement 12) is the resource watchdog, because the supervisor is asleep while the workloads run. The
+  execution mode's ban on other orchestration skills is this skill's own rule already.
 
 ## Headless mode
 

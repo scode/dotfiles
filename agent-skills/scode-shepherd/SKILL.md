@@ -69,7 +69,10 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 
 1. Read the goal: the invocation text, or the goal file it names. Note any model overrides ("worker luna medium",
    "reviewer sol xhigh"); otherwise the defaults above apply. Model ids go to `codex -m` literally, so a model line
-   named alone means that line's current id: `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`, or `gpt-6-astra`.
+   named alone means that line's current id: `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`, or `gpt-6-astra`. If the goal
+   file says it was written by `scode-build-goal` in shepherd mode, read `goal-file.md` next to this file in full before
+   going on: it changes the run directory, the plan, and the approval below, and adds rules for the rest of the run. Any
+   other goal file, including one `scode-build-goal` wrote for another mode, takes the steps below as they stand.
 2. Check the ground: the checkout is a Git repository (a colocated jj repository is fine) whose GitHub remote holds the
    PR branches, and `codex`, `gh` (authenticated), and `deno` are on `PATH`. Tell the user that the checkout belongs to
    the worker for the length of the run.
@@ -82,7 +85,8 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 6. Show the user the plan and wait for approval: the numbered stack (id, title, and a one-line scope for each), the
    worker and reviewer models, the checks (with any item's own checks), the workflow, the run directory, and, when the
    plan sets them, the worker rules and the review charter (verbatim, or summarized and saying so). Revise until the
-   user approves. Do this every time, even when the goal came from a file.
+   user approves. Do this every time, even when the goal came from a file, unless `goal-file.md` applies and says
+   otherwise.
 7. Run `<skill-dir>/scripts/shepherd init <run-dir>`.
 8. Start `<run-dir>/journal.md`, append-only: the goal, the run directory, the approval, and from then on every wake and
    what you decided.
@@ -190,7 +194,7 @@ you through the skillette. The driver starts your turns and acts on what you lea
 Everything else in this skill holds, with three differences. Use the run directory the starting message names (it
 already exists and holds the goal as `goal.md`) instead of choosing one. Do not load the skillette or keep a `wakes/`
 directory. And when the user's answer to an approval question asks for changes, revise and ask again; only an answer
-that approves lets you run `init`.
+that approves lets you run `init`, unless `goal-file.md` applies and lifts the approval.
 
 Each of your turns is cut off after three hours, and a cut-off turn counts as one that wrote no `next.json`. If you take
 an item over, work in pieces that each fit in a turn, and write `run` once the `adopt` is done.
@@ -244,10 +248,11 @@ stay drafts; publishing them is the user's call. Leave the run directory in plac
 
 ## Resuming after compaction or in a fresh session
 
-If your context mentions a shepherd run, this skill still governs it. Re-read this file, read the run's journal and
-`shepherd status`, and reconcile the last recorded watcher once as the skillette says before arming anything, so that
-two runners never drive one checkout. Headless, there is no watcher to reconcile: the driver owns the runner, and the
-runner's own lock keeps a second one from starting.
+If your context mentions a shepherd run, this skill still governs it. Re-read this file, then the run's journal; when
+the journal says `goal-file.md` governs the run, re-read that too. Then read `shepherd status`, and reconcile the last
+recorded watcher once as the skillette says before arming anything, so that two runners never drive one checkout.
+Headless, there is no watcher to reconcile: the driver owns the runner, and the runner's own lock keeps a second one
+from starting.
 
 ## Other orchestration skills
 
