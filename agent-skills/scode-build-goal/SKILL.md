@@ -1,6 +1,6 @@
 ---
 name: scode-build-goal
-description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file meant to be passed to /goal. No-workhorse mode is the default: the executing session works at its own model, with same-model sub-agents allowed for speed. `galaxy-brain` mode uses scode-galaxy-brain to delegate suitable work to cheaper models; `powerhorse` mode uses scode-powerhorse to supervise large parallel chunks on strong delegates. `scode-build-goal help` prints a usage TLDR instead.
+description: Use only when the user explicitly invokes `$scode-build-goal` or `/scode-build-goal`. Takes a natural-language goal, optionally prefixed with an `in <dir>` clause (also `into`, `under`); picks mnemonic paths for the goal file and its working log (by default beside the checkout, out of the repo; proposes a temporary location when no good place exists), interrogates the user up front to resolve the decisions unattended work will need, then writes a self-resumeable goal file meant to be passed to /goal. No-workhorse mode is the default: the executing session works at its own model, with same-model sub-agents allowed for speed. `galaxy-brain` mode uses scode-galaxy-brain to delegate suitable work to cheaper models; `powerhorse` mode uses scode-powerhorse to supervise large parallel chunks on strong delegates; `shepherd` mode writes it for scode-shepherd, a strong supervisor over a cheap worker. `scode-build-goal help` prints a usage TLDR instead.
 ---
 
 # scode-build-goal
@@ -10,7 +10,7 @@ The output is the goal file itself — this skill does not start the work. The g
 user hands `/goal /path/to/foo-goal.md` (or the harness's equivalent) to a fresh session and the work starts if nothing
 has happened yet, or resumes from the working log if it has. The user never has to know or say which of the two it is;
 the goal file decides from what exists on disk. The same command can be repeated session after session until the work is
-done.
+done. In shepherd mode the goal file is started with `$scode-shepherd` instead of `/goal` (see Shepherd mode).
 
 NOTE: The design assumes unattended execution. Settle foreseeable product decisions and acceptable fallbacks before
 writing the goal. Unforeseen implementation choices can be made during execution; material scope changes cannot be
@@ -24,12 +24,13 @@ $scode-build-goal <goal text...>
 $scode-build-goal in /path/to/dir <goal text...>
 $scode-build-goal galaxy-brain <goal text...>
 $scode-build-goal powerhorse <goal text...>
+$scode-build-goal shepherd <goal text...>
 ```
 
 (equivalently `/scode-build-goal ...`). The argument string is the user's natural-language statement of what they want
 built. Two paths come out of it: the goal file, which this skill writes, and the working log, which the executing agent
-creates and keeps via the `agent-resumeable` skill. Where those live is this skill's call, per Placing the files below;
-the user does not have to name paths.
+creates and keeps via the `agent-resumeable` skill (in shepherd mode, a run directory scode-shepherd creates instead).
+Where those live is this skill's call, per Placing the files below; the user does not have to name paths.
 
 The second form overrides the directory only. The clause is one of the words `in`, `into`, or `under`, followed by a
 path-shaped word: something that starts with `/`, `~`, or `.`, or contains a `/`, and ends at the next whitespace (a
@@ -46,8 +47,9 @@ the working directory, `~` expanded), and if it does not exist or is not a writa
 than creating it or falling back to the defaults.
 
 If the entire argument string is `help`, answer in chat with a TLDR — the invocation shapes including the default
-no-workhorse mode, galaxy brain mode, and powerhorse mode, what the two files are for, where they get put by default,
-and that the output is a file to pass to `/goal` — and stop. Do not create or modify anything.
+no-workhorse mode, galaxy brain mode, powerhorse mode, and shepherd mode (whose goal file is started with
+`$scode-shepherd`), what the two files are for, where they get put by default, and that the output is a file to pass to
+`/goal` — and stop. Do not create or modify anything.
 
 If the goal text is missing, ask rather than guessing.
 
@@ -80,11 +82,11 @@ reassessment review, for which the goal file names no model, runs at the executi
 resource watchdog keeps every one of its obligations, but loses its option of a small-context watcher agent, since that
 is a cheaper model doing monitoring the executing agent would otherwise do; it runs as a background process only.
 
-The mode applies unless the user requests galaxy brain mode or powerhorse mode. The existing `no-workhorse` switch and
-plain-language requests that the executing agent work at its own model also select it explicitly. Remove only a switch
-consumed as a mode choice; a quoted, negated, path-embedded, or subject-of-the-goal mention stays in the goal text. An
-unclear request about delegation belongs in the up-front batch rather than being guessed. The `in <dir>` clause still
-has to come first, and `help` still requires the entire argument string.
+The mode applies unless the user requests galaxy brain mode, powerhorse mode, or shepherd mode. The existing
+`no-workhorse` switch and plain-language requests that the executing agent work at its own model also select it
+explicitly. Remove only a switch consumed as a mode choice; a quoted, negated, path-embedded, or subject-of-the-goal
+mention stays in the goal text. An unclear request about delegation belongs in the up-front batch rather than being
+guessed. The `in <dir>` clause still has to come first, and `help` still requires the entire argument string.
 
 ## Galaxy brain mode
 
@@ -131,6 +133,18 @@ that the executing agent supervise large parallel chunks on strong models rather
 same rules as for `galaxy-brain` decide what is a switch and what is a mention, and an unclear request is asked about. A
 request that asks for more than one mode is asked about, never resolved by guessing.
 
+## Shepherd mode
+
+The `shepherd` switch, or a plain-language request to run the goal under scode-shepherd, selects shepherd mode. The same
+rules as for `galaxy-brain` decide what is a switch and what is a mention, and a request for more than one mode is asked
+about. A goal that is about scode-shepherd (`$scode-build-goal teach scode-shepherd to run Claude workers`) is a
+mention, not a request. `shepherd` is also an ordinary word: when it is part of the goal's own wording, as a verb
+(`$scode-build-goal shepherd the 2.0 migration through CI`) or a noun (`$scode-build-goal shepherd runner: add a
+--dry-run flag`), it is goal text, not a switch, and when it could be either, ask. When the mode is on, read
+`modes/shepherd.md` next to this file in full before the up-front questions: it changes the review gate menu, the
+placement, the goal file's contents, and how the user starts the run, and it governs wherever it and this file differ.
+In every other mode, do not read it.
+
 ## Placing the files
 
 The point of picking the paths here is that the user should never have to invent two filenames to get an unattended run
@@ -146,6 +160,8 @@ nested), not a package name or a remote name, so two agents given the same goal 
 slug. Never a UUID, a timestamp, a session id, or anything else the user could not reproduce from the goal itself. The
 goal file is `<slug>-goal.md` and the log is `<slug>-goal-log.md`; the shared prefix keeps the pair adjacent in a
 listing and makes the log's role obvious.
+
+In shepherd mode a run directory takes the log's place; `modes/shepherd.md` says how it is named.
 
 Where they go. An `in <dir>` clause on the invocation (see Invocation) settles this outright: both files go in that
 directory and the list below is skipped. Otherwise, in order of preference:
@@ -208,9 +224,10 @@ codebase already answers. Then ask the user about what remains, batched rather t
 - Review gate: which reviewer checks each PR before it is finished, chosen from the menu in Review gate options below.
   Present the menu every time, numbered as it appears there, with the first option marked as the default taken if the
   user does not care.
-- Delegation mode: no-workhorse (the default), galaxy brain, or powerhorse, per the mode sections above, stated rather
-  than asked unless the request was ambiguous, so a misread costs the user one line to fix. In powerhorse mode, also
-  state the defaults for the worker model, the width, and PR sizing that Powerhorse mode lists.
+- Delegation mode: no-workhorse (the default), galaxy brain, powerhorse, or shepherd, per the mode sections above,
+  stated rather than asked unless the request was ambiguous, so a misread costs the user one line to fix. In powerhorse
+  mode, also state the defaults for the worker model, the width, and PR sizing that Powerhorse mode lists. In shepherd
+  mode, state what `modes/shepherd.md` lists.
 - If no-workhorse applies only by default, state the fallback for an executing session that already has galaxy-brain
   active: the executor asks how to resolve that conflict before dependent work. The user can instead explicitly choose
   no-workhorse now, which authorizes stopping galaxy-brain, or choose galaxy brain mode.
@@ -265,6 +282,8 @@ much the user trusts the model doing the writing. The menu, in the order and num
 4. Other: a plain-text answer naming any other reviewer, such as another model or effort for the single agent, or a
    `pre-pr-review-swarm` run.
 
+In shepherd mode, `modes/shepherd.md` changes the default and what can be chosen.
+
 Every option runs on the model it names, shelled out to the other harness when the executing one cannot reach that model
 natively. An Other answer that names a model without an effort runs at high.
 
@@ -296,7 +315,8 @@ itself at the demanded model, as a native sub-agent or through `scode-harness-sh
 ## What the goal file must contain
 
 Write the goal file as instructions addressed to the executing agent. It must be self-contained: the executing session
-has none of this conversation's context. Include, at minimum:
+has none of this conversation's context. In shepherd mode, `modes/shepherd.md` says which of these items change.
+Include, at minimum:
 
 - **The goal.** The user's intent, sharpened by the Q&A. State the acceptance criteria.
 - **Decisions already made.** The Q&A answers, phrased as settled decisions with their reasoning. The executing agent

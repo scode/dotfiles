@@ -19,7 +19,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 ## What comes out
 
 - The output is one file, the goal file, written as instructions to the agent that will execute it under `/goal`. The
-  skill does not start the work.
+  skill does not start the work. In shepherd mode the goal file is started differently and has a run directory instead
+  of a working log (see Shepherd mode).
 - The goal file is self-resumeable from the user's point of view: handing `/goal <absolute path of the goal file>` (or
   the harness's equivalent) to any fresh session either starts the work or resumes it, decided by whether the working
   log exists on disk. The user never has to know or say which of the two applies, and repeats the same command until the
@@ -77,8 +78,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
   executing agent do the work at its own model also selects it explicitly. A quoted, negated, path-embedded, or
   subject-of-the-goal mention stays in the goal text; only an occurrence consumed as a switch is removed. An unclear
   request about delegation is asked about, not guessed. The `in <dir>` clause and `help` rules are unchanged.
-- The up-front batch states which mode applies, no-workhorse, galaxy brain, or powerhorse, so the user can correct it
-  before anything is written.
+- The up-front batch states which mode applies, no-workhorse, galaxy brain, powerhorse, or shepherd, so the user can
+  correct it before anything is written.
 - When no-workhorse applies only by default, the batch states the fallback for a previously active galaxy-brain session:
   the executor asks before dependent work. The user can explicitly choose no-workhorse to authorize stopping it, or
   choose galaxy brain mode instead. The goal file records the settled fallback.
@@ -131,6 +132,47 @@ whoever is judging whether a change kept the user-facing behavior intact.
   the review gate and the scope reassessment launched through powerhorse. The resource watchdog runs as a background
   process only, without the watcher-agent option.
 
+## Shepherd mode
+
+- The skill supports a shepherd mode, turned on by the word `shepherd` used as a switch or by a plain-language request
+  to run the goal under scode-shepherd. A goal about scode-shepherd is a mention, `shepherd` used as part of the goal's
+  own wording (a verb, or a noun) is goal text, and an ambiguous use is asked about, so such goals keep the mode they
+  had before. What counts as a switch, a mention, or an unclear request follows the galaxy brain rules, and a request
+  for more than one mode is asked about.
+- The mode's specifics live in `modes/shepherd.md`, which the skill reads only when the mode is on and which governs
+  where it and `SKILL.md` differ. The other modes never read it. That keeps their behavior what it was: the hooks in
+  `SKILL.md` that every mode reads only name the new mode and point at the file.
+- In shepherd mode the goal file is executed by scode-shepherd, started with `$scode-shepherd <goal file>` in an
+  interactive Codex session or with `shepherd drive` headless, not with `/goal`; repeating the same command resumes the
+  run. The skill tells the user both commands when the goal file is written.
+- Planning depth is the same as in the other modes, an outline; the PR-by-PR decomposition is scode-shepherd's
+  supervisor's at execution time. scode-shepherd treats the goal file's decisions as the user's approval of a plan that
+  stays within them, so the up-front batch is where the user's say over the run happens.
+- The batch states the mode and how the run is started, the worker (by default `gpt-6.1-terra` high, overridable by a
+  model named for the workers), and the run directory in place of the log path. scode-shepherd v1 runs the worker and
+  the reviewer through `codex exec`, so both must be models Codex serves: a worker or reviewer request for any other
+  model is said to be unavailable and asked about, never mapped to another model.
+- The review gate menu keeps its options and numbering, with option 1 (opus) marked unavailable and option 2
+  (`gpt-6.1-sol` high) the default; an Other answer must name a model Codex serves, and no swarm is available. The goal
+  file carries the demand and the full general charter as in the other modes.
+- There is no working log. The run directory, `<slug>-goal-shepherd` beside the goal file, takes its place; its name
+  keeps it adjacent to the goal file and apart from the `<checkout>-shepherd-<slug>` directories plain scode-shepherd
+  runs pick. The skill never creates it, for the same reason it never creates the log, and an existing directory of that
+  name is handled like an existing log (refine the slug, or ask, moving the old one aside under a dated suffix).
+- The run directory never goes inside the checkout the goal is about (scode-shepherd refuses one there); when the goal
+  file does, the run directory goes in the checkout's parent and the batch says so. A temporary location is called out
+  as making the run's state temporary too. An existing run directory is moved aside only when nothing runs in it.
+- The worker is a demand only when the user named it; the default worker is recorded as the default, so scode-shepherd's
+  supervisor may still change it. The batch states, and the goal file names, the checks every PR must pass, all runnable
+  unattended, since the runner runs them on every PR.
+- Shepherd mode cannot run without a checkout that has a GitHub remote; the skill says so and asks.
+- The goal file opens, right after its title, with the sentence "This goal file was written by scode-build-goal in
+  shepherd mode.", which is what scode-shepherd checks for. Its execution mode requires `$scode-shepherd` for the whole
+  goal, names the run directory and the worker demand, and forbids `scode-galaxy-brain`, `scode-powerhorse`, and
+  `scode-model-routing`. It has no resume protocol and no resource watchdog, because scode-shepherd's run directory and
+  journal, and its runner's disk and memory guard, do those jobs. Decision logging goes to the run's journal. Everything
+  else the goal file requires is the same as in the other modes.
+
 ## Up-front questions
 
 - The skill assumes unattended execution. Foreseeable consequential choices and acceptable fallbacks are settled before
@@ -141,9 +183,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - The batch always presents the review-gate menu, numbered, with these four options in this order and the first marked
   as the default: a single fresh-context agent with a general correctness, design, and idiomatic-code charter on opus
   high; the same on gpt-6.1-sol high; the same on gpt-6-astra high; and Other, a plain-text answer naming any other
-  reviewer. Each reviewer runs on the model it names, cross-harness when the executing harness cannot reach the model
-  natively; an Other answer naming a model without an effort runs at high. The user's choice is recorded in the goal
-  file; the skill never picks a reviewer silently.
+  reviewer (in shepherd mode, changed as Shepherd mode says). Each reviewer runs on the model it names, cross-harness
+  when the executing harness cannot reach the model natively; an Other answer naming a model without an effort runs at
+  high. The user's choice is recorded in the goal file; the skill never picks a reviewer silently.
 - The menu offers no swarm option, and the default is never a swarm. A swarm is the reviewer only when the user
   explicitly asks for one (saying "swarm" or naming `pre-pr-review-swarm`), in the invocation or in an Other answer. A
   reviewer request that names only a model and effort, such as "gpt 6.1 sol high reviewer", means a single charter agent
@@ -167,6 +209,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
   Disclose unavailable independent review; self-review must not be represented as independent.
 
 ## What the goal file requires of the executing agent
+
+In shepherd mode, Shepherd mode above replaces the resume protocol, the resource watchdog, and the execution mode
+entries below, and moves decision logging to the run's journal.
 
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
