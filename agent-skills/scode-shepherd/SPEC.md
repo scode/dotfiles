@@ -54,7 +54,8 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
    still knows what the reviewer asked for.
 7. **Rerunning grants a budget.** Running again after an escalation is the supervisor's decision to continue, so the
    escalated item's caps restart. The runner counts escalations per item, and the supervisor asks the user after the
-   third escalation on one item.
+   third escalation on one item. A `resources-low` escalation is the exception: rerunning after it neither restarts the
+   caps nor counts (see requirement 12).
 8. **Approved items are history.** A replan may change anything not yet approved; the runner refuses a plan that moves,
    removes, or changes the spec of an approved item. Approved PRs are frozen too: verification of each later item
    requires the previous item's PR branch to still point at its approved head and the new PR's head to contain it, and
@@ -76,6 +77,30 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
     failed-check message say how the runner runs checks, the worker is told to run them that way and to report replan
     for a check that cannot pass unattended rather than change tests, and the supervisor is told to leave manual tests
     out of the plan's checks.
+12. **The runner holds off on low resources.** This is the runner's form of the resource watchdog `scode-build-goal`
+    requires of unattended runs: the supervisor is asleep, so an alert addressed to it would go unseen, and the runner
+    is what launches the workloads. It reads free space on the filesystems holding the checkout, the run directory, the
+    temporary directory, and the home directory, one reading per filesystem, and available memory. Memory is the
+    tightest of `/proc/meminfo` and the cgroup v2 limits on the runner's own cgroup and its ancestors (a container, or a
+    systemd scope or slice with `MemoryMax=`), where a cgroup's available memory is its limit minus its working set
+    (usage without the inactive file cache, which the kernel reclaims on demand). A reading it cannot take, including a
+    `df` that does not answer within 25 seconds, is logged once as `resources-unreadable` and does not count as short.
+    - Before every worker session, check run, and review, it waits while a filesystem has under 5 GiB free, or under 10%
+      while also under 20 GiB, or memory is under 10% available while also under 4 GiB. It reads again every minute and
+      escalates `resources-low` when the shortage lasts `resourceWaitMinutes` (30). The percentages are capped because
+      on a large disk 10% is far more than a run needs. On a filesystem smaller than 20 GiB the 5 GiB floor is a quarter
+      of its size instead, so that a small tmpfs `/tmp` does not stop every run.
+    - While a step runs, it reads every minute and kills the step under 1 GiB free on a filesystem (5% of the size on a
+      filesystem smaller than 20 GiB), or under 3% and 1 GiB of memory, and escalates `resources-low`. A killed check
+      run is not reported to the worker as a failure, and a killed review is neither a verdict nor a reviewer failure. A
+      step that exits or hits its deadline while a reading is in flight is not killed for it.
+    - Neither stop spends the item's budget: the wait comes before the session is counted, and a killed session is added
+      back. Resuming after `resources-low` neither refills the budget nor counts as one of the item's escalations, since
+      the stop says nothing about how the item is going. A killed session is not a crash either. The session after a
+      killed one is told why its predecessor stopped, along with the feedback its predecessor was given.
+    - While a live runner waits, `status` says so.
+    - `resourceWaitMinutes: 0` turns the guard off, both the wait and the in-run kill. It is the only limit that may
+      be 0. It is for readings that are wrong, or a shortage that is structural and cannot be moved elsewhere.
 
 ## The supervisor channel
 
@@ -203,10 +228,13 @@ sessions, failing checks, a wrong base, a non-draft or closed PR, a PR in anothe
 item; escalation for crashes, infrastructure failures, changed history, and every cap; feedback that survives a lost
 session; resume preparation; replan reconciliation; verdict derivation; and the hook's replies, including its thread
 filter; and the policy fields (the unchanged default prompts, a charter keeping the runner's scope, reporting, and
-verdict sections, worker rules under precedence, cumulative item checks, and their validation). The drive loop is
-unit-tested the same way, behind `DriverOps`: answered, unanswered, and failed questions, the runner's result reaching
-the supervisor, every step saved before it is acted on, a restart handing the runner its start time, the nudge for a
-missing `next.json`, stop, the turn cap keeping what is pending, and usage surviving a failed turn. What the real
-operations do (codex, gh, git, process groups, the locks, `cmdHook`'s file handling, `cmdDrive`'s flag handling, and
-`runRunner`'s wait for a runner left behind) is not unit-tested; it is exercised by the manual smoke run in `AGENTS.md`
-and by real runs. Tests do not modify the environment of the test process.
+verdict sections, worker rules under precedence, cumulative item checks, and their validation). The resource guard is
+unit-tested too: the wait before each kind of launch, its bound and off switch, the in-run kill of each kind of step and
+its effect on the budget, the resume after `resources-low`, the thresholds, the parsers for the readings, and the status
+line. The drive loop is unit-tested the same way, behind `DriverOps`: answered, unanswered, and failed questions, the
+runner's result reaching the supervisor, every step saved before it is acted on, a restart handing the runner its start
+time, the nudge for a missing `next.json`, stop, the turn cap keeping what is pending, and usage surviving a failed
+turn. What the real operations do (codex, gh, git, process groups, the locks, taking the resource readings, the in-run
+watch, `cmdHook`'s file handling, `cmdDrive`'s flag handling, and `runRunner`'s wait for a runner left behind) is not
+unit-tested; it is exercised by the manual smoke run in `AGENTS.md` and by real runs. Tests do not modify the
+environment of the test process.

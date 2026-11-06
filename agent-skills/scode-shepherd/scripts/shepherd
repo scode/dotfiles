@@ -46,6 +46,8 @@ type Limits = {
   workerMinutes: number;
   reviewerMinutes: number;
   checkMinutes: number;
+  /** How long the runner waits for disk or memory to recover before it escalates `resources-low`. */
+  resourceWaitMinutes: number;
 };
 
 const DEFAULT_LIMITS: Limits = {
@@ -55,6 +57,7 @@ const DEFAULT_LIMITS: Limits = {
   workerMinutes: 120,
   reviewerMinutes: 45,
   checkMinutes: 45,
+  resourceWaitMinutes: 30,
 };
 const DEFAULT_WORKER: ModelSel = { model: "gpt-6.1-terra", effort: "high" };
 const DEFAULT_REVIEWER: ModelSel = { model: "gpt-6.1-sol", effort: "high" };
@@ -198,7 +201,12 @@ export function planProblems(p: unknown): string[] {
   if (plan.limits !== undefined) {
     for (const [k, v] of Object.entries(plan.limits as Record<string, unknown>)) {
       if (!(k in DEFAULT_LIMITS)) out.push(`unknown limit ${k}`);
-      else if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
+      else if (k === "resourceWaitMinutes") {
+        // 0 is the guard's off switch, for a machine whose readings are wrong or whose shortage is structural.
+        if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+          out.push(`limit ${k} must be a non-negative integer`);
+        }
+      } else if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
         out.push(`limit ${k} must be a positive integer`);
       }
     }
@@ -284,9 +292,12 @@ export function reconcile(plan: Plan, state: State): { items: ItemState[] } | { 
  * again, because while no runner was active the supervisor may have touched the PR or the verification tree. A
  * recorded `current` session and worker pid belong to a dead runner and are cleared (the caller stops that worker
  * first, if it is still alive).
+ *
+ * A `resources-low` escalation is the exception: it says nothing about how the item is going, so it neither refills the
+ * budget nor counts toward the item's escalations. The runner already kept the stop from spending a session.
  */
 export function prepareResume(state: State, escalation: Escalation | undefined) {
-  if (escalation !== undefined) {
+  if (escalation !== undefined && escalation.reason !== "resources-low") {
     const item = state.items.find((i) => i.id === escalation.item);
     if (item) {
       item.sessionsBase = item.sessions, item.reviewBase = item.reviewRounds, item.crashes = 0;
@@ -594,8 +605,9 @@ export function hookReply(
 // The run loop
 // ---------------------------------------------------------------------------------------------------------------------
 
-type WorkerResult = { code: number; timedOut: boolean; usage: Usage; stderrTail: string };
-type CheckResult = { ok: true } | { ok: false; command: string; logPath: string; tail: string };
+/** `resourceKill` is set when the in-run resource watch killed the step (see `runLogged`), with the shortage. */
+type WorkerResult = { code: number; timedOut: boolean; usage: Usage; stderrTail: string; resourceKill?: string };
+type CheckResult = { ok: true } | { ok: false; command: string; logPath: string; tail: string; resourceKill?: string };
 
 /**
  * The outcome of preparing the verification tree. `infra` is a failure on the runner's side (fetch, worktree) that a
@@ -621,9 +633,11 @@ interface Ops {
   prepareTree(pr: PrInfo, approvedBase: string | undefined): Promise<TreeResult>;
   runChecks(checks: string[], logDir: string, minutes: number): Promise<CheckResult>;
   runReviewer(a: { prompt: string; dir: string; sel: ModelSel; minutes: number }): Promise<
-    { text?: string; usage: Usage }
+    { text?: string; usage: Usage; resourceKill?: string }
   >;
   readText(path: string): Promise<string | undefined>;
+  /** What is short of disk or memory right now, in a sentence, or undefined when there is headroom. */
+  resources(): Promise<string | undefined>;
   log(item: string | undefined, event: string, detail?: unknown): Promise<void>;
   sleep(ms: number): Promise<void>;
 }
@@ -651,6 +665,29 @@ function pathsFor(runDir: string) {
 }
 
 type Outcome = { done: true } | { escalation: Escalation };
+
+/**
+ * Waits for disk and memory headroom before the runner launches anything, and returns the shortage when it lasts past
+ * `resourceWaitMinutes`, for the caller to escalate. A `resourceWaitMinutes` of 0 turns the guard off.
+ *
+ * This is the runner's version of the resource watchdog `scode-build-goal` requires of unattended runs. The supervisor
+ * is asleep while the runner works, so an alert addressed to it would go unseen; the runner is the one launching
+ * workloads, so it is the one that holds off. While a step runs, the in-run watch in `runLogged` covers the rest: below
+ * a hard floor it kills the step.
+ */
+export async function waitForResources(ops: Ops, lim: Limits, item: string): Promise<string | undefined> {
+  if (lim.resourceWaitMinutes === 0) return undefined;
+  for (let waited = 0;; waited++) {
+    const short = await ops.resources();
+    if (short === undefined) {
+      if (waited > 0) await ops.log(item, "resources-ok", { waitedMinutes: waited });
+      return undefined;
+    }
+    if (waited === 0) await ops.log(item, "resources-low", short);
+    if (waited >= lim.resourceWaitMinutes) return short;
+    await ops.sleep(60_000);
+  }
+}
 
 /**
  * Drives every item to approval, or stops with an escalation. Persists state after every transition so that a killed
@@ -682,6 +719,9 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
             `${s.sessions - s.sessionsBase} worker sessions used. Last feedback given: ${s.pending ?? "(none)"}`,
           );
         }
+        // Before counting the session, so a run that stops on resources has not spent part of the item's budget.
+        const shortBeforeWorker = await waitForResources(ops, lim, it.id);
+        if (shortBeforeWorker !== undefined) return await escalate("resources-low", it.id, shortBeforeWorker);
         s.sessions++, s.phase = "working";
         const sessionDir = p.session(it.id, s.sessions), reportPath = `${sessionDir}/report.json`;
         const prompt = workerPrompt({
@@ -698,6 +738,19 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
         const res = await ops.runWorker({ prompt, sessionDir, reportPath, sel: worker, minutes: lim.workerMinutes });
         addUsage(s.usage.worker, res.usage);
         state.current = undefined;
+        if (res.resourceKill !== undefined) {
+          // The runner, not the worker, cut this session short, so it does not count against the item's budget. The
+          // base moves rather than the count, so the next session still gets a directory of its own.
+          // Nor is it a crash, so it breaks a run of crashes. Feedback the killed session never got to act on is
+          // kept for the next one.
+          s.sessionsBase++, s.crashes = 0;
+          s.pending =
+            `Your previous session (${sessionDir}) was stopped by the runner because the machine ran out of ` +
+            `room (${res.resourceKill}). Inspect the repository and the PR as they are now, then continue the item ` +
+            `from there.` + (s.pending === undefined ? "" : `\n\nThe feedback that session was given:\n\n${s.pending}`);
+          await ops.log(it.id, "worker-killed", { session: s.sessions, resources: res.resourceKill });
+          return await escalate("resources-low", it.id, `the worker session was killed: ${res.resourceKill}`);
+        }
         const report = parseReport(await ops.readText(reportPath));
         await ops.log(it.id, "worker-end", { session: s.sessions, code: res.code, timedOut: res.timedOut, report });
         if (typeof report === "string") {
@@ -750,11 +803,16 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
           baseSha: s.baseSha!,
           guidance: await ops.readText(p.guidance(it.id)),
         });
+        const shortBeforeReview = await waitForResources(ops, lim, it.id);
+        if (shortBeforeReview !== undefined) return await escalate("resources-low", it.id, shortBeforeReview);
         let review: Review | undefined, dir = "";
         for (let attempt = 1; attempt <= 2 && review === undefined; attempt++) {
           dir = `${p.review(it.id, n)}${attempt > 1 ? `-attempt-${attempt}` : ""}`;
           const r = await ops.runReviewer({ prompt, dir, sel: reviewer, minutes: lim.reviewerMinutes });
           addUsage(s.usage.reviewer, r.usage);
+          if (r.resourceKill !== undefined) {
+            return await escalate("resources-low", it.id, `the review was killed: ${r.resourceKill}`);
+          }
           review = parseReview(r.text);
         }
         if (review === undefined) {
@@ -848,7 +906,12 @@ async function verify(
   const tree = await ops.prepareTree(pr, approvedBase);
   if ("infra" in tree) return { escalate: "verify-infra-failed", detail: tree.infra };
   if ("history" in tree) return { escalate: "approved-history-changed", detail: tree.history };
+  const short = await waitForResources(ops, lim, s.id);
+  if (short !== undefined) return { escalate: "resources-low", detail: short };
   const checks = await ops.runChecks(itemChecks(plan, index), `${p.item(s.id)}/checks-${s.sessions}`, lim.checkMinutes);
+  if (!checks.ok && checks.resourceKill !== undefined) {
+    return { escalate: "resources-low", detail: `\`${checks.command}\` was killed: ${checks.resourceKill}` };
+  }
   if (!checks.ok) {
     return {
       problem: `\`${checks.command}\` fails at the PR's pushed head ${pr.head} (full log: ${checks.logPath}). ` +
@@ -894,6 +957,113 @@ function tailOf(text: string, lines: number) {
  */
 const liveGroups = new Set<number>();
 
+/**
+ * Resource thresholds.
+ *
+ * A launch waits ("soft") while a filesystem has under 5 GiB free (under a quarter of its size, for a filesystem
+ * smaller than 20 GiB), or under 10% free while also under 20 GiB, or while memory is under 10% available while also
+ * under 4 GiB. A running step is killed ("hard") under 1 GiB free on a filesystem (under 5% of its size, for one
+ * smaller than 20 GiB), or under 3% and 1 GiB of memory.
+ *
+ * The percentage rules are capped by absolute amounts because on a large disk 10% is far more than any run needs: a 2
+ * TB disk that is 91% full still has 180 GB free, and an earlier draft with a plain percentage rule would have stopped
+ * runs on it. The absolute floors scale down on small filesystems for the opposite reason: a tmpfs `/tmp` at half the
+ * RAM of an 8 GiB machine is 4 GiB in all and would otherwise stop every run. `scode-build-goal`'s watchdog uses 5 GB
+ * or 10% as alert levels for an agent to judge; here they decide on their own, so they have to be stricter about what
+ * counts as short.
+ */
+const GIB = 1024 * 1024;
+const SOFT_DISK_KB = 5 * GIB, SOFT_DISK_SMALL_FRACTION = 0.25, SOFT_DISK_FRACTION = 0.1;
+const SOFT_DISK_FRACTION_CAP_KB = 20 * GIB;
+const SOFT_MEM_FRACTION = 0.1, SOFT_MEM_CAP_KB = 4 * GIB;
+const HARD_DISK_KB = 1 * GIB, HARD_DISK_SMALL_FRACTION = 0.05, HARD_MEM_FRACTION = 0.03, HARD_MEM_CAP_KB = 1 * GIB;
+
+/**
+ * Total and available KiB, and the mount point, from `df -Pk` output. Parsed from the right, anchored on the capacity
+ * column (`NN%`), so a filesystem name with spaces in it (an SMB export, say) does not shift the fields. Used and
+ * available may be negative: GNU df prints that for a filesystem filled past its reserve, which is exactly the reading
+ * that must not be dropped as unparseable.
+ */
+export function parseDf(text: string): { totalKb: number; availKb: number; mount: string } | undefined {
+  const line = text.trim().split("\n").at(-1) ?? "";
+  const m = /(\d+)\s+(-?\d+)\s+(-?\d+)\s+\d+%\s+(\S.*)$/.exec(line);
+  if (!m || text.trim().split("\n").length < 2) return undefined;
+  const totalKb = Number(m[1]), availKb = Math.max(0, Number(m[3]));
+  return totalKb > 0 ? { totalKb, availKb, mount: m[4] } : undefined;
+}
+
+/** Total and available memory in KiB from `/proc/meminfo`. */
+export function parseMeminfo(text: string): { totalKb: number; availKb: number } | undefined {
+  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(text)?.[1]);
+  const totalKb = kb("MemTotal"), availKb = kb("MemAvailable");
+  return Number.isFinite(totalKb) && Number.isFinite(availKb) && totalKb > 0 ? { totalKb, availKb } : undefined;
+}
+
+/**
+ * Memory as one cgroup v2 limit sees it, from that cgroup's `memory.max`, `memory.current` (bytes), and `memory.stat`,
+ * or undefined when the cgroup has no limit. Inside a container, or under a systemd scope with `MemoryMax=`,
+ * `/proc/meminfo` reports the host's memory, so without this the memory check could never fire before the cgroup's OOM
+ * killer does.
+ *
+ * Available is the limit minus the working set, where the working set is `memory.current` without the inactive file
+ * cache (the figure kubelet and `docker stats` use). `memory.current` alone counts page cache the kernel would drop on
+ * demand, and after any I/O-heavy step it sits just under the limit for good, which would stop a healthy run.
+ */
+export function parseCgroupMemory(
+  max: string,
+  current: string,
+  stat: string,
+): { totalKb: number; availKb: number } | undefined {
+  const limit = Number(max.trim()), used = Number(current.trim());
+  if (!Number.isFinite(limit) || !Number.isFinite(used) || limit <= 0) return undefined; // "max" means no limit
+  const inactiveFile = Number(/^inactive_file (\d+)$/m.exec(stat)?.[1] ?? 0);
+  const working = Math.max(0, used - inactiveFile);
+  return { totalKb: limit / 1024, availKb: Math.max(0, limit - working) / 1024 };
+}
+
+/**
+ * The cgroup v2 directories whose limits apply to this process, innermost first, from `/proc/self/cgroup`: its own
+ * cgroup and every ancestor up to the mount root. A limit set on any of them (a systemd slice, say) caps this process,
+ * so the guard reads them all. Empty when there is no v2 entry (cgroup v1, or no cgroups).
+ */
+export function cgroupDirs(selfCgroup: string, root = "/sys/fs/cgroup"): string[] {
+  const path = /^0::(\/.*)$/m.exec(selfCgroup)?.[1];
+  if (path === undefined) return [];
+  const parts = path.split("/").filter((s) => s !== "" && s !== "." && s !== "..");
+  return parts.map((_, i) => `${root}/${parts.slice(0, parts.length - i).join("/")}`).concat(root);
+}
+
+/** One filesystem as the guard sees it: its mount point, its size and free space, and the watched paths on it. */
+export type DiskReading = { mount: string; paths: string[]; totalKb: number; availKb: number };
+
+/**
+ * The shortage at `level`, described for the log and the escalation, or undefined when every filesystem and memory
+ * has room (see the thresholds above).
+ */
+export function resourceShortfall(
+  disks: DiskReading[],
+  mem: { totalKb: number; availKb: number } | undefined,
+  level: "soft" | "hard" = "soft",
+): string | undefined {
+  // Rounded down, so a message never claims more room than there is.
+  const gib = (kb: number) => (Math.floor(kb / GIB * 10) / 10).toFixed(1);
+  const diskShort = (d: DiskReading) =>
+    level === "hard"
+      ? d.availKb < Math.min(HARD_DISK_KB, d.totalKb * HARD_DISK_SMALL_FRACTION)
+      : d.availKb < Math.min(SOFT_DISK_KB, d.totalKb * SOFT_DISK_SMALL_FRACTION) ||
+        (d.availKb < d.totalKb * SOFT_DISK_FRACTION && d.availKb < SOFT_DISK_FRACTION_CAP_KB);
+  const out = disks
+    .filter(diskShort)
+    .map((d) => `${gib(d.availKb)} GiB free of ${gib(d.totalKb)} GiB on ${d.mount} (holding ${d.paths.join(", ")})`);
+  const [fraction, cap] = level === "hard"
+    ? [HARD_MEM_FRACTION, HARD_MEM_CAP_KB]
+    : [SOFT_MEM_FRACTION, SOFT_MEM_CAP_KB];
+  if (mem && mem.availKb < mem.totalKb * fraction && mem.availKb < cap) {
+    out.push(`${gib(mem.availKb)} GiB of ${gib(mem.totalKb)} GiB memory available`);
+  }
+  return out.length ? out.join("; ") : undefined;
+}
+
 /** Signals a whole process group, tolerating one that is already gone. */
 function killGroup(pgid: number, sig: Deno.Signal) {
   try {
@@ -912,8 +1082,20 @@ function killGroup(pgid: number, sig: Deno.Signal) {
  */
 async function runLogged(
   cmd: string[],
-  o: { cwd: string; stdin?: string; stdout: string; stderr: string; minutes: number; onPid?: (pid: number) => void },
-): Promise<{ code: number; timedOut: boolean }> {
+  o: {
+    cwd: string;
+    stdin?: string;
+    stdout: string;
+    stderr: string;
+    minutes: number;
+    onPid?: (pid: number) => void;
+    /**
+     * Called every minute while the child runs; a returned shortage kills the child's group (TERM, then KILL) and is
+     * reported as `resourceKill`. This is the in-run half of the resource guard (see `waitForResources`).
+     */
+    watch?: () => Promise<string | undefined>;
+  },
+): Promise<{ code: number; timedOut: boolean; resourceKill?: string }> {
   const child = new Deno.Command("setsid", {
     args: cmd,
     cwd: o.cwd,
@@ -938,20 +1120,109 @@ async function runLogged(
     killGroup(child.pid, "SIGTERM");
     killTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), 10_000);
   }, o.minutes * 60_000);
+  // The watch. A reading can take tens of seconds (df on a slow mount), so it is not allowed to overlap the next tick,
+  // and everything it decides is checked again after the await: by then the child may have exited (its group must
+  // not be signalled after it is reaped, since the pid may be reused) or hit its deadline (a timeout is a timeout,
+  // not a resource kill). It has its own kill timer so it cannot clobber or leak the deadline's.
+  let resourceKill: string | undefined, finished = false, reading = false;
+  let watchKillTimer: ReturnType<typeof setTimeout> | undefined;
+  const settled = () => finished || timedOut || resourceKill !== undefined;
+  const watcher = o.watch === undefined ? undefined : setInterval(async () => {
+    if (settled() || reading) return;
+    reading = true;
+    const short = await o.watch!().catch(() => undefined);
+    reading = false;
+    if (short === undefined || settled()) return;
+    resourceKill = short;
+    killGroup(child.pid, "SIGTERM");
+    watchKillTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), 10_000);
+  }, 60_000);
   const status = await child.status;
+  finished = true;
   clearTimeout(timer);
+  if (watcher !== undefined) clearInterval(watcher);
   // Anything the child left behind in its group goes too, so it cannot outlive the step or hold the pipes open.
   killGroup(child.pid, "SIGKILL");
   liveGroups.delete(child.pid);
   clearTimeout(killTimer);
+  clearTimeout(watchKillTimer);
   await Promise.race([pumps, new Promise((r) => setTimeout(r, 15_000))]);
-  return { code: status.code, timedOut };
+  return { code: status.code, timedOut, resourceKill };
 }
 
 function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () => Promise<void>): Ops {
   const repo = plan.repo, remote = plan.remote ?? "origin";
   const exists = (path: string) => Deno.stat(path).then(() => true, () => false);
   const git = (args: string[], cwd = repo) => $`git -C ${cwd} ${args}`.noThrow().stdout("piped").stderr("piped");
+  // A reading that cannot be taken is logged once per source, never silently counted as headroom.
+  const unreadable = new Set<string>();
+  const noteUnreadable = async (what: string, why: string) => {
+    if (unreadable.has(what)) return;
+    unreadable.add(what);
+    const entry = { t: new Date().toISOString(), event: "resources-unreadable", detail: `${what}: ${why}` };
+    await Deno.writeTextFile(p.events, JSON.stringify(entry) + "\n", { append: true }).catch(() => {});
+  };
+  /** df for one path, abandoned after 25 seconds: a hung network mount must not wedge the runner before every launch. */
+  const dfOf = async (path: string): Promise<{ totalKb: number; availKb: number; mount: string } | string> => {
+    // dax's own timeout sends TERM and then waits, which a process stuck in the kernel can outlast, so the race is
+    // what bounds the wait; the timeout only tries to clean up behind it.
+    const run = $`df -Pk ${path}`.noThrow().stdout("piped").stderr("piped").timeout("20s").then(
+      (r) => r.code === 0 ? parseDf(r.stdout) ?? "unparseable df output" : `df exited ${r.code}: ${r.stderr.trim()}`,
+      (e) => `df failed: ${e}`,
+    );
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<string>((r) => t = setTimeout(() => r("df did not answer within 25 seconds"), 25_000));
+    try {
+      return await Promise.race([run, deadline]);
+    } finally {
+      clearTimeout(t);
+    }
+  };
+  /** The tightest cgroup v2 memory limit on this process, or undefined when none applies. */
+  const cgroupMemory = async () => {
+    const self = await Deno.readTextFile("/proc/self/cgroup").catch(() => "");
+    let tightest: { totalKb: number; availKb: number } | undefined;
+    for (const dir of cgroupDirs(self)) {
+      // No memory.max is normal (the root cgroup has none, nor does a cgroup without the memory controller).
+      const max = await Deno.readTextFile(`${dir}/memory.max`).catch(() => undefined);
+      if (max === undefined || max.trim() === "max") continue;
+      try {
+        const [cur, stat] = await Promise.all(["current", "stat"].map((f) => Deno.readTextFile(`${dir}/memory.${f}`)));
+        const m = parseCgroupMemory(max, cur, stat);
+        if (m === undefined) await noteUnreadable(dir, `unparseable memory.max ${JSON.stringify(max.trim())}`);
+        else if (tightest === undefined || m.availKb < tightest.availKb) tightest = m;
+      } catch (e) {
+        await noteUnreadable(dir, `${e}`);
+      }
+    }
+    return tightest;
+  };
+  /**
+   * Disk and memory as the guard sees them. Disk: the filesystems holding the checkout, the run directory, the
+   * temporary directory, and the home directory (where codex's state and the build tools' caches live), one entry per
+   * filesystem. Memory: the tightest of `/proc/meminfo` and the cgroup v2 limits on this process.
+   */
+  const readings = async () => {
+    const byMount = new Map<string, DiskReading>();
+    // `||`, not `??`: an empty TMPDIR or HOME means unset, and `df ""` would only fail.
+    for (const path of new Set([repo, runDir, Deno.env.get("TMPDIR") || "/tmp", Deno.env.get("HOME") || "/"])) {
+      const d = await dfOf(path);
+      if (typeof d === "string") await noteUnreadable(path, d);
+      else if (byMount.has(d.mount)) byMount.get(d.mount)!.paths.push(path);
+      else byMount.set(d.mount, { ...d, paths: [path] });
+    }
+    const meminfo = await Deno.readTextFile("/proc/meminfo").catch((e) => `${e}`);
+    const host = parseMeminfo(meminfo);
+    if (host === undefined) await noteUnreadable("/proc/meminfo", meminfo.slice(0, 200));
+    const cg = await cgroupMemory();
+    const mem = cg !== undefined && (host === undefined || cg.availKb < host.availKb) ? cg : host;
+    return { disks: [...byMount.values()], mem };
+  };
+  // The in-run watch, off when the plan turns the guard off (`resourceWaitMinutes: 0`).
+  const watch = limitsOf(plan).resourceWaitMinutes === 0 ? undefined : async () => {
+    const r = await readings();
+    return resourceShortfall(r.disks, r.mem, "hard");
+  };
   return {
     async runWorker(a) {
       await Deno.mkdir(a.sessionDir, { recursive: true });
@@ -987,6 +1258,7 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
           state.workerPid = pid;
           save();
         },
+        watch,
       });
       state.workerPid = undefined;
       const read = (f: string) => Deno.readTextFile(`${a.sessionDir}/${f}`).catch(() => "");
@@ -1072,11 +1344,13 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
           stdout: logPath,
           stderr: `${logPath}.stderr`,
           minutes,
+          watch,
         });
-        if (r.code !== 0 || r.timedOut) {
+        // A killed check counts even if it exited 0 (one that traps TERM, say): the run was cut short either way.
+        if (r.code !== 0 || r.timedOut || r.resourceKill !== undefined) {
           const tail = tailOf(await Deno.readTextFile(logPath).catch(() => ""), 60) +
             (r.timedOut ? `\n(killed after ${minutes} minutes)` : "");
-          return { ok: false, command, logPath, tail };
+          return { ok: false, command, logPath, tail, resourceKill: r.resourceKill };
         }
       }
       return { ok: true };
@@ -1104,20 +1378,26 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
         `${a.dir}/review.json`,
         "-",
       ];
-      await runLogged(cmd, {
+      const r = await runLogged(cmd, {
         cwd: p.verify,
         stdin: a.prompt,
         stdout: `${a.dir}/events.jsonl`,
         stderr: `${a.dir}/stderr.log`,
         minutes: a.minutes,
+        watch,
       });
       const events = await Deno.readTextFile(`${a.dir}/events.jsonl`).catch(() => "");
       return {
+        resourceKill: r.resourceKill,
         text: await Deno.readTextFile(`${a.dir}/review.json`).catch(() => undefined),
         usage: codexUsage(events),
       };
     },
 
+    async resources() {
+      const r = await readings();
+      return resourceShortfall(r.disks, r.mem, "soft");
+    },
     readText: (path) => Deno.readTextFile(path).catch(() => undefined),
     log: (item, event, detail) =>
       Deno.writeTextFile(p.events, JSON.stringify({ t: new Date().toISOString(), item, event, detail }) + "\n", {
@@ -1256,7 +1536,33 @@ async function cmdRun(runDir: string): Promise<number> {
   return 0;
 }
 
-export function statusText(plan: Plan, state: State, escalation: string | undefined, supervisor?: Usage): string {
+/**
+ * The resource shortage the runner is waiting out right now, if any: the last event in the run log is a
+ * `resources-low`, apart from `resources-unreadable` notes the readings themselves may add (the wait logs nothing else
+ * until it ends, one way or the other). Without this, a runner holding off on a full disk looks exactly like one whose
+ * worker is busy.
+ */
+export function resourceWait(events: string): string | undefined {
+  for (const line of events.trim().split("\n").reverse()) {
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      return undefined;
+    }
+    if (e?.event === "resources-unreadable") continue;
+    return e?.event === "resources-low" ? `since ${e.t}: ${e.detail}` : undefined;
+  }
+  return undefined;
+}
+
+export function statusText(
+  plan: Plan,
+  state: State,
+  escalation: string | undefined,
+  supervisor?: Usage,
+  waiting?: string,
+): string {
   const lines = state.items.map((s, i) => {
     const w = s.usage.worker, r = s.usage.reviewer;
     return `${i + 1}. ${s.id} [${s.phase}] sessions=${s.sessions} reviews=${s.reviewRounds} ` +
@@ -1270,6 +1576,7 @@ export function statusText(plan: Plan, state: State, escalation: string | undefi
       `supervisor tokens (headless): ${supervisor.input}in/${supervisor.cachedInput}cached/${supervisor.output}out`,
     );
   }
+  if (waiting) lines.push(`waiting for disk or memory ${waiting}`);
   if (escalation) lines.push(`open escalation: ${escalation.trim()}`);
   return `${plan.items.length} items\n${lines.join("\n")}`;
 }
@@ -1279,7 +1586,13 @@ async function cmdStatus(runDir: string) {
   const plan = await loadPlan(p);
   const state = await readJson<State>(p.state);
   const driver = await readJson<DriverState>(`${runDir}/driver.json`).catch(() => undefined);
-  console.log(statusText(plan, state, await Deno.readTextFile(p.escalation).catch(() => undefined), driver?.usage));
+  // The log only says a wait began; a runner that died mid-wait leaves the same last line, so ask whether one is alive.
+  const lockPid = Number(await Deno.readTextFile(p.lock).catch(() => "")) || undefined;
+  const waiting = await ownedAlive(lockPid, runDir)
+    ? resourceWait(await Deno.readTextFile(p.events).catch(() => ""))
+    : undefined;
+  const escalation = await Deno.readTextFile(p.escalation).catch(() => undefined);
+  console.log(statusText(plan, state, escalation, driver?.usage, waiting));
 }
 
 async function cmdAdopt(runDir: string, id: string, url: string) {
@@ -1827,10 +2140,23 @@ function fakeWorld(plan: Plan, o: {
   prs?: Record<string, Partial<PrInfo> | { error: string; notFound?: true }>;
   tree?: (pr: PrInfo, approvedBase: string | undefined) => TreeResult | undefined;
   repo?: string;
+  /** Successive `resources()` readings; undefined (or running out) means headroom. */
+  resources?: (string | undefined)[];
+  /** One in-run resource kill per step kind: the first such step comes back killed with this shortage. */
+  kill?: Partial<Record<"worker" | "checks" | "review", string>>;
+  /** Kill this worker session number (rather than the first) with a disk shortage. */
+  killWorkerSession?: number;
 }) {
+  const kills = { ...(o.kill ?? {}) };
+  const killOnce = (step: "worker" | "checks" | "review") => {
+    const k = kills[step];
+    delete kills[step];
+    return k;
+  };
   const files = new Map<string, string>();
   const calls: string[] = [], checkLists: string[][] = [];
-  const reviews = [...(o.reviews ?? [])];
+  const reviews = [...(o.reviews ?? [])], readings = [...(o.resources ?? [])];
+  let sleeps = 0;
   const p = pathsFor("/run");
   const state: State = { version: 1, nonce: "n0nce", items: plan.items.map((i) => emptyItem(i.id)) };
   const prFor = (url: string): PrInfo | { error: string; notFound?: true } => {
@@ -1855,12 +2181,14 @@ function fakeWorld(plan: Plan, o: {
       calls.push(`worker ${item}#${session}`);
       files.set(`prompt:${item}#${session}`, a.prompt);
       const r = o.worker(item, session);
-      if (r !== undefined) files.set(a.reportPath, r);
+      const resourceKill = session === o.killWorkerSession ? "low disk" : killOnce("worker");
+      if (r !== undefined && resourceKill === undefined) files.set(a.reportPath, r);
       return Promise.resolve({
-        code: o.workerCode ?? 0,
+        code: resourceKill === undefined ? o.workerCode ?? 0 : 143,
         timedOut: false,
         usage: { input: 10, cachedInput: 0, output: 1 },
         stderrTail: "model not found",
+        resourceKill,
       });
     },
     repoName: () => Promise.resolve(o.repo ?? "o/r"),
@@ -1873,6 +2201,10 @@ function fakeWorld(plan: Plan, o: {
       checkLists.push(checks);
       const head = calls.filter((c) => c.startsWith("tree ")).pop()!.slice(5);
       calls.push(`checks ${head}`);
+      const resourceKill = killOnce("checks");
+      if (resourceKill !== undefined) {
+        return Promise.resolve({ ok: false, command: "make test", logPath: "/log", tail: "Killed", resourceKill });
+      }
       return Promise.resolve(
         o.checksOk === undefined || o.checksOk(head)
           ? { ok: true }
@@ -1881,14 +2213,17 @@ function fakeWorld(plan: Plan, o: {
     },
     runReviewer() {
       calls.push("review");
-      return Promise.resolve({ text: reviews.shift(), usage: { input: 5, cachedInput: 0, output: 1 } });
+      const resourceKill = killOnce("review");
+      const text = resourceKill === undefined ? reviews.shift() : undefined;
+      return Promise.resolve({ text, usage: { input: 5, cachedInput: 0, output: 1 }, resourceKill });
     },
     readText: (path) => Promise.resolve(files.get(path)),
     log: () => Promise.resolve(),
-    sleep: () => Promise.resolve(),
+    sleep: () => (sleeps++, Promise.resolve()),
+    resources: () => Promise.resolve(readings.shift()),
   };
   const run = () => runLoop(plan, state, p, ops, () => Promise.resolve());
-  return { ops, state, p, calls, files, run, checkLists };
+  return { ops, state, p, calls, files, run, checkLists, sleeps: () => sleeps };
 }
 
 const url = (n: number) => `https://github.com/o/r/pull/${n}`;
@@ -2445,4 +2780,213 @@ Deno.test("parseNext accepts the four actions and explains anything else, inheri
   assertIncludes(parseNext(nx({ action: "ask" })) as string, '"question"');
   assertIncludes(parseNext(nx({ action: "wait" })) as string, "must be");
   assertIncludes(parseNext(nx({ action: "toString" })) as string, "must be");
+});
+
+Deno.test("a short-lived resource shortage only delays the next launch", async () => {
+  // Builds and test runs fill disks and then clean up; a shortage that passes must cost minutes, not the run.
+  const plan = testPlan(1);
+  const w = fakeWorld(plan, { worker: () => done(1), reviews: [approve], resources: ["low disk", "low disk"] });
+  assertEq(await w.run(), { done: true });
+  assertEq(w.sleeps(), 2);
+  assertEq(w.state.items[0].sessions, 1);
+});
+
+Deno.test("a lasting shortage escalates before the worker starts, without spending a session", async () => {
+  // The supervisor is asleep, so the runner must stop launching and say why. The wait is bounded by
+  // resourceWaitMinutes (one reading a minute), and counting the session would leave the item with less budget when
+  // the supervisor runs it again after freeing space.
+  const plan = { ...testPlan(1), limits: { resourceWaitMinutes: 3 } };
+  const w = fakeWorld(plan, { worker: () => done(1), resources: Array(10).fill("2.0 GiB free on /") });
+  const e = escalationOf(await w.run());
+  assertEq([e.reason, e.detail], ["resources-low", "2.0 GiB free on /"]);
+  assertEq(w.sleeps(), 3);
+  assertEq(w.state.items[0].sessions, 0);
+  assertEq(w.calls, []);
+});
+
+Deno.test("resources are checked before the checks and before the review too", async () => {
+  // Checks and reviews are launches like any other: a full suite or a reviewer on a full disk fails for nothing.
+  const plan = { ...testPlan(1), limits: { resourceWaitMinutes: 1 } };
+  const beforeChecks = fakeWorld(plan, { worker: () => done(1), resources: [undefined, "low", "low"] });
+  assertEq(escalationOf(await beforeChecks.run()).reason, "resources-low");
+  assertEq(beforeChecks.calls, ["worker p1#1", "tree sha1"]);
+  const beforeReview = fakeWorld(plan, { worker: () => done(1), resources: [undefined, undefined, "low", "low"] });
+  assertEq(escalationOf(await beforeReview.run()).reason, "resources-low");
+  assertEq(beforeReview.calls, ["worker p1#1", "tree sha1", "checks sha1"]);
+});
+
+Deno.test("resourceWaitMinutes 0 turns the guard off, and only that limit may be 0", async () => {
+  // The off switch is for a machine whose readings are wrong or whose shortage is structural; with it set, no reading
+  // may delay or stop anything.
+  const plan = { ...testPlan(1), limits: { resourceWaitMinutes: 0 } };
+  const w = fakeWorld(plan, { worker: () => done(1), reviews: [approve], resources: Array(10).fill("low") });
+  assertEq(await w.run(), { done: true });
+  assertEq(w.sleeps(), 0);
+  assertEq(planProblems(plan), []);
+  assertIncludes(planProblems({ ...testPlan(1), limits: { resourceWaitMinutes: -1 } }).join("\n"), "non-negative");
+  assertIncludes(planProblems({ ...testPlan(1), limits: { sessionsPerItem: 0 } }).join("\n"), "positive");
+});
+
+Deno.test("a worker session killed for resources escalates and costs the item no budget", async () => {
+  // The kill is the runner's doing, not the worker's failure. With one session per item, counting it would leave the
+  // item nothing to resume with once the supervisor frees space. Nor is it a crash: a crash, a kill, and a crash are
+  // not two crashes in a row.
+  const plan = { ...testPlan(1), limits: { sessionsPerItem: 1 } };
+  const w = fakeWorld(plan, { worker: () => done(1), reviews: [approve], kill: { worker: "0.5 GiB free on /" } });
+  w.state.items[0].crashes = 1;
+  const e = escalationOf(await w.run());
+  assertEq(w.state.items[0].crashes, 0);
+  assertEq(e.reason, "resources-low");
+  assertIncludes(e.detail, "0.5 GiB free on /");
+  prepareResume(w.state, e);
+  assertEq(w.state.items[0].escalations, 0);
+  assertEq(await w.run(), { done: true });
+  assertEq(w.calls, ["worker p1#1", "worker p1#2", "tree sha1", "checks sha1", "review"]);
+  // The fresh session hears why its predecessor stopped instead of starting the item over blind.
+  assertIncludes(w.files.get("prompt:p1#2")!, "stopped by the runner");
+});
+
+Deno.test("a killed session's successor still gets the feedback the killed one was given", async () => {
+  // The killed session may never have acted on a failing-check report; dropping it would make the next session redo
+  // work the runner already knows is broken.
+  const w = fakeWorld(testPlan(1), {
+    worker: () => done(1),
+    reviews: [approve],
+    checksOk: () => w.calls.filter((c) => c.startsWith("checks")).length > 1,
+    killWorkerSession: 2,
+  });
+  const e = escalationOf(await w.run());
+  assertEq(e.reason, "resources-low");
+  prepareResume(w.state, e);
+  assertEq(await w.run(), { done: true });
+  const third = w.files.get("prompt:p1#3")!;
+  assertIncludes(third, "stopped by the runner");
+  assertIncludes(third, "`make test` fails");
+});
+
+Deno.test("checks or a review killed for resources escalate instead of reaching the worker or the verdict", async () => {
+  // A killed check run did not fail on the PR's merits, so feeding it to the worker as a failure would send it chasing
+  // a bug that does not exist; a killed review likewise is neither a verdict nor a reviewer failure.
+  const checks = fakeWorld(testPlan(1), { worker: () => done(1), kill: { checks: "0.5 GiB free on /tmp" } });
+  const ce = escalationOf(await checks.run());
+  assertEq(ce.reason, "resources-low");
+  assertIncludes(ce.detail, "make test");
+  assertEq(checks.state.items[0].pending, undefined);
+  const review = fakeWorld(testPlan(1), { worker: () => done(1), reviews: [approve], kill: { review: "low memory" } });
+  assertEq(escalationOf(await review.run()).reason, "resources-low");
+  assertEq(review.calls, ["worker p1#1", "tree sha1", "checks sha1", "review"]);
+  assertEq(review.state.items[0].reviewRounds, 0);
+});
+
+Deno.test("resuming after resources-low neither refills the budget nor counts an escalation", () => {
+  // A full disk says nothing about how the item is going. Refilling would let repeated disk trouble hide a stuck item
+  // from the session cap, and counting it would push the item toward the ask-the-user threshold for the machine's
+  // sake.
+  const state: State = { version: 1, nonce: "n", items: [{ ...emptyItem("p1"), sessions: 3, reviewRounds: 1 }] };
+  prepareResume(state, { reason: "resources-low", item: "p1", detail: "d", at: "t" });
+  assertEq([state.items[0].sessionsBase, state.items[0].reviewBase, state.items[0].escalations], [0, 0, 0]);
+  prepareResume(state, { reason: "blocked", item: "p1", detail: "d", at: "t" });
+  assertEq([state.items[0].sessionsBase, state.items[0].reviewBase, state.items[0].escalations], [3, 1, 1]);
+});
+
+Deno.test("resourceShortfall: soft limits for launches, hard limits for running steps", () => {
+  // The percentage rules are capped by absolute amounts so a large, mostly full disk with plenty left is not short,
+  // and the absolute floors scale down so a small filesystem (a tmpfs /tmp) is not short just for being small.
+  const gib = 1024 * 1024;
+  const disk = (totalGib: number, availGib: number, level?: "soft" | "hard") =>
+    resourceShortfall(
+      [{ mount: "/", paths: ["/d", "/e"], totalKb: totalGib * gib, availKb: availGib * gib }],
+      undefined,
+      level,
+    );
+  const mem = (totalGib: number, availGib: number, level?: "soft" | "hard") =>
+    resourceShortfall([], { totalKb: totalGib * gib, availKb: availGib * gib }, level);
+  assertEq(disk(100, 20), undefined);
+  assertEq(disk(100, 4.99), "4.9 GiB free of 100.0 GiB on / (holding /d, /e)"); // rounded down, one line per mount
+  assertIncludes(disk(100, 9)!, "/d"); // under 10% and under the 20 GiB cap
+  assertEq(disk(1000, 90), undefined); // under 10%, but above the cap
+  assertIncludes(disk(1000, 19)!, "/d");
+  assertEq(disk(4, 2), undefined); // a 4 GiB tmpfs half full: the 5 GiB floor scales down to a quarter
+  assertIncludes(disk(4, 0.9)!, "/d");
+  assertEq(mem(64, 4), undefined); // under 10%, but not under 4 GiB
+  assertIncludes(mem(64, 3)!, "memory");
+  assertEq(mem(512, 40), undefined);
+  assertEq(disk(100, 2, "hard"), undefined);
+  assertIncludes(disk(100, 0.5, "hard")!, "/d");
+  assertEq(disk(4, 0.5, "hard"), undefined); // the 1 GiB floor scales down to 5% of a small filesystem
+  assertIncludes(disk(4, 0.1, "hard")!, "/d");
+  assertEq(mem(64, 1.5, "hard"), undefined);
+  assertIncludes(mem(64, 0.5, "hard")!, "memory");
+  assertEq(mem(16, 0.9, "hard"), undefined); // under 1 GiB, but not under 3% of 16 GiB
+});
+
+Deno.test("parseDf, parseMeminfo, and parseCgroupMemory read the fields the guard needs", () => {
+  // Misreading any of these silently turns the guard into a no-op or a permanent stop, so the edge cases are pinned.
+  const header = "Filesystem     1024-blocks      Used Available Capacity Mounted on\n";
+  assertEq(parseDf(header + "/dev/sda1  1258291200 970000000 245000000      80% /\n"), {
+    totalKb: 1258291200,
+    availKb: 245000000,
+    mount: "/",
+  });
+  assertEq(parseDf(header + "//nas/my share  1000 600 400  60% /mnt/my share\n"), {
+    totalKb: 1000,
+    availKb: 400,
+    mount: "/mnt/my share",
+  });
+  // Filled past the reserve, GNU df prints a negative Available; that is the fullest disk there is, not garbage.
+  assertEq(parseDf(header + "/dev/sdb1 1000 1100 -100 100% /data\n"), { totalKb: 1000, availKb: 0, mount: "/data" });
+  assertEq(parseDf(header + "tmpfs 0 0 0 - /x\n"), undefined);
+  assertEq(parseDf(header), undefined);
+  assertEq(parseDf("garbage"), undefined);
+  assertEq(parseMeminfo("MemTotal:       98000000 kB\nMemFree: 1 kB\nMemAvailable:   56000000 kB\n"), {
+    totalKb: 98000000,
+    availKb: 56000000,
+  });
+  assertEq(parseMeminfo("MemTotal: 98000000 kB\n"), undefined);
+  const g = 1024 * 1024 * 1024;
+  assertEq(parseCgroupMemory("max\n", "123\n", ""), undefined);
+  assertEq(parseCgroupMemory(`${8 * g}\n`, `${4 * g}\n`, "anon 1\n"), {
+    totalKb: 8 * 1024 * 1024,
+    availKb: 4 * 1024 * 1024,
+  });
+  assertEq(parseCgroupMemory("1024\n", "4096\n", ""), { totalKb: 1, availKb: 0 });
+  // After a build, page cache fills the cgroup up to its limit. The inactive part is reclaimable and is not short.
+  assertEq(
+    parseCgroupMemory(`${8 * g}\n`, `${7.8 * g}\n`, `anon ${g}\nfile ${6.5 * g}\ninactive_file ${6 * g}\n`),
+    { totalKb: 8 * 1024 * 1024, availKb: 6.2 * 1024 * 1024 },
+  );
+});
+
+Deno.test("cgroupDirs lists this process's cgroup and every ancestor up to the mount root", () => {
+  // A limit on any ancestor (a systemd slice) caps this process too; reading only the mount root, which on a host has
+  // no memory.max at all, would never see a limit.
+  assertEq(cgroupDirs("0::/user.slice/app.slice/x.scope\n", "/cg"), [
+    "/cg/user.slice/app.slice/x.scope",
+    "/cg/user.slice/app.slice",
+    "/cg/user.slice",
+    "/cg",
+  ]);
+  assertEq(cgroupDirs("0::/\n", "/cg"), ["/cg"]); // inside a container's cgroup namespace
+  assertEq(cgroupDirs("12:memory:/x\n", "/cg"), []); // cgroup v1 only
+  assertEq(cgroupDirs("", "/cg"), []);
+});
+
+Deno.test("status reports a resource wait in progress, and only while it lasts", () => {
+  // A runner holding off on a full disk otherwise looks just like one with a busy worker.
+  const ev = (event: string, detail?: string) => JSON.stringify({ t: "T", item: "p1", event, detail });
+  assertEq(resourceWait([ev("worker-end"), ev("resources-low", "low disk")].join("\n")), "since T: low disk");
+  assertEq(
+    resourceWait([ev("resources-low", "low disk"), ev("resources-unreadable", "/x")].join("\n")),
+    "since T: low disk",
+  );
+  assertEq(resourceWait([ev("resources-low", "low disk"), ev("resources-ok")].join("\n")), undefined);
+  assertEq(resourceWait([ev("resources-low", "low disk"), ev("escalate")].join("\n")), undefined);
+  assertEq(resourceWait(""), undefined);
+  const plan = testPlan(1);
+  const state: State = { version: 1, nonce: "n", items: [emptyItem("p1")] };
+  assertIncludes(
+    statusText(plan, state, undefined, undefined, "since T: low disk"),
+    "waiting for disk or memory since T",
+  );
+  assertEq(statusText(plan, state, undefined).includes("waiting"), false);
 });
