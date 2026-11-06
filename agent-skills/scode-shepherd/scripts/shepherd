@@ -5,7 +5,7 @@
  *
  * The supervisor writes `plan.json` into a run directory and starts `shepherd run`. From then on this script owns the
  * loop. For each item it starts a fresh worker session, verifies the worker's claimed PR independently (right
- * repository, open draft, expected base, approved history intact, and the plan's checks passing at its head in a
+ * repository, open draft, expected base, approved history intact, and its checks passing at its head in a
  * separate worktree), blocks on a strong-model review, and feeds failures or findings into the next fresh session. It
  * exits only when every item is approved (exit 0) or when it needs the supervisor (exit 10, with `escalation.json`
  * saying why). Waking the supervisor on that exit is the job of the wake mechanism the supervisor arms around `run`,
@@ -62,9 +62,18 @@ const DEFAULT_REVIEWER: ModelSel = { model: "gpt-6.1-sol", effort: "high" };
 /** Consecutive worker sessions that exit nonzero without a report before the runner stops blaming the worker. */
 const CRASH_LIMIT = 2;
 
-type PlanItem = { id: string; title: string; spec: string };
+/** One PR of the stack. `checks` are this item's own checks, run after the plan-wide ones. */
+type PlanItem = { id: string; title: string; spec: string; checks?: string[] };
 
-/** What the supervisor writes. The runner treats it as read-only input; replanning means editing it and re-running. */
+/**
+ * What the supervisor writes. The runner treats it as read-only input; replanning means editing it and re-running.
+ *
+ * The runner owns the mechanism (sessions, verification, the blocking gate, caps); the plan owns the policy that varies
+ * with the goal. `reviewCharter` replaces the default judging instructions the reviewer gets, `workerRules` adds rules
+ * to the worker's "How to work" section, and an item's `checks` adds to the plan-wide `checks` for that item. A plan
+ * that sets none of them gets exactly the prompts and checks it got before these fields existed. This is how a goal
+ * file's own review charter, PR discipline, and validation guidance reach the runner (SPEC.md, "Goal-file policy").
+ */
 type Plan = {
   version: 1;
   goal: string;
@@ -75,11 +84,26 @@ type Plan = {
   workflow: string;
   context: string;
   checks: string[];
+  reviewCharter?: string;
+  workerRules?: string[];
   worker?: ModelSel;
   reviewer?: ModelSel;
   limits?: Partial<Limits>;
   items: PlanItem[];
 };
+
+/**
+ * The checks an item's PR must pass: the plan-wide ones, then the item checks of this item and every item before it,
+ * in stack order and each once. Cumulative because a PR is stacked on the earlier ones: checking an earlier item's
+ * targeted tests only at that item's head would let a later PR break them unnoticed.
+ */
+export function itemChecks(plan: Plan, index: number): string[] {
+  const out: string[] = [];
+  for (const c of [...plan.checks, ...plan.items.slice(0, index + 1).flatMap((i) => i.checks ?? [])]) {
+    if (!out.includes(c)) out.push(c);
+  }
+  return out;
+}
 
 type Phase = "pending" | "working" | "verifying" | "reviewing" | "approved";
 
@@ -154,8 +178,16 @@ export function planProblems(p: unknown): string[] {
   if (plan.remote !== undefined && (typeof plan.remote !== "string" || plan.remote === "")) {
     out.push("remote must be a non-empty string");
   }
-  if (!Array.isArray(plan.checks) || plan.checks.some((c) => typeof c !== "string" || c.trim() === "")) {
-    out.push("checks must be an array of non-empty shell command strings");
+  const strings = (v: unknown) => Array.isArray(v) && v.every((c) => typeof c === "string" && c.trim() !== "");
+  if (!strings(plan.checks)) out.push("checks must be an array of non-empty shell command strings");
+  if (plan.reviewCharter !== undefined && (typeof plan.reviewCharter !== "string" || !plan.reviewCharter.trim())) {
+    out.push("reviewCharter must be a non-empty string");
+  }
+  // One line each, because each rule renders as one list entry; a newline would break out of the list, and a rule
+  // carrying a heading could fake a section of the prompt.
+  const rules = plan.workerRules;
+  if (rules !== undefined && (!strings(rules) || (rules as string[]).some((r) => /\n/.test(r)))) {
+    out.push("workerRules must be an array of non-empty, single-line strings");
   }
   for (const k of ["worker", "reviewer"]) {
     const m = plan[k] as Record<string, unknown> | undefined;
@@ -182,6 +214,14 @@ export function planProblems(p: unknown): string[] {
     else seen.add(it.id);
     for (const k of ["title", "spec"]) {
       if (typeof it?.[k] !== "string" || (it[k] as string).trim() === "") out.push(`items[${i}].${k} is empty`);
+    }
+    if (it?.checks !== undefined && !strings(it.checks)) {
+      out.push(`items[${i}].checks must be an array of non-empty shell command strings`);
+    }
+    // A misspelled item key ("check") would otherwise be ignored, and an item's targeted tests would silently never
+    // run. Items had no optional keys before `checks`, so refusing unknown ones breaks no existing plan.
+    for (const k of Object.keys(it ?? {})) {
+      if (!["id", "title", "spec", "checks"].includes(k)) out.push(`items[${i}] has unknown key ${k}`);
     }
   });
   return out;
@@ -326,7 +366,12 @@ export function parseReview(text: string | undefined): Review | undefined {
     const r = JSON.parse(text);
     if (!Array.isArray(r?.findings)) return undefined;
     const findings = r.findings as Finding[];
-    return { verdict: findings.some((f) => f.severity === "blocking") ? "changes" : "approve", findings };
+    const blocking = findings.some((f) => f.severity === "blocking");
+    // "changes" with no blocking finding means the reviewer's findings went somewhere the runner does not read (a
+    // charter's findings file, say). Taking the empty list as approval would wave the PR through, so it counts as no
+    // usable result: retried once, then escalated.
+    if (r.verdict === "changes" && !blocking) return undefined;
+    return { verdict: blocking ? "changes" : "approve", findings };
   } catch {
     return undefined;
   }
@@ -417,14 +462,20 @@ export function workerPrompt(c: PromptCtx): string {
           `needs a change, report replan.\n`
         : "") +
       `- Before reporting done, run these checks and make them pass:\n` +
-      c.plan.checks.map((k) => `  - \`${k}\``).join("\n") + "\n" +
+      itemChecks(c.plan, c.index).map((k) => `  - \`${k}\``).join("\n") + "\n" +
       `- ${UNATTENDED_CHECKS} Run each check that way yourself before reporting done, not in your interactive ` +
       `shell, where a test that waits for input can pass because you answered it. If a check cannot pass unattended ` +
       `(a test that needs a person, say), report replan with the reason; do not change tests to get around it.\n` +
       `- Stay inside this item's scope and do not start later items. If the item cannot be done as specified, or the ` +
       `plan looks wrong, do not improvise around it: report blocked or replan as described below.\n` +
       `- Your claims are checked independently. The checks are re-run at the PR's pushed head, and a reviewer reviews ` +
-      `the PR diff before the next item starts.`,
+      `the PR diff before the next item starts.` +
+      // Goal-supplied rules come with a precedence: a goal file's PR discipline ("restructure the stack instead of
+      // stacking a correction on top") would otherwise license rewriting an approved PR, which the rule above forbids.
+      (c.plan.workerRules?.length
+        ? `\n- Rules from the goal. Where one conflicts with a rule above, the rule above wins, and you report ` +
+          `replan instead:\n` + c.plan.workerRules.map((r) => `  - ${r.trim()}`).join("\n")
+        : ""),
     `## The supervisor channel\n\n${channelParagraph(c.nonce)}`,
     `## Finishing\n\nWhen the item is done, write the file ${c.reportPath} containing exactly one JSON object:\n\n` +
       '```json\n{"status": "done", "pr_url": "https://github.com/OWNER/REPO/pull/N", "summary": "one to five sentences"}\n```\n\n' +
@@ -433,6 +484,21 @@ export function workerPrompt(c: PromptCtx): string {
   );
   return sections.join("\n\n") + "\n";
 }
+
+/** The runner's verdict rule. Approval is derived from blocking findings, so this sentence is never the charter's. */
+const VERDICT_RULE = `A finding is "blocking" when the PR should not stand without the fix, "minor" otherwise. ` +
+  `Return verdict "changes" exactly when there is at least one blocking finding.`;
+
+/**
+ * The reviewer's judging and reporting instructions for a plan without a `reviewCharter`. Kept word for word as it was
+ * before plans could supply a charter, so that direct shepherd runs see no change (SPEC.md, "Goal-file policy").
+ */
+export const DEFAULT_REVIEW_SECTION =
+  `## What to report\n\nJudge the diff against what this item must do and against ` +
+  `ordinary code quality: correctness, missing or wrong tests, behavior the spec asks for that is absent, work that ` +
+  `belongs to other items, and documentation the change makes wrong. A finding is "blocking" when the PR should not ` +
+  `stand without the fix, "minor" otherwise. Do not raise style preferences the repository does not already follow. ` +
+  `Return verdict "changes" exactly when there is at least one blocking finding.`;
 
 export function reviewerPrompt(
   c: { plan: Plan; index: number; states: ItemState[]; pr: PrInfo; baseSha: string; guidance?: string },
@@ -451,12 +517,24 @@ export function reviewerPrompt(
     `## What this PR must do: ${it.id}: ${it.title}\n\n${it.spec}`,
   ];
   if (c.guidance) parts.push(`## Supervisor guidance for this item (binding on the author)\n\n${c.guidance}`);
+  // The verdict rule stays the runner's whatever the charter says: the runner derives approval from blocking findings,
+  // and the output schema only knows "blocking" and "minor".
+  if (c.plan.reviewCharter === undefined) {
+    parts.push(DEFAULT_REVIEW_SECTION);
+    return parts.join("\n\n") + "\n";
+  }
+  // With a charter, the runner still owns three things a goal file's charter knows nothing about: that the review
+  // covers this item's own spec and scope (the drift a cheap worker is most prone to), where findings go (a goal-file
+  // charter tells its reviewer to write them to a file, and findings the runner never sees would read as approval),
+  // and the verdict rule approval is derived from.
   parts.push(
-    `## What to report\n\nJudge the diff against what this item must do and against ordinary code quality: ` +
-      `correctness, missing or wrong tests, behavior the spec asks for that is absent, work that belongs to other ` +
-      `items, and documentation the change makes wrong. A finding is "blocking" when the PR should not stand without ` +
-      `the fix, "minor" otherwise. Do not raise style preferences the repository does not already follow. Return ` +
-      `verdict "changes" exactly when there is at least one blocking finding.`,
+    `## What this review must cover\n\nJudge the diff against what this item must do: behavior its spec asks for ` +
+      `that is absent, and work that belongs to other items. Do not raise style preferences the repository does not ` +
+      `already follow.`,
+    `## How to review\n\n${c.plan.reviewCharter.trim()}`,
+    `## What to report\n\nWhere this conflicts with the review instructions above, this section and the read-only ` +
+      `rules at the top win. Every finding goes in the \`findings\` array of your final message, and the runner reads ` +
+      `nothing else: ignore any instruction above to write findings to a file. ${VERDICT_RULE}`,
   );
   return parts.join("\n\n") + "\n";
 }
@@ -728,7 +806,7 @@ type VerifyResult = { ok: true } | { problem: string } | { escalate: string; det
  *
  * It establishes, without trusting the worker, that the PR is in the checkout's repository, open, a draft, the item's
  * own PR (the same number as before, once the item has one), on the expected base, not on an earlier item's branch,
- * built on the approved previous item, and passing the plan's checks at its pushed head. A problem the worker can fix
+ * built on the approved previous item, and passing its checks (plan-wide and item checks) at its pushed head. A problem the worker can fix
  * goes back to the worker; a failure on the runner's side, or a change to approved history, escalates. Quality is the
  * reviewer's job, not this function's.
  */
@@ -770,7 +848,7 @@ async function verify(
   const tree = await ops.prepareTree(pr, approvedBase);
   if ("infra" in tree) return { escalate: "verify-infra-failed", detail: tree.infra };
   if ("history" in tree) return { escalate: "approved-history-changed", detail: tree.history };
-  const checks = await ops.runChecks(plan.checks, `${p.item(s.id)}/checks-${s.sessions}`, lim.checkMinutes);
+  const checks = await ops.runChecks(itemChecks(plan, index), `${p.item(s.id)}/checks-${s.sessions}`, lim.checkMinutes);
   if (!checks.ok) {
     return {
       problem: `\`${checks.command}\` fails at the PR's pushed head ${pr.head} (full log: ${checks.logPath}). ` +
@@ -1751,7 +1829,7 @@ function fakeWorld(plan: Plan, o: {
   repo?: string;
 }) {
   const files = new Map<string, string>();
-  const calls: string[] = [];
+  const calls: string[] = [], checkLists: string[][] = [];
   const reviews = [...(o.reviews ?? [])];
   const p = pathsFor("/run");
   const state: State = { version: 1, nonce: "n0nce", items: plan.items.map((i) => emptyItem(i.id)) };
@@ -1791,7 +1869,8 @@ function fakeWorld(plan: Plan, o: {
       calls.push(`tree ${pr.head}`);
       return Promise.resolve(o.tree?.(pr, approvedBase) ?? { baseSha: approvedBase ?? "mainsha" });
     },
-    runChecks() {
+    runChecks(checks) {
+      checkLists.push(checks);
       const head = calls.filter((c) => c.startsWith("tree ")).pop()!.slice(5);
       calls.push(`checks ${head}`);
       return Promise.resolve(
@@ -1809,7 +1888,7 @@ function fakeWorld(plan: Plan, o: {
     sleep: () => Promise.resolve(),
   };
   const run = () => runLoop(plan, state, p, ops, () => Promise.resolve());
-  return { ops, state, p, calls, files, run };
+  return { ops, state, p, calls, files, run, checkLists };
 }
 
 const url = (n: number) => `https://github.com/o/r/pull/${n}`;
@@ -2067,6 +2146,102 @@ Deno.test("reconcile keeps approved history fixed and lets the rest follow the p
   if (!("error" in moved)) throw new Error("reordering an approved item must be refused");
   const respec = reconcile({ ...plan, items: [{ ...plan.items[0], spec: "changed" }, ...plan.items.slice(1)] }, state);
   if (!("error" in respec)) throw new Error("changing an approved spec must be refused");
+});
+
+/** A plan's policy fields, filled in, as a goal file's supervisor would supply them, over a three-item stack. */
+function policyPlan(): Plan {
+  const plan = testPlan(3);
+  plan.reviewCharter = "Check correctness, and whether a simpler shape would do. Report findings to /tmp/f.md.";
+  plan.workerRules = ["Do not add code a later PR deletes; restructure instead."];
+  plan.items[1].checks = ["cargo test -p ui"];
+  return plan;
+}
+
+/** A PR for the reviewer-prompt tests. */
+function testPr(): PrInfo {
+  return {
+    url: url(1),
+    number: 1,
+    repo: "o/r",
+    state: "OPEN",
+    isDraft: true,
+    headRef: "b1",
+    head: "sha1",
+    baseRef: "main",
+  };
+}
+
+Deno.test("a plan without the policy fields gets exactly the prompts it got before they existed", () => {
+  // Direct shepherd runs must not change because goal-file runs can supply policy. The whole default judging section
+  // is pinned, not a prefix, so that dropping a sentence from it fails here.
+  const plan = testPlan(1);
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const review = reviewerPrompt({ plan, index: 0, states, pr: testPr(), baseSha: "base" });
+  if (!review.endsWith(`\n\n${DEFAULT_REVIEW_SECTION}\n`)) {
+    throw new Error(`default review section changed:\n${review}`);
+  }
+  assertEq(
+    DEFAULT_REVIEW_SECTION,
+    `## What to report\n\nJudge the diff against what this item must do and against ordinary code quality: ` +
+      `correctness, missing or wrong tests, behavior the spec asks for that is absent, work that belongs to other ` +
+      `items, and documentation the change makes wrong. A finding is "blocking" when the PR should not stand without ` +
+      `the fix, "minor" otherwise. Do not raise style preferences the repository does not already follow. Return ` +
+      `verdict "changes" exactly when there is at least one blocking finding.`,
+  );
+  const work = workerPrompt({ plan, index: 0, states, nonce: "n", reportPath: "/r" });
+  assertIncludes(work, "the PR diff before the next item starts.\n\n## The supervisor channel");
+  assertEq(itemChecks(plan, 0), ["make test"]);
+});
+
+Deno.test("a review charter replaces only the general judging text; scope, reporting, and the verdict stay the runner's", () => {
+  // A goal file's charter knows nothing about this item's spec, and tells its reviewer to write findings to a file;
+  // without the runner's own sections, scope drift would go unflagged and file-only findings would read as approval.
+  const plan = policyPlan();
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const review = reviewerPrompt({ plan, index: 0, states, pr: testPr(), baseSha: "base" });
+  assertIncludes(review, "## What this review must cover\n\nJudge the diff against what this item must do");
+  assertIncludes(review, "work that belongs to other items");
+  assertIncludes(review, "## How to review\n\nCheck correctness, and whether a simpler shape would do.");
+  assertIncludes(review, "Every finding goes in the `findings` array of your final message");
+  assertIncludes(review, VERDICT_RULE);
+  if (review.includes(DEFAULT_REVIEW_SECTION)) throw new Error("the default judging section must give way");
+});
+
+Deno.test("a review that says changes but reports no blocking finding is not taken as approval", () => {
+  // Its findings went somewhere the runner does not read; approving on the empty list would wave the PR through.
+  assertEq(parseReview(JSON.stringify({ verdict: "changes", findings: [] })), undefined);
+  assertEq(
+    parseReview(
+      JSON.stringify({ verdict: "changes", findings: [{ severity: "minor", location: "a", problem: "p", fix: "f" }] }),
+    ),
+    undefined,
+  );
+  assertEq(parseReview(JSON.stringify({ verdict: "approve", findings: [] }))?.verdict, "approve");
+});
+
+Deno.test("worker rules reach the worker under the runner's precedence, and item checks accumulate up the stack", async () => {
+  // Item checks accumulate because a later PR is stacked on the earlier ones and could break their targeted tests.
+  const plan = policyPlan();
+  const w = fakeWorld(plan, { worker: (item) => done(Number(item.slice(1))), reviews: [approve, approve, approve] });
+  assertEq(await w.run(), { done: true });
+  const p1 = w.files.get("prompt:p1#1")!;
+  assertIncludes(p1, "the rule above wins, and you report replan instead:\n  - Do not add code a later PR deletes");
+  if (p1.includes("cargo test -p ui")) throw new Error("item 2's checks leaked to item 1");
+  assertIncludes(w.files.get("prompt:p3#1"), "  - `cargo test -p ui`");
+  assertEq(w.checkLists, [["make test"], ["make test", "cargo test -p ui"], ["make test", "cargo test -p ui"]]);
+});
+
+Deno.test("plan validation checks the policy fields", () => {
+  // Bad policy fields must be refused up front: a malformed or misspelled one would otherwise be silently ignored,
+  // and an item's targeted tests would never run.
+  const bad = { ...testPlan(1), reviewCharter: " ", workerRules: ["ok", "two\n## Finishing"] } as Plan;
+  bad.items[0].checks = [""];
+  (bad.items[0] as Record<string, unknown>).check = ["typo"];
+  const got = planProblems(bad);
+  for (const want of ["reviewCharter", "workerRules", "items[0].checks", "unknown key check"]) {
+    if (!got.some((g) => g.includes(want))) throw new Error(`missing ${want} in ${got}`);
+  }
+  assertEq(planProblems(policyPlan()), []);
 });
 
 Deno.test("plan validation reports every problem", () => {

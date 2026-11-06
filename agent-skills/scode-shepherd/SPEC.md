@@ -35,10 +35,10 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
    that the PR is in the checkout's repository, open, and a draft; that it is the item's own PR (once an item has a
    verified PR, fix rounds must update that PR, so a stack cannot collect duplicate PRs); that it targets the expected
    base (trunk for the first item, the previous item's PR branch after that) and does not reuse an earlier item's
-   branch; and that the plan's checks pass at its pushed head in a separate detached worktree. A failure the worker can
-   fix goes back to the worker as feedback. A failure on the runner's side (a `gh` error after one retry, a failed fetch
-   or worktree step) escalates instead, because charging it to the worker would burn worker sessions on something no
-   worker can fix and report it as the worker's fault.
+   branch; and that its checks (the plan-wide ones and the item checks up to it) pass at its pushed head in a separate
+   detached worktree. A failure the worker can fix goes back to the worker as feedback. A failure on the runner's side
+   (a `gh` error after one retry, a failed fetch or worktree step) escalates instead, because charging it to the worker
+   would burn worker sessions on something no worker can fix and report it as the worker's fault.
 4. **Blocking review.** Each verified PR is reviewed by the reviewer model before the next item starts. The verdict is
    derived from the findings (any blocking finding means changes), not taken from the reviewer's own verdict field.
    Blocking review was chosen over concurrent review to keep v1 simple; concurrent review is a possible later speed-up
@@ -123,6 +123,32 @@ v1 supports a Codex supervisor and Codex workers and reviewers only.
 - `gh` 2.45 has no `baseRefOid` field, so the runner fetches the base branch to find the commit to diff against, or uses
   the previous item's verified head.
 
+## Goal-file policy
+
+The runner owns the mechanism: sessions, verification of facts, the blocking review gate, caps, and escalation. Policy
+that varies with the goal comes from the plan, so that a goal file's own rules (its review charter, its PR discipline,
+its guidance on which checks to run) reach the worker and the reviewer without the runner encoding them. `plan.json`
+carries three such fields.
+
+- `reviewCharter` replaces the reviewer's general judging instructions. Three things stay the runner's whatever the
+  charter says: that the review covers the item's own spec and scope (absent behavior, work belonging to other items),
+  because a goal file's charter knows nothing about items and scope drift is what a cheap worker is most prone to; that
+  every finding goes in the final message's `findings`, overriding a charter's instruction to write them to a file,
+  because findings the runner never reads would read as approval; and the verdict rule, from which approval is derived.
+  The reporting rules and the read-only rules win where a charter conflicts with them. A review that says `changes` but
+  reports no blocking finding counts as unparseable, not as approval.
+- `workerRules` are added to the worker's "How to work" list under a precedence: where one conflicts with the runner's
+  own rules, the runner's win and the worker reports replan. A goal file's PR discipline ("restructure the stack instead
+  of stacking a correction on top") would otherwise license rewriting an approved PR. Each rule is one line.
+- An item's `checks` run after the plan-wide checks at that item's head and at every later item's head, because a later
+  PR is stacked on it and could break them.
+
+The user sees all three at plan approval. A plan that sets none of them gets exactly the worker and reviewer prompts,
+and exactly the checks, it got before the fields existed. That was checked byte for byte against the previous runner
+when they were added, and a unit test pins the whole default review section, so a direct shepherd run does not change
+when a goal-file run supplies policy. The one change that reaches such runs too is the unparseable-review rule above,
+which only turns a self-contradictory review from an approval into a retry.
+
 ## Headless mode
 
 `shepherd drive` runs the supervisor itself, with `codex exec`, and resumes the supervisor's thread for each event,
@@ -176,9 +202,11 @@ The runner's decisions are unit-tested with fakes behind its `Ops` interface: se
 sessions, failing checks, a wrong base, a non-draft or closed PR, a PR in another repository, and a second PR for one
 item; escalation for crashes, infrastructure failures, changed history, and every cap; feedback that survives a lost
 session; resume preparation; replan reconciliation; verdict derivation; and the hook's replies, including its thread
-filter. The drive loop is unit-tested the same way, behind `DriverOps`: answered, unanswered, and failed questions, the
-runner's result reaching the supervisor, every step saved before it is acted on, a restart handing the runner its start
-time, the nudge for a missing `next.json`, stop, the turn cap keeping what is pending, and usage surviving a failed
-turn. What the real operations do (codex, gh, git, process groups, the locks, `cmdHook`'s file handling, `cmdDrive`'s
-flag handling, and `runRunner`'s wait for a runner left behind) is not unit-tested; it is exercised by the manual smoke
-run in `AGENTS.md` and by real runs. Tests do not modify the environment of the test process.
+filter; and the policy fields (the unchanged default prompts, a charter keeping the runner's scope, reporting, and
+verdict sections, worker rules under precedence, cumulative item checks, and their validation). The drive loop is
+unit-tested the same way, behind `DriverOps`: answered, unanswered, and failed questions, the runner's result reaching
+the supervisor, every step saved before it is acted on, a restart handing the runner its start time, the nudge for a
+missing `next.json`, stop, the turn cap keeping what is pending, and usage surviving a failed turn. What the real
+operations do (codex, gh, git, process groups, the locks, `cmdHook`'s file handling, `cmdDrive`'s flag handling, and
+`runRunner`'s wait for a runner left behind) is not unit-tested; it is exercised by the manual smoke run in `AGENTS.md`
+and by real runs. Tests do not modify the environment of the test process.

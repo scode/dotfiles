@@ -53,12 +53,12 @@ For each item, the runner starts a fresh worker session with a prompt it builds 
 and any feedback from the previous round. When the session ends, the worker's report must name a PR. The runner then
 checks the PR independently: it is in the checkout's repository, open, and a draft; it is the item's own PR (fix rounds
 must update it, not open another); it targets the expected base (trunk for the first item, the previous item's PR branch
-after that); it builds on the previous item exactly as approved; and the plan's checks pass at its pushed head in a
-separate worktree. A failure the worker can fix goes to a fresh worker session. A failure on the runner's side (`gh` or
-`git` errors) and any change to an approved PR escalate instead. A verified PR goes to the reviewer, which blocks:
-changes requested means a fresh worker session with the findings, approval means the next item. Approved PRs are frozen,
-and the runner checks them all again before it reports completion. Caps on worker sessions and review rounds per item
-turn a stuck item into an escalation.
+after that); it builds on the previous item exactly as approved; and its checks pass at its pushed head in a separate
+worktree. A failure the worker can fix goes to a fresh worker session. A failure on the runner's side (`gh` or `git`
+errors) and any change to an approved PR escalate instead. A verified PR goes to the reviewer, which blocks: changes
+requested means a fresh worker session with the findings, approval means the next item. Approved PRs are frozen, and the
+runner checks them all again before it reports completion. Caps on worker sessions and review rounds per item turn a
+stuck item into an escalation.
 
 Inside a worker session, the runner's hook refuses to let the worker end its turn without a valid report (up to a cap),
 and delivers the messages you put in the run directory's `inbox/` after the worker's next tool call. Both carry a
@@ -79,8 +79,9 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 5. Write `<run-dir>/plan.json` (see The plan). This is where your effort goes: a weak decomposition or a vague item spec
    costs worker sessions and review rounds on every item it touches.
 6. Show the user the plan and wait for approval: the numbered stack (id, title, and a one-line scope for each), the
-   worker and reviewer models, the checks, the workflow, and the run directory. Revise until the user approves. Do this
-   every time, even when the goal came from a file.
+   worker and reviewer models, the checks (with any item's own checks), the workflow, the run directory, and, when the
+   plan sets them, the worker rules and the review charter (verbatim, or summarized and saying so). Revise until the
+   user approves. Do this every time, even when the goal came from a file.
 7. Run `<skill-dir>/scripts/shepherd init <run-dir>`.
 8. Start `<run-dir>/journal.md`, append-only: the goal, the run directory, the approval, and from then on every wake and
    what you decided.
@@ -162,10 +163,10 @@ paths that matter: a worker session lives in `<run-dir>/items/<id>/session-<n>/`
 | exit 3                                          | another runner is active (reconcile its watcher once, as the skillette says; headless, the driver already waited out any runner it left behind, so stop with the reason rather than run again), or your plan edit touched an approved item: undo that part                                         |
 | exit 1 or any other code                        | read the runner's stderr (the watcher's, or headless the `.stderr` file the driver's message names), fix the cause, and run again. The same failure twice means asking the user                                                                                                                    |
 
-To take an item over, do the work yourself in the checkout while the runner is stopped, following the plan's workflow,
-then `shepherd adopt <run-dir> <item> <pr-url>` and run again, so that your PR gets the same verification and review as
-the worker's. When one item has escalated three times (`status` shows the count), stop and ask the user instead of
-running again: by then, more budget is not what is missing.
+To take an item over, do the work yourself in the checkout while the runner is stopped, following the plan's workflow
+and worker rules, then `shepherd adopt <run-dir> <item> <pr-url>` and run again, so that your PR gets the same
+verification and review as the worker's. When one item has escalated three times (`status` shows the count), stop and
+ask the user instead of running again: by then, more budget is not what is missing.
 
 Append the decision to the journal, arm a fresh wake directory, and end your turn.
 
@@ -211,11 +212,21 @@ an item over, work in pieces that each fit in a turn, and write `run` once the `
   interactive tests, which `cargo test -- --ignored` and similar "run everything" flags tend to include. Skip those by
   name, or leave the flag out.
 - `worker`, `reviewer`: optional `{"model": ..., "effort": ...}` overrides.
+- `reviewCharter`: optional. What the reviewer judges each PR against, replacing the runner's default judging
+  instructions; the runner keeps its own rule for blocking and minor findings and the verdict. Leave it out unless a
+  goal file supplies a charter.
+- `workerRules`: optional rules added to every worker session's "How to work" list, such as a goal file's PR discipline.
+  One line each. They give way to the runner's own rules: where one conflicts (a "restructure the stack" rule against
+  "approved PRs are frozen", say), the worker is told to follow the runner's rule and report replan. Leave them out
+  unless a goal file supplies them.
 - `limits`: optional overrides of `sessionsPerItem` (6), `reviewRounds` (3), `stopBlocks` (3), `workerMinutes` (120),
   `reviewerMinutes` (45), and `checkMinutes` (45).
 - `items`: the stack in order. Each has an `id` (lowercase letters, digits, and dashes), a `title`, and a `spec`. The
   spec says what the PR contains, what it leaves to other items, how to tell it is done (the behavior and the tests that
-  pin it), and anything the reviewer should hold it to. Size items to one reviewable PR.
+  pin it), and anything the reviewer should hold it to. Size items to one reviewable PR. An item may also have `checks`:
+  the targeted tests a change to one area needs, when the full suite is too slow to run for every PR. They run after the
+  plan-wide `checks` at that item's head and at every later item's head, since a later PR could break them, and like all
+  checks they run unattended, so they must not need a person.
 
 `<run-dir>/items/<id>/guidance.md` is optional and yours to write at any time; the runner reads it when it starts each
 worker session and review of that item, so a change takes effect from the next one. Use it for answers to the worker's
