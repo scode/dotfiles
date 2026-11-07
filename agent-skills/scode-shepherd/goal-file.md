@@ -62,6 +62,8 @@ file did not weigh.
 - `context`: what every item shares, taken from the goal file: the outline, the decisions that bind the items (with
   their reasoning, so a worker does not quietly undo one), the binding repository constraints it cites, and what is out
   of scope. A worker sees only this, its own item, and the stack's titles, so leave nothing out that an item depends on.
+  Add the interface sketches `SKILL.md` asks for. The goal file's outline stops short of them on purpose, so they are
+  yours to write at plan time; a sketch is a planner choice, not a departure.
 - `items`: your decomposition of the outline into one reviewable PR each, sized as the goal file's PR discipline says.
 - `workflow`: the goal file's PR discipline for version control (normally a `jjstack` stack).
 - `workerRules`: the goal file's rules that bind a worker within its item, one line each. From its PR discipline: no

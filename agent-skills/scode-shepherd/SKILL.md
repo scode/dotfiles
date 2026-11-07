@@ -217,6 +217,15 @@ an item over, work in pieces that each fit in a turn, and write `run` once the `
   own draft PR, stacked on the previous item's." The runner adds the expected base branch for each item.
 - `context`: the design every item shares: the approach, the interfaces and invariants items rely on, the decisions you
   settled, and what is out of scope for the whole goal. A worker sees only this, its own item, and the stack's titles.
+  Write the interfaces down as code sketches in the repository's language wherever an item changes something that
+  crosses layers or that a later item builds on: the key types, the signatures that change, and any change to the schema
+  of stored data, at the boundaries, not whole implementations. Put a sketch more than one item uses here and one only
+  its own item needs in that item's `spec`. Draw them from the code you read while planning, and read more where a
+  sketch needs it. A list of constraints is not a design; given only that, the worker has to design the change itself,
+  which is the work a cheap model does worst and you do best. Leave leaf work, which a worker can design from its item
+  alone, to the worker. The runner lets a worker correct a sketch the code shows is wrong only when the correction keeps
+  the plan's requirements, approved PRs, and later items' contracts, and has the reviewer check that; anything larger
+  comes back to you as a replan.
 - `checks`: shell commands that must pass at every PR's head, run from the repository root, for example the gates the
   repository's `AGENTS.md` or CI requires. Keep them to what each PR must pass on its own. The runner runs them
   unattended, with no terminal and no input, so leave out anything that needs a person: a test suite's manual or

@@ -120,6 +120,21 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
     - `resourceWaitMinutes: 0` turns the guard off, both the wait and the in-run kill. It is the only limit that may
       be 0. It is for readings that are wrong, or a shortage that is structural and cannot be moved elsewhere.
 
+13. **The supervisor designs the interfaces.** Where an item changes something that crosses layers or that a later item
+    builds on, the plan carries code sketches of the key types, changed signatures, and stored-data schema at the
+    boundaries, drawn from the code the supervisor read while planning: in the context when more than one item uses
+    them, in the item's spec otherwise. The worker builds to them and may correct one the code shows is wrong, as little
+    as the code requires, when the correction keeps the plan's requirements and decisions, what approved PRs
+    established, and what later items are told to build on; it records why in its report's decisions and its commit
+    message, and that is not a replan. A larger correction is a replan, since the stack's shared contract is the
+    supervisor's. The reviewer reads the commit messages and holds a departure to the same boundary, so an explanation
+    alone does not excuse one. The split exists to put the hard thinking on the strong model, and a plan that describes
+    a cross-cutting change only by its constraints leaves the design to the cheap one. On a patreon-buddy run
+    (2026-11-06) the plan did that for a typed identity change across every layer of the app, and the gpt-6.1-terra
+    worker twice gave up after a minute of reading. Whether the sketches fix that is not yet measured; a sketch is cheap
+    once the supervisor has read the code, and it also fixes interfaces that two items share before the first of them is
+    built.
+
 ## The supervisor channel
 
 The runner talks to a live worker through two hooks: a Stop guard that refuses to let the worker end its turn without a
