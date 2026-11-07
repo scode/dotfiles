@@ -531,6 +531,18 @@ export function sketchReviewNote(base: string, head: string): string {
     `and decisions, what approved PRs established, and what later items build on. Otherwise it is a blocking finding.`;
 }
 
+/**
+ * The runner's review is the goal's review. A goal file's review gate ("one fresh-context gpt-6.1-sol high reviewer
+ * per PR") reaches the worker verbatim in the plan's goal, and on a patreon-buddy run (2026-11-06) two worker sessions
+ * read it as their own job: they loaded the shell-out skill and had a sol reviewer look at their diff before reporting
+ * done. That paid for a strong-model review the runner then repeated, and put a review the worker commissioned and
+ * summarized into its own report. The second sentence keeps the rule from swallowing the review steps a repository
+ * asks of every author, such as a commit-message cold read.
+ */
+export const REVIEW_RULE = "That review is the PR review the goal asks for, so do not review the PR through another " +
+  "model or agent yourself. Review steps the repository's rules ask of every author, such as checking commit " +
+  "messages, still apply.";
+
 export function workerPrompt(c: PromptCtx): string {
   const it = c.plan.items[c.index], s = c.states[c.index];
   const base = expectedBase(c.plan, c.states, c.index);
@@ -566,7 +578,7 @@ export function workerPrompt(c: PromptCtx): string {
       `plan looks wrong, do not improvise around it: report blocked or replan as described below.\n` +
       `- ${SKETCH_RULE}\n` +
       `- Your claims are checked independently. The checks are re-run at the PR's pushed head, and a reviewer reviews ` +
-      `the PR diff before the next item starts.` +
+      `the PR diff before the next item starts. ${REVIEW_RULE}` +
       // Goal-supplied rules come with a precedence: a goal file's PR discipline ("restructure the stack instead of
       // stacking a correction on top") would otherwise license rewriting an approved PR, which the rule above forbids.
       (c.plan.workerRules?.length
@@ -2650,6 +2662,22 @@ Deno.test("worker and reviewer get the same bounded rule for correcting the plan
   );
 });
 
+Deno.test("the worker is told the runner's review is the goal's review, so it does not commission its own", () => {
+  // Workers given a goal file's review gate in the plan's goal ran a sol review of their own diff before reporting
+  // done, duplicating the runner's review (see REVIEW_RULE). The rule must leave a repository's own author-side
+  // review steps in force.
+  const plan = testPlan(1);
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
+  assertIncludes(work, `a reviewer reviews the PR diff before the next item starts. ${REVIEW_RULE}`);
+  assertEq(
+    REVIEW_RULE,
+    "That review is the PR review the goal asks for, so do not review the PR through another model or agent " +
+      "yourself. Review steps the repository's rules ask of every author, such as checking commit messages, still " +
+      "apply.",
+  );
+});
+
 Deno.test("the worker is told its hard limit and that an item's size is grounds for neither blocked nor replan", () => {
   // Without this a cheap worker stopped on a broad item after a minute of reading and reported blocked, spending a
   // supervisor wake and an escalation (see blockedRule). The whole rule is pinned, so that dropping its restriction to
@@ -2883,7 +2911,7 @@ Deno.test("a plan without the policy fields gets exactly the prompts it got befo
       `verdict "changes" exactly when there is at least one blocking finding.`,
   );
   const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
-  assertIncludes(work, "the PR diff before the next item starts.\n\n## The supervisor channel");
+  assertIncludes(work, `the PR diff before the next item starts. ${REVIEW_RULE}\n\n## The supervisor channel`);
   assertEq(itemChecks(plan, 0), ["make test"]);
 });
 

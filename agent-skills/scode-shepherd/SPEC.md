@@ -43,7 +43,11 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
 4. **Blocking review.** Each verified PR is reviewed by the reviewer model before the next item starts. The verdict is
    derived from the findings (any blocking finding means changes), not taken from the reviewer's own verdict field.
    Blocking review was chosen over concurrent review to keep v1 simple; concurrent review is a possible later speed-up
-   once this works.
+   once this works. The runner's review is the PR review a goal asks for, and the worker prompt says so and tells the
+   worker not to commission a review of its own to meet that gate (review steps the repository asks of every author,
+   such as a commit-message cold read, still apply): on a patreon-buddy run (2026-11-06) workers who saw the goal file's
+   review gate in the plan's goal had a sol reviewer check their diff before reporting done, which the runner then
+   repeated.
 5. **Caps escalate.** Worker sessions and review rounds per item are capped. Reaching a cap, a worker report of
    `blocked` or `replan`, two worker sessions in a row that exit nonzero without a report (a launch or API failure, not
    a worker losing its way), and an unparseable reviewer result twice in a row end the run with exit 10 and an
