@@ -164,7 +164,13 @@ whoever is judging whether a change kept the user-facing behavior intact.
   as making the run's state temporary too. An existing run directory is moved aside only when nothing runs in it.
 - The worker is a demand only when the user named it; the default worker is recorded as the default, so scode-shepherd's
   supervisor may still change it. The batch states, and the goal file names, the checks every PR must pass, all runnable
-  unattended, since the runner runs them on every PR.
+  unattended, since the runner runs them on every PR. Stacked PRs make some CI misfire: a base guard (a job whose only
+  step fails a PR whose base is not an allowed branch) fails on a PR whose actual base it does not allow, and a workflow
+  filtered to the default branch does not run on a PR whose actual base its filter excludes. The goal file names a base
+  guard by workflow and job as expected to fail for that reason alone, not as a gate, and names a skipped workflow and
+  puts what it validates in the checks, or asks the user whether the PRs may go without it. A check the user requires by
+  name keeps that demand in either case, and its conflict with the stacked bases is asked about; on a patreon-buddy run
+  (2026-11-06) a goal file demanding that every applicable GitHub check pass sent a worker to replan over a base guard.
 - Shepherd mode cannot run without a checkout that has a GitHub remote; the skill says so and asks.
 - The goal file opens, right after its title, with the sentence "This goal file was written by scode-build-goal in
   shepherd mode.", which is what scode-shepherd checks for. Its execution mode requires `$scode-shepherd` for the whole

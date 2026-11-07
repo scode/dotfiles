@@ -83,7 +83,18 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
     since nobody is there to answer and the test would wait out the check deadline. Instead the worker prompt and every
     failed-check message say how the runner runs checks, the worker is told to run them that way and to report replan
     for a check that cannot pass unattended rather than change tests, and the supervisor is told to leave manual tests
-    out of the plan's checks.
+    out of the plan's checks. Stacking makes CI written for PRs against the default branch misfire. A base guard, a job
+    whose only step fails a PR whose base is not an allowed branch, fails by design on every PR whose base it does not
+    allow; the supervisor names it in the plan's context by workflow and job as expected to fail for that reason alone,
+    so any other failure, and every other check, still counts, and a job that also builds or tests is never one. A
+    workflow filtered to the default branch does not run on a PR based elsewhere, so the supervisor names it in the
+    plan's context and puts its validation in the plan's checks, or asks the user when that cannot run on the runner's
+    machine and the goal does not already say it is not needed. A goal file's general demand that applicable GitHub
+    checks pass is read as not covering a base guard, which the stack it asks for implies, nor a skipped workflow whose
+    validation the checks cover; a demand for such a check by name stays the user's to waive, because running the same
+    commands locally is not the hosted check passing. On a patreon-buddy run (2026-11-06) nothing named the repository's
+    base guard, and a worker whose goal demanded every applicable GitHub check pass reported replan over it, an
+    escalation nobody needed.
 12. **The runner holds off on low resources.** This is the runner's form of the resource watchdog `scode-build-goal`
     requires of unattended runs: the supervisor is asleep, so an alert addressed to it would go unseen, and the runner
     is what launches the workloads. It reads free space on the filesystems holding the checkout, the run directory, the

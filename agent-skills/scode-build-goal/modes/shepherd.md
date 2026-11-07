@@ -27,7 +27,12 @@ In this mode the batch states, besides what `SKILL.md` lists:
   the effort named or high when none is. A worker model Codex does not serve cannot run in this mode; say so and ask.
 - The checks every PR must pass: the gates the repository requires (its `AGENTS.md`, CI), as found while reading it.
   scode-shepherd's runner runs them on every PR unattended, with no terminal and no input, so name only checks that can
-  run that way.
+  run that way. The PRs are stacked, and CI written for PRs against the default branch can misfire on them: a base guard
+  (a job whose only step fails a PR whose base is not an allowed branch) fails on every PR whose actual base it does not
+  allow, and a workflow filtered to the default branch does not run on a PR whose actual base its filter excludes. Name
+  a base guard in the goal file by workflow and job as expected to fail for that reason alone, not as a gate. Name a
+  skipped workflow too, and put what it validates in the checks, or ask the user whether the PRs may go without it. When
+  the user requires either check by name, keep that demand and ask about its conflict with the stacked bases instead.
 - The review gate menu, changed as below.
 - The run directory (see Placement), in place of the log path.
 - When `codex`, `gh`, or `deno` is missing on this machine, say so. The run happens on whichever machine starts it, so

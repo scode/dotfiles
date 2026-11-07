@@ -221,7 +221,16 @@ an item over, work in pieces that each fit in a turn, and write `run` once the `
   repository's `AGENTS.md` or CI requires. Keep them to what each PR must pass on its own. The runner runs them
   unattended, with no terminal and no input, so leave out anything that needs a person: a test suite's manual or
   interactive tests, which `cargo test -- --ignored` and similar "run everything" flags tend to include. Skip those by
-  name, or leave the flag out.
+  name, or leave the flag out. Stacked PRs meet CI that was written for PRs against the default branch, so read the
+  repository's workflows for two cases. A base guard, a job whose only step fails any PR whose base is not an allowed
+  branch, fails on every PR whose base it does not allow (all after the first, and the first too when `trunk` is not
+  allowed). Name it in `context` by workflow and job, with the condition: that job failing for that reason alone is
+  expected; any other failure of it, and every other check, still counts. A job that also builds or tests is not a base
+  guard. A workflow filtered to the default branch does not run on a PR based elsewhere: put what it validates in
+  `checks` when it can run here, and name the workflow and what replaces it in `context`; when it cannot run here (it
+  needs another OS, say), ask the user, unless the goal already says that validation is not needed. Either case is the
+  user's when the goal demands that check by name: ask. Without this a worker told to keep GitHub checks green reports
+  replan over a guard.
 - `worker`, `reviewer`: optional `{"model": ..., "effort": ...}` overrides.
 - `reviewCharter`: optional. What the reviewer judges each PR against, replacing the runner's default judging
   instructions; the runner keeps its own rule for blocking and minor findings and the verdict. Leave it out unless a
