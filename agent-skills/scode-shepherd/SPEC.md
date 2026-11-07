@@ -49,7 +49,13 @@ than trusted, and the strong supervisor wakes only when the runner cannot decide
    a worker losing its way), and an unparseable reviewer result twice in a row end the run with exit 10 and an
    `escalation.json`. The review cap is checked right after a "changes" verdict, so the escalation carries those
    findings and no fix session is spent that nobody would review. The runner never gives up silently and never skips an
-   item.
+   item. Because `blocked` and `replan` escalate at once, the worker prompt says what each is for: `blocked` for an
+   obstacle the worker cannot remove, named in the reason, and `replan` for a change the work shows the plan needs,
+   named with what showed it. How large an item looks is grounds for neither. The prompt also states the session's hard
+   limit, which covers the worker's own checks and the PR, and the Stop hook's refusal points back to these rules rather
+   than offering a way out of its own. On a patreon-buddy run (2026-11-06), told only to report blocked "if you cannot
+   finish", a gpt-6.1-terra high worker read code for a minute on an item that spanned every layer of the app and
+   reported blocked without changing anything, which cost a supervisor wake and one of the item's escalations.
 6. **Feedback is not lost.** The latest review's findings stay in every worker prompt for the item until the next
    review, alongside the newest failure (a lost session, a failed verification), so a session that follows a failure
    still knows what the reviewer asked for.
