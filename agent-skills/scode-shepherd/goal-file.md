@@ -121,3 +121,7 @@ file did not weigh.
   your own. When you take an item over, you are the one launching builds: check free disk and memory before you start.
 - Its execution mode forbids `scode-galaxy-brain`, `scode-powerhorse`, and `scode-model-routing`, which is what "Other
   orchestration skills" in `SKILL.md` says anyway.
+- Its review gate is run by the runner, for each PR and each fix round, with the reviewer the goal file demands. The
+  goal goes to the worker verbatim, gate included, and the runner tells the worker not to commission a review of its own
+  to meet that gate, so do not add a worker rule that asks for one. Review steps the repository asks of every author,
+  such as a commit-message cold read, still apply to the worker.
