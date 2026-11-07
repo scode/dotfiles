@@ -446,6 +446,28 @@ export function channelParagraph(nonce: string): string {
 export const UNATTENDED_CHECKS = "The runner runs every check unattended, with no terminal and no input, as " +
   "`setsid sh -c '<check>' < /dev/null` from the repository root.";
 
+/**
+ * What the worker may report instead of done, and what it may not. A bare "if you cannot finish, report blocked" read
+ * to a cheap worker as permission to stop on any item that looks large: on a patreon-buddy run (2026-11-06) a
+ * gpt-6.1-terra high worker read code for about a minute on an item spanning every layer of the app, changed nothing,
+ * and reported blocked with only "I could not complete [the item]" as the reason. That cost a supervisor wake and one of
+ * the item's escalations for nothing the supervisor could resolve except by telling the worker to get on with it.
+ *
+ * So the prompt states the session's hard limit (which includes the worker's own checks and the PR, since the deadline
+ * kills the whole session), says that how large an item looks is grounds for neither blocked nor replan, and asks each
+ * reason to name the concrete obstacle or the concrete change the plan needs. The Stop hook's refusal points back here
+ * rather than restating an escape hatch of its own.
+ */
+export function blockedRule(workerMinutes: number): string {
+  return `This session has a hard limit of ${workerMinutes} minutes, which includes running the checks, the PR, ` +
+    `and this report. Keep making progress until the item is done, and finish as soon as it is. How large or ` +
+    `laborious the item looks is not grounds for blocked or replan. Write {"status": "blocked", "reason": "..."} ` +
+    `instead of done only for an obstacle you cannot remove yourself, such as access or a tool you lack, a decision ` +
+    `the item leaves open that is not yours to make, or a service that keeps failing, and name that obstacle in the ` +
+    `reason. Write {"status": "replan", "reason": "..."} only when the work shows the plan itself must change, and ` +
+    `name the change and what you found that requires it.`;
+}
+
 export function workerPrompt(c: PromptCtx): string {
   const it = c.plan.items[c.index], s = c.states[c.index];
   const base = expectedBase(c.plan, c.states, c.index);
@@ -490,8 +512,8 @@ export function workerPrompt(c: PromptCtx): string {
     `## The supervisor channel\n\n${channelParagraph(c.nonce)}`,
     `## Finishing\n\nWhen the item is done, write the file ${c.reportPath} containing exactly one JSON object:\n\n` +
       '```json\n{"status": "done", "pr_url": "https://github.com/OWNER/REPO/pull/N", "summary": "one to five sentences"}\n```\n\n' +
-      `If you cannot finish, write {"status": "blocked", "reason": "..."} instead, or {"status": "replan", "reason": ` +
-      `"..."} when the plan itself needs to change. Then end your turn. Ending the turn without this file is refused.`,
+      blockedRule(limitsOf(c.plan).workerMinutes) +
+      ` Then end your turn. Ending the turn without this file is refused.`,
   );
   return sections.join("\n\n") + "\n";
 }
@@ -594,7 +616,7 @@ export function hookReply(
       reply: {
         decision: "block",
         reason: `${prefix}You cannot end your turn yet: ${r}. Finish the item and write the report as the Finishing ` +
-          `section of your task describes, or write a blocked or replan report if you cannot finish.`,
+          `section of your task describes. Blocked and replan are only for what that section allows.`,
       },
     };
   }
@@ -2318,6 +2340,32 @@ Deno.test("a blocked report escalates immediately with the worker's reason", asy
   const w = fakeWorld(plan, { worker: () => JSON.stringify({ status: "blocked", reason: "needs creds" }) });
   const e = escalationOf(await w.run());
   assertEq([e.reason, e.detail], ["blocked", "needs creds"]);
+});
+
+Deno.test("the worker is told its hard limit and that an item's size is grounds for neither blocked nor replan", () => {
+  // Without this a cheap worker stopped on a broad item after a minute of reading and reported blocked, spending a
+  // supervisor wake and an escalation (see blockedRule). The whole rule is pinned, so that dropping its restriction to
+  // obstacles the worker cannot remove fails here, and the limit shown must be the plan's, not the default. The Stop
+  // refusal is a binding supervisor message too, so it must not grant the old "if you cannot finish" escape hatch.
+  const plan = { ...testPlan(1), limits: { workerMinutes: 30 } };
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const work = workerPrompt({ plan, index: 0, states, nonce: "n", reportPath: "/r" });
+  assertIncludes(work, blockedRule(30));
+  assertEq(
+    blockedRule(30),
+    `This session has a hard limit of 30 minutes, which includes running the checks, the PR, and this report. Keep ` +
+      `making progress until the item is done, and finish as soon as it is. How large or laborious the item looks is ` +
+      `not grounds for blocked or replan. Write {"status": "blocked", "reason": "..."} instead of done only for an ` +
+      `obstacle you cannot remove yourself, such as access or a tool you lack, a decision the item leaves open that ` +
+      `is not yours to make, or a service that keeps failing, and name that obstacle in the reason. Write ` +
+      `{"status": "replan", "reason": "..."} only when the work shows the plan itself must change, and name the ` +
+      `change and what you found that requires it.`,
+  );
+  assertIncludes(workerPrompt({ plan: testPlan(1), index: 0, states, nonce: "n", reportPath: "/r" }), blockedRule(120));
+  const stop = hookReply({ hook_event_name: "Stop" }, { nonce: "n", blocksSoFar: 0, cap: 2, inbox: [] });
+  const reason = (stop.reply as { reason: string }).reason;
+  assertIncludes(reason, "Blocked and replan are only for what that section allows.");
+  if (reason.includes("if you cannot finish")) throw new Error("the Stop refusal must not offer a blanket way out");
 });
 
 Deno.test("failing checks at the PR head send the worker back with the log tail, then review proceeds", async () => {
