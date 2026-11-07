@@ -501,6 +501,36 @@ export function decisionsRule(runDir: string): string {
     `no reason to report replan. Do not write anything under ${runDir} yourself except this report file.`;
 }
 
+/**
+ * How a worker treats the interface sketches a supervisor puts in the plan (SKILL.md, "The plan"). The sketches move the
+ * design of a cross-cutting change to the strong model; on a patreon-buddy run (2026-11-06) the plan described a
+ * typed identity change across every layer only by its constraints, and the cheap worker twice gave up after a minute
+ * of reading. A sketch is still a plan written before the code was touched, so the worker may correct one, but only
+ * inside a boundary: a correction that changes what an approved PR established or what a later item is told to build
+ * on changes the stack's shared contract, which is the supervisor's, so that one is a replan. Without the permission,
+ * the "plan looks wrong: report replan" rule would turn every wrong field type into an escalation.
+ */
+export const SKETCH_RULE = "Where the design context or this item sketches types, signatures, or a data schema, " +
+  "build to them. You may correct a sketch that the code shows is wrong, as little as the code requires, when the " +
+  "correction keeps every requirement and decision in the plan, changes nothing an approved PR established, and " +
+  "leaves what later items are told to build on usable as described. Record such a correction and why in your " +
+  "report's decisions and in the commit message; it is no reason to report replan. A correction that would break " +
+  "any of those limits is a replan: report it with the code that shows the sketch is wrong.";
+
+/**
+ * The reviewer's side of SKETCH_RULE, with the same boundary. The reviewer sees the sketches but not the worker's
+ * report, and its diff command does not show commit messages, so it is told where the explanation is. An explanation
+ * alone does not excuse a departure: a worker that replaced the supervisor's design with its own would otherwise get a
+ * review of whether its design is good, not of whether it was allowed.
+ */
+export function sketchReviewNote(base: string, head: string): string {
+  return `## Interface sketches\n\nSketches of types, signatures, or schemas in the design context or in the ` +
+    `item's spec were written before the code was touched. Read the PR's commit messages (\`git log --format=%B ` +
+    `${base}..${head}\`). A departure from a sketch is acceptable only when a commit message explains it, the code ` +
+    `bears the explanation out, the change is no larger than the code requires, and it keeps the plan's requirements ` +
+    `and decisions, what approved PRs established, and what later items build on. Otherwise it is a blocking finding.`;
+}
+
 export function workerPrompt(c: PromptCtx): string {
   const it = c.plan.items[c.index], s = c.states[c.index];
   const base = expectedBase(c.plan, c.states, c.index);
@@ -534,6 +564,7 @@ export function workerPrompt(c: PromptCtx): string {
       `(a test that needs a person, say), report replan with the reason; do not change tests to get around it.\n` +
       `- Stay inside this item's scope and do not start later items. If the item cannot be done as specified, or the ` +
       `plan looks wrong, do not improvise around it: report blocked or replan as described below.\n` +
+      `- ${SKETCH_RULE}\n` +
       `- Your claims are checked independently. The checks are re-run at the PR's pushed head, and a reviewer reviews ` +
       `the PR diff before the next item starts.` +
       // Goal-supplied rules come with a precedence: a goal file's PR discipline ("restructure the stack instead of
@@ -581,6 +612,7 @@ export function reviewerPrompt(
     `## Design context\n\n${c.plan.context}`,
     `## The stack\n\n${stackOverview(c.plan, c.states, c.index)}`,
     `## What this PR must do: ${it.id}: ${it.title}\n\n${it.spec}`,
+    sketchReviewNote(c.baseSha, c.pr.head),
   ];
   if (c.guidance) parts.push(`## Supervisor guidance for this item (binding on the author)\n\n${c.guidance}`);
   // The verdict rule stays the runner's whatever the charter says: the runner derives approval from blocking findings,
@@ -2583,6 +2615,38 @@ Deno.test("the worker is told that reported decisions satisfy a goal's journal r
       `runner copies them into the run's journal. That is how decisions reach the journal: it satisfies any ` +
       `instruction in the goal, its rules, or the guidance to log decisions there, is not a conflict with them, and ` +
       `is no reason to report replan. Do not write anything under /run yourself except this report file.`,
+  );
+});
+
+Deno.test("worker and reviewer get the same bounded rule for correcting the plan's interface sketches", () => {
+  // The sketches hand the design of a cross-cutting change to the worker. The worker may correct one inside a boundary
+  // (keeping requirements, approved PRs, and later items' contracts) without a replan, and the reviewer checks the
+  // same boundary rather than judging any explained departure on its merits. Both texts are pinned whole, so that
+  // dropping a limit from either fails here; the reviewer's section must follow the item spec it refers to, and name
+  // the commit range, since its diff command shows no commit messages.
+  const plan = testPlan(1);
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
+  assertIncludes(work, `- ${SKETCH_RULE}\n`);
+  assertEq(
+    SKETCH_RULE,
+    "Where the design context or this item sketches types, signatures, or a data schema, build to them. You may " +
+      "correct a sketch that the code shows is wrong, as little as the code requires, when the correction keeps " +
+      "every requirement and decision in the plan, changes nothing an approved PR established, and leaves what later " +
+      "items are told to build on usable as described. Record such a correction and why in your report's decisions " +
+      "and in the commit message; it is no reason to report replan. A correction that would break any of those limits " +
+      "is a replan: report it with the code that shows the sketch is wrong.",
+  );
+  const pr = testPr();
+  const review = reviewerPrompt({ plan, index: 0, states, pr, baseSha: "base" });
+  assertIncludes(review, `${plan.items[0].spec}\n\n${sketchReviewNote("base", pr.head)}`);
+  assertEq(
+    sketchReviewNote("B", "H"),
+    "## Interface sketches\n\nSketches of types, signatures, or schemas in the design context or in the item's " +
+      "spec were written before the code was touched. Read the PR's commit messages (`git log --format=%B B..H`). A " +
+      "departure from a sketch is acceptable only when a commit message explains it, the code bears the explanation " +
+      "out, the change is no larger than the code requires, and it keeps the plan's requirements and decisions, what " +
+      "approved PRs established, and what later items build on. Otherwise it is a blocking finding.",
   );
 });
 
