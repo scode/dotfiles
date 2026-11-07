@@ -312,9 +312,14 @@ export function prepareResume(state: State, escalation: Escalation | undefined) 
 // Worker reports and review results (pure)
 // ---------------------------------------------------------------------------------------------------------------------
 
+/**
+ * A worker's report. `decisions` is optional on every status: the consequential choices the worker made that its
+ * item's spec did not settle. The runner appends them to the supervisor's journal (see `journalDecisions`), so the
+ * worker never writes there itself. `decisionsDropped` counts the malformed entries `parseReport` left out.
+ */
 type Report =
-  | { status: "done"; pr_url: string; summary: string }
-  | { status: "blocked" | "replan"; reason: string };
+  & ({ status: "done"; pr_url: string; summary: string } | { status: "blocked" | "replan"; reason: string })
+  & { decisions?: string[]; decisionsDropped?: number };
 
 const PR_URL_RE = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)\/?$/;
 
@@ -327,15 +332,24 @@ export function parseReport(text: string | undefined): Report | string {
   } catch {
     return "the report file is not valid JSON";
   }
+  // Decisions are a side channel, so a malformed list never costs the report: a done report with a PR, or a blocked
+  // report with a question for the user, is worth more than its metadata. The well-formed entries are kept and the
+  // rest counted, and the session's report file stays on disk with the original.
+  const raw = r?.decisions;
+  const decisions = Array.isArray(raw)
+    ? raw.filter((d): d is string => typeof d === "string" && d.trim() !== "").map((d) => d.trim())
+    : [];
+  const dropped = raw === undefined || raw === null ? 0 : Array.isArray(raw) ? raw.length - decisions.length : 1;
+  const extra = { ...(decisions.length ? { decisions } : {}), ...(dropped ? { decisionsDropped: dropped } : {}) };
   if (r?.status === "done") {
     if (typeof r.pr_url !== "string" || !PR_URL_RE.test(r.pr_url)) {
       return 'a "done" report needs "pr_url" set to the PR\'s URL, https://github.com/OWNER/REPO/pull/N';
     }
-    return { status: "done", pr_url: r.pr_url, summary: String(r.summary ?? "") };
+    return { status: "done", pr_url: r.pr_url, summary: String(r.summary ?? ""), ...extra };
   }
   if (r?.status === "blocked" || r?.status === "replan") {
     if (typeof r.reason !== "string" || r.reason.trim() === "") return `a "${r.status}" report needs a "reason"`;
-    return { status: r.status, reason: r.reason };
+    return { status: r.status, reason: r.reason, ...extra };
   }
   return 'status must be "done", "blocked", or "replan"';
 }
@@ -403,6 +417,8 @@ export function reviewFeedback(prUrl: string, review: Review, path: string): str
 
 type PromptCtx = {
   plan: Plan;
+  /** The run directory, named to the worker as the one place it must not write, apart from its report. */
+  runDir: string;
   index: number;
   states: ItemState[];
   nonce: string;
@@ -468,6 +484,23 @@ export function blockedRule(workerMinutes: number): string {
     `name the change and what you found that requires it.`;
 }
 
+/**
+ * How a worker's decisions reach the run's journal. The journal is the supervisor's: it opens with the goal file's path,
+ * which is how a resumed supervisor tells that the run directory belongs to its goal, and it is the run's decision log.
+ * A goal file's decision-logging rule ("record major decisions in <run dir>/journal.md") travels to the worker in the
+ * plan's context, and on a patreon-buddy run (2026-11-06) the worker took it literally and edited the journal itself.
+ * An append happened to be harmless, but nothing stopped a rewrite of the first line. The worker reports its decisions
+ * instead, and the runner appends them, so the goal's rule is still honored and nobody but the supervisor and the
+ * runner touches the run directory.
+ */
+export function decisionsRule(runDir: string): string {
+  return `If you made consequential choices that this item's spec did not settle, add "decisions": ["...", ...] to ` +
+    `the report, whatever its status: one entry per choice, saying what you chose, what you rejected, and why. The ` +
+    `runner copies them into the run's journal. That is how decisions reach the journal: it satisfies any ` +
+    `instruction in the goal, its rules, or the guidance to log decisions there, is not a conflict with them, and is ` +
+    `no reason to report replan. Do not write anything under ${runDir} yourself except this report file.`;
+}
+
 export function workerPrompt(c: PromptCtx): string {
   const it = c.plan.items[c.index], s = c.states[c.index];
   const base = expectedBase(c.plan, c.states, c.index);
@@ -512,8 +545,8 @@ export function workerPrompt(c: PromptCtx): string {
     `## The supervisor channel\n\n${channelParagraph(c.nonce)}`,
     `## Finishing\n\nWhen the item is done, write the file ${c.reportPath} containing exactly one JSON object:\n\n` +
       '```json\n{"status": "done", "pr_url": "https://github.com/OWNER/REPO/pull/N", "summary": "one to five sentences"}\n```\n\n' +
-      blockedRule(limitsOf(c.plan).workerMinutes) +
-      ` Then end your turn. Ending the turn without this file is refused.`,
+      blockedRule(limitsOf(c.plan).workerMinutes) + `\n\n${decisionsRule(c.runDir)}\n\nThen end your turn. ` +
+      `Ending the turn without this file is refused.`,
   );
   return sections.join("\n\n") + "\n";
 }
@@ -658,6 +691,12 @@ interface Ops {
     { text?: string; usage: Usage; resourceKill?: string }
   >;
   readText(path: string): Promise<string | undefined>;
+  /**
+   * Appends to a file only if it already exists, returning undefined when it did and the reason when it did not. The
+   * journal is the one user: creating it would give it a first line other than the goal file's path, which a resumed
+   * supervisor reads as a foreign run.
+   */
+  appendIfExists(path: string, text: string): Promise<string | undefined>;
   /** What is short of disk or memory right now, in a sentence, or undefined when there is headroom. */
   resources(): Promise<string | undefined>;
   log(item: string | undefined, event: string, detail?: unknown): Promise<void>;
@@ -671,7 +710,9 @@ function addUsage(a: Usage, b: Usage) {
 type Paths = ReturnType<typeof pathsFor>;
 function pathsFor(runDir: string) {
   return {
+    root: runDir,
     plan: `${runDir}/plan.json`,
+    journal: `${runDir}/journal.md`,
     state: `${runDir}/state.json`,
     escalation: `${runDir}/escalation.json`,
     inbox: `${runDir}/inbox`,
@@ -687,6 +728,51 @@ function pathsFor(runDir: string) {
 }
 
 type Outcome = { done: true } | { escalation: Escalation };
+
+/**
+ * Appends a worker session's reported decisions to the journal under a heading of their own, before anything else
+ * happens with the report, so that they are logged whether the report escalates or goes on to verification. Malformed
+ * entries the parser dropped are noted with the report's path, which still holds them. When the journal is missing (a
+ * run whose supervisor has not started one) nothing is created, and when it cannot be written the run goes on; either
+ * way the session's `worker-end` event holds the decisions, and a `decisions-not-journaled` event makes `status` say so.
+ */
+async function journalDecisions(ops: Ops, p: Paths, item: string, session: number, report: Report, reportPath: string) {
+  const decisions = report.decisions ?? [], dropped = report.decisionsDropped ?? 0;
+  if (decisions.length === 0 && dropped === 0) return;
+  const entry = `\n${decisionsHeading(item, session)}\n\n` +
+    decisions.map((d) => `DECISION (worker): ${d}\n`).join("\n") +
+    (dropped
+      ? `${decisions.length ? "\n" : ""}${dropped} malformed decision ${
+        dropped === 1 ? "entry was" : "entries were"
+      } left out; see ${reportPath}.\n`
+      : "");
+  const failed = await ops.appendIfExists(p.journal, entry);
+  if (failed !== undefined) await ops.log(item, "decisions-not-journaled", { session, reason: failed });
+}
+
+/** The journal heading for one worker session's decisions, written by the runner or, recovering them, the supervisor. */
+export function decisionsHeading(item: string, session: number): string {
+  return `## Worker decisions: ${item}, session ${session}`;
+}
+
+/**
+ * The worker sessions whose decisions did not reach the journal, one line each, for `status`. The supervisor reads the
+ * journal and `status`, not the event log, so without this a journal that could not be written would lose the
+ * decisions from the supervisor's view without a trace. A session drops out of the list once the journal has its
+ * heading, which is how the supervisor recovers one (SKILL.md, step 8), so that a later wake does not copy it again.
+ */
+export function unjournaledDecisions(events: string, journal: string): string[] {
+  const out: string[] = [];
+  const headings = new Set(journal.split("\n").map((l) => l.trim()));
+  for (const line of events.split("\n")) {
+    try {
+      const e = JSON.parse(line);
+      if (e.event !== "decisions-not-journaled" || headings.has(decisionsHeading(e.item, e.detail?.session))) continue;
+      out.push(`${e.item} session ${e.detail?.session} (${e.detail?.reason})`);
+    } catch { /* a torn last line */ }
+  }
+  return out;
+}
 
 /**
  * Waits for disk and memory headroom before the runner launches anything, and returns the shortage when it lasts past
@@ -748,6 +834,7 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
         const sessionDir = p.session(it.id, s.sessions), reportPath = `${sessionDir}/report.json`;
         const prompt = workerPrompt({
           plan,
+          runDir: p.root,
           index,
           states: state.items,
           nonce: state.nonce,
@@ -761,6 +848,11 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
         addUsage(s.usage.worker, res.usage);
         state.current = undefined;
         if (res.resourceKill !== undefined) {
+          // The session may have written its report before the kill. Its PR claim is not acted on (the next session
+          // starts over from the repository as it is), but its decisions were made and would otherwise reach neither
+          // the journal nor the event log.
+          const early = parseReport(await ops.readText(reportPath));
+          if (typeof early !== "string") await journalDecisions(ops, p, it.id, s.sessions, early, reportPath);
           // The runner, not the worker, cut this session short, so it does not count against the item's budget. The
           // base moves rather than the count, so the next session still gets a directory of its own.
           // Nor is it a crash, so it breaks a run of crashes. Feedback the killed session never got to act on is
@@ -796,6 +888,7 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
           continue;
         }
         s.crashes = 0;
+        await journalDecisions(ops, p, it.id, s.sessions, report, reportPath);
         if (report.status !== "done") return await escalate(report.status, it.id, report.reason);
         s.prUrl = report.pr_url, s.pending = undefined, s.phase = "verifying";
         await save();
@@ -1421,6 +1514,13 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
       return resourceShortfall(r.disks, r.mem, "soft");
     },
     readText: (path) => Deno.readTextFile(path).catch(() => undefined),
+    // Any failure, not only a missing file, is returned rather than thrown: a journal the runner cannot append to must
+    // not stop the run. The caller logs it, and `status` shows it.
+    appendIfExists: (path, text) =>
+      Deno.writeTextFile(path, text, { append: true, create: false }).then(
+        () => undefined,
+        (e) => e instanceof Deno.errors.NotFound ? "the journal does not exist" : `${e}`,
+      ),
     log: (item, event, detail) =>
       Deno.writeTextFile(p.events, JSON.stringify({ t: new Date().toISOString(), item, event, detail }) + "\n", {
         append: true,
@@ -1584,6 +1684,7 @@ export function statusText(
   escalation: string | undefined,
   supervisor?: Usage,
   waiting?: string,
+  unjournaled: string[] = [],
 ): string {
   const lines = state.items.map((s, i) => {
     const w = s.usage.worker, r = s.usage.reviewer;
@@ -1599,6 +1700,12 @@ export function statusText(
     );
   }
   if (waiting) lines.push(`waiting for disk or memory ${waiting}`);
+  if (unjournaled.length) {
+    lines.push(
+      `worker decisions not in the journal (they are in that session's worker-end event in events.jsonl): ` +
+        unjournaled.join(", "),
+    );
+  }
   if (escalation) lines.push(`open escalation: ${escalation.trim()}`);
   return `${plan.items.length} items\n${lines.join("\n")}`;
 }
@@ -1610,11 +1717,11 @@ async function cmdStatus(runDir: string) {
   const driver = await readJson<DriverState>(`${runDir}/driver.json`).catch(() => undefined);
   // The log only says a wait began; a runner that died mid-wait leaves the same last line, so ask whether one is alive.
   const lockPid = Number(await Deno.readTextFile(p.lock).catch(() => "")) || undefined;
-  const waiting = await ownedAlive(lockPid, runDir)
-    ? resourceWait(await Deno.readTextFile(p.events).catch(() => ""))
-    : undefined;
+  const events = await Deno.readTextFile(p.events).catch(() => "");
+  const waiting = await ownedAlive(lockPid, runDir) ? resourceWait(events) : undefined;
   const escalation = await Deno.readTextFile(p.escalation).catch(() => undefined);
-  console.log(statusText(plan, state, escalation, driver?.usage, waiting));
+  const journal = await Deno.readTextFile(p.journal).catch(() => "");
+  console.log(statusText(plan, state, escalation, driver?.usage, waiting, unjournaledDecisions(events, journal)));
 }
 
 async function cmdAdopt(runDir: string, id: string, url: string) {
@@ -2168,6 +2275,10 @@ function fakeWorld(plan: Plan, o: {
   kill?: Partial<Record<"worker" | "checks" | "review", string>>;
   /** Kill this worker session number (rather than the first) with a disk shortage. */
   killWorkerSession?: number;
+  /** Make every append to an existing journal fail, as an unwritable one would. */
+  journalFails?: boolean;
+  /** A killed worker session leaves its report behind, as one that wrote it just before the kill would. */
+  reportBeforeKill?: boolean;
 }) {
   const kills = { ...(o.kill ?? {}) };
   const killOnce = (step: "worker" | "checks" | "review") => {
@@ -2176,7 +2287,7 @@ function fakeWorld(plan: Plan, o: {
     return k;
   };
   const files = new Map<string, string>();
-  const calls: string[] = [], checkLists: string[][] = [];
+  const calls: string[] = [], checkLists: string[][] = [], events: string[] = [];
   const reviews = [...(o.reviews ?? [])], readings = [...(o.resources ?? [])];
   let sleeps = 0;
   const p = pathsFor("/run");
@@ -2204,7 +2315,7 @@ function fakeWorld(plan: Plan, o: {
       files.set(`prompt:${item}#${session}`, a.prompt);
       const r = o.worker(item, session);
       const resourceKill = session === o.killWorkerSession ? "low disk" : killOnce("worker");
-      if (r !== undefined && resourceKill === undefined) files.set(a.reportPath, r);
+      if (r !== undefined && (resourceKill === undefined || o.reportBeforeKill)) files.set(a.reportPath, r);
       return Promise.resolve({
         code: resourceKill === undefined ? o.workerCode ?? 0 : 143,
         timedOut: false,
@@ -2240,12 +2351,19 @@ function fakeWorld(plan: Plan, o: {
       return Promise.resolve({ text, usage: { input: 5, cachedInput: 0, output: 1 }, resourceKill });
     },
     readText: (path) => Promise.resolve(files.get(path)),
-    log: () => Promise.resolve(),
+    appendIfExists: (path, text) => {
+      const old = files.get(path);
+      if (old === undefined) return Promise.resolve("the journal does not exist");
+      if (o.journalFails) return Promise.resolve("EACCES");
+      files.set(path, old + text);
+      return Promise.resolve(undefined);
+    },
+    log: (item, event, detail) => (events.push(JSON.stringify({ t: "T", item, event, detail })), Promise.resolve()),
     sleep: () => (sleeps++, Promise.resolve()),
     resources: () => Promise.resolve(readings.shift()),
   };
   const run = () => runLoop(plan, state, p, ops, () => Promise.resolve());
-  return { ops, state, p, calls, files, run, checkLists, sleeps: () => sleeps };
+  return { ops, state, p, calls, files, run, checkLists, events, sleeps: () => sleeps };
 }
 
 const url = (n: number) => `https://github.com/o/r/pull/${n}`;
@@ -2342,6 +2460,132 @@ Deno.test("a blocked report escalates immediately with the worker's reason", asy
   assertEq([e.reason, e.detail], ["blocked", "needs creds"]);
 });
 
+Deno.test("worker decisions are appended to an existing journal under their own heading, whatever the report's status", async () => {
+  // The journal is the goal's decision log, and the worker must not edit it itself (see decisionsRule). Decisions in a
+  // blocked report matter as much as in a done one, so they are journaled before the report escalates.
+  const plan = testPlan(2);
+  const w = fakeWorld(plan, {
+    worker: (item) =>
+      item === "p1"
+        ? JSON.stringify({ status: "done", pr_url: url(1), summary: "", decisions: ["kept A over B because C"] })
+        : JSON.stringify({ status: "blocked", reason: "needs creds", decisions: [" chose X ", "chose Y"] }),
+    reviews: [approve],
+  });
+  w.files.set(w.p.journal, "Goal file: /g.md\n");
+  assertEq(escalationOf(await w.run()).reason, "blocked");
+  assertEq(
+    w.files.get(w.p.journal),
+    "Goal file: /g.md\n" +
+      "\n## Worker decisions: p1, session 1\n\nDECISION (worker): kept A over B because C\n" +
+      "\n## Worker decisions: p2, session 1\n\nDECISION (worker): chose X\n\nDECISION (worker): chose Y\n",
+  );
+});
+
+Deno.test("a worker session killed for resources after writing its report still has its decisions journaled", async () => {
+  // The kill path returns before the ordinary report handling, and the next session never reads the old report.
+  const plan = testPlan(1);
+  const w = fakeWorld(plan, {
+    worker: () => JSON.stringify({ status: "done", pr_url: url(1), summary: "", decisions: ["d"] }),
+    kill: { worker: "low disk" },
+    reportBeforeKill: true,
+  });
+  w.files.set(w.p.journal, "Goal file: /g.md\n");
+  assertEq(escalationOf(await w.run()).reason, "resources-low");
+  assertEq(w.files.get(w.p.journal), `Goal file: /g.md\n\n${decisionsHeading("p1", 1)}\n\nDECISION (worker): d\n`);
+});
+
+Deno.test("the runner never creates the journal to hold worker decisions", async () => {
+  // A journal the runner created would open with a worker decision instead of the goal file's path, and a resumed
+  // supervisor would then take the run directory for another goal's.
+  const plan = testPlan(1);
+  const w = fakeWorld(plan, {
+    worker: () => JSON.stringify({ status: "done", pr_url: url(1), summary: "", decisions: ["d"] }),
+    reviews: [approve],
+  });
+  assertEq(await w.run(), { done: true });
+  assertEq(w.files.get(w.p.journal), undefined);
+});
+
+Deno.test("malformed decisions never cost a report: good entries are kept and the rest counted", () => {
+  // Decisions are a side channel. Refusing the whole report over them would turn a valid PR, or a blocked report with
+  // a question only the user can answer, into a lost session once the Stop hook's refusals ran out.
+  const base = { status: "done", pr_url: url(1), summary: "s" };
+  assertEq(parseReport(JSON.stringify({ ...base, decisions: [" a ", "", 3] })), {
+    ...base,
+    decisions: ["a"],
+    decisionsDropped: 2,
+  });
+  assertEq(parseReport(JSON.stringify({ ...base, decisions: "a" })), { ...base, decisionsDropped: 1 });
+  assertEq(parseReport(JSON.stringify({ ...base, decisions: null })), base);
+  assertEq(parseReport(JSON.stringify({ ...base, decisions: [] })), base);
+  const blocked = { status: "blocked", reason: "needs creds" };
+  assertEq(parseReport(JSON.stringify({ ...blocked, decisions: [""] })), { ...blocked, decisionsDropped: 1 });
+});
+
+Deno.test("a done report with malformed decisions goes on to verification on the item's last session", async () => {
+  // The case the strict parser got wrong: with one session allowed, a refused report escalated sessions-exhausted
+  // without the PR ever being verified.
+  const plan = { ...testPlan(1), limits: { sessionsPerItem: 1 } };
+  const w = fakeWorld(plan, {
+    worker: () => JSON.stringify({ status: "done", pr_url: url(1), summary: "", decisions: ["ok", ""] }),
+    reviews: [approve],
+  });
+  w.files.set(w.p.journal, "Goal file: /g.md\n");
+  assertEq(await w.run(), { done: true });
+  assertEq(
+    w.files.get(w.p.journal),
+    "Goal file: /g.md\n\n## Worker decisions: p1, session 1\n\nDECISION (worker): ok\n\n" +
+      "1 malformed decision entry was left out; see /run/items/p1/session-1/report.json.\n",
+  );
+});
+
+Deno.test("decisions that could not be journaled are reported by status, and the run goes on", async () => {
+  // The supervisor reads the journal and status, not the event log, so a journal the runner could not write must show
+  // up in status or the decisions are lost from the supervisor's view.
+  const plan = testPlan(1);
+  const w = fakeWorld(plan, {
+    worker: () => JSON.stringify({ status: "done", pr_url: url(1), summary: "", decisions: ["d"] }),
+    reviews: [approve],
+    journalFails: true,
+  });
+  w.files.set(w.p.journal, "Goal file: /g.md\n");
+  assertEq(await w.run(), { done: true });
+  assertEq(w.files.get(w.p.journal), "Goal file: /g.md\n");
+  const missing = unjournaledDecisions(w.events.join("\n"), w.files.get(w.p.journal)!);
+  assertEq(missing, ["p1 session 1 (EACCES)"]);
+  // Recovering them under the runner's heading takes the session off the list, so a later wake does not copy again.
+  const recovered = w.files.get(w.p.journal)! + `\n${decisionsHeading("p1", 1)}\n\nDECISION (worker): d\n`;
+  assertEq(unjournaledDecisions(w.events.join("\n"), recovered), []);
+  assertIncludes(
+    statusText(plan, w.state, undefined, undefined, undefined, missing),
+    "worker decisions not in the journal (they are in that session's worker-end event in events.jsonl): " +
+      "p1 session 1 (EACCES)",
+  );
+  if (statusText(plan, w.state, undefined).includes("not in the journal")) throw new Error("no line without misses");
+});
+
+Deno.test("the worker is told that reported decisions satisfy a goal's journal rule and to write nothing in the run directory", () => {
+  // The run that prompted this had the goal file's journal rule in the plan's context and a worker rule saying to log
+  // DECISIONs in the run journal. The prompt must settle that the report field satisfies such a rule, or a worker
+  // could take the two for a conflict and report replan under the worker-rule precedence.
+  const plan = {
+    ...testPlan(1),
+    context: "Record major decisions with a DECISION label in /run/journal.md.",
+    workerRules: ["Log consequential choices as DECISION in the run journal."],
+  };
+  const states = plan.items.map((i) => emptyItem(i.id));
+  const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
+  assertIncludes(work, decisionsRule("/run"));
+  assertEq(
+    decisionsRule("/run"),
+    `If you made consequential choices that this item's spec did not settle, add "decisions": ["...", ...] to the ` +
+      `report, whatever its status: one entry per choice, saying what you chose, what you rejected, and why. The ` +
+      `runner copies them into the run's journal. That is how decisions reach the journal: it satisfies any ` +
+      `instruction in the goal, its rules, or the guidance to log decisions there, is not a conflict with them, and ` +
+      `is no reason to report replan. Do not write anything under /run yourself except this report file.`,
+  );
+});
+
 Deno.test("the worker is told its hard limit and that an item's size is grounds for neither blocked nor replan", () => {
   // Without this a cheap worker stopped on a broad item after a minute of reading and reported blocked, spending a
   // supervisor wake and an escalation (see blockedRule). The whole rule is pinned, so that dropping its restriction to
@@ -2349,7 +2593,7 @@ Deno.test("the worker is told its hard limit and that an item's size is grounds 
   // refusal is a binding supervisor message too, so it must not grant the old "if you cannot finish" escape hatch.
   const plan = { ...testPlan(1), limits: { workerMinutes: 30 } };
   const states = plan.items.map((i) => emptyItem(i.id));
-  const work = workerPrompt({ plan, index: 0, states, nonce: "n", reportPath: "/r" });
+  const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
   assertIncludes(work, blockedRule(30));
   assertEq(
     blockedRule(30),
@@ -2361,7 +2605,10 @@ Deno.test("the worker is told its hard limit and that an item's size is grounds 
       `{"status": "replan", "reason": "..."} only when the work shows the plan itself must change, and name the ` +
       `change and what you found that requires it.`,
   );
-  assertIncludes(workerPrompt({ plan: testPlan(1), index: 0, states, nonce: "n", reportPath: "/r" }), blockedRule(120));
+  assertIncludes(
+    workerPrompt({ plan: testPlan(1), runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" }),
+    blockedRule(120),
+  );
   const stop = hookReply({ hook_event_name: "Stop" }, { nonce: "n", blocksSoFar: 0, cap: 2, inbox: [] });
   const reason = (stop.reply as { reason: string }).reason;
   assertIncludes(reason, "Blocked and replan are only for what that section allows.");
@@ -2571,7 +2818,7 @@ Deno.test("a plan without the policy fields gets exactly the prompts it got befo
       `the fix, "minor" otherwise. Do not raise style preferences the repository does not already follow. Return ` +
       `verdict "changes" exactly when there is at least one blocking finding.`,
   );
-  const work = workerPrompt({ plan, index: 0, states, nonce: "n", reportPath: "/r" });
+  const work = workerPrompt({ plan, runDir: "/run", index: 0, states, nonce: "n", reportPath: "/r" });
   assertIncludes(work, "the PR diff before the next item starts.\n\n## The supervisor channel");
   assertEq(itemChecks(plan, 0), ["make test"]);
 });
