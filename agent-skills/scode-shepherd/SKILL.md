@@ -90,11 +90,13 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 7. Run `<skill-dir>/scripts/shepherd init <run-dir>`.
 8. Start `<run-dir>/journal.md`, append-only: the goal, the run directory, the approval, and from then on every wake and
    what you decided. Start it before the runner, which appends the decisions workers report (under "Worker decisions"
-   headings) only to a journal that exists. Workers never write in the run directory themselves, so do not tell one to,
-   and when a plan you take over or resume has such a rule, remove it while the runner is stopped. When `status` says
-   some workers' decisions are not in the journal, copy them in from the session's `worker-end` event in `events.jsonl`,
-   under the heading the runner would have used (`## Worker decisions: <item>, session <n>`); `status` stops listing a
-   session once that heading is in the journal.
+   headings) only to a journal that exists. Workers write nothing in the run directory but their own session's report,
+   and the runner's prompt already tells them so. Do not tell one to write anything else there, and do not add a rule
+   that forbids writing there at all, which contradicts the report the runner requires. When a plan you take over or
+   resume has either kind of rule, remove it while the runner is stopped. When `status` says some workers' decisions are
+   not in the journal, copy them in from the session's `worker-end` event in `events.jsonl`, under the heading the
+   runner would have used (`## Worker decisions: <item>, session <n>`); `status` stops listing a session once that
+   heading is in the journal.
 9. Start the runner under the wake mechanism (see Waking up), tell the user the run is underway and how to ask about it,
    and end your turn.
 
