@@ -103,7 +103,8 @@ file did not weigh.
   Guidance and a takeover stay yours.
 - **Decision logging.** Log every consequential choice in the journal under a DECISION label, with the alternatives you
   considered: the decomposition, every replan, guidance that changes how an item is built, and every takeover. The user
-  will ask for these later to revisit them.
+  will ask for these later to revisit them. The workers' own choices reach the journal through their reports, which the
+  runner appends, so do not put the journal in `context` or `workerRules` as somewhere a worker writes.
 - **Done.** The goal file's done criterion is a stack of open PRs that together achieve the goal. That is what
   "Finishing" in `SKILL.md` reports; the PRs stay drafts, and merging is the user's.
 

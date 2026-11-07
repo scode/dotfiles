@@ -268,6 +268,18 @@ logs, and its reviews. A headless run adds `goal.md`, `driver.json`, the transie
 supervisor turn's prompt, events, and final message, the archived `next.json` files, questions and answers, and the
 runner's output per run).
 
+The worker writes only its session's report there. The decisions a worker makes that its item's spec did not settle go
+in the report's `decisions`, and the runner appends them to `journal.md` under a heading naming the item and session,
+before acting on the report, so they reach the run's decision log whatever the report's status. Malformed entries are
+left out and counted in that entry, never a reason to refuse the report: a report's PR or blocked reason is worth more
+than its metadata. The runner appends only to a journal that already exists: one it created would not open with the goal
+file's path, and a resumed supervisor would take the run directory for another goal's (see "Goal files from
+scode-build-goal"). A missing or unwritable journal does not stop the run; `status` names the sessions whose decisions
+stayed in the event log until the supervisor copies them in under the same heading. A session the resource guard kills
+has its report's decisions journaled too, if it wrote one. This exists because a goal file's "record decisions in the
+run's journal" reaches the worker through the plan's context, and on a patreon-buddy run (2026-11-06) the worker took it
+literally and edited the supervisor's journal itself.
+
 ## Testing
 
 The runner's decisions are unit-tested with fakes behind its `Ops` interface: sequencing per item; feedback for lost
