@@ -77,7 +77,11 @@ file did not weigh.
 - `worker`: the goal file's worker demand; the defaults when it makes none.
 - `checks`: the gates the goal file cites from the repository (its `AGENTS.md`, CI) and any validation the goal file
   demands for every PR. Targeted tests for one area go in that item's `checks`. All of them run unattended, as "The
-  plan" in `SKILL.md` says.
+  plan" in `SKILL.md` says. A goal file's general demand that applicable GitHub checks pass does not cover a base guard,
+  as `SKILL.md` defines it, on a PR whose actual base the guard does not allow (the stack the goal file asks for implies
+  that failure), nor a workflow that does not run on a PR's base when `checks` cover what it validates; name both as
+  `SKILL.md` says. A demand for such a check by name, or for validation the plan's `checks` cannot provide and the goal
+  file does not scope out, is a departure: ask.
 - `limits`: the defaults, unless the goal file sets them.
 
 ## Rules from the goal file that bind you
