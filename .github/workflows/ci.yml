@@ -27,6 +27,8 @@ jobs:
           command -v rustup || true
           command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
@@ -77,6 +79,8 @@ jobs:
           command -v rustup || true
           command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
@@ -108,6 +112,8 @@ jobs:
           command -v rustup || true
           command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
