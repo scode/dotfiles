@@ -112,13 +112,15 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   queued. Each turn runs in its own process group under a wrapper that records its pid and, last, the script's exit
   status; a turn ends when that exit file exists and is `lost` only when its group is gone with no exit status after a
   second look, or it never started within a grace period. A restarted daemon recovers turns its predecessor launched,
-  and neither stopping the daemon nor signalling its process group kills turns. A second live daemon is refused. The
-  journal that `wait` follows is repaired from state after a crash, and readers ignore a partial last line. `wait`
-  blocks until a turn ends and exits instead of hanging when no daemon is alive; daemon liveness needs a fresh heartbeat
-  and a live pid, never command-line matching. `status` gives the journal position, counts by state, free slots,
-  awaiting identities oldest first with exit, a compact audit summary and findings offsets, and running turns with pids
-  and output files. Unknown CLI options are refused. Terminal states are `complete` and `stopped-incomplete`, set by the
-  orchestrator between turns.
+  and neither stopping the daemon nor signalling its process group kills turns. A nonblocking lifetime lock refuses a
+  second daemon even before the owner publishes its heartbeat or if that heartbeat becomes stale. Heartbeat updates
+  replace the file atomically so readers never mistake a partial write for a dead daemon. The journal that `wait`
+  follows is repaired from state after a crash, and readers ignore a partial last line. `wait` blocks until a turn ends
+  and exits instead of hanging when no daemon is alive; daemon liveness needs a fresh heartbeat and a live pid, never
+  command-line matching. `status` gives the journal position, counts by state, free slots, awaiting identities oldest
+  first with exit, a compact audit summary and findings offsets, and running turns with pids and output files. Unknown
+  CLI options are refused. Terminal states are `complete` and `stopped-incomplete`, set by the orchestrator between
+  turns.
 - Groups advance independently: synthesis follows a group's own audit, and discovery follows its synthesis without a
   run-wide phase barrier. A group's discovery waits for synthesis, or an incomplete stop, in the interface groups
   recorded in its group notes, and for nothing else. Each group is tracked as queued, running, awaiting a parent

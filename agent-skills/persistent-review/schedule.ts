@@ -424,16 +424,25 @@ export async function tick(dir: string, options: TickOptions = {}): Promise<numb
 /**
  * Run until `stop` is requested. Refuses to start beside a live daemon for the same schedule, since two daemons
  * would each launch from the same queue. It never kills turns on exit; they keep running and a later daemon
- * records how they ended.
+ * records how they ended. A lifetime lock owns the daemon slot; heartbeat reads alone cannot exclude concurrent
+ * starts, and a paused daemon must retain ownership even if its heartbeat becomes stale.
  */
 async function run(dir: string, intervalMs = 1000, options: TickOptions = {}) {
   await load(dir);
+  using lease = await Deno.open(join(dir, "daemon.lock"), { create: true, write: true });
+  requireThat(await lease.tryLock(true), `A scheduler daemon is already running for ${dir}`);
   requireThat(!(await daemonAlive(dir)), `A scheduler daemon is already running for ${dir}`);
-  const beat = () => Deno.writeTextFile(daemonPath(dir), JSON.stringify({ pid: Deno.pid, beat: now() }) + "\n");
-  await beat();
+  // Readers must see a complete heartbeat. Truncate-and-write briefly made a live daemon appear absent.
+  const beat = async () => {
+    const path = daemonPath(dir);
+    await Deno.writeTextFile(path + ".tmp", JSON.stringify({ pid: Deno.pid, beat: now() }) + "\n");
+    await Deno.rename(path + ".tmp", path);
+  };
+  // Clear an old stop request before publishing readiness, so a new stop cannot be erased during startup.
   await Deno.remove(stopPath(dir)).catch(() => {});
   await locked(dir, () => ({ events: [{ kind: "daemon-started", pid: Deno.pid }] }));
   try {
+    await beat();
     while (!(await Deno.stat(stopPath(dir)).catch(() => null))) {
       await tick(dir, options);
       await beat();
@@ -684,6 +693,30 @@ async function drain(dir: string, options: TickOptions = {}) {
   for (let i = 0; i < 300 && (await tick(dir, options)) > 0; i++) await new Promise((r) => setTimeout(r, 20));
 }
 
+/** Fail with the stuck phase instead of leaving CI waiting forever for a daemon lifecycle operation. */
+async function bounded<T>(work: Promise<T>, phase: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timed out waiting for ${phase}`)), 2000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Poll observable readiness with a deadline; a missing pid or heartbeat must fail the test, not hang the suite. */
+async function until(check: () => Promise<boolean>, phase: string) {
+  const end = Date.now() + 2000;
+  while (!(await check())) {
+    if (Date.now() >= end) throw new Error(`Timed out waiting for ${phase}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function refuses(work: () => Promise<unknown>, text: string) {
   try {
     await work();
@@ -749,9 +782,7 @@ Deno.test("an exit file that appears after the group dies still decides the outc
     await tick(dir);
     // Point the turn at a group that does not exist; only the second exit-file read can save it from "lost".
     await edit(dir, (state) => state.identities.a.turns[0].pid = 2147483646);
-    while (!(await Deno.stat(join(dir, "turns", "a-1.exit")).catch(() => null))) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
+    await until(async () => !!(await Deno.stat(join(dir, "turns", "a-1.exit")).catch(() => null)), "turn exit file");
     await drain(dir);
     same((await status(dir)).awaiting_parent.map((r) => r.exit), [0]);
   }));
@@ -861,20 +892,53 @@ Deno.test("events the state recorded but the journal lacks are replayed", () =>
 
 /**
  * End to end through the daemon: a turn queued after the daemon started is launched without any further parent call,
- * `wait` wakes on its end, a second daemon is refused, and `stop` ends the daemon with a journal entry.
+ * `wait` wakes on its end, a second daemon is refused, and `stop` ends the daemon with a journal entry. Each lifecycle
+ * wait is bounded and cleanup runs on assertion failure, so an accidentally accepted twin cannot hang CI.
  */
 Deno.test("the daemon launches newly ready turns, wakes waiters, refuses a twin, and stops on request", () =>
   fixture(async (dir, script) => {
     await init(dir, 2);
     await add(dir, "a");
     const daemon = run(dir, 10);
-    while (!(await daemonAlive(dir))) await new Promise((r) => setTimeout(r, 10));
-    await refuses(() => run(dir, 10), "already running");
-    await ready(dir, "a", await script("exit 0"), "initial");
-    same(await wait(dir, 0, 5, 10), 0);
-    await Deno.writeTextFile(stopPath(dir), "");
-    await daemon;
+    try {
+      await until(() => daemonAlive(dir), "daemon startup");
+      await bounded(refuses(() => run(dir, 10), "already running"), "duplicate daemon refusal");
+      await ready(dir, "a", await script("exit 0"), "initial");
+      same(await wait(dir, 0, 1, 10), 0);
+    } finally {
+      await Deno.writeTextFile(stopPath(dir), "");
+      await bounded(daemon, "daemon shutdown");
+    }
     same((await journal(dir)).at(-1)?.kind, "daemon-exit");
+  }));
+
+/** A daemon owns its slot before publishing a heartbeat and while paused; neither absence nor staleness admits a twin. */
+Deno.test("the daemon lease refuses a twin without a usable heartbeat and releases on exit", () =>
+  fixture(async (dir) => {
+    await init(dir, 1);
+    const lease = await Deno.open(join(dir, "daemon.lock"), { create: true, write: true });
+    await lease.lock(true);
+    try {
+      for (const heartbeat of ["", JSON.stringify({ pid: Deno.pid, beat: "2000-01-01T00:00:00Z" })]) {
+        await Deno.writeTextFile(daemonPath(dir), heartbeat);
+        const twin = run(dir, 10);
+        try {
+          await bounded(refuses(() => twin, "already running"), "daemon lease refusal");
+        } finally {
+          await Deno.writeTextFile(stopPath(dir), "");
+          await bounded(twin.catch(() => {}), "duplicate daemon cleanup");
+        }
+      }
+    } finally {
+      lease.close();
+    }
+    const daemon = run(dir, 10);
+    try {
+      await until(() => daemonAlive(dir), "replacement daemon startup");
+    } finally {
+      await Deno.writeTextFile(stopPath(dir), "");
+      await bounded(daemon, "replacement daemon shutdown");
+    }
   }));
 
 /**
