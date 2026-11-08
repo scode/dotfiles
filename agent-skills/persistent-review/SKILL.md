@@ -41,6 +41,11 @@ carries only what is new for that turn (named gaps, questions, cross-group input
 immediate-recording instruction, and the brief's absolute path with an instruction to reread it if the reviewer's
 context was compacted. Do not paste the brief again.
 
+Include this instruction in every initial and continuation prompt: validate findings through source and contract
+analysis. Do not reproduce bugs or write reproductions unless the caller explicitly requests that work. Existing tests
+and builds remain allowed, but execution is not required to substantiate a finding. Distinguish conclusions supported by
+source from behavior observed during execution. The same rule applies to the orchestrator's candidate checks.
+
 This protocol imposes no elapsed-time limit. Continue while the review makes progress under the charter and the stopping
 rules below. Do not ask the caller for a time budget or invent an overall or per-turn deadline. The delegation and
 shellout defaults requiring a hard deadline do not apply to this protocol; retain their monitoring and termination

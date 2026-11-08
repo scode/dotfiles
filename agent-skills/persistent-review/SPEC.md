@@ -22,6 +22,10 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   the brief's path with an instruction to reread it after a compaction of the reviewer's context; the brief is not
   pasted again. Caller-required reading besides source is followed, and its per-reviewer cost is stated in the launch
   plan because it scales with group count.
+- Every initial and continuation prompt directs reviewers to validate findings through source and contract analysis.
+  Reviewers and the orchestrator do not reproduce bugs or write reproductions unless the caller explicitly requests that
+  work. Existing tests and builds remain allowed; execution is not required to substantiate a finding. Reports
+  distinguish source-supported conclusions from behavior observed during execution.
 - Codex and Claude reviewers are supported. Other reviewer backends are reported unsupported without substitution.
   Installation remains shared across all seven caller harnesses.
 
