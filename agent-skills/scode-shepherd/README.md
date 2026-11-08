@@ -6,7 +6,7 @@ NOTE: This is a first version. It has run only on throwaway tasks: the local smo
 stack on `scode/repotesting` (2026-11-04, gpt-6.1-terra medium worker, gpt-6.1-sol high reviewer) where each PR passed
 on its first session and first review, so the fix-round and escalation paths have not run for real yet. Nobody knows yet
 whether a cheap worker under this runner produces acceptable stacks on real goals, or how often it needs the supervisor.
-The first real goal ran on 2026-11-06; `testcases/` records it as a test case for a future eval.
+The first real goals ran on 2026-11-06 and 2026-11-07; `testcases/` records them as test cases for a future eval.
 
 ## Test cases
 
@@ -14,6 +14,8 @@ The first real goal ran on 2026-11-06; `testcases/` records it as a test case fo
 and what happened, so that an eval can replay them later. Agents using the skill never read it.
 
 - `patreon-buddy-tags.md`: tag subscriptions in patreon-buddy, a four-PR stack across every layer of a Rust app.
+- `vibe-lb-unique-names.md`: globally unique account names in vibe-lb, a three-PR stack through storage, API, CLI and a
+  TypeScript client, planned in Claude Code.
 
 ## Why it exists
 
