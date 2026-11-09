@@ -42,9 +42,11 @@ directory:
   the run directory says why), 3 when it refuses to start (another runner is active, or an edited `plan.json` changes an
   approved item), 2 on a usage or plan error, and 1 on a crash (its stderr has the stack trace). Running it again
   resumes where it stopped.
-- `status <run-dir>` prints one line per item (phase, worker sessions, review rounds, escalations so far, PR, token
-  use), a line when the runner is holding off on low disk or memory, and any open escalation. It is small; read it
-  instead of the state file.
+- `status <run-dir>` prints one line per item (phase, worker sessions, review rounds, escalations so far, PR, and the
+  worker's and the reviewer's token use, each including the sub agents its sessions started), a line when the runner is
+  holding off on low disk or memory, and any open escalation. Under `shepherd drive` it adds your own thread's token
+  use, with your sub agents; a `codex exec` you start yourself is not in it. It is small; read it instead of the state
+  file.
 - `adopt <run-dir> <item> <pr-url>` hands a PR that someone other than the worker made (you, after taking over) to the
   next `run` for verification and review. The runner must be stopped.
 - `hook <run-dir>` is the worker's hook handler. The runner installs it on each worker session itself; you never call
@@ -79,7 +81,9 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 3. Create the run directory next to the checkout: `<parent>/<checkout-name>-shepherd-<slug>`, where the slug is a few
    words from the goal. If that exists, add `-2`, `-3`, and so on. Never reuse another run's directory.
 4. Understand the repository and the goal well enough to design the change. Delegate broad reading to read-only sub
-   agents and keep their conclusions, not their file dumps.
+   agents and keep their conclusions, not their file dumps. When a sub agent cannot run the model you need and you start
+   `codex exec` instead, here or later in the run, do not pass `--ephemeral`: an ephemeral session leaves no transcript,
+   so its tokens drop out of what the run is measured by and nobody can audit what it read.
 5. Write `<run-dir>/plan.json` (see The plan). This is where your effort goes: a weak decomposition or a vague item spec
    costs worker sessions and review rounds on every item it touches.
 6. Show the user the plan and wait for approval: the numbered stack (id, title, and a one-line scope for each), the

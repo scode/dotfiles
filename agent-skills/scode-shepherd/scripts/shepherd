@@ -149,7 +149,10 @@ type ItemState = {
   approvedSpec?: string;
   /** PR head at approval; later items must build on it, and it must still be the PR's head when the run ends. */
   approvedHead?: string;
+  /** Token totals per role, each including the sub agents its sessions started. */
   usage: { worker: Usage; reviewer: Usage };
+  /** How many sub-agent threads those totals include. Absent in state written before sub agents were counted. */
+  subagentThreads?: { worker: number; reviewer: number };
 };
 
 type State = {
@@ -705,7 +708,18 @@ export function hookReply(
 // ---------------------------------------------------------------------------------------------------------------------
 
 /** `resourceKill` is set when the in-run resource watch killed the step (see `runLogged`), with the shortage. */
-type WorkerResult = { code: number; timedOut: boolean; usage: Usage; stderrTail: string; resourceKill?: string };
+/**
+ * `usage` includes the session's native sub agents (see `subagentUsage`); `subagentThreads` says how many there were,
+ * and is left out by fakes that have none.
+ */
+type WorkerResult = {
+  code: number;
+  timedOut: boolean;
+  usage: Usage;
+  subagentThreads?: number;
+  stderrTail: string;
+  resourceKill?: string;
+};
 type CheckResult = { ok: true } | { ok: false; command: string; logPath: string; tail: string; resourceKill?: string };
 
 /**
@@ -732,7 +746,7 @@ interface Ops {
   prepareTree(pr: PrInfo, approvedBase: string | undefined): Promise<TreeResult>;
   runChecks(checks: string[], logDir: string, minutes: number): Promise<CheckResult>;
   runReviewer(a: { prompt: string; dir: string; sel: ModelSel; minutes: number }): Promise<
-    { text?: string; usage: Usage; resourceKill?: string }
+    { text?: string; usage: Usage; subagentThreads?: number; resourceKill?: string }
   >;
   readText(path: string): Promise<string | undefined>;
   /**
@@ -749,6 +763,13 @@ interface Ops {
 
 function addUsage(a: Usage, b: Usage) {
   a.input += b.input, a.cachedInput += b.cachedInput, a.output += b.output;
+}
+
+/** Adds a session's sub-agent thread count to its item's, creating the counter in state that predates it. */
+function countSubagents(s: ItemState, role: "worker" | "reviewer", n: number | undefined) {
+  if (!n) return;
+  s.subagentThreads ??= { worker: 0, reviewer: 0 };
+  s.subagentThreads[role] += n;
 }
 
 type Paths = ReturnType<typeof pathsFor>;
@@ -890,6 +911,7 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
         await ops.log(it.id, "worker-start", { session: s.sessions, sessionDir });
         const res = await ops.runWorker({ prompt, sessionDir, reportPath, sel: worker, minutes: lim.workerMinutes });
         addUsage(s.usage.worker, res.usage);
+        countSubagents(s, "worker", res.subagentThreads);
         state.current = undefined;
         if (res.resourceKill !== undefined) {
           // The session may have written its report before the kill. Its PR claim is not acted on (the next session
@@ -910,7 +932,13 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
           return await escalate("resources-low", it.id, `the worker session was killed: ${res.resourceKill}`);
         }
         const report = parseReport(await ops.readText(reportPath));
-        await ops.log(it.id, "worker-end", { session: s.sessions, code: res.code, timedOut: res.timedOut, report });
+        await ops.log(it.id, "worker-end", {
+          session: s.sessions,
+          code: res.code,
+          timedOut: res.timedOut,
+          subagentThreads: res.subagentThreads,
+          report,
+        });
         if (typeof report === "string") {
           // A session that dies at once and nonzero, twice in a row, is a launch or API problem (bad model id, quota,
           // auth), not a worker that lost its way; another session would only burn the budget the same way.
@@ -969,6 +997,7 @@ export async function runLoop(plan: Plan, state: State, p: Paths, ops: Ops, save
           dir = `${p.review(it.id, n)}${attempt > 1 ? `-attempt-${attempt}` : ""}`;
           const r = await ops.runReviewer({ prompt, dir, sel: reviewer, minutes: lim.reviewerMinutes });
           addUsage(s.usage.reviewer, r.usage);
+          countSubagents(s, "reviewer", r.subagentThreads);
           if (r.resourceKill !== undefined) {
             return await escalate("resources-low", it.id, `the review was killed: ${r.resourceKill}`);
           }
@@ -1104,6 +1133,149 @@ export function codexUsage(events: string): Usage {
     } catch { /* a truncated last line from a killed session carries no usable usage */ }
   }
   return u;
+}
+
+/**
+ * Where a codex launched in `cwd` keeps its session rollouts: `$CODEX_HOME/sessions`, or `~/.codex/sessions` when
+ * `CODEX_HOME` is unset. The runner and the driver launch codex with their own environment, so this is where their
+ * sessions' rollouts land. Codex resolves a relative `CODEX_HOME` against its own working directory, which is the
+ * checkout or the verification tree rather than this script's, so a relative value is resolved against `cwd` too.
+ */
+export function codexSessionsRoot(
+  cwd: string,
+  codexHome = Deno.env.get("CODEX_HOME"),
+  userHome = Deno.env.get("HOME"),
+): string {
+  // `||`, not `??`: an empty variable means unset to codex as well.
+  const home = codexHome || `${userHome || "/"}/.codex`;
+  return `${home.startsWith("/") ? home : `${cwd}/${home}`}/sessions`;
+}
+
+/** The first line of a file, read in chunks so that a multi-megabyte rollout is not read whole to get its header. */
+async function firstLine(path: string, cap = 4 << 20): Promise<string | undefined> {
+  const f = await Deno.open(path).catch(() => undefined);
+  if (f === undefined) return undefined;
+  try {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const buf = new Uint8Array(64 << 10);
+    while (size < cap) {
+      const n = await f.read(buf);
+      if (n === null) break;
+      const nl = buf.subarray(0, n).indexOf(10);
+      chunks.push(buf.slice(0, nl === -1 ? n : nl));
+      size += n;
+      if (nl !== -1) break;
+    }
+    const all = new Uint8Array(chunks.reduce((s, c) => s + c.length, 0));
+    let at = 0;
+    for (const c of chunks) all.set(c, at), at += c.length;
+    return new TextDecoder().decode(all);
+  } finally {
+    f.close();
+  }
+}
+
+/**
+ * Token totals of every sub agent a codex thread started, at any depth, and how many threads that was.
+ *
+ * A thread's own `turn.completed` usage covers that thread alone. Its native sub agents run as separate threads with
+ * their own rollouts and their own token counts, and they can cost more than the thread that started them: in one
+ * benchmark run the ten sub agents of one worker session used more tokens than all five of the worker's sessions, and
+ * leaving them out halved the worker's reported cost. A sub agent's rollout names its parent in its first line (`session_meta`), as
+ * `parent_thread_id` and as `session_id` (the root of its tree), so the descendants are the rollouts whose parent is
+ * the thread or one of its descendants. Each one's total is the last `total_token_usage` it recorded.
+ *
+ * What this does not count: a `codex exec` the thread starts from its shell is an unrelated session as far as codex
+ * records go (no parent link), and a session launched with `--ephemeral` leaves no rollout at all.
+ *
+ * Only the date directories from the day before `since` to the day after `now` are read (codex names them by date,
+ * and the day either side covers a time zone offset), and only the first line of each rollout outside the tree.
+ */
+export async function subagentUsage(
+  root: string,
+  thread: string,
+  since: Date,
+  now = new Date(),
+): Promise<{ usage: Usage; threads: number }> {
+  const day = 24 * 3600 * 1000;
+  // Whole days from midnight, so the last day is never skipped when `now` is earlier in its day than `since` was.
+  const midnight = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const metas: { id: string; parent?: string; root?: string; path: string }[] = [];
+  for (let t = midnight(since) - day; t <= midnight(now) + day; t += day) {
+    const d = new Date(t);
+    const dir = `${root}/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/` +
+      String(d.getUTCDate()).padStart(2, "0");
+    const entries = await Array.fromAsync(Deno.readDir(dir)).catch(() => [] as Deno.DirEntry[]);
+    for (const e of entries) {
+      if (!e.isFile || !e.name.startsWith("rollout-") || !e.name.endsWith(".jsonl")) continue;
+      const path = `${dir}/${e.name}`;
+      try {
+        const p = JSON.parse((await firstLine(path)) ?? "").payload ?? {};
+        if (typeof p.id !== "string") continue;
+        const parent = p.parent_thread_id ?? p.source?.subagent?.thread_spawn?.parent_thread_id;
+        metas.push({ id: p.id, parent: typeof parent === "string" ? parent : undefined, root: p.session_id, path });
+      } catch { /* not a rollout header this version understands; it cannot be placed in the tree */ }
+    }
+  }
+  const tree = new Set([thread]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const m of metas) {
+      if (tree.has(m.id)) continue;
+      if ((m.parent !== undefined && tree.has(m.parent)) || m.root === thread) tree.add(m.id), grew = true;
+    }
+  }
+  const usage = { input: 0, cachedInput: 0, output: 0 };
+  let threads = 0;
+  for (const m of metas) {
+    if (m.id === thread || !tree.has(m.id)) continue;
+    threads++;
+    const text = await Deno.readTextFile(m.path).catch(() => "");
+    let last: Record<string, number> | undefined;
+    for (const line of text.split("\n")) {
+      if (!line.includes('"token_count"')) continue;
+      try {
+        const t = JSON.parse(line).payload?.info?.total_token_usage;
+        if (t && typeof t === "object") last = t;
+      } catch { /* a truncated last line from a killed sub agent */ }
+    }
+    if (last) {
+      usage.input += last.input_tokens ?? 0, usage.cachedInput += last.cached_input_tokens ?? 0;
+      usage.output += last.output_tokens ?? 0;
+    }
+  }
+  return { usage, threads };
+}
+
+/** The `thread_id` of a codex `--json` event log's `thread.started`, if the launch got that far. */
+function threadOf(events: string): string | undefined {
+  for (const line of events.split("\n")) {
+    if (!line.includes('"thread.started"')) continue;
+    try {
+      const t = JSON.parse(line).thread_id;
+      if (typeof t === "string") return t;
+    } catch { /* truncated */ }
+  }
+  return undefined;
+}
+
+/**
+ * A finished codex session's usage including its sub agents: its own `turn.completed` total plus `subagentUsage` of
+ * its thread. `since` is when the session was launched and `cwd` where (see `codexSessionsRoot`). A session that never
+ * started a thread has no sub agents.
+ */
+async function sessionUsage(
+  events: string,
+  since: Date,
+  cwd: string,
+): Promise<{ usage: Usage; subagentThreads: number }> {
+  const usage = codexUsage(events);
+  const thread = threadOf(events);
+  if (thread === undefined) return { usage, subagentThreads: 0 };
+  const sub = await subagentUsage(codexSessionsRoot(cwd), thread, since);
+  addUsage(usage, sub.usage);
+  return { usage, subagentThreads: sub.threads };
 }
 
 function tailOf(text: string, lines: number) {
@@ -1386,6 +1558,7 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
     async runWorker(a) {
       await Deno.mkdir(a.sessionDir, { recursive: true });
       await Deno.writeTextFile(`${a.sessionDir}/prompt.md`, a.prompt);
+      const launched = new Date();
       const hook = JSON.stringify(`${shq(SELF)} hook ${shq(runDir)}`); // TOML basic string; JSON escaping is valid here
       const cmd = [
         "codex",
@@ -1421,7 +1594,11 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
       });
       state.workerPid = undefined;
       const read = (f: string) => Deno.readTextFile(`${a.sessionDir}/${f}`).catch(() => "");
-      return { ...r, usage: codexUsage(await read("events.jsonl")), stderrTail: tailOf(await read("stderr.log"), 20) };
+      return {
+        ...r,
+        ...await sessionUsage(await read("events.jsonl"), launched, repo),
+        stderrTail: tailOf(await read("stderr.log"), 20),
+      };
     },
 
     async repoName() {
@@ -1518,6 +1695,7 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
     async runReviewer(a) {
       await Deno.mkdir(a.dir, { recursive: true });
       await Deno.writeTextFile(`${a.dir}/prompt.md`, a.prompt);
+      const launched = new Date();
       // --yolo because the codex sandbox does not start on every host (bwrap fails on loopback setup); the reviewer
       // works in the verification tree, never in the worker's checkout, and the prompt forbids writes.
       const cmd = [
@@ -1549,7 +1727,7 @@ function realOps(plan: Plan, state: State, p: Paths, runDir: string, save: () =>
       return {
         resourceKill: r.resourceKill,
         text: await Deno.readTextFile(`${a.dir}/review.json`).catch(() => undefined),
-        usage: codexUsage(events),
+        ...await sessionUsage(events, launched, p.verify),
       };
     },
 
@@ -1726,21 +1904,24 @@ export function statusText(
   plan: Plan,
   state: State,
   escalation: string | undefined,
-  supervisor?: Usage,
+  supervisor?: Usage & { subagentThreads?: number },
   waiting?: string,
   unjournaled: string[] = [],
 ): string {
+  // Say how many sub-agent threads a total includes, so a reader comparing it with session counts is not misled.
+  const sub = (n: number | undefined) => n ? ` (incl. ${n} sub-agent thread${n === 1 ? "" : "s"})` : "";
   const lines = state.items.map((s, i) => {
     const w = s.usage.worker, r = s.usage.reviewer;
     return `${i + 1}. ${s.id} [${s.phase}] sessions=${s.sessions} reviews=${s.reviewRounds} ` +
       `escalations=${s.escalations} pr=${s.pr?.url ?? s.prUrl ?? "-"} ` +
-      `tokens worker=${w.input}in/${w.cachedInput}cached/${w.output}out ` +
-      `reviewer=${r.input}in/${r.cachedInput}cached/${r.output}out`;
+      `tokens worker=${w.input}in/${w.cachedInput}cached/${w.output}out${sub(s.subagentThreads?.worker)} ` +
+      `reviewer=${r.input}in/${r.cachedInput}cached/${r.output}out${sub(s.subagentThreads?.reviewer)}`;
   });
   if (state.current) lines.push(`current: ${state.current.item} session ${state.current.session}`);
   if (supervisor) {
     lines.push(
-      `supervisor tokens (headless): ${supervisor.input}in/${supervisor.cachedInput}cached/${supervisor.output}out`,
+      `supervisor tokens (headless): ${supervisor.input}in/${supervisor.cachedInput}cached/${supervisor.output}out` +
+        sub(supervisor.subagentThreads),
     );
   }
   if (waiting) lines.push(`waiting for disk or memory ${waiting}`);
@@ -1765,7 +1946,8 @@ async function cmdStatus(runDir: string) {
   const waiting = await ownedAlive(lockPid, runDir) ? resourceWait(events) : undefined;
   const escalation = await Deno.readTextFile(p.escalation).catch(() => undefined);
   const journal = await Deno.readTextFile(p.journal).catch(() => "");
-  console.log(statusText(plan, state, escalation, driver?.usage, waiting, unjournaledDecisions(events, journal)));
+  const supervisor = driver && { ...driver.usage, subagentThreads: driver.subagentThreads };
+  console.log(statusText(plan, state, escalation, supervisor, waiting, unjournaledDecisions(events, journal)));
 }
 
 async function cmdAdopt(runDir: string, id: string, url: string) {
@@ -1896,8 +2078,13 @@ type DriverState = {
   answerer?: string;
   /** Undefined only when the supervisor finished or stopped. */
   pending?: Pending;
-  /** The supervisor thread's running token total, from the latest turn that recorded one. */
+  /**
+   * The supervisor thread's running token total, from the latest turn that recorded one, including the sub agents
+   * the thread has started (see `subagentUsage`).
+   */
   usage: Usage;
+  /** How many sub-agent threads `usage` includes, measured with it. Absent in driver state from before the count. */
+  subagentThreads?: number;
 };
 
 /** How the runner came out, in a sentence for the supervisor, plus `shepherd status` at that point. */
@@ -1910,7 +2097,7 @@ interface DriverOps {
    * thread's token total when the turn recorded one; a turn that failed early records none.
    */
   supervisorTurn(message: string, thread: string | undefined, turn: number): Promise<
-    { thread?: string; code: number; timedOut: boolean; usage?: Usage }
+    { thread?: string; code: number; timedOut: boolean; usage?: Usage; subagentThreads?: number }
   >;
   /** Reads the `next.json` the turn just wrote, and moves it aside so the next turn starts without one. */
   takeNext(turn: number): Promise<string | undefined>;
@@ -2002,7 +2189,7 @@ export async function driveLoop(ds: DriverState, ops: DriverOps, save: () => Pro
     await save();
     const t = await ops.supervisorTurn(p.message, ds.thread, ds.turns);
     ds.thread ??= t.thread;
-    if (t.usage) ds.usage = t.usage;
+    if (t.usage) ds.usage = t.usage, ds.subagentThreads = t.subagentThreads;
     await save();
     const next = parseNext(await ops.takeNext(ds.turns));
     if (typeof next === "string") {
@@ -2034,6 +2221,18 @@ export async function driveLoop(ds: DriverState, ops: DriverOps, save: () => Pro
     ds.pending = next.action === "ask" ? { kind: "answer", question: next.question } : { kind: "runner" };
     await save();
   }
+}
+
+/** The modification time of the oldest `turn-<n>.prompt.md` in the supervisor directory, if there is one. */
+export async function earliestPromptTime(dir: string): Promise<Date | undefined> {
+  const entries = await Array.fromAsync(Deno.readDir(dir)).catch(() => [] as Deno.DirEntry[]);
+  let earliest: Date | undefined;
+  for (const e of entries) {
+    if (!/^turn-\d+\.prompt\.md$/.test(e.name)) continue;
+    const m = (await Deno.stat(`${dir}/${e.name}`).catch(() => undefined))?.mtime ?? undefined;
+    if (m && (earliest === undefined || m < earliest)) earliest = m;
+  }
+  return earliest;
 }
 
 /** The supervisor's thread id, from the first `thread.started` among the turns' event logs, if any turn got that far. */
@@ -2092,7 +2291,19 @@ function realDriverOps(runDir: string, ds: DriverState): DriverOps {
       } catch { /* no thread.started: the launch failed */ }
       // A turn that failed before completing records no usage; reporting zeros would erase the thread's real total.
       const usage = text.includes('"turn.completed"') ? codexUsage(text) : undefined;
-      return { thread: thread ?? started, code: r.code, timedOut: r.timedOut, usage };
+      const id = thread ?? started;
+      let subagentThreads: number | undefined;
+      if (usage !== undefined && id !== undefined) {
+        // The thread's total covers every turn so far, and so does this: every sub agent the supervisor has started
+        // on the thread, counted again from their rollouts each turn. The earliest turn prompt was written before
+        // the thread started, so its time bounds the search. That is turn 1's unless a driver died between counting
+        // turn 1 and writing its prompt, and this turn's own prompt guarantees there is one.
+        const since = await earliestPromptTime(dir) ?? new Date();
+        const sub = await subagentUsage(codexSessionsRoot(ds.repo), id, since);
+        addUsage(usage, sub.usage);
+        subagentThreads = sub.threads;
+      }
+      return { thread: id, code: r.code, timedOut: r.timedOut, usage, subagentThreads };
     },
 
     async takeNext(turn) {
@@ -2248,7 +2459,9 @@ async function cmdDrive(runDir: string, args: string[]): Promise<number> {
   const label = { 0: "DONE", [DRIVE_WAITING]: "QUESTION", [DRIVE_STOPPED]: "STOPPED", [DRIVE_PROTOCOL]: "FAILED" };
   console.log(`${label[out.code as keyof typeof label]}: ${out.message}`);
   const u = ds.usage;
-  console.log(`supervisor tokens: ${u.input}in/${u.cachedInput}cached/${u.output}out over ${ds.turns} turns`);
+  const n = ds.subagentThreads;
+  const sub = n ? ` (incl. ${n} sub-agent thread${n === 1 ? "" : "s"})` : "";
+  console.log(`supervisor tokens: ${u.input}in/${u.cachedInput}cached/${u.output}out${sub} over ${ds.turns} turns`);
   return out.code;
 }
 
@@ -3016,6 +3229,113 @@ Deno.test("codexUsage takes the last turn.completed, which is the thread's runni
     '{"type":"turn.compl',
   ].join("\n");
   assertEq(codexUsage(ev), { input: 9, cachedInput: 3, output: 4 });
+});
+
+/**
+ * Sub agents are where a worker's tokens can hide: in one benchmark run they outspent all of the worker's sessions,
+ * and `status` reported half the worker's real use. This pins how a thread's tree is found in a codex sessions
+ * directory: children by `parent_thread_id`, grandchildren through their parent or their `session_id` root, and each
+ * thread's last `total_token_usage`, while an unrelated session, the thread's own rollout, and a session outside the
+ * dated directories searched are left out.
+ */
+Deno.test("subagentUsage sums every descendant thread's last total and nothing else", async () => {
+  const root = await Deno.makeTempDir();
+  try {
+    const rollout = async (day: string, id: string, meta: Record<string, unknown>, totals: number[][]) => {
+      await Deno.mkdir(`${root}/${day}`, { recursive: true });
+      const lines = [
+        JSON.stringify({ type: "session_meta", payload: { id, ...meta, base_instructions: "x".repeat(70_000) } }),
+      ];
+      for (const [i, c, o] of totals) {
+        lines.push(JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: { total_token_usage: { input_tokens: i, cached_input_tokens: c, output_tokens: o } },
+          },
+        }));
+      }
+      lines.push('{"type":"event_msg","payload":{"type":"token_cou'); // a sub agent killed mid-write
+      await Deno.writeTextFile(`${root}/${day}/rollout-2026-11-08T18-00-00-${id}.jsonl`, lines.join("\n"));
+    };
+    await rollout("2026/11/08", "T", { session_id: "T" }, [[1000, 900, 50]]);
+    await rollout("2026/11/08", "A", { session_id: "T", parent_thread_id: "T" }, [[10, 5, 1], [100, 50, 10]]);
+    // A grandchild found only through the nested source field, and one found only through its root.
+    await rollout("2026/11/09", "B", { source: { subagent: { thread_spawn: { parent_thread_id: "A" } } } }, [[
+      20,
+      10,
+      2,
+    ]]);
+    await rollout("2026/11/08", "C", { session_id: "T" }, [[3, 0, 1]]);
+    await rollout("2026/11/08", "U", { session_id: "U" }, [[7777, 0, 7]]);
+    await rollout("2026/10/01", "OLD", { session_id: "T", parent_thread_id: "T" }, [[5000, 0, 5]]);
+    const since = new Date("2026-11-08T18:00:00Z"), now = new Date("2026-11-08T23:00:00Z");
+    assertEq(await subagentUsage(root, "T", since, now), {
+      usage: { input: 123, cachedInput: 60, output: 13 },
+      threads: 3,
+    });
+    assertEq(await subagentUsage(root, "U", since, now), {
+      usage: { input: 0, cachedInput: 0, output: 0 },
+      threads: 0,
+    });
+    // An overnight run on a host east of UTC: codex names directories by local date, so a sub agent started late can
+    // sit in the date after `now`'s UTC date, and `now` is earlier in its day than `since` was. That day must be read.
+    await rollout("2026/11/10", "LATE", { session_id: "T", parent_thread_id: "T" }, [[4, 0, 1]]);
+    const late = await subagentUsage(root, "T", since, new Date("2026-11-09T12:00:00Z"));
+    assertEq(late.threads, 4);
+    assertEq(await subagentUsage(`${root}/missing`, "T", since, now), {
+      usage: { input: 0, cachedInput: 0, output: 0 },
+      threads: 0,
+    });
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+/**
+ * The sub-agent search has to look where codex wrote, and codex resolves a relative `CODEX_HOME` against its own
+ * working directory (the checkout or the verification tree), not the runner's. Pins that, the absolute and unset cases,
+ * and that the supervisor's search starts at its oldest turn prompt even when turn 1's is missing (a driver that died
+ * between counting the turn and writing its prompt), rather than at the time of the current measurement.
+ */
+Deno.test("sub agents are looked for in codex's own sessions directory, from the supervisor's first prompt", async () => {
+  assertEq(codexSessionsRoot("/repo", "/abs/home", "/home/u"), "/abs/home/sessions");
+  assertEq(codexSessionsRoot("/repo", "rel/home", "/home/u"), "/repo/rel/home/sessions");
+  assertEq(codexSessionsRoot("/repo", "", "/home/u"), "/home/u/.codex/sessions");
+  assertEq(codexSessionsRoot("/repo", undefined, "/home/u"), "/home/u/.codex/sessions");
+  const dir = await Deno.makeTempDir();
+  try {
+    assertEq(await earliestPromptTime(dir), undefined);
+    for (const [n, t] of [[2, "2026-11-02T10:00:00Z"], [3, "2026-11-05T10:00:00Z"]] as const) {
+      await Deno.writeTextFile(`${dir}/turn-${n}.prompt.md`, "m");
+      await Deno.utime(`${dir}/turn-${n}.prompt.md`, new Date(t), new Date(t));
+    }
+    await Deno.writeTextFile(`${dir}/turn-1.md`, "a final message, not a prompt");
+    await Deno.utime(`${dir}/turn-1.md`, new Date("2026-10-01T00:00:00Z"), new Date("2026-10-01T00:00:00Z"));
+    assertEq((await earliestPromptTime(dir))?.toISOString(), "2026-11-02T10:00:00.000Z");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+/**
+ * `status` is where the supervisor gets the token totals it reports, so a total that includes sub agents has to say
+ * so: otherwise a worker total far above what its session count suggests looks like an accounting error. State written
+ * before the counter existed still reads.
+ */
+Deno.test("status names the sub-agent threads a role's tokens include", () => {
+  const plan = testPlan(1);
+  const item = emptyItem("p1");
+  const state: State = { version: 1, nonce: "n", items: [item] };
+  assertEq(statusText(plan, state, undefined).includes("sub-agent"), false);
+  countSubagents(item, "worker", 6);
+  countSubagents(item, "worker", undefined);
+  countSubagents(item, "reviewer", 1);
+  const text = statusText(plan, state, undefined);
+  assertIncludes(text, "0out (incl. 6 sub-agent threads) reviewer=");
+  assertIncludes(text, "0out (incl. 1 sub-agent thread)");
+  const headless = statusText(plan, state, undefined, { input: 9, cachedInput: 8, output: 1, subagentThreads: 2 });
+  assertIncludes(headless, "supervisor tokens (headless): 9in/8cached/1out (incl. 2 sub-agent threads)");
 });
 
 /**

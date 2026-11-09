@@ -288,6 +288,14 @@ pending step is kept, and `--max-turns` raises the cap for a run that should go 
 token total from the latest turn that reported one, which `status` reports next to the worker's and the reviewer's,
 because measuring what each role costs is the point of evaluating this skill.
 
+For the same reason each role's total includes the native sub agents its sessions start, at any depth, and `status` says
+how many sub-agent threads a total includes. A thread's own usage leaves them out, and they can be most of the cost: in
+one benchmark run a worker's sub agents used more tokens than its sessions, and leaving them out halved the worker's
+reported use. Codex records each sub agent's parent in its rollout, which is how they are found. A `codex exec` that a
+session starts from its shell has no such link and is not counted, and one started with `--ephemeral` leaves no rollout
+at all. So the supervisor never passes `--ephemeral` to a `codex exec` it starts itself: the run's transcripts are its
+cost record and its audit trail, and an ephemeral session drops out of both while saving nothing a run needs.
+
 ## Run directory
 
 The run directory lives next to the checkout, never inside it, so nothing the run writes shows up in the worker's
