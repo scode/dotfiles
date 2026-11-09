@@ -11,9 +11,24 @@ env:
 
 jobs:
   fmt:
-    runs-on: ubicloud
+    runs-on: tensorlake-medium
     steps:
+      - name: Rehearsal runner identity and starting counters
+        run: |
+          date -u +%FT%TZ
+          hostname
+          nproc
+          lscpu
+          head -1 /proc/stat
+          cat /proc/uptime
+          cat /proc/meminfo
+          cat /proc/self/cgroup
+          df -B1 /
+          command -v rustup || true
+          command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
@@ -29,15 +44,43 @@ jobs:
       - run: cargo fmt --check
 
   dprint:
-    runs-on: ubicloud
+    runs-on: tensorlake-medium
     steps:
+      - name: Rehearsal runner identity and starting counters
+        run: |
+          date -u +%FT%TZ
+          hostname
+          nproc
+          lscpu
+          head -1 /proc/stat
+          cat /proc/uptime
+          cat /proc/meminfo
+          cat /proc/self/cgroup
+          df -B1 /
+          command -v rustup || true
+          command -v cargo || true
       - uses: actions/checkout@v7
       - uses: dprint/check@v2.5
 
   clippy:
-    runs-on: ubicloud
+    runs-on: tensorlake-medium
     steps:
+      - name: Rehearsal runner identity and starting counters
+        run: |
+          date -u +%FT%TZ
+          hostname
+          nproc
+          lscpu
+          head -1 /proc/stat
+          cat /proc/uptime
+          cat /proc/meminfo
+          cat /proc/self/cgroup
+          df -B1 /
+          command -v rustup || true
+          command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
@@ -53,9 +96,24 @@ jobs:
       - run: cargo clippy -- -D warnings
 
   test:
-    runs-on: ubicloud
+    runs-on: tensorlake-medium
     steps:
+      - name: Rehearsal runner identity and starting counters
+        run: |
+          date -u +%FT%TZ
+          hostname
+          nproc
+          lscpu
+          head -1 /proc/stat
+          cat /proc/uptime
+          cat /proc/meminfo
+          cat /proc/self/cgroup
+          df -B1 /
+          command -v rustup || true
+          command -v cargo || true
       - uses: actions/checkout@v7
+      # Tensorlake's base image has no Rust toolchain; include setup in its measured cost.
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v6
         with:
           path: |
@@ -83,3 +141,9 @@ jobs:
       # Exercise the real builder and compiled freshness checks on the existing Linux runner, for every helper.
       - name: Build and test compiled helpers
         run: cargo test --test helper_launcher -- --ignored
+      - name: Rehearsal ending counters
+        if: always()
+        run: |
+          date -u +%FT%TZ
+          head -1 /proc/stat
+          cat /proc/uptime
