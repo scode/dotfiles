@@ -10,26 +10,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Quick jobs run on Tensorlake's small runner and the compile-heavy ones on boat. Tensorlake's image has no Rust
+  # toolchain, so fmt installs a minimal one. It skips the cargo cache on purpose: rustfmt needs no build output, and
+  # since every job shares one cache key, a miss here would save a near-empty cache under the key clippy and test use.
   fmt:
-    runs-on: boat
+    runs-on: tensorlake-small
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/cache@v6
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - run: rustup component add rustfmt
+          components: rustfmt
       - run: cargo fmt --check
 
   dprint:
-    runs-on: boat
+    runs-on: tensorlake-small
     steps:
       - uses: actions/checkout@v7
       - uses: dprint/check@v2.5
