@@ -186,17 +186,34 @@ transfers.
 
 ## Sandbox lifecycle and cost
 
-- **Reuse before creating.** Every create is a start, and starts are the scarce resource. When the orchestrating
-  workflow has another unit of work coming and an owned sandbox of a suitable type is free, run it there after clearing
-  the previous unit's work directory and credential, instead of deleting and creating. A default sandbox idling for an
-  hour costs less than a single paid start. A sandbox whose last exec ended without its `exit` frame is never reused
-  (see "Running work and transfer").
-- **Never stop and resume.** A resume is also a start, and owned sandboxes have snapshots off, so a stop erases them
-  anyway. Use delete, not stop.
-- **Delete when the work is done.** Delete with `boat delete ID --yes` as soon as the orchestrating workflow has no
-  further work for that sandbox, and delete every owned sandbox before this session ends or the workflow finishes,
-  including after failures and aborts. The TTL is a backstop for a session that dies before cleanup, not the cleanup
-  plan. Afterwards, check `boat list --all --json` for any remaining sandbox carrying the prefix that this session
-  recorded as its own. If cleanup itself fails, report the exact names and IDs so the user can remove them.
+A sandbox that lives only a few minutes is poor value. Its start costs the same however briefly it runs, and once starts
+are paid, a single one costs as much as running the sandbox for tens of minutes. Even within the allowance, each start
+uses up a slot shared with everything else on the account. So send short units of work to a sandbox that already exists,
+and do not create one per unit.
+
+- **Keep or delete by expected reuse.** When a unit of work ends, decide from what the orchestrating workflow has queued
+  or can reasonably expect. If it will probably need a sandbox of the same type again within the window below, keep this
+  one idle and reuse it, after clearing the previous unit's work directory and credential. If not, delete it. An idle
+  sandbox that reaches the end of its window with nothing to do is deleted then. The window is how long the sandbox can
+  sit idle before the running time costs as much as the cheapest paid start ($0.03), so keeping it longer than that
+  costs more than starting a new one later:
+
+  | `--type`  | Keep idle for up to |
+  | --------- | ------------------- |
+  | `small`   | about 100 minutes   |
+  | `default` | about 50 minutes    |
+  | `large`   | about 25 minutes    |
+  | `xlarge`  | about 9 minutes     |
+
+  These are rules of thumb, not exact break-even points: while starts are still free the window leans toward deleting,
+  and once they cost up to $0.07 it leans toward keeping. Do not hold a sandbox past its window just in case. A sandbox
+  whose last exec ended without its `exit` frame is never kept for reuse (see "Running work and transfer").
+- **Delete rather than stop.** Owned sandboxes have snapshots off, so a stop erases them just as a delete does, and a
+  resume would be a start anyway. Delete with `boat delete ID --yes`.
+- **Clean up at the end.** Delete every owned sandbox before this session ends or the orchestrating workflow finishes,
+  including after failures and aborts, whatever their windows say. The TTL is a backstop for a session that dies before
+  cleanup, not the cleanup plan. Afterwards, check `boat list --all --json` for any remaining sandbox carrying the
+  prefix that this session recorded as its own. If cleanup itself fails, report the exact names and IDs so the user can
+  remove them.
 - **Stay within the budget.** The count of owned sandboxes never exceeds the registered budget, and a create happens
   only when its start is free (see "Creating an owned sandbox").
