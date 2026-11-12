@@ -4,7 +4,7 @@ An agent skill that registers remote machines as workers so that some other work
 scode-galaxy-brain) can run work on them instead of on the local machine. Invoking it only declares capacity; it does
 not by itself delegate anything.
 
-NOTE: This is not a general remote-execution tool. It supports exactly three kinds of worker, and all are treated as
+NOTE: This is not a general remote-execution tool. It supports exactly four kinds of worker, and all are treated as
 disposable: the agent may install tools, copy source, and run agents on them with permission checks disabled. Do not
 point it at machines where that is not acceptable.
 
@@ -80,15 +80,39 @@ agent CLIs preinstalled, so the agent installs them fresh; for a burst of severa
 sandbox, checkpoint it, and clone the rest from the snapshot, deleting the snapshot when the burst is done. Snapshots
 outlive their sandbox and bill storage monthly, so cleanup includes sweeping them.
 
+## Boat sandboxes
+
+[Boat](https://docs.boat.dev) sandboxes are full x86_64 Ubuntu VMs driven by the `boat` CLI, which the agent assumes is
+installed and signed in. Only a budget is supported:
+
+```text
+$scode-ssh-delegate boat 10      # or: boat:10, or: it's okay to use up to 10 boat sandboxes
+```
+
+The budget is the same concurrency cap as for sprites and sandboxes. By default the agent creates boat's `default` size
+(4 vCPUs, 8 GB of RAM), and it may pick `small`, `large`, or `xlarge` when the work calls for it, saying why. Every
+sandbox is created with `--no-env`, so none of your boat account's stored secrets reach it, with snapshots off, so a
+pushed credential does not outlive the sandbox, and with monitoring off, so boat does not keep command output such as
+agent transcripts.
+
+Boat's pricing shapes how the agent uses it. Running time is cheap, but every sandbox start counts against the plan's
+per-minute, per-hour, and per-day start allowance, and starts beyond it cost money or are refused. So the agent keeps a
+sandbox for several units of work rather than creating one per unit, never stops and resumes one, and creates a sandbox
+only when `boat limits` says the next start is free; paying for extra starts is left to you. A boat sandbox also does
+not stop when idle; it runs until deleted or until its fixed TTL (two hours by default, extended when needed) runs out,
+so the agent deletes every sandbox it created as soon as the work is done. Claude Code and Codex come preinstalled.
+
 ## What the agent will not do
 
 - Delegate on its own. Some other workflow or instruction has to decide to use the workers.
-- Keep anything running on a sprite or sandbox between commands. Both pause or suspend when nothing is attached, which
-  stops or freezes every process, so long-lived servers and background jobs do not work there; the agent is told not to
-  try.
+- Keep anything running on a sprite or tensorlake sandbox between commands. Both pause or suspend when nothing is
+  attached, which stops or freezes every process, so long-lived servers and background jobs do not work there; the agent
+  is told not to try.
 - Open interactive sessions on sprites or sandboxes, since those keep the instance billed after the agent has moved on.
+- Pay for extra boat starts on its own.
 - Clone from, fetch from, or push to private repository remotes from a worker.
 
 The full rules the agent follows are in [SKILL.md](SKILL.md), which is what an agent loads up front; the sprite rules in
-[sprites.md](sprites.md), the tensorlake rules in [tensorlake.md](tensorlake.md), and the use-time rules in
-[using-workers.md](using-workers.md) are read only when a session actually registers such a worker or hands work to one.
+[sprites.md](sprites.md), the tensorlake rules in [tensorlake.md](tensorlake.md), the boat rules in [boat.md](boat.md),
+and the use-time rules in [using-workers.md](using-workers.md) are read only when a session actually registers such a
+worker or hands work to one.

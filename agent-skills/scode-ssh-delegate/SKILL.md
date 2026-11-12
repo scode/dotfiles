@@ -1,15 +1,16 @@
 ---
 name: scode-ssh-delegate
 description: >
-  Make Ubuntu 26.04 LTS hosts, Fly.io sprites, and Tensorlake sandboxes available as remote workers. Use when the user
-  invokes scode-ssh-delegate or $scode-ssh-delegate followed by one or more hostnames, including terse forms such as
-  "$scode-ssh-delegate foo" or "$scode-ssh-delegate foo, bar, baz"; when it is followed by named sprites or sandboxes,
-  such as "$scode-ssh-delegate sprites foo1 foo2", "$scode-ssh-delegate sbx foo1 foo2", or "use the sprites foo1
-  foo2"; or when it grants a sprite or sandbox budget, such as "$scode-ssh-delegate sprites:3", "$scode-ssh-delegate
-  sbx:3", or "it's okay to use up to 3 sprites". Immediately identify each named host's, sprite's, or sandbox's OS,
-  CPU count, and memory, then retain the supported workers (or the budgets) for possible use by another workflow. This
-  invocation does not request delegation. If retained context after compaction or resume says workers or a budget were
-  registered, re-read this skill and its companion files before touching them.
+  Make Ubuntu 26.04 LTS hosts, Fly.io sprites, Tensorlake sandboxes, and boat sandboxes available as remote workers.
+  Use when the user invokes scode-ssh-delegate or $scode-ssh-delegate followed by one or more hostnames, including terse
+  forms such as "$scode-ssh-delegate foo" or "$scode-ssh-delegate foo, bar, baz"; when it is followed by named sprites
+  or sandboxes, such as "$scode-ssh-delegate sprites foo1 foo2", "$scode-ssh-delegate sbx foo1 foo2", or "use the
+  sprites foo1 foo2"; or when it grants a sprite, sandbox, or boat budget, such as "$scode-ssh-delegate sprites:3",
+  "$scode-ssh-delegate sbx:3", "$scode-ssh-delegate boat 10", "$scode-ssh-delegate boat:10", or "it's okay to use up
+  to 3 sprites". Immediately identify each named host's, sprite's, or sandbox's OS, CPU count, and memory, then retain
+  the supported workers (or the budgets) for possible use by another workflow. This invocation does not request
+  delegation. If retained context after compaction or resume says workers or a budget were registered, re-read this
+  skill and its companion files before touching them.
 ---
 
 # scode SSH Delegate
@@ -18,10 +19,11 @@ This skill declares remote capacity; it does not decide whether or what to deleg
 instructions own that decision and all task decomposition. This skill only establishes which workers are available, the
 environment they provide, and the trust boundaries that apply if another workflow uses them.
 
-Three kinds of worker exist. SSH hosts are machines the user already runs and reaches over SSH; registering them is
+Four kinds of worker exist. SSH hosts are machines the user already runs and reaches over SSH; registering them is
 described in this file. Sprites are Fly.io sandboxes driven through the `sprite` CLI, and tensorlake sandboxes are
 Tensorlake microVMs driven through the `tl` CLI; for both, the user either names existing instances or lets this session
-create them up to a budget. All kinds end up in the same worker pool with the same trust rules.
+create them up to a budget. Boat sandboxes are full VMs driven through the `boat` CLI, and only a budget exists for
+them. All kinds end up in the same worker pool with the same trust rules.
 
 This file is deliberately limited to what every invocation needs. Companion files next to it are read on demand so that
 a session which never touches sprites or sandboxes, or never actually delegates, does not pay for that text:
@@ -37,14 +39,19 @@ a session which never touches sprites or sandboxes, or never actually delegates,
   image, bootstrap, snapshot templates, and the lifecycle rules that keep sandboxes cheap. The same
   neither-names-nor-a-number rule applies: ask rather than guess. Do not register or touch a tensorlake sandbox without
   having read the file.
+- `boat.md` — read it before classifying any argument whenever the invocation has `boat` as a whole argument or a
+  `boat:` prefix (`boat 10`, `boat:10`), or talks about boat sandboxes in natural language ("up to N boat sandboxes"). A
+  hostname that merely contains "boat" is not such a mention. It covers budget registration, sizes, credentials,
+  transfer, and the lifecycle rules that keep boat's per-start pricing cheap. Do not register or touch a boat sandbox
+  without having read the file.
 - `using-workers.md` — read it before the first command, transfer, install, or credential touches any registered worker,
   whoever asked for that: another skill, the user's instructions, or a follow-up request in the same conversation. It
   covers what may be installed on a worker, which credentials may be transferred and how, and how source and results
   cross the boundary. The rsync transport recorded at registration is not permission to skip it.
 
-After compaction or resume, if the retained context says a sprite or sandbox budget or such workers were registered,
-re-read `sprites.md` or `tensorlake.md` before the next operation on them; if workers were in use, re-read
-`using-workers.md` before the next delegation.
+After compaction or resume, if the retained context says a sprite, sandbox, or boat budget or such workers were
+registered, re-read `sprites.md`, `tensorlake.md`, or `boat.md` before the next operation on them; if workers were in
+use, re-read `using-workers.md` before the next delegation.
 
 ## Trust rules that always apply
 
@@ -61,10 +68,10 @@ that no session can act on a worker without having seen them:
 
 ## Register SSH hosts
 
-Treat values following the invocation that are not a sprite or tensorlake form as SSH targets. Commas are optional
-separators, so `$scode-ssh-delegate foo` and `$scode-ssh-delegate foo, bar, baz` are complete requests. SSH uses the
-current Unix username unless the user supplies another normal SSH target form. Do not require the user to say that the
-hosts are available or repeat them in a later task.
+Treat values following the invocation that are not a sprite, tensorlake, or boat form as SSH targets. Commas are
+optional separators, so `$scode-ssh-delegate foo` and `$scode-ssh-delegate foo, bar, baz` are complete requests. SSH
+uses the current Unix username unless the user supplies another normal SSH target form. Do not require the user to say
+that the hosts are available or repeat them in a later task.
 
 Immediately connect to every supplied target and collect only:
 
@@ -119,12 +126,14 @@ Do not inspect commands, packages, Codex or Claude authentication, project depen
 this initial inventory. Do not bootstrap a host merely because the user declared it. A later invocation adds successful
 targets; reprobing a target refreshes its inventory, and a failed reprobe removes it.
 
-## Sprites and tensorlake sandboxes, in one paragraph
+## Sprites, tensorlake sandboxes, and boat sandboxes, in one paragraph
 
-Registration and everything else about sprites is in `sprites.md`, and about tensorlake sandboxes in `tensorlake.md`;
-this is only so that an SSH-only reader knows what the forms mean. Named sprites and sandboxes are borrowed: the session
-runs work on them and never destroys them. A budget (`sprites:N` or `sbx:N`) is a concurrency cap, not a consumable
-count: at most N owned instances may exist at the same time, destroying one frees its slot, and there is no limit on how
-many the session creates over its lifetime. `sbx:6` after six create-and-destroy cycles is not "used up"; it still
-allows six more alive at once. A budget never touches instances the session did not create. Nothing is installed,
-transferred, or run on any worker at registration.
+Registration and everything else about sprites is in `sprites.md`, about tensorlake sandboxes in `tensorlake.md`, and
+about boat sandboxes in `boat.md`; this is only so that an SSH-only reader knows what the forms mean. Named sprites and
+sandboxes are borrowed: the session runs work on them and never destroys them. Boat has no named form. A budget
+(`sprites:N`, `sbx:N`, or `boat:N`, which can also be written `boat N`) is a concurrency cap, not a consumable count: at
+most N owned instances may exist at the same time, destroying one frees its slot, and there is no limit on how many the
+session creates over its lifetime. `sbx:6` after six create-and-destroy cycles is not "used up"; it still allows six
+more alive at once. Boat adds one constraint of its own: because every boat start counts against the plan's start
+allowance, `boat.md` has the session reuse its boat sandboxes and create one only when the start is free. A budget never
+touches instances the session did not create. Nothing is installed, transferred, or run on any worker at registration.
