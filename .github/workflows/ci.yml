@@ -80,6 +80,8 @@ jobs:
         run: deno test --no-config --no-lock -A agent-skills/interactive-artifact/interactive-artifact.ts
       - name: Test farhelm-plan-status collector
         run: deno test --no-config --no-lock -A agent-skills/farhelm-plan-status/scripts/collect
+      - name: Test scode-build-goal watchdog
+        run: deno test --no-config --no-lock -A agent-skills/scode-build-goal/scripts/watchdog
       # Exercise the real builder and compiled freshness checks on the existing Linux runner, for every helper.
       - name: Build and test compiled helpers
         run: cargo test --test helper_launcher -- --ignored

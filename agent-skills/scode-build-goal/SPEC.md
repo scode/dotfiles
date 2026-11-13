@@ -31,7 +31,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - The skill never overwrites or removes an existing goal or log file without asking. On a name collision it refines the
   slug with another word from the goal, or, when the existing files are an earlier attempt at the same goal, asks the
   user whether to replace them. Replacing moves both existing files aside under a dated suffix; it never deletes them
-  and never leaves the old log in place.
+  and never leaves the old log in place. A leftover watchdog status file moves aside with them, since it carries the old
+  attempt's alert state.
 - Every path written into the goal file, not only the log path, is absolute. The goal file is read by sessions with
   arbitrary working directories.
 
@@ -96,8 +97,7 @@ whoever is judging whether a change kept the user-facing behavior intact.
   and effort. The goal file does not carry galaxy-brain's concurrency rules. Native sub-agents are the normal launch
   path, and `scode-harness-shellout` covers a model not available as a native sub-agent type.
 - The review gate and scope reassessment review are the same as in galaxy brain mode, launched by the executing agent
-  itself the same way as any other sub-agent. The resource watchdog keeps all its obligations but runs as a background
-  process only, without the small-context watcher-agent option. The mode changes nothing else.
+  itself the same way as any other sub-agent. The mode changes nothing else.
 
 ## Galaxy brain mode
 
@@ -129,8 +129,7 @@ whoever is judging whether a change kept the user-facing behavior intact.
   unclear role is asked about. The per-PR review gate runs while other chunks continue.
 - The mode changes nothing else: the resume protocol, planning outline and scope reassessment, PR discipline (apart from
   sizing), decision logging, unattended fallback, done criterion, and the user's review-gate choice are the same, with
-  the review gate and the scope reassessment launched through powerhorse. The resource watchdog runs as a background
-  process only, without the watcher-agent option.
+  the review gate and the scope reassessment launched through powerhorse.
 
 ## Shepherd mode
 
@@ -224,17 +223,61 @@ entries below, and moves decision logging to the run's journal.
 - In the default no-workhorse mode, no orchestration skill, with the demands and allowances described under No-workhorse
   mode. In galaxy brain mode, `scode-galaxy-brain` for the entire run as described under Galaxy brain mode. In
   powerhorse mode, `scode-powerhorse` throughout, as described under Powerhorse mode.
-- A resource watchdog for memory and disk, started before the first delegation and without the watcher-agent option in
-  the no-workhorse and powerhorse modes, restarted if it dies, and carried in every handoff note. Prefer a process
-  monitor over a model watchdog to keep routine minute-level sampling out of model turns. A small-context model watcher
-  may replace frequent parent wakeups when it delivers alerts without being polled and is expected to reduce total cost,
-  including launch overhead and polling usage. Notification delivery and failure detection are verified, including
-  independent stale-heartbeat notification tested by stalling a live throwaway monitor. Without verified resource-alert,
-  exit, and stale-heartbeat notifications, the executor checks status at least once a minute. Every path checks
-  heartbeat freshness before workload launches. Dead monitors or heartbeats stale for two sample intervals pause new
-  launches until monitoring is restored. The log records how to reconcile or restart the monitor, and completion stops
-  the owned monitor. Reducing model wakeups must not reduce resource sampling or assume that status-file writes or
-  process-completion notifications deliver intermediate resource alerts.
+- A resource watchdog for memory and disk, started before the first delegation, restarted if it dies, and carried in
+  every handoff note. It is the skill's own `scripts/watchdog`, which the goal file names by absolute path along with
+  its status file (beside the working log, never created by this skill), watched paths, interval, and alert levels, so
+  no executor writes its own. The alert levels default to scode-shepherd's runner guard's "soft" levels, whose
+  percentage rule is capped by absolute amounts: a plain 10% rule, which this skill used before, alerts on a 2 TB disk
+  that still has 180 GB free. Memory includes cgroup v2 limits, since inside a container or a limited systemd scope
+  `/proc/meminfo` shows the host's memory and the OOM killer fires first. Swap is not watched: available memory counts
+  what the run can use without paging, so it alerts before the machine is down to swap.
+- The watchdog delivers alerts, worsening, recovery, unreadable sources, and its own exit or stall as notifications, so
+  routine minute-level sampling costs no model turns. A sampler cannot report its own hang, so a separate observer
+  watches the status file's age and reports it once it is two sample intervals old. The goal file names the mechanism
+  for each harness. In Claude Code, the sampler and the observer run under two Monitor tools, which turn each printed
+  line into a notification while the session keeps working; both expire every 30 minutes, and the executor re-arms them
+  and checks the status in that turn, so the normal case costs one such turn per half hour. The two are always re-armed
+  together, so they stay in step, and an observer started on an already-stale file stays quiet until the file has been
+  fresh, so a re-arm never reads as a new failure. In Codex, which has no Monitor, both are armed through
+  `skillette-codex-wake-on-exit`, which turns a process exit into a queued wake-up. The sampler keeps running there too,
+  so its exit means it died; the observer is the process that exits on each event (a stale heartbeat, or an event the
+  sampler recorded in the status file) and is re-armed. A sampler that exited on its own alerts instead would stop
+  sampling until the wake-up landed, which in Codex is not before the current turn ends. The sampler keeps what it has
+  already reported in the status file, so a re-armed sampler does not repeat an alert, and a resumed session checks the
+  status before its first launch instead. An earlier session's monitor handles do not work from a new session (Codex's
+  wake-on-exit refuses another thread), so a new session that finds a fresh heartbeat stops the earlier monitors through
+  their handles where it can and otherwise kills the sampler the status file names, before starting its own; two
+  samplers must never write one status file. In Codex, an observer armed on an already-stale status file does not count
+  that as an event, or a sampler that cannot be restored would wake the session at every turn end. The script path is
+  written with symlinks resolved, so it is the same file whichever harness runs the goal. That path is inside the
+  checkout the skills are installed from, so a goal that edits that checkout can change the script under a running
+  watchdog; this is accepted, since a restart picks up the change and a per-goal copy would keep old goal files away
+  from later fixes.
+- In Codex the observer is armed before the sampler, because it relays only events recorded after it started, and the
+  session stops its own runs through their handles, since killing a sampler by pid would queue a wake-up for an exit it
+  caused itself.
+- Delivery and failure detection are verified in each session, on fresh throwaway status files, before the real monitors
+  start: a synthetic alert, a killed throwaway sampler, and a throwaway sampler that stalls without exiting, caught
+  within two sample intervals. The stall uses the script's own stall flag rather than SIGSTOP, because under Monitor a
+  stopped job is reported as an exit and would test the exit path instead.
+- Every path checks the status (fresh heartbeat, nothing short, every source readable) before new workload launches and
+  at natural boundaries. A dead monitor, a heartbeat stale for two sample intervals, or a reported shortage pauses new
+  launches until the check passes. Only a shortage gets the cleanup response (removing owned worktrees and caches,
+  waiting for or killing the delegate most likely responsible); a monitoring failure only pauses launches until
+  monitoring is restored, since killing work over a sampler that missed a beat would turn every routine Monitor expiry
+  into damage. A shortage the run cannot relieve is logged as a blocker and launches stay paused, and so is a sampler
+  that dies again before its first sample or a source that stays unreadable after a restart, so a sampler that cannot
+  start does not cost a model turn per restart. When the harness's mechanism is unavailable or fails verification, the
+  executor logs that and relies on those checks alone; it does not poll the status file on a timer. Earlier text
+  required a check at least once a minute in that case, and on 2026-11-12 three independent reviewers of a pair of
+  long-running goal files flagged it: on a run of hours or weeks it is a model turn every minute, which burns context,
+  and a model in the middle of a long tool call cannot poll every minute anyway, so the launch and boundary checks are
+  what actually protect the run. Without Deno there is no watchdog, which counts as a dead monitor, and the planning
+  session says so up front when this machine lacks it. Reducing model wakeups must not reduce resource sampling or
+  assume that status-file writes or process-completion notifications deliver intermediate resource alerts.
+- The goal file has no small-context watcher-agent option for the watchdog in any mode. That option existed only for
+  when the process path still needed frequent parent wakeups, which a named notification mechanism removes. The log
+  records how to reconcile or restart the monitors, and completion stops the owned monitors.
 - A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a fresh-context run, delegated
   through the active orchestration skill (in no-workhorse mode, launched by the executing agent itself), of the reviewer
   the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and skill or
