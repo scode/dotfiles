@@ -78,9 +78,7 @@ The review gate and the scope reassessment review work the same way as in galaxy
 model standing in for the executing agent, they exist to be independent of the author, and that matters no less when the
 author wrote every line. The executing agent launches them like any other sub-agent, natively or through
 `scode-harness-shellout`. The review gate keeps the model, effort, and skill or charter the goal file demands. The scope
-reassessment review, for which the goal file names no model, runs at the executing agent's own model and effort. The
-resource watchdog keeps every one of its obligations, but loses its option of a small-context watcher agent, since that
-is a cheaper model doing monitoring the executing agent would otherwise do; it runs as a background process only.
+reassessment review, for which the goal file names no model, runs at the executing agent's own model and effort.
 
 The mode applies unless the user requests galaxy brain mode, powerhorse mode, or shepherd mode. The existing
 `no-workhorse` switch and plain-language requests that the executing agent work at its own model also select it
@@ -109,8 +107,7 @@ two orchestrators is ever loaded.
 Everything else the goal file requires stays the same: the resume protocol, the planning outline and scope reassessment,
 PR discipline, decision logging, the unattended fallback, the done criterion, and the review gate the user picks from
 the menu. The review gate and the scope reassessment review are launched through powerhorse instead of galaxy-brain. The
-review gate keeps the model, effort, and skill the goal file demands. The resource watchdog keeps every obligation but
-runs as a background process only, because powerhorse runs no helper agents.
+review gate keeps the model, effort, and skill the goal file demands.
 
 Three choices exist only in this mode, and the up-front batch states a default for each so the user can override it with
 one line:
@@ -204,7 +201,9 @@ exists, never overwrite or remove it without asking. Either refine the slug with
 counter or a date) so the new pair is distinct, or, when the existing files really are an earlier attempt at the same
 goal, ask the user whether to replace them. Replacing means moving both existing files aside under a dated suffix
 (`<name>.archive-YYYY-MM-DD.md`), never deleting them, and never leaving the old log in place: a leftover log would make
-the new goal's first run resume from the old attempt.
+the new goal's first run resume from the old attempt. A leftover watchdog status file (`<slug>-goal-watchdog.json`, see
+Resource watchdog) moves aside with them, as `<slug>-goal-watchdog.archive-YYYY-MM-DD.json` (after stopping any sampler
+still writing it), since it carries the old attempt's alert state.
 
 ## Up-front questions
 
@@ -374,38 +373,71 @@ Include, at minimum:
   away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo root, the
   commit range or bookmark to review, and the file the findings go to; the reviewer has no other context.
 - **Resource watchdog.** Right after the resume protocol in no-workhorse mode, or after activating the orchestration
-  skill in galaxy brain or powerhorse mode, and before the first delegation, the executing agent must start an
-  independent watchdog to watch memory and disk for the rest of the run and alert the orchestrator when either is
-  heading for exhaustion. Prefer a plain background process or the harness's process-monitor facility so routine
-  sampling does not require model turns. If that path still requires frequent parent wakeups, a small-context watcher
-  agent is reasonable when it can deliver alerts directly and is expected to reduce total cost, including its launch
-  overhead, model price, and polling usage. Give it only the monitoring context it needs; the parent must not have to
-  poll it for alerts. Sending only alerts to the parent does not eliminate the watcher's own polling cost. This is
+  skill in galaxy brain or powerhorse mode, and before the first delegation, the executing agent must start this skill's
+  watchdog to watch memory and disk for the rest of the run, and act when either is heading for exhaustion. This is
   mandatory, not a suggestion: unattended runs fan out delegates and worktrees, a Rust worktree costs on the order of
   1.5 GB of build output, tests leave temp directories behind, and a full disk or an OOM kill ends a run
-  mid-implementation with no signal to the orchestrator beyond a dead delegate. Spell out in the goal file what the
-  watchdog checks and how often — free space on the filesystems holding the repository, any worktrees, the scratch
-  directory, and `/tmp`, plus available memory and swap, using whatever the platform provides (`df`, `free` or
-  `/proc/meminfo` on Linux, `vm_stat`/`sysctl` on macOS), sampled every minute or so — and the thresholds at which it
-  alerts (a sensible default: under 10% or under 5 GB free on any watched filesystem, or under 10% available memory,
-  whichever comes first, with a second alert when the number keeps falling). An alert is an instruction to act, not to
-  note: the orchestrator stops launching new delegates, removes gated worktrees and build caches it owns, waits for or
-  kills the delegate most likely responsible, and only resumes when the watchdog reports headroom. The goal file must
-  also say that a watchdog that dies is restarted, and that its running state is part of every handoff note so a resumed
-  session reconciles the existing monitor or restarts it. Record its handle, watched paths, status path, and delivery
-  mechanism in the log, and stop the owned monitor when the goal is done. Separate sampling from model wakeups: keep the
-  minute-level samples in a private heartbeat/status file and use supported notifications for alerts, worsening
-  conditions, recovery, and monitor failure. A file update alone is not a notification. Verify delivery with a harmless
-  synthetic alert and verify failure detection with a throwaway monitor before relying on the mechanism. Omitting
-  periodic checks also requires independent stale-heartbeat detection: stall a throwaway monitor without exiting it and
-  verify that the caller is notified within two sample intervals. A monitor cannot detect its own sampling loop hanging.
-  If resource-alert, exit, or stale-heartbeat notifications are unavailable or unverified, say so in the log and check
-  status at least once a minute. On every path, check heartbeat freshness before new workload launches, batching that
-  check with other required observations. A dead monitor or a heartbeat stale for two sample intervals pauses new
-  launches until monitoring is restored. Do not lengthen resource sampling intervals or assume that a process-completion
-  notification delivers intermediate alerts from a still-running watchdog merely to reduce model turns. In no-workhorse
-  and powerhorse modes, the goal file leaves out the watcher-agent option: the watchdog is a background process, and any
-  status checks it cannot deliver as notifications are the executing agent's own.
+  mid-implementation with no signal to the orchestrator beyond a dead delegate. The watchdog is the Deno script
+  `scripts/watchdog` next to this `SKILL.md`; its module docs describe each subcommand's output. When this machine has
+  no `deno`, say so in the up-front batch. The goal file spells out everything below, with absolute paths, so the
+  executing agent writes no watchdog of its own:
+  - **What it watches.** The script's path with symlinks resolved (`realpath`), so it is the same file whichever harness
+    runs the goal. The status file, `<slug>-goal-watchdog.json` next to the working log, which this skill does not
+    create. The watched paths, each passed to `sample` as `--path`: the repository, the home directory, `/tmp`, the
+    directory holding the status file, the executing session's own scratch directory (which it adds when it starts the
+    sampler), and any worktree or build directory the run later creates on another filesystem (restart the sampler with
+    it added; a path that no longer exists is measured at its nearest existing parent). The interval, 60 seconds. The
+    script's default alert levels, unless the user asked for others: a filesystem under 5 GiB free (or under a quarter
+    of its size, for one smaller than 20 GiB), or under 10% free while also under 20 GiB; memory, including any cgroup
+    limit, under 10% available while also under 4 GiB. It reports a shortage once, again each time it loses another
+    quarter, and once when it recovers.
+  - **Claude Code.** Run `watchdog observe --status <file>` under the Monitor tool, and `watchdog sample --status <file>
+    --path <dir>...` under a second Monitor, both at the maximum timeout (30 minutes). Every line either prints is a
+    notification, and a quiet sample prints nothing. The observer reports `STALE` once the status file is two sample
+    intervals old, which catches a sampler that hangs without exiting. Keep the two in step: whenever either is re-armed
+    or restarted, stop the other and arm both again, observer first, then run `check`. An expiry notice is routine, not
+    an exit; a monitor exit is a monitoring failure.
+  - **Codex.** Arm the observer, `watchdog observe --status <file> --exit-on-event`, and then the sampler, with the same
+    arguments as in Claude Code, as two separate runs through the `skillette-codex-wake-on-exit` mechanism (load the
+    `skillette` skill and follow that entry), then run `check` and keep working on the goal. The observer goes first
+    because it relays only events recorded after it started. The sampler keeps sampling and never exits on purpose, so
+    its run wakes the session only if it dies. The observer exits with status 10, printing the event, on the first event
+    the sampler records after the observer started or on a heartbeat going stale (one already stale when it starts does
+    not count). On that callback, acknowledge it and arm a fresh observer; after a `STALE`, also stop the hung sampler
+    with `wake-on-exit stop` (which queues no wake-up), act on any alert in that run's `stdout.log` (it may have been
+    unable to write the status file), and arm a new one; then run `check` and act. Stop this session's own runs only
+    through their handles. The wake-up arrives when the current turn ends, and only an interactive session with a
+    connected client receives it; a `codex exec` session uses the fallback below.
+  - **Acting on it.** A shortage (an `ALERT` or `WORSE` line, or `check` reporting a resource short) is an instruction
+    to act, not to note: stop launching new delegates, remove gated worktrees and build caches the run owns, wait for or
+    kill the delegate most likely responsible, and resume launches only once `check` passes again. When nothing the run
+    owns can free enough, record the shortage in the log as a blocker; launches stay paused. A monitoring failure (a
+    `STALE` or `ERROR` line, a monitor exit, or `check` failing on heartbeat age or an unreadable source) pauses new
+    launches until monitoring is restored and `check` passes: restart a dead or hung sampler, after stopping a hung one
+    (its Monitor, its wake-on-exit run, or the `pid` in the status file) so two never write the same status file. A
+    sampler that dies again before writing a sample, or a source that stays unreadable after a restart, is logged as a
+    blocker and not retried before the next natural boundary; launches stay paused. A `RECOVERED` or `FRESH` line needs
+    nothing beyond that `check`. Run `watchdog check --status <file>` before every new workload launch, batched with
+    other required observations, and at natural boundaries (a delegate returning, a PR finished, a handoff).
+  - **Verification.** In each session, before starting the real monitors, prove the mechanism on new throwaway status
+    files in the scratch directory with `--interval 5`, run the same way as the real ones: a sampler run with
+    `--synthetic-alert` delivers an `ALERT`; a sampler killed through the `pid` in its status file is reported as an
+    exit; and a sampler run with `--stall-after 2`, watched by its own observer armed first, produces `STALE` within two
+    sample intervals of the sample it missed. In Codex these callbacks, like the real ones, arrive at turn ends. Stop
+    the throwaway runs afterwards.
+  - **Fallback.** When the harness has neither mechanism, or the mechanism fails verification, say so in the log, run
+    the sampler as a plain background process, and rely on `check` before launches and at boundaries. Do not poll the
+    status file on a timer, do not lengthen the sampling interval to save model turns, and do not count a process-exit
+    notification as delivering intermediate alerts from a sampler that is still running. Without `deno` there is no
+    watchdog at all, which is a dead monitor: launches pause until it is installed.
+  - **Lifecycle.** Record the monitor handles (Monitor task ids, or wake-on-exit run ids and directories), the status
+    and watched paths, and the delivery mechanism in the log, and carry the watchdog's running state in every handoff
+    note so a resumed session reconciles the existing monitors or restarts them. When the status file's heartbeat is
+    still fresh at the start of a session, an earlier session's monitors are still running: stop them through the
+    handles the log records where that works (a resumed Codex thread can still use its own), and otherwise kill the
+    `pid` the status file names, before starting this session's own. Ignore callbacks from runs this session did not
+    arm. A resumed session runs `check` before its first launch, because the sampler does not repeat an alert it already
+    delivered. Stop the owned monitors (`TaskStop`, or `wake-on-exit stop`) when the goal is done.
 - **Decision logging.** Log major design decisions in the working log as they happen, with a scannable DECISION label —
   especially decisions that could reasonably have gone another way. The user will later ask for the major decisions in
   order to revisit them, so an unlogged decision is effectively a hidden one.

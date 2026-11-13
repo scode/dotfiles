@@ -1299,9 +1299,8 @@ const liveGroups = new Set<number>();
  * The percentage rules are capped by absolute amounts because on a large disk 10% is far more than any run needs: a 2
  * TB disk that is 91% full still has 180 GB free, and an earlier draft with a plain percentage rule would have stopped
  * runs on it. The absolute floors scale down on small filesystems for the opposite reason: a tmpfs `/tmp` at half the
- * RAM of an 8 GiB machine is 4 GiB in all and would otherwise stop every run. `scode-build-goal`'s watchdog uses 5 GB
- * or 10% as alert levels for an agent to judge; here they decide on their own, so they have to be stricter about what
- * counts as short.
+ * RAM of an 8 GiB machine is 4 GiB in all and would otherwise stop every run. `scode-build-goal`'s watchdog alerts at
+ * the soft levels for an agent to judge; here they decide on their own.
  */
 const GIB = 1024 * 1024;
 const SOFT_DISK_KB = 5 * GIB, SOFT_DISK_SMALL_FRACTION = 0.25, SOFT_DISK_FRACTION = 0.1;

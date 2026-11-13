@@ -1,0 +1,603 @@
+#!/usr/bin/env -S deno run -A
+/**
+ * The resource watchdog that scode-build-goal's goal files tell the executing agent to run: it watches disk and memory
+ * for an unattended run, and turns a shortage into a wake-up for the model without the model ever polling for one.
+ *
+ * Three subcommands share one status file:
+ *
+ * - `sample` reads disk and memory once per interval and rewrites the status file every time, so the file's mtime is
+ *   the heartbeat. It prints a line only for an event: a resource going short (`ALERT`), a short resource falling by
+ *   another quarter (`WORSE`), a resource recovering (`RECOVERED`), or a reading it cannot take (`ERROR`). A quiet
+ *   sample prints nothing, which is what keeps routine sampling out of model turns.
+ * - `observe` watches the status file from outside and prints `STALE` once it is missing or older than two sample
+ *   intervals, and `FRESH` when it is written again. A sampler that hangs (a `df` wedged in the kernel, a stopped
+ *   process) cannot report its own hang, so this has to be a separate process. With `--exit-on-event` it also relays
+ *   the sampler's events: it exits with status 10 on its first stale heartbeat or on the first event the sampler
+ *   records after the observer started, printing it. Neither mode reports a file that was already stale at its start.
+ * - `check` is the one-shot question an agent asks before launching heavy work: exit 0 when the heartbeat is fresh and
+ *   nothing is short or unreadable, 1 otherwise, with a one-line summary either way.
+ *
+ * Each printed line is meant to become a notification: in Claude Code `sample` and `observe` run under the Monitor
+ * tool, which turns every stdout line into one. Codex has no such tool, only a mechanism that wakes the session when a
+ * process exits. There the sampler runs under that mechanism without ever exiting on purpose (so a crash still wakes
+ * the session), and `observe --exit-on-event` is the process that exits, and is re-armed, once per event. Keeping the
+ * sampler running is the point: a sampler that exited on its first alert would leave nothing sampling until the
+ * session got around to restarting it, which in Codex is not before the current turn ends.
+ *
+ * NOTE: The sampler carries its notification state (which resources it already reported short, at what level, and
+ * which sources it reported unreadable) in the status file and picks it up again on start. A restart therefore does
+ * not repeat an alert the agent already has, which matters because Claude Code's Monitor kills the sampler every 30
+ * minutes and the agent restarts it. The flip side is that a fresh session must read the status (`check`) rather than
+ * wait for an alert about a shortage that began before it started.
+ *
+ * Linux and macOS. The thresholds follow scode-shepherd's runner guard (see `isShort`); the parsing helpers are copied
+ * from there rather than imported, because scode-build-goal loads no other skill.
+ */
+import $ from "jsr:@david/dax@0.50.2";
+import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+
+const GIB = 1024 * 1024; // in KiB, the unit every reading uses
+const SYNTHETIC = "synthetic";
+const EVENT_EXIT = 10;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Thresholds and the shortage rule
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Alert levels, all overridable by flags. Defaults are scode-shepherd's "soft" levels; see `isShort` for the rule. */
+export type Thresholds = {
+  diskGib: number;
+  diskPercent: number;
+  diskCapGib: number;
+  memPercent: number;
+  memCapGib: number;
+};
+export const DEFAULTS: Thresholds = { diskGib: 5, diskPercent: 10, diskCapGib: 20, memPercent: 10, memCapGib: 4 };
+
+/**
+ * Recovery needs this much more headroom than the alert level, so a resource hovering at the line does not alternate
+ * between ALERT and RECOVERED every minute (Monitor stops a monitor that emits too many events).
+ */
+const RECOVERY_MARGIN = 1.2;
+
+/**
+ * Whether a reading is short at the given thresholds, each scaled by `scale`.
+ *
+ * A filesystem is short under `diskGib` free (or under a quarter of its size when that is less, which with the defaults
+ * means a filesystem under 20 GiB), or under
+ * `diskPercent` free while also under `diskCapGib`. Memory is short under `memPercent` available while also under
+ * `memCapGib`. The percentage rules are capped by absolute amounts because 10% of a large disk is far more than any run
+ * needs: a 2 TB disk at 91% full still has 180 GB free, and an earlier draft of scode-shepherd's guard with a plain
+ * percentage rule would have stopped runs on it. The disk floor scales down on small filesystems for the opposite reason, so a 4 GiB tmpfs `/tmp` is not short
+ * from the moment it is mounted.
+ */
+export function isShort(r: Reading, t: Thresholds, scale = 1): boolean {
+  const pct = (p: number) => r.totalKb * p / 100 * scale;
+  if (r.kind === "memory") return r.availKb < pct(t.memPercent) && r.availKb < t.memCapGib * GIB * scale;
+  return r.availKb < Math.min(t.diskGib * GIB, r.totalKb / 4) * scale ||
+    (r.availKb < pct(t.diskPercent) && r.availKb < t.diskCapGib * GIB * scale);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Readings
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** One resource: a filesystem (keyed by mount point, listing the watched paths on it) or memory (keyed `memory`). */
+export type Reading = { key: string; kind: "disk" | "memory"; totalKb: number; availKb: number; paths?: string[] };
+
+/**
+ * Total and available KiB, and the mount point, from `df -Pk` output. Parsed from the right, anchored on the capacity
+ * column, so a filesystem name with spaces does not shift the fields. GNU df prints a negative available figure for a
+ * filesystem filled past its reserve; that is read as zero rather than dropped as unparseable.
+ */
+export function parseDf(text: string): { totalKb: number; availKb: number; mount: string } | undefined {
+  const lines = text.trim().split("\n");
+  const m = /(\d+)\s+(-?\d+)\s+(-?\d+)\s+\d+%\s+(\S.*)$/.exec(lines.at(-1) ?? "");
+  if (!m || lines.length < 2) return undefined;
+  const totalKb = Number(m[1]), availKb = Math.max(0, Number(m[3]));
+  return totalKb > 0 ? { totalKb, availKb, mount: m[4] } : undefined;
+}
+
+/** Total and available memory in KiB from Linux's `/proc/meminfo`. */
+export function parseMeminfo(text: string): { totalKb: number; availKb: number } | undefined {
+  const kb = (k: string) => Number(new RegExp(`^${k}:\\s+(\\d+)`, "m").exec(text)?.[1]);
+  const totalKb = kb("MemTotal"), availKb = kb("MemAvailable");
+  return Number.isFinite(totalKb) && Number.isFinite(availKb) && totalKb > 0 ? { totalKb, availKb } : undefined;
+}
+
+/**
+ * Available memory in KiB from macOS's `vm_stat`: free, inactive, speculative, and purgeable pages, which the kernel
+ * hands out without paging anything else out. It is an estimate (macOS has no MemAvailable), good enough for a 10%
+ * alert level.
+ */
+export function parseVmStat(text: string): number | undefined {
+  const pageSize = Number(/page size of (\d+) bytes/.exec(text)?.[1]);
+  const pages = (k: string) => Number(new RegExp(`^Pages ${k}:\\s+(\\d+)`, "m").exec(text)?.[1] ?? 0);
+  if (!Number.isFinite(pageSize)) return undefined;
+  return (pages("free") + pages("inactive") + pages("speculative") + pages("purgeable")) * pageSize / 1024;
+}
+
+/**
+ * Memory as one cgroup v2 limit sees it, or undefined when the cgroup has no limit. Inside a container or a systemd
+ * scope with `MemoryMax=`, `/proc/meminfo` reports the host's memory, so without this the alert could never fire before
+ * the cgroup's OOM killer does. Available is the limit minus the working set (`memory.current` without inactive file
+ * cache, the figure kubelet uses), since page cache sits near the limit after any I/O-heavy step and would read as
+ * permanently short.
+ */
+export function parseCgroupMemory(max: string, current: string, stat: string) {
+  const limit = Number(max.trim()), used = Number(current.trim());
+  if (!Number.isFinite(limit) || !Number.isFinite(used) || limit <= 0) return undefined; // "max" means no limit
+  const inactiveFile = Number(/^inactive_file (\d+)$/m.exec(stat)?.[1] ?? 0);
+  return { totalKb: limit / 1024, availKb: Math.max(0, limit - Math.max(0, used - inactiveFile)) / 1024 };
+}
+
+/** This process's cgroup v2 directory and every ancestor up to the root, innermost first; empty without cgroup v2. */
+export function cgroupDirs(selfCgroup: string, root = "/sys/fs/cgroup"): string[] {
+  const path = /^0::(\/.*)$/m.exec(selfCgroup)?.[1];
+  if (path === undefined) return [];
+  const parts = path.split("/").filter((s) => s !== "" && s !== "." && s !== "..");
+  return parts.map((_, i) => `${root}/${parts.slice(0, parts.length - i).join("/")}`).concat(root);
+}
+
+/** The `df` runs that have not settled yet, by path; see `dfOf`. */
+const dfInFlight = new Set<string>();
+
+/** What a stuck `df` reads as, both on the sample where it hit the limit and on later ones while it is still stuck. */
+const DF_STUCK = "df has not answered within 25 seconds";
+
+/**
+ * `df` for one path, given up after 25 seconds. dax's timeout sends TERM and then waits, which a process stuck in the
+ * kernel on a hung network mount can outlast, so the race is what bounds the sample; the timeout only cleans up. A path
+ * whose previous `df` is still stuck is not given another, or a hung mount would collect one stuck process per sample,
+ * and it reads as the same error so the sampler reports the hang once.
+ *
+ * A watched path that does not exist (a worktree the run has removed, a directory not created yet) is measured at its
+ * nearest existing ancestor, which is the filesystem it would land on. Treating it as unreadable instead would fail
+ * `check` for good once the agent cleaned up a worktree it was told to watch. That walk stats paths on the same mount,
+ * so it runs inside the time limit too.
+ */
+async function dfOf(path: string) {
+  if (dfInFlight.has(path)) return DF_STUCK;
+  dfInFlight.add(path);
+  const run = (async () => {
+    let target = path.startsWith("/") ? path : `${Deno.cwd()}/${path}`;
+    while (target !== "/" && !(await Deno.stat(target).then(() => true, () => false))) {
+      target = target.replace(/\/+[^/]*\/*$/, "") || "/";
+    }
+    const r = await $`df -Pk ${target}`.noThrow().quiet().timeout("20s");
+    return r.code === 0 ? parseDf(r.stdout) ?? "unparseable df output" : `df exited ${r.code}: ${r.stderr.trim()}`;
+  })().catch((e) => `df failed: ${e}`).finally(() => dfInFlight.delete(path));
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<string>((r) => t = setTimeout(() => r(DF_STUCK), 25_000));
+  try {
+    return await Promise.race([run, deadline]);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+type Mem = { totalKb: number; availKb: number };
+
+/**
+ * Memory on Linux: the tightest of `/proc/meminfo` and every cgroup v2 limit on this process. A limited cgroup whose
+ * usage cannot be read is an error, never headroom.
+ */
+async function linuxMemory(errors: Record<string, string>): Promise<Mem | undefined> {
+  const best = { m: parseMeminfo(await Deno.readTextFile("/proc/meminfo").catch(() => "")) };
+  if (best.m === undefined) errors.memory = "unparseable /proc/meminfo";
+  for (const dir of cgroupDirs(await Deno.readTextFile("/proc/self/cgroup").catch(() => ""))) {
+    // No memory.max is normal: the root cgroup has none, nor does a cgroup without the memory controller.
+    const max = await Deno.readTextFile(`${dir}/memory.max`).catch(() => undefined);
+    if (max === undefined || max.trim() === "max") continue;
+    try {
+      const [cur, stat] = await Promise.all(["current", "stat"].map((f) => Deno.readTextFile(`${dir}/memory.${f}`)));
+      const cg = parseCgroupMemory(max, cur, stat);
+      if (cg === undefined) errors[dir] = `unparseable memory.max ${JSON.stringify(max.trim())}`;
+      else if (best.m === undefined || cg.availKb < best.m.availKb) best.m = cg;
+    } catch (e) {
+      errors[dir] = `${e}`;
+    }
+  }
+  return best.m;
+}
+
+/** Memory on macOS, from `sysctl hw.memsize` and `vm_stat`. */
+async function macMemory(errors: Record<string, string>): Promise<Mem | undefined> {
+  const total = Number((await $`sysctl -n hw.memsize`.noThrow().quiet()).stdout.trim()) / 1024;
+  const avail = parseVmStat((await $`vm_stat`.noThrow().quiet()).stdout);
+  if (total > 0 && avail !== undefined) return { totalKb: total, availKb: avail };
+  errors.memory = "unreadable sysctl or vm_stat output";
+}
+
+/**
+ * One sample: a reading per distinct filesystem holding a watched path, plus memory, and an error per source that
+ * could not be read. The `df` calls run in parallel so one hung mount costs one 25-second timeout, not one per path.
+ */
+async function sampleOnce(paths: string[]): Promise<{ readings: Reading[]; errors: Record<string, string> }> {
+  const readings = new Map<string, Reading>();
+  const errors: Record<string, string> = {};
+  const dfs = await Promise.all(paths.map(dfOf));
+  paths.forEach((path, i) => {
+    const d = dfs[i];
+    if (typeof d === "string") errors[path] = d;
+    else if (readings.has(d.mount)) readings.get(d.mount)!.paths!.push(path);
+    else readings.set(d.mount, { key: d.mount, kind: "disk", totalKb: d.totalKb, availKb: d.availKb, paths: [path] });
+  });
+  const mem = Deno.build.os === "darwin" ? await macMemory(errors) : await linuxMemory(errors);
+  if (mem !== undefined) readings.set("memory", { key: "memory", kind: "memory", ...mem });
+  return { readings: [...readings.values()], errors };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Events: the sampler's state machine
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * What the sampler has already told the agent: for each short resource, the available KiB at its last ALERT or WORSE;
+ * for each unreadable source, the error it reported. Persisted in the status file (see the module NOTE).
+ */
+export type Notified = { short: Record<string, number>; errors: Record<string, string> };
+
+/** Human-readable size, rounded down so a message never claims more room than there is. */
+const gib = (kb: number) => `${(Math.floor(kb / GIB * 10) / 10).toFixed(1)} GiB`;
+
+/** A reading as event lines and `check` print it: what is free, of how much, and which watched paths it covers. */
+function describe(r: Reading): string {
+  if (r.key === SYNTHETIC) return "synthetic alert (--synthetic-alert)";
+  return r.kind === "memory"
+    ? `${gib(r.availKb)} of ${gib(r.totalKb)} memory available`
+    : `${gib(r.availKb)} free of ${gib(r.totalKb)} on ${r.key} (holding ${r.paths!.join(", ")})`;
+}
+
+/**
+ * The event lines for one sample, given what was notified before, and the new notified state. Pure, so the rules are
+ * unit-tested: ALERT when a resource goes short; WORSE when a short resource has lost another quarter of what it had at
+ * its last notification; RECOVERED once it clears the alert level by `RECOVERY_MARGIN`; ERROR once per unreadable
+ * source (again only if its error text changes), and RECOVERED when it reads again.
+ */
+export function events(
+  readings: Reading[],
+  errors: Record<string, string>,
+  before: Notified,
+  t: Thresholds,
+): { lines: string[]; after: Notified } {
+  const lines: string[] = [];
+  const after: Notified = { short: {}, errors: {} };
+  for (const r of readings) {
+    const last = before.short[r.key];
+    if (last === undefined) {
+      if (isShort(r, t)) {
+        lines.push(`ALERT ${describe(r)}`);
+        after.short[r.key] = r.availKb;
+      }
+    } else if (!isShort(r, t, RECOVERY_MARGIN)) {
+      lines.push(`RECOVERED ${describe(r)}`);
+    } else if (r.availKb < last * 0.75) {
+      lines.push(`WORSE ${describe(r)}`);
+      after.short[r.key] = r.availKb;
+    } else {
+      after.short[r.key] = last;
+    }
+  }
+  // A short resource with no reading this time stays short while some source is failing, since its path may be the one
+  // that failed. Without any failure it is gone for good (the watched path now lives on another filesystem), and keeping
+  // it would hold `check` at NOT-OK forever.
+  const failing = Object.keys(errors).length > 0;
+  for (const [key, kb] of Object.entries(before.short)) {
+    if (failing && !(key in after.short) && !readings.some((r) => r.key === key)) after.short[key] = kb;
+  }
+  for (const [source, err] of Object.entries(errors)) {
+    if (before.errors[source] !== err) lines.push(`ERROR cannot read ${source}: ${err}`);
+    after.errors[source] = err;
+  }
+  for (const source of Object.keys(before.errors)) {
+    if (!(source in errors)) lines.push(`RECOVERED ${source} is readable again`);
+  }
+  return { lines, after };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The status file
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** One event line as the sampler printed it, numbered so `observe --exit-on-event` can tell new events from old. */
+type Event = { seq: number; line: string };
+
+/**
+ * The status file's content. Its mtime, not `t`, is the heartbeat `observe` and `check` judge. `seq` counts every event
+ * the sampler has printed over the file's life (it survives restarts with `notified`), and `recent` keeps the last few.
+ */
+type Status = {
+  t: string;
+  pid: number;
+  intervalSeconds: number;
+  notified: Notified;
+  readings: Reading[];
+  seq: number;
+  recent: Event[];
+};
+const RECENT_EVENTS = 20;
+
+async function readStatus(path: string): Promise<Status | undefined> {
+  try {
+    return JSON.parse(await Deno.readTextFile(path));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Written to a sibling file and renamed into place, so a reader never sees a half-written status. */
+async function writeStatus(path: string, s: Status) {
+  const tmp = `${path}.tmp-${Deno.pid}`;
+  await Deno.writeTextFile(tmp, JSON.stringify(s, null, 1) + "\n");
+  await Deno.rename(tmp, path);
+}
+
+/** Seconds since the status file was last written, or undefined when it does not exist. */
+async function ageSeconds(path: string): Promise<number | undefined> {
+  const st = await Deno.stat(path).catch(() => undefined);
+  return st?.mtime ? (Date.now() - st.mtime.getTime()) / 1000 : undefined;
+}
+
+const sleep = (seconds: number) => new Promise((r) => setTimeout(r, seconds * 1000));
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Prints one event line now (Monitor batches lines within 200 ms, so a sample's lines arrive as one notification). */
+function emit(line: string) {
+  console.log(line);
+}
+
+/**
+ * The sampling loop; runs until killed and never exits on purpose. Each sample's events are printed before the status
+ * file is written, so a full disk that makes the write fail cannot swallow the alert about it; a failed write is itself
+ * reported once as `ERROR` and the loop carries on (the observer sees the stale file too).
+ *
+ * `--stall-after N` is for verifying the observer: after N samples it stops sampling and writing but keeps the process
+ * alive, the way a sampler wedged on a hung mount looks from outside. SIGSTOP is not a substitute in Claude Code, since
+ * the shell under Monitor reports a stopped job as an exit (status 147), which tests the exit path instead.
+ */
+async function sample(status: string, paths: string[], intervalSeconds: number, t: Thresholds, o: Opts) {
+  const prior = await readStatus(status);
+  const notified: Notified = prior?.notified ?? { short: {}, errors: {} };
+  // A synthetic alert from an earlier verification run must not silence the next one.
+  delete notified.short[SYNTHETIC];
+  let seq = prior?.seq ?? 0, recent = prior?.recent ?? [], writeFailed = false;
+  for (let n = 0;; n++) {
+    if (o.stallAfter !== undefined && n >= o.stallAfter) {
+      setInterval(() => {}, 1 << 30); // a pending timer keeps Deno from exiting on an empty event loop
+      return;
+    }
+    const { readings, errors } = await sampleOnce(paths);
+    if (o.synthetic) readings.push({ key: SYNTHETIC, kind: "memory", totalKb: GIB, availKb: 0 });
+    const { lines, after } = events(readings, errors, notified, t);
+    Object.assign(notified, after);
+    const stamped = lines.map((l) => `${new Date().toISOString()} ${l}`);
+    stamped.forEach(emit);
+    recent = [...recent, ...stamped.map((line) => ({ seq: ++seq, line }))].slice(-RECENT_EVENTS);
+    const s: Status = {
+      t: new Date().toISOString(),
+      pid: Deno.pid,
+      intervalSeconds,
+      notified,
+      readings,
+      seq,
+      recent,
+    };
+    try {
+      await writeStatus(status, s);
+      writeFailed = false;
+    } catch (e) {
+      if (!writeFailed) emit(`${new Date().toISOString()} ERROR cannot write ${status}: ${e}`);
+      writeFailed = true;
+    }
+    await sleep(intervalSeconds);
+  }
+}
+
+/**
+ * The outside observer. The status file's own `intervalSeconds` sets the stale limit unless `--max-age` does. It checks
+ * every quarter of that limit (at most every 30 seconds), and every second while the file does not exist yet, so a
+ * sampler started alongside it is picked up at once rather than after a guess at its interval. A missing file gets a
+ * grace period of one limit from the observer's start.
+ *
+ * With `--exit-on-event` it is the process Codex's wake-on-exit mechanism watches: it exits with status 10 on a stale
+ * heartbeat, or once the sampler records an event numbered past the one the status file showed when the observer
+ * started, printing every such event. An event recorded before the observer started is not relayed, which is why the
+ * agent runs `check` after arming it.
+ *
+ * In either mode, a heartbeat that is already stale when the observer starts is not reported: the agent arming it is
+ * restarting monitoring and runs `check` afterwards, a dead sampler's own exit is reported by whatever runs it, and
+ * reporting at once would make every re-arm look like a fresh failure (and, in Codex, turn a sampler that cannot be
+ * restored into a wake-up at every turn end). It reports once the file has been fresh and goes stale again.
+ */
+async function observe(status: string, maxAgeFlag: number | undefined, o: Opts) {
+  const started = Date.now();
+  const first = await readStatus(status);
+  const baseline = first?.seq ?? 0;
+  const firstAge = await ageSeconds(status);
+  let stale = firstAge !== undefined && firstAge > (maxAgeFlag ?? 2 * (first?.intervalSeconds ?? 60));
+  while (true) {
+    const s = await readStatus(status);
+    const maxAge = maxAgeFlag ?? 2 * (s?.intervalSeconds ?? 60);
+    if (o.exitOnEvent && s !== undefined && s.seq > baseline) {
+      s.recent.filter((e) => e.seq > baseline).forEach((e) => emit(e.line));
+      Deno.exit(EVENT_EXIT);
+    }
+    const written = await ageSeconds(status);
+    const age = written ?? (Date.now() - started) / 1000;
+    if (!stale && age > maxAge) {
+      const what = written === undefined ? `missing after ${Math.round(age)}s` : `last written ${Math.round(age)}s ago`;
+      emit(`${new Date().toISOString()} STALE ${status} ${what} (limit ${maxAge}s)`);
+      stale = true;
+      if (o.exitOnEvent) Deno.exit(EVENT_EXIT);
+    } else if (stale && age <= maxAge) {
+      emit(`${new Date().toISOString()} FRESH ${status} written again`);
+      stale = false;
+    }
+    await sleep(written === undefined ? 1 : Math.min(30, Math.max(1, maxAge / 4)));
+  }
+}
+
+/** The pre-launch gate: exit 0 only for a fresh heartbeat with nothing short and nothing unreadable. */
+async function check(status: string): Promise<number> {
+  const s = await readStatus(status), age = await ageSeconds(status);
+  if (s === undefined || age === undefined) {
+    console.log(`NOT-OK no readable status at ${status}`);
+    return 1;
+  }
+  const limit = 2 * s.intervalSeconds;
+  const problems = [
+    ...(age > limit ? [`heartbeat ${Math.round(age)}s old (limit ${limit}s)`] : []),
+    ...Object.entries(s.notified.short).map(([k, kb]) => {
+      const r = s.readings.find((r) => r.key === k);
+      return `short: ${r ? describe(r) : `${k} (${gib(kb)} at its last reading)`}`;
+    }),
+    ...Object.entries(s.notified.errors).map(([k, e]) => `unreadable: ${k}: ${e}`),
+  ];
+  console.log(problems.length ? `NOT-OK ${problems.join("; ")}` : `OK ${s.readings.map(describe).join("; ")}`);
+  return problems.length ? 1 : 0;
+}
+
+type Opts = { exitOnEvent: boolean; synthetic: boolean; stallAfter?: number };
+
+const USAGE = `usage:
+  watchdog sample  --status <file> --path <dir> [--path <dir>...] [--interval <s>] [--synthetic-alert] [--stall-after N]
+                   [--disk-gib N] [--disk-percent N] [--disk-cap-gib N] [--mem-percent N] [--mem-cap-gib N]
+  watchdog observe --status <file> [--max-age <s>] [--exit-on-event]
+  watchdog check   --status <file>`;
+
+function usage(problem?: string): never {
+  console.error(problem ? `${problem}\n${USAGE}` : USAGE);
+  Deno.exit(2);
+}
+
+if (import.meta.main) {
+  const a = parseArgs(Deno.args, {
+    string: [
+      "status",
+      "path",
+      "interval",
+      "max-age",
+      "stall-after",
+      "disk-gib",
+      "disk-percent",
+      "disk-cap-gib",
+      "mem-percent",
+      "mem-cap-gib",
+    ],
+    boolean: ["exit-on-event", "synthetic-alert"],
+    collect: ["path"],
+  });
+  const num = (k: string, d?: number) => {
+    const v = a[k as keyof typeof a];
+    if (v === undefined) return d;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) usage(`--${k} must be a positive number, got ${v}`);
+    return n;
+  };
+  const status = a.status ?? usage("--status is required");
+  const cmd = a._[0];
+  const o = { exitOnEvent: a["exit-on-event"], synthetic: a["synthetic-alert"], stallAfter: num("stall-after") };
+  if (cmd === "sample") {
+    const paths = a.path as string[];
+    if (!paths.length) usage("sample needs at least one --path");
+    if (o.exitOnEvent) usage("--exit-on-event is for observe; the sampler never exits on purpose");
+    const t: Thresholds = {
+      diskGib: num("disk-gib", DEFAULTS.diskGib)!,
+      diskPercent: num("disk-percent", DEFAULTS.diskPercent)!,
+      diskCapGib: num("disk-cap-gib", DEFAULTS.diskCapGib)!,
+      memPercent: num("mem-percent", DEFAULTS.memPercent)!,
+      memCapGib: num("mem-cap-gib", DEFAULTS.memCapGib)!,
+    };
+    await sample(status, paths, num("interval", 60)!, t, o);
+  } else if (cmd === "observe") await observe(status, num("max-age"), o);
+  else if (cmd === "check") Deno.exit(await check(status));
+  else usage();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Tests: the shortage rule and the event state machine, which decide every notification the agent gets.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const disk = (availGib: number, totalGib: number, key = "/"): Reading => ({
+  key,
+  kind: "disk",
+  totalKb: totalGib * GIB,
+  availKb: availGib * GIB,
+  paths: [key],
+});
+const mem = (availGib: number, totalGib: number): Reading => ({
+  key: "memory",
+  kind: "memory",
+  totalKb: totalGib * GIB,
+  availKb: availGib * GIB,
+});
+const none: Notified = { short: {}, errors: {} };
+
+Deno.test("isShort caps the percentage rule so a big, mostly full disk is not short", () => {
+  // The case that motivated the caps: 180 GiB free is 9% of a 2 TB disk but plenty for any run.
+  assertEquals(isShort(disk(180, 2000), DEFAULTS), false);
+  assertEquals(isShort(disk(19, 2000), DEFAULTS), true); // under 10% and under 20 GiB
+  assertEquals(isShort(disk(4.9, 2000), DEFAULTS), true); // under the 5 GiB floor
+});
+
+Deno.test("isShort scales the floor down for small filesystems so a small tmpfs is not short when empty", () => {
+  assertEquals(isShort(disk(4, 4), DEFAULTS), false);
+  assertEquals(isShort(disk(0.9, 4), DEFAULTS), true); // under a quarter of 4 GiB
+});
+
+Deno.test("isShort needs both the memory percentage and the memory cap", () => {
+  assertEquals(isShort(mem(6, 64), DEFAULTS), false); // under 10% but over 4 GiB
+  assertEquals(isShort(mem(3, 64), DEFAULTS), true);
+  assertEquals(isShort(mem(1, 8), DEFAULTS), false); // 12.5% of 8 GiB
+});
+
+Deno.test("events: quiet samples print nothing, which is what keeps sampling out of model turns", () => {
+  assertEquals(events([disk(500, 1000), mem(30, 64)], {}, none, DEFAULTS).lines, []);
+});
+
+Deno.test("events: alert once, then only a further quarter's loss is WORSE, then RECOVERED with a margin", () => {
+  const a = events([disk(4, 1000)], {}, none, DEFAULTS);
+  assertEquals(a.lines.length, 1);
+  assert(a.lines[0].startsWith("ALERT "));
+  // Still short but not a quarter lower: silent, and the notified level stays at the alert's.
+  const b = events([disk(3.5, 1000)], {}, a.after, DEFAULTS);
+  assertEquals([b.lines, b.after.short["/"]], [[], 4 * GIB]);
+  const c = events([disk(2.9, 1000)], {}, b.after, DEFAULTS);
+  assert(c.lines[0].startsWith("WORSE "));
+  // A resource at zero cannot lose another quarter, so it does not repeat WORSE every sample.
+  const zero = events([disk(0, 1000)], {}, c.after, DEFAULTS);
+  assertEquals(events([disk(0, 1000)], {}, zero.after, DEFAULTS).lines, []);
+  // Just over the alert level is inside the recovery margin: no RECOVERED yet, so no flapping.
+  assertEquals(events([disk(5.5, 1000)], {}, c.after, DEFAULTS).lines, []);
+  const d = events([disk(50, 1000)], {}, c.after, DEFAULTS);
+  assert(d.lines[0].startsWith("RECOVERED "));
+  assertEquals(d.after, none);
+});
+
+Deno.test("events: an unreadable source is reported once, kept short-state, and recovers", () => {
+  const short = events([disk(1, 1000)], {}, none, DEFAULTS).after;
+  const a = events([], { "/": "df did not answer" }, short, DEFAULTS);
+  assertEquals(a.lines, ["ERROR cannot read /: df did not answer"]);
+  assertEquals(a.after.short["/"], 1 * GIB); // a shortage is not forgotten just because the next read failed
+  assertEquals(events([], { "/": "df did not answer" }, a.after, DEFAULTS).lines, []);
+  assertEquals(events([disk(1, 1000)], {}, a.after, DEFAULTS).lines, ["RECOVERED / is readable again"]);
+});
+
+Deno.test("parsers read df, meminfo, vm_stat, and cgroup output", () => {
+  const df = "Filesystem 1024-blocks Used Available Capacity Mounted on\nmy fs 1000 990 -5 100% /mnt/a b\n";
+  assertEquals(parseDf(df), { totalKb: 1000, availKb: 0, mount: "/mnt/a b" });
+  assertEquals(parseMeminfo("MemTotal: 1000 kB\nMemFree: 1 kB\nMemAvailable: 300 kB\n"), {
+    totalKb: 1000,
+    availKb: 300,
+  });
+  const vm = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 10.\nPages inactive: 5.\n";
+  assertEquals(parseVmStat(vm), 15 * 16);
+  assertEquals(parseCgroupMemory("max", "1", ""), undefined);
+  assertEquals(parseCgroupMemory("2048", "2048", "inactive_file 1024\n"), { totalKb: 2, availKb: 1 });
+  assertEquals(cgroupDirs("0::/a/b\n", "/cg"), ["/cg/a/b", "/cg/a", "/cg"]);
+});
