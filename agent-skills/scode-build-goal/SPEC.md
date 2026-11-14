@@ -221,6 +221,12 @@ whoever is judging whether a change kept the user-facing behavior intact.
   accepts the latest overseer the log records, or before any record the one its prompt names, so an overseer resume does
   not have to replace a working executor. A busy executor is not treated as a silent one: messages reach it only at its
   next tool call.
+- Every session the run spends money in can be found by searching the two logs for `SESSION`: the overseer log gets a
+  `SESSION overseer` line for each overseer session and a `SESSION executor` line for each distinct executor session
+  (launches, replacements, restarts, and launches that died before introducing themselves), one line per session id,
+  each with its transcript path and, for an executor, its launch id and farhelm session id, and the working log gets a
+  `SESSION reviewer` or `SESSION consult` line for each review or consult run outside Claude Code. Native sub-agents
+  need none, since their transcripts sit under the executor's.
 - The overseer keeps its own log, `<slug>-goal-overseer-log.md`, beside the working log, through `agent-resumeable`. The
   skill creates neither log and handles an existing overseer log like an existing working log.
 

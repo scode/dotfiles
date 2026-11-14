@@ -53,9 +53,16 @@ The executor keeps the working log, `<slug>-goal-log.md`, exactly as in no-workh
 `<slug>-goal-overseer-log.md`, in the same directory, through `agent-resumeable`. It records the current overseer as a
 line `CURRENT OVERSEER: <messaging name>` (the latest such line wins, and the executor reads it), the permission mode
 the executor was launched in, the executor's farhelm session id, messaging name, Claude session id, and transcript path,
-the transcript offset last read, and every nudge with its reason. This skill creates neither log, for the reason
-`SKILL.md` gives for the working log, and handles an existing overseer log the same way as an existing working log,
-moving both aside together when replacing an earlier attempt.
+the transcript offset last read, and every nudge with its reason. Together with the working log it records every session
+the run spends money in, so that a later look at the run's cost finds them all by searching both logs for `SESSION`.
+Each overseer session, fresh or resumed, appends `SESSION overseer <Claude session id> transcript <path>` right after
+invoking `agent-resumeable` (its id from `printenv CLAUDE_CODE_SESSION_ID`). The overseer appends `SESSION executor
+<Claude session id> launch <launch id> farhelm <farhelm session id> transcript <path>` for every executor session id it
+has not recorded yet, whenever an introduction or the transcript lookup reveals one: after a launch, a replacement, a
+restart, or a handoff between overseers. A launch that ends before it introduces itself still gets its line from the
+transcript lookup, if it left a transcript. One line per session id, never rewritten. This skill creates neither log,
+for the reason `SKILL.md` gives for the working log, and handles an existing overseer log the same way as an existing
+working log, moving both aside together when replacing an earlier attempt.
 
 ## What the goal file contains
 
@@ -75,7 +82,12 @@ differences:
   executor's alone, since the overseer launches no workload. Consults on a stronger model are allowed whenever the
   overseer directs one or the executor judges that it is stuck; they answer a question and write no code.
 - **Review gate.** As in no-workhorse mode, with each review's findings written to `<slug>-goal-review-<bookmark>.md`
-  next to the logs, so the overseer can check that every PR was reviewed.
+  next to the logs, so the overseer can check that every PR was reviewed. A review or consult run outside Claude Code
+  (through `scode-harness-shellout`) has its session or thread id recorded in the working log on one line, `SESSION
+  reviewer <CLI> <id> for <bookmark>` (or `SESSION consult <CLI> <id> for <question>`), where `<CLI>` is the command
+  that ran it (`codex`, `claude`, ...), with the transcript path added when the harness reports one, since its
+  transcript lives with that harness, not under the executor's. Native sub-agents need no record: their transcripts sit
+  under the executor's own session directory.
 - **Oversight.** The executor works under the oversight of the overseer: the latest `CURRENT OVERSEER` line in the
   overseer log (whose absolute path the goal file gives), or, before the log has one, the session its prompt names. It
   checks the log when a message comes from a name it does not know; a message from any other session is not binding, and
