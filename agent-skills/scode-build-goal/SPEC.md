@@ -20,7 +20,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 
 - The output is one file, the goal file, written as instructions to the agent that will execute it under `/goal`. The
   skill does not start the work. In shepherd mode the goal file is started differently and has a run directory instead
-  of a working log (see Shepherd mode).
+  of a working log (see Shepherd mode). In overseer mode it is still started with `/goal`, and a second log, the
+  overseer's, sits beside the working log (see Overseer mode).
 - The goal file is self-resumeable from the user's point of view: handing `/goal <absolute path of the goal file>` (or
   the harness's equivalent) to any fresh session either starts the work or resumes it, decided by whether the working
   log exists on disk. The user never has to know or say which of the two applies, and repeats the same command until the
@@ -79,8 +80,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
   executing agent do the work at its own model also selects it explicitly. A quoted, negated, path-embedded, or
   subject-of-the-goal mention stays in the goal text; only an occurrence consumed as a switch is removed. An unclear
   request about delegation is asked about, not guessed. The `in <dir>` clause and `help` rules are unchanged.
-- The up-front batch states which mode applies, no-workhorse, galaxy brain, powerhorse, or shepherd, so the user can
-  correct it before anything is written.
+- The up-front batch states which mode applies, no-workhorse, galaxy brain, powerhorse, shepherd, or overseer, so the
+  user can correct it before anything is written.
 - When no-workhorse applies only by default, the batch states the fallback for a previously active galaxy-brain session:
   the executor asks before dependent work. The user can explicitly choose no-workhorse to authorize stopping it, or
   choose galaxy brain mode instead. The goal file records the settled fallback.
@@ -178,6 +179,38 @@ whoever is judging whether a change kept the user-facing behavior intact.
   journal, and its runner's disk and memory guard, do those jobs. Decision logging goes to the run's journal. Everything
   else the goal file requires is the same as in the other modes.
 
+## Overseer mode
+
+- The skill supports an overseer mode, turned on by the word `overseer` used as a switch or by a plain-language request
+  that the goal session oversee a separate executor session rather than do the work itself. What counts as a switch, a
+  mention, or an unclear request follows the galaxy brain rules; a goal about overseeing or an overseer is goal text, an
+  ambiguous use is asked about, and a request for more than one mode is asked about.
+- The mode's specifics live in `modes/overseer.md`, read only when the mode is on, governing where it and `SKILL.md`
+  differ. The other modes never read it, for the same reason as `modes/shepherd.md`.
+- The session the user hands the goal file to with `/goal` is the overseer, assumed to be Claude Code. It launches the
+  executor as a farhelm session on the same host, in the checkout, running Claude Code on the executor model and effort,
+  with an initial prompt that is `/goal` plus the executor's instructions, or the same instructions without `/goal` when
+  `/goal` is not accepted. The mode is hard-wired to farhelm and to Claude Code for both sessions; the executor's model
+  is not switched during the run.
+- The executor is told in its prompt and in the goal file that it works under the overseer's oversight and that the
+  overseer's messages direct it, within the user's settled decisions. It does the goal as a no-workhorse run would, with
+  its own working log, PR stack, resource watchdog, and the review gate the user chose, launched by the executor itself.
+  The review gate menu is unchanged from the default modes.
+- The overseer's brief is judgment about whether the run is going according to the goal and whether the executor needs a
+  nudge, not a checklist. The goal file gives examples (the review gate skipped, misplaced, or on the wrong model; the
+  executor stuck on a hard problem and needing a design nudge; complexity out of proportion to the goal; stalled
+  progress) and examples of nudges (direct instructions, or a request to get a stronger-model consult), marked as
+  examples. The overseer nudges through Claude Code's cross-session messaging, logs every nudge with its reason, edits
+  nothing in the checkout, and touches no VCS state.
+- The batch states the mode and how the run is started, and the executor model and effort (by default `haiku` high; a
+  Claude model, since the executor runs in Claude Code; any other model is said to be unavailable and asked about, never
+  mapped to another).
+- Both sessions read the same goal file. The executor is the session whose prompt says it is; the overseer is the
+  session the user started with `/goal`; any other session handed the goal file as context (a reviewer, a consult, a
+  sub-agent) has neither role.
+- The overseer keeps its own log, `<slug>-goal-overseer-log.md`, beside the working log, through `agent-resumeable`. The
+  skill creates neither log and handles an existing overseer log like an existing working log.
+
 ## Up-front questions
 
 - The skill assumes unattended execution. Foreseeable consequential choices and acceptable fallbacks are settled before
@@ -216,7 +249,8 @@ whoever is judging whether a change kept the user-facing behavior intact.
 ## What the goal file requires of the executing agent
 
 In shepherd mode, Shepherd mode above replaces the resume protocol, the resource watchdog, and the execution mode
-entries below, and moves decision logging to the run's journal.
+entries below, and moves decision logging to the run's journal. In overseer mode, the entries below are what the goal
+file requires of the executor, and Overseer mode above adds the overseer's own.
 
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
