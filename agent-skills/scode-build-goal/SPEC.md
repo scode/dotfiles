@@ -204,10 +204,23 @@ whoever is judging whether a change kept the user-facing behavior intact.
   nothing in the checkout, and touches no VCS state.
 - The batch states the mode and how the run is started, and the executor model and effort (by default `haiku` high; a
   Claude model, since the executor runs in Claude Code; any other model is said to be unavailable and asked about, never
-  mapped to another).
-- Both sessions read the same goal file. The executor is the session whose prompt says it is; the overseer is the
-  session the user started with `/goal`; any other session handed the goal file as context (a reviewer, a consult, a
-  sub-agent) has neither role.
+  mapped to another), and the farhelm host permissions an unattended run needs: managing sessions without asking, and
+  starting YOLO sessions without asking when the overseer runs YOLO, since otherwise every executor launch, stop, and
+  restart waits on an approval card and farhelm refuses an agent's YOLO launch outright.
+- Both sessions read the same goal file and both are started with `/goal`, so the executor marker sentence decides the
+  roles: a session whose prompt carries it, or whose Claude session id the executor's working log records as the
+  executor's (which keeps the role through compaction), is the executor, a `/goal` session without it is the overseer,
+  and any other session handed the goal file as context (a reviewer, a consult, a sub-agent) has neither role.
+- The executor's first action, before its resume protocol, is a message introducing itself to the overseer with its
+  Claude session id, because farhelm reports no conversation id and a session's messaging name does not follow its
+  farhelm title; the message's sender and the session id are how the overseer finds where to send nudges and which
+  transcript to read. The overseer answers with a message the executor must reply to, since the introduction proves
+  delivery in one direction only.
+- Only one overseer acts on the executor. A resumed overseer first checks whether the overseer its log records is still
+  live and, if so, stops and tells the user. Otherwise it records itself as the current overseer, and the executor
+  accepts the latest overseer the log records, or before any record the one its prompt names, so an overseer resume does
+  not have to replace a working executor. A busy executor is not treated as a silent one: messages reach it only at its
+  next tool call.
 - The overseer keeps its own log, `<slug>-goal-overseer-log.md`, beside the working log, through `agent-resumeable`. The
   skill creates neither log and handles an existing overseer log like an existing working log.
 
@@ -250,7 +263,7 @@ whoever is judging whether a change kept the user-facing behavior intact.
 
 In shepherd mode, Shepherd mode above replaces the resume protocol, the resource watchdog, and the execution mode
 entries below, and moves decision logging to the run's journal. In overseer mode, the entries below are what the goal
-file requires of the executor, and Overseer mode above adds the overseer's own.
+file requires of the executor, preceded by its introduction message, and Overseer mode above adds the overseer's own.
 
 - Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
