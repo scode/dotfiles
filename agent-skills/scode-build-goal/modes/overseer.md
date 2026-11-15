@@ -34,17 +34,22 @@ In this mode the batch states, besides what `SKILL.md` lists:
 - The mode, and that the run is started with `/goal <goal file>` in a Claude Code session launched by farhelm on the
   host where the work happens, which becomes the overseer. Recommend opus for that session, since the mode's value is
   the overseer's judgment, with permissions bypassed, since the executor inherits the overseer's permission mode and an
-  unattended executor cannot answer approval prompts.
+  unattended executor cannot answer approval prompts. The session should be a fresh one, or one the user compacts with
+  `/compact` before `/goal` when it already carries other work (this planning session, for one), because every look the
+  overseer takes at the executor re-reads its whole context.
 - The executor: the model and effort the user named for it, or `haiku` at high effort when none was named. It runs in
   Claude Code, so it has to be a Claude model; a request for any other model is said to be unavailable in this mode and
   asked about, never mapped to another model. A model named for the reviewer sets the review gate instead, and when it
-  is unclear which role a named model is for, ask.
+  is unclear which role a named model is for, ask. A `haiku` executor runs with a smaller auto-compact window (see
+  Launching the executor in What the goal file contains); say so.
 - The review gate menu, unchanged from `SKILL.md`. The executor launches the reviews itself, as in no-workhorse mode,
   and one of the things the overseer watches is that it does so with the chosen model.
 - The farhelm host permissions an unattended run needs. Without "Manage sessions on this host without asking", every
   launch, stop, and restart of the executor waits up to nine minutes for the user to approve a card and then fails.
   Without "Start YOLO sessions without asking", farhelm refuses an agent's YOLO launch outright, and the executor is
-  launched YOLO whenever the overseer runs with permissions bypassed.
+  launched YOLO whenever the overseer runs with permissions bypassed. A `haiku` executor's launch carries a farhelm
+  wrapper, which such a host also holds for the user's approval, so it needs that permission whatever the overseer's
+  permission mode.
 - The overseer log path (see Placement), next to the goal file and the executor's working log.
 
 ## Placement
@@ -99,8 +104,10 @@ differences:
   its own Claude session id (`printenv CLAUDE_CODE_SESSION_ID`), its launch id, and its working log's path, so the
   overseer can find its transcript; it sends the same introduction whenever the overseer asks for one. Its working log
   records its Claude session id as the executor's, so a compacted or resumed executor that no longer sees its first
-  prompt keeps the role. Otherwise it messages the overseer only to reply, to report a decision only the user can make,
-  and when the goal is done.
+  prompt keeps the role. After every compaction (frequent for a `haiku` executor), it rereads the goal file's Roles and
+  Oversight sections and the part covering the item it is on, along with the working log's latest entries, before its
+  next step. Otherwise it messages the overseer only to reply, to report a decision only the user can make, and when the
+  goal is done.
 
 For the overseer, the goal file adds these sections:
 
@@ -124,12 +131,18 @@ For the overseer, the goal file adds these sections:
   (`<slug>-executor`, numbered `-2`, `-3`, and so on for replacements), a fresh idempotency key for each launch (a
   replacement reuses none, so it cannot be answered with the session it replaces), and the same permission mode as the
   overseer's own session (YOLO when its permissions are bypassed); a message to a session in a different permission mode
-  waits for a human to approve it. The initial prompt is `/goal`, followed by: the marker sentence, the goal file's
-  absolute path, the overseer's messaging name (from the header `ListAgents` prints), the launch id (this launch's
-  idempotency key), and that the executor must read the goal file's Roles and Oversight sections first. A replacement
-  stops the old session first and carries its own new launch id. When the executor's transcript shows that `/goal` was
-  not accepted, replace the session with one whose prompt is the same text without `/goal`. The introduction gives the
-  executor's messaging name (the message's sender) and its transcript, the file named after its Claude session id under
+  waits for a human to approve it. When the executor model is `haiku`, and only then, add `--wrapper
+  'CLAUDE_CODE_AUTO_COMPACT_WINDOW=125000'`. Claude Code compacts about 31K tokens short of that window, so the
+  executor's context is compacted at roughly 94K tokens instead of growing toward the model's 1M window, and every call
+  stays under the 100K-token prompt size above which Haiku bills five times its base rate. Other models have no such
+  price step and keep their default window. A restart reuses the stored launch, wrapper included. If farhelm refuses the
+  wrapper, launch without it and say in the overseer log and in the report to the user that the executor runs on the
+  default window. The initial prompt is `/goal`, followed by: the marker sentence, the goal file's absolute path, the
+  overseer's messaging name (from the header `ListAgents` prints), the launch id (this launch's idempotency key), and
+  that the executor must read the goal file's Roles and Oversight sections first. A replacement stops the old session
+  first and carries its own new launch id. When the executor's transcript shows that `/goal` was not accepted, replace
+  the session with one whose prompt is the same text without `/goal`. The introduction gives the executor's messaging
+  name (the message's sender) and its transcript, the file named after its Claude session id under
   `~/.claude/projects/`. Answer it with a message the executor has to reply to: the introduction proves only that
   messages reach the overseer, and every nudge travels the other way. When no introduction arrives within about five
   minutes, check `farhelm agent sessions` first: a session that is not running (an approval card pending, a failed
@@ -153,11 +166,15 @@ For the overseer, the goal file adds these sections:
   executor raises that the goal file's settled decisions answer, the overseer answers; the rest go to the user.
 - **Done.** The executor reports done; the overseer checks the done criterion itself (the stack of open PRs, and for
   each a findings file and a transcript showing the review ran on the demanded reviewer) before the goal counts as
-  achieved, and leaves the executor's session in place for the user.
+  achieved, and leaves the executor's session in place for the user. Its report to the user ends by asking whether to
+  run a whole-stack review: one review of the entire stack by a reviewer that took no part in the run, aimed at what the
+  per-PR reviews each saw only part of, such as the contract between a PR and the one that consumes it, and agreement
+  between the docs the PRs touched. It does not run one unless the user asks; if the user does, the executor runs it the
+  way it runs a review gate, on the reviewer the user names, and the overseer oversees that as before.
 
 ## When the goal file is written
 
 Tell the user to start the run with `/goal <goal file>` in a farhelm-launched Claude Code session on the host and in the
-checkout the goal is about, preferably on opus with permissions bypassed, and that the same command in a fresh session
-resumes the overseer once the old overseer session has ended. Repeat the farhelm host permissions from the batch if this
-host lacks them.
+checkout the goal is about, preferably on opus with permissions bypassed, in a fresh session or after `/compact` in one
+that carries other work, and that the same command in a fresh session resumes the overseer once the old overseer session
+has ended. Repeat the farhelm host permissions from the batch if this host lacks them.
