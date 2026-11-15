@@ -207,6 +207,18 @@ whoever is judging whether a change kept the user-facing behavior intact.
   mapped to another), and the farhelm host permissions an unattended run needs: managing sessions without asking, and
   starting YOLO sessions without asking when the overseer runs YOLO, since otherwise every executor launch, stop, and
   restart waits on an approval card and farhelm refuses an agent's YOLO launch outright.
+- A `haiku` executor, and only a `haiku` one, is launched with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=125000` set through a
+  farhelm wrapper. Haiku bills a call whose prompt exceeds 100K tokens at five times its base rate, and an executor left
+  on the default 1M window re-reads an ever larger context on every call; measured on Claude Code 2.1.325, Claude Code
+  compacts about 31K tokens short of the window, so 125000 compacts at roughly 94K and keeps every call under the price
+  step with some margin (100000, the smallest window it accepts, compacts at about 69K). Compaction is preferred over a
+  fresh executor per PR because it does not tie the session's lifetime to a PR's size, carries a summary across, and
+  needs no further farhelm launches, which cannot yet run fully unattended. Other models have no such price step and
+  keep their default window. The wrapper needs farhelm's "Start YOLO sessions without asking", since a host that asks
+  before YOLO launches also holds a wrapper for approval.
+- The batch and the closing instructions say to start the overseer in a fresh session, or in one compacted with
+  `/compact` first, because the overseer re-reads its whole context on every look, and a session that carries earlier
+  work (the planning session, typically) pays for that history again on each of them at the overseer model's price.
 - Both sessions read the same goal file and both are started with `/goal`, so the executor marker sentence decides the
   roles: a session whose prompt carries it, or whose Claude session id the executor's working log records as the
   executor's (which keeps the role through compaction), is the executor, a `/goal` session without it is the overseer,
@@ -229,6 +241,9 @@ whoever is judging whether a change kept the user-facing behavior intact.
   need none, since their transcripts sit under the executor's.
 - The overseer keeps its own log, `<slug>-goal-overseer-log.md`, beside the working log, through `agent-resumeable`. The
   skill creates neither log and handles an existing overseer log like an existing working log.
+- When the overseer has checked the done criterion, its report asks the user whether to run a whole-stack review by a
+  reviewer that took no part, aimed at what the per-PR reviews each saw only part of (contracts between paired PRs,
+  agreement between docs). It is a question, not a default step: the user decides whether the stack warrants it.
 
 ## Up-front questions
 
