@@ -112,6 +112,14 @@ That is the intended behavior, not an ownership gap, because the user chose wher
 only owns its own named entries within it. Uninstall leaves a symlinked container in place, whatever its target holds:
 the installer did not create the link, and `rmdir` refuses a symlink anyway, so removing it is the user's call.
 
+## Qwen Code Instructions and Skills
+
+When `~/.qwen` already exists, `install` symlinks `agent-instructions/AGENTS.md` to `~/.qwen/QWEN.md` and installs the
+same shared and conditional external skills as the other harnesses into `~/.qwen/skills`. It does not create `~/.qwen`
+on machines without that directory. These are Qwen Code's default native paths; the installer does not follow a custom
+`QWEN_HOME` or `context.fileName` setting. Uninstall removes the owned links and removes the skills directory only if it
+is empty, preserving user-added files under the usual container and symlink ownership rules above.
+
 ## Managed JSON Ownership
 
 `JsonManaged` edits user-owned JSON files and owns only the paths its `managed_*` operations declare. Declaring a path
