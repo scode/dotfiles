@@ -91,10 +91,10 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 /// Claude and Codex still spell their entries out one by one in
 /// `add_claude_features` and `add_codex_features`, because those sections
 /// interleave migration cleanups for paths earlier installer versions wrote;
-/// the Muse, OpenCode, Goose, Pi, and omp sections below derive theirs from
-/// this list. A test in `tests/cli_integration.rs` checks that every harness
-/// ends up with the same set, so a skill added to one place and not the other
-/// fails CI rather than silently installing for some harnesses only.
+/// the Muse, OpenCode, Goose, Pi, omp, and Qwen Code sections below derive
+/// theirs from this list. A test in `tests/cli_integration.rs` checks that
+/// every harness ends up with the same set, so a skill added to one place and
+/// not the other fails CI rather than installing for some harnesses only.
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "farhelm-plan-status",
@@ -320,6 +320,24 @@ fn add_omp_features(g: &mut FeatureGraph) {
     .build();
 
     add_shared_skill_features(g, "omp", "~/.omp/agent", "~/.omp/agent/skills");
+}
+
+/// Qwen Code reads global instructions from `~/.qwen/QWEN.md` by default and
+/// personal skills from `~/.qwen/skills`. Use its native paths so neither
+/// depends on another harness being installed. Both are gated on `~/.qwen`
+/// already existing, as with the other harnesses' config directories.
+///
+/// This targets the default layout; a custom `QWEN_HOME` or `context.fileName`
+/// setting needs links at the user's chosen paths instead.
+fn add_qwen_features(g: &mut FeatureGraph) {
+    g.add(
+        "qwen-md",
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.qwen/QWEN.md"),
+    )
+    .condition(PathExists::new("~/.qwen"))
+    .build();
+
+    add_shared_skill_features(g, "qwen", "~/.qwen", "~/.qwen/skills");
 }
 
 fn add_zed_features(g: &mut FeatureGraph) {
@@ -1076,6 +1094,7 @@ fn features() -> FeatureGraph {
     add_goose_features(&mut g);
     add_pi_features(&mut g);
     add_omp_features(&mut g);
+    add_qwen_features(&mut g);
     add_shell_features(&mut g);
     g
 }

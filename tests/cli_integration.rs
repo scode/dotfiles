@@ -22,6 +22,7 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
     std::fs::create_dir_all(home.path().join(".config/goose")).unwrap();
     std::fs::create_dir_all(home.path().join(".pi/agent")).unwrap();
     std::fs::create_dir_all(home.path().join(".omp/agent")).unwrap();
+    std::fs::create_dir_all(home.path().join(".qwen")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
@@ -41,11 +42,12 @@ const SKILLS_ROOTS: &[&str] = &[
     ".config/goose/skills",
     ".pi/agent/skills",
     ".omp/agent/skills",
+    ".qwen/skills",
 ];
 
 /// Where the shared instruction blob is symlinked for harnesses that read a
-/// global `AGENTS.md` from their own config directory, relative to the fake
-/// home.
+/// global instruction file from their own config directory, relative to the
+/// fake home. Qwen Code calls its file `QWEN.md`; the others use `AGENTS.md`.
 ///
 /// Claude and Codex are absent on purpose: their instruction links have
 /// dedicated assertions next to the rest of their sections. Goose is absent
@@ -56,6 +58,7 @@ const NATIVE_INSTRUCTION_LINKS: &[&str] = &[
     ".config/opencode/AGENTS.md",
     ".pi/agent/AGENTS.md",
     ".omp/agent/AGENTS.md",
+    ".qwen/QWEN.md",
 ];
 
 /// Goose's copy of the instruction blob, relative to the fake home.
@@ -240,10 +243,8 @@ fn test_install_creates_symlinks() {
         );
     }
 
-    // OpenCode, Pi, and omp get the same instruction blob at their native
-    // global-rules paths. Asserted here rather than relying on a harness's
-    // ~/.claude/CLAUDE.md fallback, which is exactly what the native link
-    // exists to avoid (and which Pi does not have at all).
+    // Each native instruction link keeps the shared blob available without
+    // depending on another harness's config directory or compatibility fallback.
     for link in NATIVE_INSTRUCTION_LINKS {
         let path = fake_home.path().join(link);
         assert!(path.is_symlink(), "expected {link} symlink");
@@ -319,12 +320,12 @@ fn test_install_creates_symlinks() {
 ///
 /// Claude and Codex list their skill entries one by one in `src/main.rs`
 /// (their sections carry migration cleanups), while Muse, OpenCode, Goose, Pi,
-/// and omp derive theirs from a shared list. Nothing but this test ties the two
-/// spellings together, so a skill added to one and forgotten in the other would
-/// install for some harnesses only and nobody would notice until a dependency
-/// load failed on the harness that lacked it. Comparing resolved targets
-/// rather than names also catches an explicit entry whose destination name is
-/// right but whose source is a different skill.
+/// omp, and Qwen Code derive theirs from a shared list. Nothing but this test
+/// ties the two spellings together, so a skill added to one and forgotten in
+/// the other would install for some harnesses only and nobody would notice
+/// until a dependency load failed on the harness that lacked it. Comparing
+/// resolved targets rather than names also catches an explicit entry whose
+/// destination name is right but whose source is a different skill.
 #[test]
 fn test_all_harnesses_install_the_same_skills() {
     let fake_home = setup_fake_home();
@@ -409,6 +410,10 @@ fn test_status_output_is_compact_until_requested() {
     assert!(!detailed_stderr.contains("re-run with --show-status"));
 }
 
+/// Uninstall reclaims links and emptied skill containers across harnesses,
+/// while preserving files whose contents are only partly installer-owned.
+/// Keeping both assertions together catches cleanup that either leaves broken
+/// installation state behind or takes user-owned files with it.
 #[test]
 fn test_uninstall_removes_symlinks() {
     let fake_home = setup_fake_home();
@@ -494,6 +499,14 @@ fn test_uninstall_removes_symlinks() {
         assert!(
             !path.exists() && !path.is_symlink(),
             "{link} should be removed after uninstall"
+        );
+    }
+    // Every skill link depends on its container so uninstall empties it before
+    // removing it. The fake home has no user-added skills to keep it alive.
+    for root in SKILLS_ROOTS {
+        assert!(
+            fake_home.path().join(root).symlink_metadata().is_err(),
+            "{root} should be removed after uninstall"
         );
     }
     // As with the shell startup files, uninstall takes the block and leaves
@@ -917,6 +930,8 @@ fn test_all_symlinks_are_relative() {
         ".config/opencode/AGENTS.md",
         ".pi/agent/AGENTS.md",
         ".omp/agent/AGENTS.md",
+        ".qwen/QWEN.md",
+        ".qwen/skills/jjstack",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",

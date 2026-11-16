@@ -39,9 +39,11 @@ the harness's config directory (`~/.config/muse`, `~/.config/opencode`, `~/.conf
 `~/.omp/agent`) already exists. OpenCode, Goose, Pi, and omp additionally get the shared agent instructions as
 `AGENTS.md` in that config directory, under the same condition. For OpenCode, Pi, and omp that is a symlink. Goose
 ignores a symlinked instruction file, so it gets a copy inside a managed block (the same mechanism as the shell startup
-files below), and picks up changes to the instructions only when install runs again. The optional `scode-graphite` skill
-is installed only when `~/git/scode-graphite-skill` exists, and the optional `scode-voice` skill is installed only when
-`~/git/voice` exists. Ghostty config is installed only when `~/Library/Application Support` exists.
+files below), and picks up changes to the instructions only when install runs again. Qwen Code gets the same skills in
+`~/.qwen/skills` and a symlink to the shared instructions at `~/.qwen/QWEN.md`, only when `~/.qwen` already exists. The
+optional `scode-graphite` skill is installed only when `~/git/scode-graphite-skill` exists, and the optional
+`scode-voice` skill is installed only when `~/git/voice` exists. Ghostty config is installed only when
+`~/Library/Application Support` exists.
 
 The statusline script is not conditional on Claude or Codex. Install creates `~/bin` when needed and links
 `~/bin/claude-statusline.sh`.
