@@ -57,17 +57,17 @@ In this mode the batch states, besides what `SKILL.md` lists:
 The executor keeps the working log, `<slug>-goal-log.md`, exactly as in no-workhorse mode. The overseer keeps its own,
 `<slug>-goal-overseer-log.md`, in the same directory, through `agent-resumeable`. It records the current overseer as a
 line `CURRENT OVERSEER: <messaging name>` (the latest such line wins, and the executor reads it), the permission mode
-the executor was launched in, the executor's farhelm session id, messaging name, Claude session id, and transcript path,
-the transcript offset last read, and every nudge with its reason. Together with the working log it records every session
-the run spends money in, so that a later look at the run's cost finds them all by searching both logs for `SESSION`.
-Each overseer session, fresh or resumed, appends `SESSION overseer <Claude session id> transcript <path>` right after
-invoking `agent-resumeable` (its id from `printenv CLAUDE_CODE_SESSION_ID`). The overseer appends `SESSION executor
-<Claude session id> launch <launch id> farhelm <farhelm session id> transcript <path>` for every executor session id it
-has not recorded yet, whenever an introduction or the transcript lookup reveals one: after a launch, a replacement, a
-restart, or a handoff between overseers. A launch that ends before it introduces itself still gets its line from the
-transcript lookup, if it left a transcript. One line per session id, never rewritten. This skill creates neither log,
-for the reason `SKILL.md` gives for the working log, and handles an existing overseer log the same way as an existing
-working log, moving both aside together when replacing an earlier attempt.
+the executor was launched in and the working directory it was launched in, the executor's farhelm session id, messaging
+name, Claude session id, and transcript path, the transcript offset last read, and every nudge with its reason. Together
+with the working log it records every session the run spends money in, so that a later look at the run's cost finds them
+all by searching both logs for `SESSION`. Each overseer session, fresh or resumed, appends `SESSION overseer <Claude
+session id> transcript <path>` right after invoking `agent-resumeable` (its id from `printenv CLAUDE_CODE_SESSION_ID`).
+The overseer appends `SESSION executor <Claude session id> launch <launch id> farhelm <farhelm session id> transcript
+<path>` for every executor session id it has not recorded yet, whenever an introduction or the transcript lookup reveals
+one: after a launch, a replacement, a restart, or a handoff between overseers. A launch that ends before it introduces
+itself still gets its line from the transcript lookup, if it left a transcript. One line per session id, never
+rewritten. This skill creates neither log, for the reason `SKILL.md` gives for the working log, and handles an existing
+overseer log the same way as an existing working log, moving both aside together when replacing an earlier attempt.
 
 ## What the goal file contains
 
@@ -100,56 +100,62 @@ differences:
   the user had given them, within the user's settled decisions: the overseer cannot authorize what the goal file's
   unattended fallback forbids. The executor acts on them at once, and answers every message that asks for a reply. When
   it disagrees, it says so in a reply and still follows the instruction unless the overseer changes it. Its first
-  action, before the resume protocol (whose wording the goal file adjusts to match), is a message to the overseer giving
-  its own Claude session id (`printenv CLAUDE_CODE_SESSION_ID`), its launch id, and its working log's path, so the
-  overseer can find its transcript; it sends the same introduction whenever the overseer asks for one. Its working log
-  records its Claude session id as the executor's, so a compacted or resumed executor that no longer sees its first
-  prompt keeps the role. After every compaction (frequent for a `haiku` executor), it rereads the goal file's Roles and
-  Oversight sections and the part covering the item it is on, along with the working log's latest entries, before its
-  next step. Otherwise it messages the overseer only to reply, to report a decision only the user can make, and when the
-  goal is done.
+  action, before the checkout check and the resume protocol (whose wording the goal file adjusts to match), is a message
+  to the overseer giving its own Claude session id (`printenv CLAUDE_CODE_SESSION_ID`), its launch id, and its working
+  log's path, so the overseer can find its transcript; it sends the same introduction whenever the overseer asks for
+  one. Its working log records its Claude session id as the executor's, so a compacted or resumed executor that no
+  longer sees its first prompt keeps the role. After every compaction (frequent for a `haiku` executor), it rereads the
+  goal file's Roles and Oversight sections and the part covering the item it is on, along with the working log's latest
+  entries, before its next step. Otherwise it messages the overseer only to reply, to report a decision only the user
+  can make, and when the goal is done.
 
 For the overseer, the goal file adds these sections:
 
+- **The checkout.** The overseer runs the same checkout check as the executor (see "The checkout" in `SKILL.md`) before
+  its resume protocol, and stops the same way when it fails, since the executor it launches works in the overseer's own
+  checkout.
 - **Resume protocol.** When the overseer log exists, first read its latest `CURRENT OVERSEER` line and check with
   `ListAgents` whether that session, unless it is this one, is still live; if it is, another overseer is running this
   goal, so stop, write nothing, and tell the user. Only then invoke `agent-resumeable` on the overseer log. A fresh
-  overseer writes its `CURRENT OVERSEER` line before launching the executor. A resumed overseer whose own permission
-  mode differs from the one the log records for the executor replaces the executor in its own mode, since its messages
-  would otherwise wait for approval. Otherwise it appends its own `CURRENT OVERSEER` line and reconciles the recorded
-  executor with `farhelm agent sessions`. One that is running is sent a message asking for its introduction, which also
-  tells it the new overseer's name. One that stopped is restarted with `farhelm agent restart`, which resumes its
-  conversation without resending its first prompt, so the overseer then messages it to continue per the goal file and
-  introduce itself. A message reaches a busy executor only at its next tool call, so an executor whose transcript shows
-  a tool call still running or recent activity is waited on, not counted as silent; a tool call running far longer than
-  its kind plausibly needs is a judgment call between waiting, replacing the executor, and telling the user. A restarted
-  executor that stops at the end of every turn, because `/goal` did not survive the restart, is replaced instead. One
-  that is gone, or that shows no activity and no answer for about five minutes, is replaced by a new launch, which
-  resumes from the executor's working log.
+  overseer writes its `CURRENT OVERSEER` line before launching the executor. A resumed overseer first compares the
+  executor working directory its log records with its own checkout root. When they differ, the run so far happened in
+  another clone, whose unpushed work a new executor here would not see, so it stops before touching the executor and
+  tells the user which checkout the run is in. A resumed overseer whose own permission mode differs from the one the log
+  records for the executor replaces the executor in its own mode, since its messages would otherwise wait for approval.
+  Otherwise it appends its own `CURRENT OVERSEER` line and reconciles the recorded executor with `farhelm agent
+  sessions`. One that is running is sent a message asking for its introduction, which also tells it the new overseer's
+  name. One that stopped is restarted with `farhelm agent restart`, which resumes its conversation without resending its
+  first prompt, so the overseer then messages it to continue per the goal file and introduce itself. A message reaches a
+  busy executor only at its next tool call, so an executor whose transcript shows a tool call still running or recent
+  activity is waited on, not counted as silent; a tool call running far longer than its kind plausibly needs is a
+  judgment call between waiting, replacing the executor, and telling the user. A restarted executor that stops at the
+  end of every turn, because `/goal` did not survive the restart, is replaced instead. One that is gone, or that shows
+  no activity and no answer for about five minutes, is replaced by a new launch, which resumes from the executor's
+  working log.
 - **Launching the executor.** Run `farhelm agent instructions` and follow it. Create the session on this host with the
-  checkout as its working directory, agent `claude`, the executor's model and effort, a title derived from the slug
-  (`<slug>-executor`, numbered `-2`, `-3`, and so on for replacements), a fresh idempotency key for each launch (a
-  replacement reuses none, so it cannot be answered with the session it replaces), and the same permission mode as the
-  overseer's own session (YOLO when its permissions are bypassed); a message to a session in a different permission mode
-  waits for a human to approve it. When the executor model is `haiku`, and only then, add `--wrapper
-  'CLAUDE_CODE_AUTO_COMPACT_WINDOW=125000'`. Claude Code compacts about 31K tokens short of that window, so the
-  executor's context is compacted at roughly 94K tokens instead of growing toward the model's 1M window, and every call
-  stays under the 100K-token prompt size above which Haiku bills five times its base rate. Other models have no such
-  price step and keep their default window. A restart reuses the stored launch, wrapper included. If farhelm refuses the
-  wrapper, launch without it and say in the overseer log and in the report to the user that the executor runs on the
-  default window. The initial prompt is `/goal`, followed by: the marker sentence, the goal file's absolute path, the
-  overseer's messaging name (from the header `ListAgents` prints), the launch id (this launch's idempotency key), and
-  that the executor must read the goal file's Roles and Oversight sections first. A replacement stops the old session
-  first and carries its own new launch id. When the executor's transcript shows that `/goal` was not accepted, replace
-  the session with one whose prompt is the same text without `/goal`. The introduction gives the executor's messaging
-  name (the message's sender) and its transcript, the file named after its Claude session id under
-  `~/.claude/projects/`. Answer it with a message the executor has to reply to: the introduction proves only that
-  messages reach the overseer, and every nudge travels the other way. When no introduction arrives within about five
-  minutes, check `farhelm agent sessions` first: a session that is not running (an approval card pending, a failed
-  start) is the thing to fix or tell the user about. Otherwise, to see what went wrong, the transcript is the top-level
-  file (not one under a session's `subagents` directory) in the checkout's project directory under `~/.claude/projects/`
-  whose first prompt contains this launch's id. Then replace the executor once; a second launch that does not introduce
-  itself goes to the user.
+  root of the overseer's own checkout as its working directory (the goal file names no checkout path), agent `claude`,
+  the executor's model and effort, a title derived from the slug (`<slug>-executor`, numbered `-2`, `-3`, and so on for
+  replacements), a fresh idempotency key for each launch (a replacement reuses none, so it cannot be answered with the
+  session it replaces), and the same permission mode as the overseer's own session (YOLO when its permissions are
+  bypassed); a message to a session in a different permission mode waits for a human to approve it. When the executor
+  model is `haiku`, and only then, add `--wrapper 'CLAUDE_CODE_AUTO_COMPACT_WINDOW=125000'`. Claude Code compacts about
+  31K tokens short of that window, so the executor's context is compacted at roughly 94K tokens instead of growing
+  toward the model's 1M window, and every call stays under the 100K-token prompt size above which Haiku bills five times
+  its base rate. Other models have no such price step and keep their default window. A restart reuses the stored launch,
+  wrapper included. If farhelm refuses the wrapper, launch without it and say in the overseer log and in the report to
+  the user that the executor runs on the default window. The initial prompt is `/goal`, followed by: the marker
+  sentence, the goal file's absolute path, the overseer's messaging name (from the header `ListAgents` prints), the
+  launch id (this launch's idempotency key), and that the executor must read the goal file's Roles and Oversight
+  sections first. A replacement stops the old session first and carries its own new launch id. When the executor's
+  transcript shows that `/goal` was not accepted, replace the session with one whose prompt is the same text without
+  `/goal`. The introduction gives the executor's messaging name (the message's sender) and its transcript, the file
+  named after its Claude session id under `~/.claude/projects/`. Answer it with a message the executor has to reply to:
+  the introduction proves only that messages reach the overseer, and every nudge travels the other way. When no
+  introduction arrives within about five minutes, check `farhelm agent sessions` first: a session that is not running
+  (an approval card pending, a failed start) is the thing to fix or tell the user about. Otherwise, to see what went
+  wrong, the transcript is the top-level file (not one under a session's `subagents` directory) in the checkout's
+  project directory under `~/.claude/projects/` whose first prompt contains this launch's id. Then replace the executor
+  once; a second launch that does not introduce itself goes to the user.
 - **Overseeing.** The judgment brief from What the mode is, in the overseer's words, with its examples marked as
   examples. Read what is new since the last look (the transcript past the offset the overseer log records, the working
   log, the PR stack), not the whole history each time; investigations that need more go to a sub-agent so the overseer's
