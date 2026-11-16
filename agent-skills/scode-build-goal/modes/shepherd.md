@@ -58,7 +58,7 @@ There is no working log in this mode: scode-shepherd keeps the run's state and j
 takes the log's place. Name it `<slug>-goal-shepherd`, a directory in the same place as the goal file, so the two stay
 adjacent in a listing (`~/git/foo-verbose-goal.md` and `~/git/foo-verbose-goal-shepherd/`). The name differs from the
 `<checkout>-shepherd-<slug>` directories a plain scode-shepherd run picks, so a goal's run directory does not collide
-with one of those. Its path in the goal file is absolute, like every path.
+with one of those. Its path in the goal file is absolute, like every path outside the checkout.
 
 The run directory never goes inside the checkout the goal is about, where the worker's version control would see it and
 scode-shepherd refuses it. When an `in <dir>` clause puts the goal file inside that checkout, say so in the batch and
@@ -90,6 +90,11 @@ Then the items of "What the goal file must contain" in `SKILL.md`, with these di
   for its model and effort when the user named one, or otherwise as the default worker, which the supervisor may change
   as scode-shepherd allows. Forbid invoking, loading, or following `scode-galaxy-brain`, `scode-powerhorse`, or
   `scode-model-routing` at any point.
+- **The checkout.** Keep it: the supervisor confirms that the checkout scode-shepherd runs on is one of the project
+  before planning, and stops and tells the user when it is not. With no resume protocol, the check comes first. Started
+  headless, `shepherd drive` creates the run directory and records its `--repo` before any supervisor reads the goal
+  file, so there the check cannot keep the run state clean, and the start instructions below tell the user what a wrong
+  `--repo` costs.
 - **Resume protocol.** Leave it out. scode-shepherd's run directory, its journal, and the runner's state are the resume
   record, and starting the same goal file again resumes the run. Do not name an `agent-resumeable` log.
 - **Resource watchdog.** Leave it out. scode-shepherd's runner checks disk and memory before every worker session, check
@@ -113,6 +118,9 @@ Tell the user how to start it, in place of the `/goal` command:
   file>`.
 - Headless: `~/.codex/skills/scode-shepherd/scripts/shepherd drive <run directory> --repo <checkout> --goal-file <goal
   file>`, with every path absolute (`~` expanded too). The run directory has to be the one the goal file names.
+  `<checkout>` is the root of the checkout to run in, which the user picks and has to be a checkout of the project: the
+  first drive records it in the run directory and later drives keep it, so a wrong one means moving the run directory
+  aside and starting over.
 
 Either way, the same command again resumes the run, as long as it is the same way the run was started (a run started
 headless resumes headless) and the run has not finished; edits to the goal file after the start do not reach a headless

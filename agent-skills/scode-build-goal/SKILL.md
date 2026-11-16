@@ -206,9 +206,28 @@ a statement, not a question: "Goal file at X, log at Y unless you want them else
 inside a repository when it is. In the temporary-location case it is a blocking question. There is no case where the
 paths are silently decided and only discoverable by reading the goal file.
 
-Every path the goal file mentions — the log file, the repo root, worktrees, scratch directories, anything the Q&A
-settles — is written in absolute form. The goal file will be read by sessions with arbitrary working directories, so a
-relative path inside it is a resumption bug waiting to happen.
+The goal file never names the checkout by path. It assumes the session that runs it was started inside a checkout of the
+project, and that checkout is whichever one the session finds itself in: the user may have several clones, and the one
+the goal was planned in is not necessarily the one it runs in. So the goal file names the project by something no clone
+changes, writes the paths of project files it refers to relative to the checkout root, and does not record the planning
+checkout's state (its current commit, bookmarks, or where `main` was) as a fact the run can rely on; the executing agent
+reads that state when it starts. Worktrees and workspaces the run creates are the executing agent's to place at run
+time.
+
+The project's identity is the GitHub repository its PRs go to, as `owner/repo`. The planning checkout here is the
+nearest checkout containing the working directory, the same one the run's checkout check examines, not the outermost one
+used above to place files. When its remotes name more than one GitHub repository (a fork with an `upstream`, say), the
+identity is the one the PRs target, and when that is unclear, ask in the up-front batch. A checkout counts as the
+project when any of its remotes points at that repository, compared as host, owner, and name (an SSH and an HTTPS URL
+for the same repository match, with or without `.git`), so a fork's clone with an `upstream` remote passes and a fork's
+clone without one does not. A project with no GitHub remote is identified by its root commit id instead (`git rev-list
+--max-parents=0 HEAD`, the oldest commit when there are several), which every clone of it shares.
+
+The goal file's own run files — the goal file, the log, the watchdog script and status file, scratch directories, and
+anything else the Q&A settles outside the project's source — are written in absolute form, even when an `in <dir>`
+clause put them inside the checkout. They are the same files whichever checkout or working directory the goal runs from,
+so a relative one would be a resumption bug waiting to happen, and an absolute one inside a checkout says where the file
+is, not which checkout the run works in.
 
 NOTE: This skill writes the goal file only. Never create the log file, not even an empty one or one with a heading: the
 goal file's resume protocol treats the log's existence as the signal that a previous session already started, so a log
@@ -351,10 +370,18 @@ overseer mode, `modes/overseer.md` does. Include, at minimum:
   stated honestly; do not require the delegate to build it merely to satisfy the completion checkpoint. In no-workhorse
   mode these sentences apply to whatever same-model sub-agents the executing agent chooses to run, and the checkpoint is
   simply the sub-agent's report back.
-- **Resume protocol.** The first action is to invoke the `agent-resumeable` skill with the log file's absolute path.
-  Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and resume
-  where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather than
-  starting over. If it does not exist, this is a fresh start. This is what makes the goal file self-resumeable.
+- **The checkout.** State that the goal runs inside a checkout of the project, identified as in Placing the files (by
+  its GitHub repository or root commit, never by path), and that the checkout is the nearest Git worktree or jj
+  workspace containing the session's working directory (a `.git` file counts as well as a `.git` directory). That is the
+  innermost one, not the outermost one Placing the files uses for file placement, and an enclosing checkout is never
+  tried after the nearest one fails. The executing agent's first action is to confirm that the nearest checkout is one
+  of the project. When it is not, it stops before the resume protocol, writes nothing (the log included, since a log
+  created from the wrong place would make the next run resume), and tells the user to start the goal from a checkout of
+  the project. Every project file path in the goal file is relative to that checkout's root.
+- **Resume protocol.** Right after the checkout check, invoke the `agent-resumeable` skill with the log file's absolute
+  path. Spell out the semantics even though that skill also enforces them: if the log file already exists, read it and
+  resume where the previous session left off — cross-checking the log against reality (VCS state, open PRs) — rather
+  than starting over. If it does not exist, this is a fresh start. This is what makes the goal file self-resumeable.
 - **Execution mode.** In the default no-workhorse mode, state what No-workhorse mode lists: this goal forbids sending
   any unit of the executing agent's own decomposition to a weaker model or a lower effort than its own (the review gate
   keeps the model and effort the goal file demands, while scope reassessment runs at the executing agent's own model and
@@ -386,8 +413,9 @@ overseer mode, `modes/overseer.md` does. Include, at minimum:
   explicit demand for its model, effort, and skill or charter, and address what it finds before moving on (in powerhorse
   mode, with the concurrency described under Execution mode). Do not write a launch command into the goal file; the
   `scode-harness-shellout` skill's harness files own the launch mechanics, and a copy pasted into a goal file drifts
-  away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo root, the
-  commit range or bookmark to review, and the file the findings go to; the reviewer has no other context.
+  away from the guards they carry. The review prompt must name the skill (or carry the full charter), the repo root (the
+  root of the checkout the executing agent runs in, which it fills in at run time), the commit range or bookmark to
+  review, and the file the findings go to; the reviewer has no other context.
 - **Resource watchdog.** Right after the resume protocol in no-workhorse mode, or after activating the orchestration
   skill in galaxy brain or powerhorse mode, and before the first delegation, the executing agent must start this skill's
   watchdog to watch memory and disk for the rest of the run, and act when either is heading for exhaustion. This is
@@ -395,18 +423,19 @@ overseer mode, `modes/overseer.md` does. Include, at minimum:
   1.5 GB of build output, tests leave temp directories behind, and a full disk or an OOM kill ends a run
   mid-implementation with no signal to the orchestrator beyond a dead delegate. The watchdog is the Deno script
   `scripts/watchdog` next to this `SKILL.md`; its module docs describe each subcommand's output. When this machine has
-  no `deno`, say so in the up-front batch. The goal file spells out everything below, with absolute paths, so the
-  executing agent writes no watchdog of its own:
+  no `deno`, say so in the up-front batch. The goal file spells out everything below, with absolute paths for everything
+  outside the checkout, so the executing agent writes no watchdog of its own:
   - **What it watches.** The script's path with symlinks resolved (`realpath`), so it is the same file whichever harness
     runs the goal. The status file, `<slug>-goal-watchdog.json` next to the working log, which this skill does not
-    create. The watched paths, each passed to `sample` as `--path`: the repository, the home directory, `/tmp`, the
-    directory holding the status file, the executing session's own scratch directory (which it adds when it starts the
-    sampler), and any worktree or build directory the run later creates on another filesystem (restart the sampler with
-    it added; a path that no longer exists is measured at its nearest existing parent). The interval, 60 seconds. The
-    script's default alert levels, unless the user asked for others: a filesystem under 5 GiB free (or under a quarter
-    of its size, for one smaller than 20 GiB), or under 10% free while also under 20 GiB; memory, including any cgroup
-    limit, under 10% available while also under 4 GiB. It reports a shortage once, again each time it loses another
-    quarter, and once when it recovers.
+    create. The watched paths, each passed to `sample` as `--path`: the root of the checkout the executing session runs
+    in (which the session adds when it starts the sampler; the goal file does not name it), the home directory, `/tmp`,
+    the directory holding the status file, the executing session's own scratch directory (which it adds when it starts
+    the sampler), and any worktree or build directory the run later creates on another filesystem (restart the sampler
+    with it added; a path that no longer exists is measured at its nearest existing parent). The interval, 60 seconds.
+    The script's default alert levels, unless the user asked for others: a filesystem under 5 GiB free (or under a
+    quarter of its size, for one smaller than 20 GiB), or under 10% free while also under 20 GiB; memory, including any
+    cgroup limit, under 10% available while also under 4 GiB. It reports a shortage once, again each time it loses
+    another quarter, and once when it recovers.
   - **Claude Code.** Run `watchdog observe --status <file>` under the Monitor tool, and `watchdog sample --status <file>
     --path <dir>...` under a second Monitor, both at the maximum timeout (30 minutes). Every line either prints is a
     notification, and a quiet sample prints nothing. The observer reports `STALE` once the status file is two sample

@@ -34,8 +34,21 @@ whoever is judging whether a change kept the user-facing behavior intact.
   user whether to replace them. Replacing moves both existing files aside under a dated suffix; it never deletes them
   and never leaves the old log in place. A leftover watchdog status file moves aside with them, since it carries the old
   attempt's alert state.
-- Every path written into the goal file, not only the log path, is absolute. The goal file is read by sessions with
-  arbitrary working directories.
+- The goal file assumes it runs inside a checkout of the project, and that checkout is whichever one contains the
+  running session's working directory. It never names a checkout by path: the user may have several clones of one
+  project, and a goal planned in one of them has to run correctly in any other. It names the project by something no
+  clone changes, writes project file paths relative to the checkout root, and does not record the planning checkout's
+  VCS state (current commit, bookmarks, where `main` was) as a fact the run relies on.
+- The project's identity is the GitHub repository its PRs target, asked about when the remotes leave that unclear; a
+  checkout is one of the project when any of its remotes points there, which admits a fork's clone with an `upstream`
+  remote. A project without a GitHub remote is identified by its root commit id, which every clone shares. A judgment
+  that a checkout's contents look right is not an identity check: two unrelated projects can look alike.
+- The checkout a run works in is the nearest Git worktree or jj workspace containing the working directory, never an
+  enclosing one tried after the nearest one fails. The outermost-checkout rule under Naming and placement is for file
+  placement only.
+- The goal file's own run files (the goal file, the log, the watchdog script and status file, scratch directories, a
+  shepherd run directory) are written as absolute paths wherever they live, an `in <dir>` inside the checkout included,
+  since they are the same files whichever checkout or working directory the goal runs from.
 
 ## Naming and placement
 
@@ -188,10 +201,10 @@ whoever is judging whether a change kept the user-facing behavior intact.
 - The mode's specifics live in `modes/overseer.md`, read only when the mode is on, governing where it and `SKILL.md`
   differ. The other modes never read it, for the same reason as `modes/shepherd.md`.
 - The session the user hands the goal file to with `/goal` is the overseer, assumed to be Claude Code. It launches the
-  executor as a farhelm session on the same host, in the checkout, running Claude Code on the executor model and effort,
-  with an initial prompt that is `/goal` plus the executor's instructions, or the same instructions without `/goal` when
-  `/goal` is not accepted. The mode is hard-wired to farhelm and to Claude Code for both sessions; the executor's model
-  is not switched during the run.
+  executor as a farhelm session on the same host, in the overseer's own checkout, running Claude Code on the executor
+  model and effort, with an initial prompt that is `/goal` plus the executor's instructions, or the same instructions
+  without `/goal` when `/goal` is not accepted. The mode is hard-wired to farhelm and to Claude Code for both sessions;
+  the executor's model is not switched during the run.
 - The executor is told in its prompt and in the goal file that it works under the overseer's oversight and that the
   overseer's messages direct it, within the user's settled decisions. It does the goal as a no-workhorse run would, with
   its own working log, PR stack, resource watchdog, and the review gate the user chose, launched by the executor itself.
@@ -286,7 +299,14 @@ In shepherd mode, Shepherd mode above replaces the resume protocol, the resource
 entries below, and moves decision logging to the run's journal. In overseer mode, the entries below are what the goal
 file requires of the executor, preceded by its introduction message, and Overseer mode above adds the overseer's own.
 
-- Invoking `agent-resumeable` on the log file's absolute path as its first action, with the resume semantics spelled
+- As its first action, confirming that the working directory is inside a checkout of the project the goal file names.
+  When it is not, the executing agent stops before writing anything, the log included, and tells the user; a log written
+  from the wrong place would make the next run in the right one resume from it. In shepherd mode the supervisor runs
+  this check, and in overseer mode both the overseer and the executor do. A headless shepherd drive records its `--repo`
+  before the supervisor runs, so there the check cannot prevent run state and the start instructions say what a wrong
+  `--repo` costs. A resumed overseer whose log shows the executor working in a different checkout from its own stops and
+  tells the user instead of reusing, restarting, or replacing that executor.
+- Invoking `agent-resumeable` on the log file's absolute path right after that check, with the resume semantics spelled
   out: an existing log means resume after cross-checking it against reality, a missing log means a fresh start.
 - In the default no-workhorse mode, no orchestration skill, with the demands and allowances described under No-workhorse
   mode. In galaxy brain mode, `scode-galaxy-brain` for the entire run as described under Galaxy brain mode. In
@@ -349,9 +369,10 @@ file requires of the executor, preceded by its introduction message, and Oversee
 - A linear stack of reviewable PRs via `jjstack`, each reviewed before it is finished by a fresh-context run, delegated
   through the active orchestration skill (in no-workhorse mode, launched by the executing agent itself), of the reviewer
   the user chose from the menu, stated in the goal file as an explicit demand for its model, effort, and skill or
-  charter. The prompt names the skill or carries the full charter, the repo root, the range to review, and the findings
-  file, with no launch command copied into the goal file. For every non-swarm reviewer the goal file spells out the
-  charter in full: general correctness, design, and idiomatic code, findings to a named file, no edits, no VCS changes.
+  charter. The prompt names the skill or carries the full charter, the repo root (of the checkout the run is in, filled
+  in at run time), the range to review, and the findings file, with no launch command copied into the goal file. For
+  every non-swarm reviewer the goal file spells out the charter in full: general correctness, design, and idiomatic
+  code, findings to a named file, no edits, no VCS changes.
 - The reviewed outline and requirement sources, including the user's relevant words and later decisions, survive into
   the goal. Before implementing substantial departures, or undertaking another repair round after repeated corrective
   reviews of a component, reassess necessity with a fresh-context review carrying the full planning charter, original
