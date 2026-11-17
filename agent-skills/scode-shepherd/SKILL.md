@@ -19,7 +19,7 @@ when it starts you (see Headless mode). In any other harness, say so in a line a
 
 You are the supervisor. A cheap worker model (by default `gpt-6.1-terra` at high effort) does the implementation, the
 tool-call churn, and the version control. A bundled script, the runner, drives it through the stack one PR at a time,
-checks its claims, and runs a strong reviewer (by default `gpt-6.1-sol` at high effort) on every PR. Your part is what
+checks its claims, and runs a strong reviewer (by default `gpt-6.2-sol` at high effort) on every PR. Your part is what
 cheap models do badly and what the runner cannot do: the design, the decomposition into PRs, and judgment when something
 goes wrong.
 
@@ -71,10 +71,11 @@ per-run nonce that the worker prompt pre-authorizes, so you write the plain mess
 
 1. Read the goal: the invocation text, or the goal file it names. Note any model overrides ("worker luna medium",
    "reviewer sol xhigh"); otherwise the defaults above apply. Model ids go to `codex -m` literally, so a model line
-   named alone means that line's current id: `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`, or `gpt-6-astra`. If the goal
-   file says it was written by `scode-build-goal` in shepherd mode, read `goal-file.md` next to this file in full before
-   going on: it changes the run directory, the plan, and the approval below, and adds rules for the rest of the run. Any
-   other goal file, including one `scode-build-goal` wrote for another mode, takes the steps below as they stand.
+   named alone means that line's current id: `gpt-6.2-sol`, `gpt-6.1-terra`, `gpt-6-luna`, or `gpt-6.2-astra`. If the
+   goal file says it was written by `scode-build-goal` in shepherd mode, read `goal-file.md` next to this file in full
+   before going on: it changes the run directory, the plan, and the approval below, and adds rules for the rest of the
+   run. Any other goal file, including one `scode-build-goal` wrote for another mode, takes the steps below as they
+   stand.
 2. Check the ground: the checkout is a Git repository (a colocated jj repository is fine) whose GitHub remote holds the
    PR branches, and `codex`, `gh` (authenticated), and `deno` are on `PATH`. Tell the user that the checkout belongs to
    the worker for the length of the run.

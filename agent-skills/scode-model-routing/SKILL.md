@@ -130,12 +130,12 @@ is native or external (see Launch mechanism). `sota` marks models trusted with c
 is not an eligibility requirement for the orchestrator role. The inventory, with the calibration history behind it, is
 in `inventory.md` next to this file; the families and the `sota` marks are:
 
-| family | models (effort words)                                                          | sota             |
-| ------ | ------------------------------------------------------------------------------ | ---------------- |
-| gpt    | gpt-6-luna (medium, high), gpt-6.1-sol (low, medium, high), gpt-6-astra (high) | gpt-6-astra high |
-| claude | haiku (high), sonnet (low, medium, high), opus (high), fable (high)            | fable high       |
-| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                          | none             |
-| glm    | glm-5.3-flash (low, high, max)                                                 | none             |
+| family | models (effort words)                                                            | sota               |
+| ------ | -------------------------------------------------------------------------------- | ------------------ |
+| gpt    | gpt-6-luna (medium, high), gpt-6.2-sol (low, medium, high), gpt-6.2-astra (high) | gpt-6.2-astra high |
+| claude | haiku (high), sonnet (low, medium, high), opus (high), fable (high)              | fable high         |
+| muse   | muse-spark-1.3-contributor (low, medium, high, xhigh)                            | none               |
+| glm    | glm-5.3-flash (low, high, max)                                                   | none               |
 
 Availability and user overrides may remove or replace these defaults; see Local availability.
 
@@ -176,14 +176,14 @@ failure or when the task proves more demanding than its initial classification.
 
 | profile                   | use when                                                                                                                                                                                      | GPT route                               | Claude route                | Muse route                                                          | GLM route                              |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | --------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna high → gpt-6.1-sol medium    | haiku high → sonnet low     | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
-| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                                            | gpt-6.1-sol low → gpt-6.1-sol medium    | sonnet low → sonnet medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna high → gpt-6.1-sol medium    | sonnet medium → sonnet high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
-| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-6.1-sol medium → gpt-6.1-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| mechanical                | Deterministic tool use, searches, log scans, or tedious verified churn                                                                                                                        | gpt-6-luna high → gpt-6.2-sol medium    | haiku high → sonnet low     | muse-spark-1.3-contributor low → muse-spark-1.3-contributor medium  | glm-5.3-flash low → glm-5.3-flash high |
+| routine authored          | Producing or editing small prose/code where baseline taste matters                                                                                                                            | gpt-6.2-sol low → gpt-6.2-sol medium    | sonnet low → sonnet medium  | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| clear-spec implementation | Bounded implementation with strong acceptance checks                                                                                                                                          | gpt-6-luna high → gpt-6.2-sol medium    | sonnet medium → sonnet high | muse-spark-1.3-contributor medium → muse-spark-1.3-contributor high | glm-5.3-flash high → glm-5.3-flash max |
+| complex implementation    | Cross-cutting behavior, difficult debugging, or ambiguity that survives the caller's decomposition — design settled by the caller first, delegated for volume of input more than for judgment | gpt-6.2-sol medium → gpt-6.2-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
 | design and synthesis      | API design, architecture, nuanced copy, or competing tradeoffs — the orchestrator's own work, not a delegation (see below)                                                                    | orchestrator (visual output: opus high) | orchestrator                | none                                                                | none                                   |
-| focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-6-luna high → gpt-6.1-sol high      | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-6.1-sol medium → gpt-6.1-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
-| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6-astra high                        | fable high                  | none                                                                | none                                   |
+| focused review            | Idiomaticity, AI slop, or docs/comment correctness; also GPT data-flow and edge-input correctness lenses with strong general correctness coverage elsewhere in the panel                      | gpt-6-luna high → gpt-6.2-sol high      | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| mechanical review         | Other non-critical review: simplification, style, prose, or patterns                                                                                                                          | gpt-6.2-sol medium → gpt-6.2-sol high   | sonnet high → opus high     | muse-spark-1.3-contributor high → muse-spark-1.3-contributor xhigh  | glm-5.3-flash max                      |
+| critical review           | Correctness, security, concurrency, data integrity, or test-quality gate                                                                                                                      | gpt-6.2-astra high                      | fable high                  | none                                                                | none                                   |
 
 Each cell lists the primary and then the escalation rung. The implementation routes have two rungs; a substantive
 failure on the second rung exhausts that family route. The rationale behind the placements (why reviews route above
@@ -212,7 +212,7 @@ announced as a divergence. A Claude session does its own visual design.
 
 Long context is an exception to the luna routes, from every orchestrator. Luna's current calibration is weaker on
 long-context retrieval, so a mechanical or clear-spec task whose input is genuinely large — whole-repo scans, big log
-files, long-document analysis, a change that has to be reasoned across many files at once — starts at gpt-6.1-sol medium
+files, long-document analysis, a change that has to be reasoned across many files at once — starts at gpt-6.2-sol medium
 instead of luna. A Claude session routing luna `external` under the workhorse default routes sol `external` for these
 instead, rather than reverting to its native route. This is about input size the model must actually reason across
 (input 5), not task difficulty; small-input work stays on luna, and when the caller cannot tell in advance, luna first
@@ -258,11 +258,11 @@ facts about it. `route exhausted: yes` means the route just answered is the last
 profile; a substantive failure there is not answered by another rung — the caller handles the work itself or makes a
 deliberate cross-family attempt; routing will not hand back the same model. `endpoint trusted` is derived from that last
 model's `sota` mark, not from its family: yes for the critical-review routes and any other route whose last rung is
-gpt-6-astra high or fable high, no for the rest — every muse and glm route, since those families carry no `sota` model,
-and a GPT or Claude route whose ladder ends below `sota`, including every GPT route that ends at gpt-6.1-sol high. The
-flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule that an
-exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says `route
-exhausted: no`.
+gpt-6.2-astra high or fable high, no for the rest — every muse and glm route, since those families carry no `sota`
+model, and a GPT or Claude route whose ladder ends below `sota`, including every GPT route that ends at gpt-6.2-sol
+high. The flag tells the caller how much the exhausted rung's own judgment can be trusted; it does not change the rule
+that an exhausted route, trusted or not, is never retried mechanically. A first attempt on a route with a rung left says
+`route exhausted: no`.
 
 ## Provider preference
 
@@ -289,7 +289,7 @@ unavailable models from every profile and use the next suitable option rather th
 mechanically. "Suitable" is defined by the profile, not by the family: a model with no placement in a profile's row is
 not the next option for that profile just because it is the strongest one left in the family. When a config file removes
 the only `sota` model of the session's own family, critical review and the design delegate-up go cross-family to the
-other family's `sota` model (the removal of fable sends a Claude session's critical review to gpt-6-astra high on
+other family's `sota` model (the removal of fable sends a Claude session's critical review to gpt-6.2-astra high on
 `external`), not to opus or sol natively. Apart from the seeding request described in `config-file.md`, do not create or
 edit the config file yourself; it belongs to the user. If the config file does not exist but the file it replaced,
 `~/.scode-galaxy-brainrc.md`, does, stop and tell the user to rename it: the old file is not read, and answering as if

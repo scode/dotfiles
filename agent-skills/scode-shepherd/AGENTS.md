@@ -54,7 +54,7 @@ up a real draft PR on that repository, which exists for this kind of testing.
 
 After changing `SKILL.md`, eval it with fresh-context sub agents before calling the change done: tell each only where
 `SKILL.md` lives, state the situation in full, and judge whether the answer reflects the intended behavior. Unless a
-situation says otherwise, the session is interactive Codex on gpt-6.1-sol high, the skill was invoked with a goal in a
+situation says otherwise, the session is interactive Codex on gpt-6.2-sol high, the skill was invoked with a goal in a
 Git repository with a GitHub remote, and no models were named.
 
 | Situation                                                                             | Expected answer                                                                                                                                                                                                 |

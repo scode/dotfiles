@@ -15,7 +15,7 @@ stderr, so keep the two streams separate as in the template.
 - Model: pass `--model <provider>/<model-id>`. The provider is `openrouter` unless the user has stated another (in the
   request or in their standing instructions); do not look for other providers that also serve the model. OpenRouter ids
   are `vendor/model`, so a full selector reads `openrouter/z-ai/glm-5.3-flash` or `openrouter/inception/mercury-3`. An
-  id written for another CLI (`opencode/glm-5.3-flash`, a bare `gpt-6.1-sol`) needs the provider's spelling, which `omp
+  id written for another CLI (`opencode/glm-5.3-flash`, a bare `gpt-6.2-sol`) needs the provider's spelling, which `omp
   models find <model>` shows under that provider's heading. `find` is a substring search and exits 0 even when nothing
   matches, so read the model column for an exact match rather than relying on the exit status. omp also accepts bare
   ids, fuzzy matches, and configured role aliases (`@slow`, `@smol`), but do not rely on them: a fuzzy or bare id can

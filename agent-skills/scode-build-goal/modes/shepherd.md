@@ -22,7 +22,7 @@ directory is not in a checkout with a GitHub remote, say that shepherd mode cann
 In this mode the batch states, besides what `SKILL.md` lists:
 
 - The mode, and that the run is started with `$scode-shepherd <goal file>` in an interactive Codex session (by default
-  on `gpt-6.1-sol` at high effort) or headless with `shepherd drive`, not with `/goal`.
+  on `gpt-6.2-sol` at high effort) or headless with `shepherd drive`, not with `/goal`.
 - The worker: `gpt-6.1-terra` at high effort unless the user names another. A model named for the workers sets it, at
   the effort named or high when none is. A worker model Codex does not serve cannot run in this mode; say so and ask.
 - The checks every PR must pass: the gates the repository requires (its `AGENTS.md`, CI), as found while reading it.
@@ -42,7 +42,7 @@ In this mode the batch states, besides what `SKILL.md` lists:
 
 scode-shepherd's runner launches every review itself, through `codex exec`, on every PR before the next one starts.
 Present the menu from "Review gate options" in `SKILL.md` with its usual numbering, but mark option 1 (opus) as not
-available in this mode and option 2 (`gpt-6.1-sol` high) as the default, and word option 4 as another model Codex
+available in this mode and option 2 (`gpt-6.2-sol` high) as the default, and word option 4 as another model Codex
 serves, without the swarm example. An Other answer must name a model Codex serves, and a swarm is not available, since
 the runner runs one reviewer per review. A reviewer request that names a model Codex does not serve is not mapped to
 another model: say it cannot run in this mode and ask.
@@ -114,7 +114,7 @@ Then the items of "What the goal file must contain" in `SKILL.md`, with these di
 
 Tell the user how to start it, in place of the `/goal` command:
 
-- Interactive: in a Codex session on the checkout (by default on `gpt-6.1-sol` at high effort), `$scode-shepherd <goal
+- Interactive: in a Codex session on the checkout (by default on `gpt-6.2-sol` at high effort), `$scode-shepherd <goal
   file>`.
 - Headless: `~/.codex/skills/scode-shepherd/scripts/shepherd drive <run directory> --repo <checkout> --goal-file <goal
   file>`, with every path absolute (`~` expanded too). The run directory has to be the one the goal file names.

@@ -89,7 +89,7 @@ chunks in flight, or a chunk table, assume the skill is still active and say tha
 There is no routing table. Every spawn is one of three kinds.
 
 **Chunks of your own decomposition** run at the _worker selection_: the session's own model and effort, unless the user
-or the goal file names another ("use gpt-6.1-sol high for the powerhorses"), at the effort it names, or at the session's
+or the goal file names another ("use gpt-6.2-sol high for the powerhorses"), at the effort it names, or at the session's
 own effort when it names none. When the skill first activates for a run, resolve the selection to a concrete model and
 effort, record it in the run state, and set both explicitly at every launch where the mechanism allows it. From then on
 the recorded selection is the worker selection, even for a later session that resumes the run on a different model. A
