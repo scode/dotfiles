@@ -39,15 +39,15 @@ re-run whenever the profile table, the precedence list, the request or answer sh
 | read-only whole-repo scan, input large                                                                 | haiku high native (read-only work never takes the luna route, so the long-context exception has nothing to redirect) |
 | design decision, own decomposition                                                                     | `orchestrator`                                                                                                       |
 | design decision from a sonnet orchestrator (not `sota`)                                                | fable high native (delegate up)                                                                                      |
-| UI styling from a Codex session on gpt-6.1-sol high under `prefer-gpt`                                 | opus high external, diverged from preference yes (visual)                                                            |
+| UI styling from a Codex session on gpt-6.2-sol high under `prefer-gpt`                                 | opus high external, diverged from preference yes (visual)                                                            |
 | routine authored under `prefer-muse`                                                                   | muse-spark-1.3-contributor medium external, escalation high                                                          |
 | critical review under `prefer-glm`                                                                     | fable high native, diverged from preference yes (no suitable model)                                                  |
-| critical review under `prefer-glm` from a Codex session on gpt-6-astra high                            | gpt-6-astra high native, diverged from preference yes                                                                |
-| config file removes fable; critical review                                                             | gpt-6-astra high external, cross-family yes (the only remaining `sota` model)                                        |
-| design decision from a Codex session on gpt-6.1-sol high (not `sota`)                                  | gpt-6-astra high native (delegate up)                                                                                |
+| critical review under `prefer-glm` from a Codex session on gpt-6.2-astra high                          | gpt-6.2-astra high native, diverged from preference yes                                                              |
+| config file removes fable; critical review                                                             | gpt-6.2-astra high external, cross-family yes (the only remaining `sota` model)                                      |
+| design decision from a Codex session on gpt-6.2-sol high (not `sota`)                                  | gpt-6.2-astra high native (delegate up)                                                                              |
 | config file removes sonnet medium; clear-spec writer under `prefer-claude`                             | sonnet high native                                                                                                   |
 | clear-spec writer, short; input 13 lists the gpt family as unreachable on `external`                   | sonnet medium native, reason says the gpt path is unavailable                                                        |
-| clear-spec writer, large input; input 13 lists gpt-6.1-sol and gpt-6-luna as unreachable on `external` | a Claude route native, not sol or luna again                                                                         |
+| clear-spec writer, large input; input 13 lists gpt-6.2-sol and gpt-6-luna as unreachable on `external` | a Claude route native, not sol or luna again                                                                         |
 | routine authored under `prefer-gpt`; input 13 lists the gpt family as unreachable on `external`        | sonnet low native, diverged from preference yes                                                                      |
 | config file says "use GLM through the zai provider"; routine authored under `prefer-glm`               | glm-5.3-flash high external, `launch preference` carrying those words verbatim                                       |
 | config file says "run sonnet through claude -p"; clear-spec writer under `prefer-claude`               | sonnet medium external, `launch preference` carrying those words                                                     |
@@ -58,10 +58,10 @@ re-run whenever the profile table, the precedence list, the request or answer sh
 | user demands opus for a mechanical task                                                                | opus high native, reason attributes the demand                                                                       |
 | user demands claude-fable-5, the older release, for critical review                                    | claude-fable-5 high external, reason attributes the demand (native model parameter takes only aliases)               |
 | user writes "fable-5 high" for a mechanical task, copied from an older prompt                          | fable high native, reason attributes the demand (the old label means the alias)                                      |
-| critical review with independent perspective requested                                                 | gpt-6-astra high external, cross-family yes (independence)                                                           |
-| clear-spec writer after one `substantive failure` on gpt-6-luna high                                   | gpt-6.1-sol medium external (not sonnet)                                                                             |
+| critical review with independent perspective requested                                                 | gpt-6.2-astra high external, cross-family yes (independence)                                                         |
+| clear-spec writer after one `substantive failure` on gpt-6-luna high                                   | gpt-6.2-sol medium external (not sonnet)                                                                             |
 | the same after `execution-path failure`                                                                | gpt-6-luna high external again                                                                                       |
-| the same after `substantive failure (lost context)`                                                    | gpt-6.1-sol medium external, reason says no attempt consumed                                                         |
+| the same after `substantive failure (lost context)`                                                    | gpt-6.2-sol medium external, reason says no attempt consumed                                                         |
 
 Focused-review scenarios:
 
@@ -69,10 +69,10 @@ Focused-review scenarios:
 | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | Codex on sol high; each of idiomaticity, AI slop, and docs/comment correctness, input not large                                                | gpt-6-luna high native; focused review                            |
 | Codex on sol high; each of data-flow and edge-input correctness lenses, with strong general correctness coverage in the panel, input not large | gpt-6-luna high native; full charter retained                     |
-| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-6.1-sol high native; no additional GPT rung                   |
-| the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-6.1-sol high native; route exhausted yes, endpoint trusted no |
-| Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-6-astra high native; critical review                          |
-| Codex on sol high; simplification review                                                                                                       | gpt-6.1-sol medium native; mechanical review                      |
+| the preceding focused review with large input, or after lost-context failure on luna high                                                      | gpt-6.2-sol high native; no additional GPT rung                   |
+| the preceding focused review after ordinary substantive failure on luna high                                                                   | gpt-6.2-sol high native; route exhausted yes, endpoint trusted no |
+| Codex on sol high; standalone correctness review focused on data flow                                                                          | gpt-6.2-astra high native; critical review                        |
+| Codex on sol high; simplification review                                                                                                       | gpt-6.2-sol medium native; mechanical review                      |
 | Claude Code on fable high; docs/comment correctness, process-defined native-only role                                                          | sonnet high native; focused review, Claude route                  |
 | Claude Code on fable high; data-flow correctness lens in a panel, process-defined native-only role                                             | fable high native; non-GPT correctness keeps critical review      |
 

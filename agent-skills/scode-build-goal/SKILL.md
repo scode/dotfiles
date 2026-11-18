@@ -117,7 +117,7 @@ Three choices exist only in this mode, and the up-front batch states a default f
 one line:
 
 - The worker model: the model and effort of the session that first runs the goal, unless the user names another. A model
-  named for the workers, in the invocation or in an answer ("use gpt-6.1 sol high for the powerhorses", "chunks on
+  named for the workers, in the invocation or in an answer ("use gpt-6.2 sol high for the powerhorses", "chunks on
   fable"), sets it, at the effort named or the executing session's own effort when none is. A model named for the
   reviewer sets the review gate, per Review gate options. When it is unclear which role a named model is for, ask. When
   the named worker model needs a CLI this machine lacks (`codex` for GPT, for example), say so in the batch; either way
@@ -311,8 +311,8 @@ than fixed here, because the right one depends on the goal, on which subscriptio
 much the user trusts the model doing the writing. The menu, in the order and numbering to present it:
 
 1. A single fresh-context agent with the general charter below on opus high. The default.
-2. A single fresh-context agent with the general charter below on gpt-6.1-sol high.
-3. A single fresh-context agent with the general charter below on gpt-6-astra high.
+2. A single fresh-context agent with the general charter below on gpt-6.2-sol high.
+3. A single fresh-context agent with the general charter below on gpt-6.2-astra high.
 4. Other: a plain-text answer naming any other reviewer, such as another model or effort for the single agent, or a
    `pre-pr-review-swarm` run.
 
@@ -323,7 +323,7 @@ natively. An Other answer that names a model without an effort runs at high.
 
 A swarm is only ever the reviewer when the user asks for one: by saying "swarm" or naming `pre-pr-review-swarm`, in the
 invocation or in an Other answer. The menu offers no swarm option and no default ever is one. A reviewer request that
-names only a model and effort ("gpt 6.1 sol high reviewer", "review with fable") is a single charter agent on that
+names only a model and effort ("gpt 6.2 sol high reviewer", "review with fable") is a single charter agent on that
 model, never the swarm on it. A swarm fans out many reviewers per PR, which costs far more than one agent, so it is not
 something to infer from a model name. When the request already names a reviewer, the batch still shows the menu but
 states which option that request maps to, so a misread costs the user one line to fix. A request for a swarm that names

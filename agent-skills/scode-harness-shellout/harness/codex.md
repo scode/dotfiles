@@ -3,11 +3,11 @@
 Read this file in full before the first `codex exec` launch of a session, after `SKILL.md`.
 
 ```sh
-codex -c model_reasoning_effort=high exec --yolo -m gpt-6.1-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
+codex -c model_reasoning_effort=high exec --yolo -m gpt-6.2-sol -o <scratch-file> "$(cat <prompt-file>)" < /dev/null
 ```
 
 - Model ids are passed to `-m` literally; codex has no alias that follows new releases. The current ids are
-  `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra`. A request that names only a model line and an effort ("a sol high
+  `gpt-6.2-sol`, `gpt-6-luna`, and `gpt-6.2-astra`. A request that names only a model line and an effort ("a sol high
   agent") means that line's id in this list; an explicitly versioned id ("gpt-6-sol") is passed as written.
 - Reasoning effort is set with the global `-c model_reasoning_effort=<low|medium|high>` option before `exec`. Always
   pass it explicitly rather than relying on the user's config default; without `--json`, the startup header echoes the

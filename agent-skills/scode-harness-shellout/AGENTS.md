@@ -82,7 +82,7 @@ a delegation request and requiring a shell-out:
 - The same GLM request with a stated preference for opencode. Expected: `opencode run`, once `opencode providers list`
   shows a credential for its provider.
 - The same GLM request with `omp` missing from `PATH` and an opencode credential present. Expected: `opencode run`.
-- A caller that supplies `external` for gpt-6.1-sol high. Expected: `codex exec`, not omp.
+- A caller that supplies `external` for gpt-6.2-sol high. Expected: `codex exec`, not omp.
 - A caller that supplies `external` for a model no installed CLI serves. Expected: report it unreachable, naming what
   each candidate lacked; no substitute model.
 - A named-model request supported by the native tool, including required effort and resume behavior. Expected: native

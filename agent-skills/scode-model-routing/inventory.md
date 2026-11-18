@@ -20,10 +20,10 @@ measured on.
 | --------------------------------- | ------ | ---- |
 | gpt-6-luna medium                 | gpt    |      |
 | gpt-6-luna high                   | gpt    |      |
-| gpt-6.1-sol low                   | gpt    |      |
-| gpt-6.1-sol medium                | gpt    |      |
-| gpt-6.1-sol high                  | gpt    |      |
-| gpt-6-astra high                  | gpt    | yes  |
+| gpt-6.2-sol low                   | gpt    |      |
+| gpt-6.2-sol medium                | gpt    |      |
+| gpt-6.2-sol high                  | gpt    |      |
+| gpt-6.2-astra high                | gpt    | yes  |
 | haiku high                        | claude |      |
 | sonnet low                        | claude |      |
 | sonnet medium                     | claude |      |
@@ -82,7 +82,7 @@ nothing was decided.
 
 `SKILL.md` states the rules; this is what each rests on, so that calibration has one place to update.
 
-- **The GPT `sota` mark.** gpt-6-astra high carries the family's `sota` mark; gpt-6.1-sol high does not. The mark
+- **The GPT `sota` mark.** gpt-6.2-astra high carries the family's `sota` mark; gpt-6.2-sol high does not. The mark
   follows the model trusted to orchestrate, not a measurement of sol against astra. The decision to mark astra as the
   flagship was made on 2026-09-06, before these sol and luna version changes. Their routes retain the earlier
   placements, but the measurements below have not been repeated on the new versions. Astra has no placement below

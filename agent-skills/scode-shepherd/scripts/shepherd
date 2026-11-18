@@ -60,7 +60,7 @@ const DEFAULT_LIMITS: Limits = {
   resourceWaitMinutes: 30,
 };
 const DEFAULT_WORKER: ModelSel = { model: "gpt-6.1-terra", effort: "high" };
-const DEFAULT_REVIEWER: ModelSel = { model: "gpt-6.1-sol", effort: "high" };
+const DEFAULT_REVIEWER: ModelSel = { model: "gpt-6.2-sol", effort: "high" };
 
 /** Consecutive worker sessions that exit nonzero without a report before the runner stops blaming the worker. */
 const CRASH_LIMIT = 2;

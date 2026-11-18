@@ -166,7 +166,7 @@ whoever is judging whether a change kept the user-facing behavior intact.
   the reviewer through `codex exec`, so both must be models Codex serves: a worker or reviewer request for any other
   model is said to be unavailable and asked about, never mapped to another model.
 - The review gate menu keeps its options and numbering, with option 1 (opus) marked unavailable and option 2
-  (`gpt-6.1-sol` high) the default; an Other answer must name a model Codex serves, and no swarm is available. The goal
+  (`gpt-6.2-sol` high) the default; an Other answer must name a model Codex serves, and no swarm is available. The goal
   file carries the demand and the full general charter as in the other modes.
 - There is no working log. The run directory, `<slug>-goal-shepherd` beside the goal file, takes its place; its name
   keeps it adjacent to the goal file and apart from the `<checkout>-shepherd-<slug>` directories plain scode-shepherd
@@ -267,13 +267,13 @@ whoever is judging whether a change kept the user-facing behavior intact.
   the codebase already settles.
 - The batch always presents the review-gate menu, numbered, with these four options in this order and the first marked
   as the default: a single fresh-context agent with a general correctness, design, and idiomatic-code charter on opus
-  high; the same on gpt-6.1-sol high; the same on gpt-6-astra high; and Other, a plain-text answer naming any other
+  high; the same on gpt-6.2-sol high; the same on gpt-6.2-astra high; and Other, a plain-text answer naming any other
   reviewer (in shepherd mode, changed as Shepherd mode says). Each reviewer runs on the model it names, cross-harness
   when the executing harness cannot reach the model natively; an Other answer naming a model without an effort runs at
   high. The user's choice is recorded in the goal file; the skill never picks a reviewer silently.
 - The menu offers no swarm option, and the default is never a swarm. A swarm is the reviewer only when the user
   explicitly asks for one (saying "swarm" or naming `pre-pr-review-swarm`), in the invocation or in an Other answer. A
-  reviewer request that names only a model and effort, such as "gpt 6.1 sol high reviewer", means a single charter agent
+  reviewer request that names only a model and effort, such as "gpt 6.2 sol high reviewer", means a single charter agent
   on that model, never a swarm. When the request already names a reviewer, the batch states which menu option it maps to
   alongside the menu. A swarm request that names no model is asked about.
 
