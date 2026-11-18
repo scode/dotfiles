@@ -279,17 +279,30 @@ whoever is judging whether a change kept the user-facing behavior intact.
 
 ## Proportionate planning
 
-- Before finalizing, show a short repository-grounded implementation outline: existing paths to reuse, the smallest
-  sufficient design, substantial new state or subsystems, expensive promises, and uncertainty. Explain aggregate cost;
-  do not prescribe every defensive detail or use invented precise estimates as targets.
+- Before finalizing, show a short repository-grounded implementation outline: existing paths to reuse, existing
+  mechanisms reused or generalized, the smallest sufficient design, substantial new state or subsystems, expensive
+  promises, and uncertainty. Explain aggregate cost; do not prescribe every defensive detail or use invented precise
+  estimates as targets.
+- Keeping the plan small and avoiding duplication are weighed against each other; neither overrides the other. A
+  mechanism that does substantially the same job as an existing one reuses it when it fits. Otherwise the plan weighs
+  generalizing it only as far as the callers actually in hand need against a separate implementation, which is right
+  when sharing would blur two different contracts, and the outline says which and why. Clear-cut cases are the planner's
+  to settle. Close calls (generalizing that reaches into code the goal otherwise leaves alone, changes behavior other
+  callers rely on, or rests on an unclear shared shape) go to the user during planning and are recorded as settled
+  decisions, so the foreseeable ones are not left to the unattended run. One planning did not foresee is a routine fork
+  during execution when every option stays within the agreed scope: decided after scope reassessment and logged as
+  DECISION. The user asked for this on 2026-11-17: the planning review until then guarded only against doing more than
+  needed, which leaves a plan free to stay small by duplicating.
 - Keep the original request and later user decisions, sourced repository constraints, and planner-proposed mechanisms
   distinct. Substantial mechanisms need a concrete contract or demonstrated failure that the smaller design cannot
   handle. Refusal of unsupported cases must still satisfy the agreed behavior.
 - Run one fresh-context planning review, using a native sub-agent at the planner's model unless the user specifies
   otherwise. It receives the request and decisions as well as the proposed goal, outline, and repository context. Its
   charter explicitly challenges unnecessary planner-authored obligations and asks for concrete smaller alternatives,
-  distinguishing changes that need a user decision. No findings is valid. Findings go to a named private file; no
-  product or VCS edits. This does not activate execution skills or change the per-PR reviewer selection.
+  challenges duplication of existing mechanisms without proposing generalization beyond the plan's actual uses, and
+  distinguishes changes and close reuse-versus-duplication calls that need a user decision. No findings is valid.
+  Findings go to a named private file; no product or VCS edits. This does not activate execution skills or change the
+  per-PR reviewer selection.
 - Resolve findings before finalizing. Reassess affected conclusions after material design changes, not wording changes.
   Disclose unavailable independent review; self-review must not be represented as independent.
 

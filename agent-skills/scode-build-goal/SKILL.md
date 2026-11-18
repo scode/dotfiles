@@ -274,11 +274,12 @@ Record the actual answers as settled decisions, keeping planner proposals distin
 
 ## Implementation outline and scope review
 
-Before finalizing the goal, show a short, repository-grounded outline: the existing path to extend, the smallest design
-that satisfies the request, substantial new persistent state or subsystems, and promises that drive the cost. Compare
-with the nearest existing implementation when useful. Explain the size and uncertainty in terms of mechanisms and
-validation needed; do not invent precise line counts or turn estimates into targets. A routine change may need only a
-paragraph. The outline exposes consequential choices, not a detailed prescription for every defensive helper.
+Before finalizing the goal, show a short, repository-grounded outline: the existing path to extend, the existing
+mechanisms the work reuses or generalizes, the smallest design that satisfies the request, substantial new persistent
+state or subsystems, and promises that drive the cost. Compare with the nearest existing implementation when useful.
+Explain the size and uncertainty in terms of mechanisms and validation needed; do not invent precise line counts or turn
+estimates into targets. A routine change may need only a paragraph. The outline exposes consequential choices, not a
+detailed prescription for every defensive helper.
 
 Keep three sources of requirements distinct in the goal: the user's request and later decisions (retain their relevant
 words), binding repository constraints (cite the source), and planner-proposed implementation choices with reasons.
@@ -287,22 +288,44 @@ machinery needs a concrete contract or demonstrated failure the smaller design c
 refused only when that still meets the agreed behavior. Neither novelty nor an unfamiliar technology alone proves
 overengineering.
 
+Small is not the only test. Keeping a plan small and avoiding duplication pull against each other, and neither wins by
+default. A plan that stays small by building a second copy of something the repository already has (another retry loop,
+config loader, or path helper beside the existing one) is not simpler; it moves the cost to whoever later has to keep
+the two in step. A plan that generalizes an existing mechanism for uses nobody has asked for is the overengineering this
+section exists to prevent. So when the work needs something that does substantially the same job as an existing
+mechanism, reuse that mechanism as it stands when it fits. When it does not quite fit, weigh generalizing it just far
+enough to serve the callers actually in hand against keeping a separate implementation, which is the better answer when
+sharing would blur two different contracts (reusing whatever smaller piece does fit, such as a backoff calculation). Say
+in the outline which one the plan does and why. A clear-cut case is the planner's to settle. A close one is a judgment
+call for the user, raised during planning with the options and what each costs, and recorded as a settled decision: for
+example when generalizing would reach into code the goal otherwise leaves alone, change behavior other callers rely on,
+or the overlap is partial enough that the shared shape is unclear. Do not ask about every helper; this is for mechanisms
+whose duplication or generalization a reviewer of the finished stack would question.
+
 Run one fresh-context planning review before writing the final goal. Use a native sub-agent at the planning session's
 model unless the user specifies otherwise; this is a focused review, separate from the per-PR menu, not a swarm or a
 reason to activate the execution workflow. Supply the original request, later user decisions, proposed goal and outline,
 relevant repository constraints and existing implementation paths. Give it this charter:
 
-> Identify where this plan does more than the user needs. For each substantial new mechanism, explain which requirement
-> makes it necessary and whether an existing facility or narrower supported behavior would suffice. Propose the smallest
-> coherent design. Challenge planner-authored requirements; identify any simplification that would change an explicit
-> user requirement or repository constraint. Report concrete findings and alternatives, or say no unnecessary complexity
-> was found. Do not manufacture objections or add safeguards to justify an unnecessary subsystem. Write findings to the
-> supplied private file; change no product files or VCS state.
+> Identify where this plan does more than the user needs, and where it duplicates a mechanism the repository already
+> has. For each substantial new mechanism, explain which requirement makes it necessary and whether an existing facility
+> or narrower supported behavior would suffice. Where the plan builds something that does substantially the same job as
+> an existing mechanism, say whether that mechanism could be reused as it stands or generalized to serve both uses, or
+> whether keeping them separate is better because sharing would blur two different contracts, and what generalizing
+> would cost; never propose generalizing beyond the uses the plan actually has. Weigh the two against each other: a plan
+> is not simpler for copying a mechanism, and not better for generalizing one nobody else needs. Propose the smallest
+> coherent design that avoids needless duplication. Challenge planner-authored requirements; identify any simplification
+> that would change an explicit user requirement or repository constraint, and mark any reuse-versus-duplication choice
+> that is a close judgment call rather than clear-cut. Report concrete findings and alternatives, or say no unnecessary
+> complexity or duplication was found. Do not manufacture objections, add safeguards to justify an unnecessary
+> subsystem, or add abstraction to justify a generalization. Write findings to the supplied private file; change no
+> product files or VCS state.
 
 Name that private findings file in the prompt. Assess the findings, remove unjustified planner obligations, and ask only
-about unresolved product tradeoffs. A reviewer cannot authorize weaker behavior. Recheck affected conclusions if the
-resolution materially changes the outline; do not repeat the whole review for wording fixes. If fresh-context review is
-unavailable, report the limitation before finalizing rather than calling a self-review independent.
+about unresolved product tradeoffs and the close reuse-versus-duplication calls. A reviewer cannot authorize weaker
+behavior. Recheck affected conclusions if the resolution materially changes the outline; do not repeat the whole review
+for wording fixes. If fresh-context review is unavailable, report the limitation before finalizing rather than calling a
+self-review independent.
 
 ## Review gate options
 
@@ -357,19 +380,23 @@ overseer mode, `modes/overseer.md` does. Include, at minimum:
   must not silently reverse these.
 - **Implementation outline and requirement sources.** Carry the reviewed outline, the distinct requirement sources, and
   agreed fallbacks above into the goal. Preserve the original request and later decisions so a reviewer can challenge
-  the planner's interpretation rather than merely checking compliance with it.
+  the planner's interpretation rather than merely checking compliance with it. Name the existing mechanisms the outline
+  reuses or generalizes, so the executing agent builds on them instead of beside them.
 - **Scope reassessment.** Before implementing a substantial departure from the outline, use a fresh-context review with
   the planning charter above, included in full in the goal. Supply the request, decisions, outline, current diff, and
   proposed departure: what changed, why it is necessary, and which simpler alternative was ruled out. A new parser,
-  installation registry, recovery protocol, or compatibility layer can signal such a departure; these are examples, not
-  a blacklist. Repeated corrective reviews of the same component also require reassessing its necessity before another
-  repair round. Reuse an existing review or delegation checkpoint that can answer this question, rather than scheduling
-  periodic swarms or reviewing every helper. Apply the same decision boundary as Unattended fallback below. Give
-  delegates bounded units within the outline; unapproved new mechanisms are outside their task. If discovered mid-unit,
-  leave that part unimplemented and report the dependency at the existing checkpoint, with checks and incomplete work
-  stated honestly; do not require the delegate to build it merely to satisfy the completion checkpoint. In no-workhorse
-  mode these sentences apply to whatever same-model sub-agents the executing agent chooses to run, and the checkpoint is
-  simply the sub-agent's report back.
+  installation registry, recovery protocol, or compatibility layer can signal such a departure, and so can a new
+  mechanism that does the job of an existing one or a generalization the outline did not plan; these are examples, not a
+  blacklist. A close reuse-versus-duplication call that planning did not foresee is a routine fork under that boundary
+  when every option stays within the agreed scope: decide it after the reassessment and log it as DECISION. Repeated
+  corrective reviews of the same component also require reassessing its necessity before another repair round. Reuse an
+  existing review or delegation checkpoint that can answer this question, rather than scheduling periodic swarms or
+  reviewing every helper. Apply the same decision boundary as Unattended fallback below. Give delegates bounded units
+  within the outline; unapproved new mechanisms are outside their task. If discovered mid-unit, leave that part
+  unimplemented and report the dependency at the existing checkpoint, with checks and incomplete work stated honestly;
+  do not require the delegate to build it merely to satisfy the completion checkpoint. In no-workhorse mode these
+  sentences apply to whatever same-model sub-agents the executing agent chooses to run, and the checkpoint is simply the
+  sub-agent's report back.
 - **The checkout.** State that the goal runs inside a checkout of the project, identified as in Placing the files (by
   its GitHub repository or root commit, never by path), and that the checkout is the nearest Git worktree or jj
   workspace containing the session's working directory (a `.git` file counts as well as a `.git` directory). That is the
