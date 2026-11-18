@@ -7,6 +7,19 @@ jobs:
   require-main-base:
     runs-on: boat
     steps:
+      - name: Rehearsal runner identity and starting counters
+        run: |
+          date -u +%FT%TZ
+          hostname
+          nproc
+          lscpu
+          head -1 /proc/stat
+          cat /proc/uptime
+          cat /proc/meminfo
+          cat /proc/self/cgroup
+          df -B1 /
+          command -v rustup || true
+          command -v cargo || true
       - name: Require main as PR base
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -15,3 +28,9 @@ jobs:
             echo "PR base must be main, got '$BASE_REF'." >&2
             exit 1
           fi
+      - name: Rehearsal ending counters
+        if: always()
+        run: |
+          date -u +%FT%TZ
+          head -1 /proc/stat
+          cat /proc/uptime
