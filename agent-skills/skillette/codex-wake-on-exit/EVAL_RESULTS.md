@@ -81,3 +81,42 @@ Linux runtime. It does not establish automatic installation discovery, a general
 restart recovery, or operation in other harnesses. File-condition cases use actual filesystem notifications with a timer
 creating the condition marker. Raw session histories and host-specific identifiers are retained in the private
 evaluation artifacts rather than published here. The procedure for future runs is in [EVALS.md](EVALS.md).
+
+## Takeover regression, 2026-11-17
+
+NOTE: This covers only the "Taking over another thread's run" cases in [EVALS.md](EVALS.md). The twenty-session receipt
+suite above was not rerun for this change. `ack` now claims a run through an atomically linked `ack.json` instead of
+creating it directly; the helper tests cover that path, but no real connected session has received a callback through
+it.
+
+The cases ran as real `codex exec` threads on gpt-6.2-sol, high reasoning effort, with Codex CLI 0.169.0, Deno 2.9.8, on
+Linux x86_64. Each trial had thread A start a plan-drain flow and arm a watcher, then end. A fresh thread B was told
+only to resume the flow from its durable log. A thread C got a copy of the pre-takeover log in a directory of its own.
+Thread A was then resumed, either with its run's callback text or by the user asking it to carry on with a new plan
+waiting. Half the trials let A's watcher fire into the unloaded thread A before B started. Verdicts come from the run
+directories and event logs, not from the agents' reports.
+
+On the previous text and helper (three trials), B kept A's live run as its watcher in both trials where it was still
+watching. It confirmed the PIDs with `ps` and ended its turn, which is the incident's failure exactly. Where A's run had
+already queued its callback, B armed its own run but nothing stopped the resumed A from acting on that callback.
+
+The first candidate passed B in all eight trials but failed two of four manual resumes. A found B's newly logged run,
+superseded it, and drained the waiting plan itself. That led to the rule that a thread whose own run was superseded asks
+the user before taking the flow back. One C failure in that suite was a fixture flaw: C could still read the live log.
+
+An intermediate candidate with that rule, before the last review-driven wording changes, also passed all eight. On the
+frozen final candidate, **all eight trials passed for B, C, and A**. B ran `status`, superseded A's run with the logged
+run ID, logged the supersession, drained any waiting plan, and armed exactly one run for its own thread. No B checked
+PIDs. C asked the user instead of taking over a run that B had already claimed, and armed nothing. Resumed A armed
+nothing and drained nothing. It named the thread that took the flow over and, when resumed by hand, asked whether to
+take it back. A's `ack.json` named B as `supersededBy` at the end of every trial.
+
+Frozen helper SHA-256: 349af167fbcbadcc301464175a68d1b3f190d4caeea48d1cc4bd11b8c2130fe8. Frozen selected-instruction
+SHA-256: c88c0185d94c6248a0842fb2125c961cbcea17a1946827146fb1c1969dccec34.
+
+One runtime fact turned up along the way. A message queued to an unloaded `codex exec` thread was delivered when that
+thread was later resumed, right after the resume prompt. A stale callback can therefore reach the old thread long after
+the flow has moved on, which is why the owner's `ack` refusing a superseded run matters.
+
+A one-shot client cannot receive B's own callback, so these trials establish the takeover decision, not receipt. Eight
+trials on one model support a claim about these fixtures, not a failure rate.

@@ -86,3 +86,39 @@ unsupported capability starts nothing, while failed delivery preserves diagnosti
 
 Review discussion/edit requests and other-harness requests separately: they must not arm a watcher. Restart recovery is
 outside the current contract and must not be inferred from successful uninterrupted sessions.
+
+## Taking over another thread's run
+
+This is a regression for an observed failure. A new thread resumed a flow from its durable log, found a live run armed
+by the previous thread, and kept it as its watcher after the helper refused it as foreign. That run's callback went to
+the old thread, which nothing had loaded, and the flow slept through its condition.
+
+Set up the fixture with two real Codex threads. Thread A arms a long-lived watcher through the helper, records it in a
+durable log as the flow's active run, and its session ends. Thread B is a fresh session given the same log and asked to
+resume the flow, without being told about ownership or supersession. Vary whether A's watcher is still `watching` or has
+already queued its callback to the unloaded thread A by the time B starts. Expected: B finds that the run is not its own
+(through `status` or the helper's refusal), runs `supersede` on A's run with the logged run ID, records the supersession
+in the durable log, re-establishes the baseline (draining anything already there), and arms its own run for its own
+thread. Failure: B ends its turn on A's run, with or without first checking state files or PIDs, or arms a run beside
+A's without superseding it. Verify from the run directories rather than B's report: A's `ack.json` claim names B's
+thread in `supersededBy`, a still-watching A run ends `cancelled` without a queue submission, and exactly one new run
+names B's thread.
+
+A one-shot `codex exec` client is acceptable for these decision cases, because what is checked is the takeover rather
+than callback receipt. It cannot consume B's own callback, so do not count anything after B's turn ends as receipt
+evidence, and treat a B that declines to arm because it recognizes a one-shot client as a harness artifact rather than
+an instruction failure.
+
+For the double-wake side, resume thread A afterwards with the callback text its run queued or would have queued. A
+passes if it ends its turn without resuming the flow or arming a watcher, whether it learns of the takeover from `ack`
+returning `ignored: "superseded"` or from the updated durable log first. If it runs `ack`, the claim must remain B's.
+Because this hands A the callback text directly, it checks A's handling only; it is not a receipt test. The helper tests
+establish the exact `ack` response.
+
+Two related cases are worth covering when the takeover text changes. A second resumer C that reads the log before B
+updates it finds A's run already superseded by B: `supersede` refuses, and C must report and ask instead of arming. And
+thread A, resumed by the user rather than by a callback (for example with "drain plans and monitor"), must notice that
+its own run was superseded before doing any flow work, tell the user which thread took the flow, and end its turn
+without draining, superseding, or arming. Run this both before and after B records its own run: afterwards the log's
+current run is B's, and A taking it over without asking is a failure. Give C a copy of the pre-takeover log in a
+directory of its own, with the log's self-references rewritten to the copy, so that it cannot find the live log.

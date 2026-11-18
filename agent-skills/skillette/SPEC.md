@@ -145,10 +145,22 @@ startup before returning. Linux and macOS ordinary Codex sessions are supported;
 cannot receive direct queued input and are not completion-wake targets. Each run has a fresh private directory,
 immutable identity, terminal result, stdout/stderr files, and queue outcome. Nonzero exits still trigger a callback.
 Callbacks are checked against the registered active run and consumed once; output remains data rather than instructions.
-Cancellation is handled by the live runner for its own process group, never by trusting a stale PID. Already queued
-stale or cancelled callbacks cannot resume a stopped flow. Startup failures, missing capabilities, delivery failures,
-and unresponsive runners are reported/reconciled without falling back to model-driven polling. There is no automatic
-enqueue retry or promise of restart recovery.
+Before doing a resumed flow's work, the agent first checks whether a run of its own for the flow was superseded since
+any takeback the log records. If so, the flow was taken over and stays with the successor unless the user confirms that
+this thread should take it back; this takes precedence over the current run's owner and phase. Only then does it check
+the run its log records as current. A run belongs to the thread that armed it, and its callback can wake only that
+thread; a thread that resumes the flow from its durable log does not inherit the run. `status` reports the owner for any
+thread's run. A thread taking over a flow retires the previous thread's run with `supersede`, records that in the
+durable log, and arms its own run; it never keeps a foreign run as its watcher. `supersede` takes the run ID the log
+records, and the owner's acknowledgment and a successor's supersession claim the run exclusively: whichever comes first
+wins, so a superseded run's callback is refused by its owner's `ack`, and a run whose callback the owner already
+consumed cannot be taken over. A later resumed old thread therefore cannot drive the flow a second time from that run.
+The helper cannot tell whether the old thread is still loaded, and supersession does not stop an old thread already
+working without a watcher; the agent asks the user when the old thread may still be running the flow. Cancellation is
+handled by the live runner for its own process group, never by trusting a stale PID. Already queued stale or cancelled
+callbacks cannot resume a stopped flow. Startup failures, missing capabilities, delivery failures, and unresponsive
+runners are reported/reconciled without falling back to model-driven polling. There is no automatic enqueue retry or
+promise of restart recovery.
 
 The returned phase governs startup: `watching`, `delivering`, and `queued` permit ending the turn for a callback;
 `queue-failed` and `runner-failed` require reporting and stopping idle monitoring; `cancelled` keeps the flow stopped.

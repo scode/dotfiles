@@ -4,8 +4,18 @@
  *
  * `start NEW-ABSOLUTE-RUN-DIR -- PROGRAM ARG...` captures CODEX_THREAD_ID and cwd,
  * confirms local queue support, and returns only after the detached runner starts.
- * `status RUN-DIR`, `stop RUN-DIR`, and `ack RUN-DIR RUN-ID` never start another job.
- * Output stays in private files; queued messages contain identifiers, not command output.
+ * `status RUN-DIR`, `stop RUN-DIR`, `supersede RUN-DIR RUN-ID`, and `ack RUN-DIR RUN-ID` never
+ * start another job. Output stays in private files; queued messages contain identifiers,
+ * not command output.
+ *
+ * A run belongs to the thread that armed it, for its whole life. Its callback can only
+ * wake that thread, even after the thread stops being used and another thread resumes
+ * the same flow from its durable log. `status` therefore reports the owner rather than
+ * refusing a foreign run, and `supersede` is the one cross-thread action: a thread taking
+ * over the flow uses it to retire the old thread's run. A callback the old run already
+ * queued can still wake its owner, but the owner's `ack` refuses it, so the owner cannot
+ * start a second copy of the flow from it. Supersession governs only the run: it cannot
+ * stop an old thread that is already working without a watcher.
  */
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
@@ -54,14 +64,113 @@ function exists(path: string) {
   }
 }
 
-/** Keep lifecycle mutations confined to the exact Codex thread that armed the job. */
-function owned(dir: string, thread: string): { manifest: Manifest; state: State } {
+/**
+ * Read a run's identity without deciding who may act on it.
+ *
+ * Only the manifest and state agreeing on one run ID and one thread make the record
+ * usable; a mismatch means the directory is not a run this helper wrote.
+ */
+function inspect(dir: string): { manifest: Manifest; state: State } {
   const manifest: Manifest = JSON.parse(Deno.readTextFileSync(join(dir, "manifest.json")));
   const state: State = JSON.parse(Deno.readTextFileSync(join(dir, "state.json")));
-  if (!uuid.test(thread) || manifest.thread !== thread || state.id !== manifest.id || state.thread !== thread) {
-    throw new Error("This run does not belong to the current Codex thread");
+  if (state.id !== manifest.id || state.thread !== manifest.thread) {
+    throw new Error("This run's manifest and state disagree; it is not a usable wake-on-exit run");
   }
   return { manifest, state };
+}
+
+/**
+ * Keep lifecycle mutations confined to the exact Codex thread that armed the job.
+ *
+ * "Owned" means the manifest names the current CODEX_THREAD_ID. A durable log that
+ * records the run for a flow this thread has resumed does not make it owned: the
+ * callback still targets the arming thread. `supersede` is the only exception.
+ */
+function owned(dir: string, thread: string): { manifest: Manifest; state: State } {
+  const record = inspect(dir);
+  if (!uuid.test(thread) || record.manifest.thread !== thread) {
+    throw new Error("This run does not belong to the current Codex thread");
+  }
+  return record;
+}
+
+/**
+ * The single claim on a run's callback, stored in `ack.json`.
+ *
+ * Exactly one of two things can claim a run: its owner acknowledging the callback, or a
+ * successor thread superseding the run (`supersededBy` set). Both go through `claim`, so
+ * whichever comes first wins and the other is refused; an owner and a successor can never
+ * both act on the same run. The file name predates supersession and is kept so that runs
+ * acknowledged by an older copy of this helper still count as claimed.
+ */
+type Claim = { id: string; at: string; supersededBy?: string };
+
+/**
+ * The run's claim, if any.
+ *
+ * This helper publishes claims whole, but an older copy created `ack.json` and then wrote
+ * it, so a claim can be empty or partial (mid-write, or after an interrupted write). Only
+ * older copies write that way, and they only ever wrote the owner's acknowledgment, so an
+ * unreadable claim is read as exactly that.
+ */
+function readClaim(dir: string): Claim | undefined {
+  const path = join(dir, "ack.json");
+  if (!exists(path)) return undefined;
+  try {
+    return JSON.parse(Deno.readTextFileSync(path));
+  } catch (error) {
+    if (error instanceof SyntaxError) return { id: "", at: "" };
+    throw error;
+  }
+}
+
+/**
+ * Publish `claim` as the run's claim unless one exists, and return the earlier claim if it does.
+ *
+ * The record is written to a private temporary file and hard-linked into place: the link
+ * fails if a claim already exists, and a reader can never see a partly written one. This
+ * needs a filesystem with hard links, which the local run directories the skillette asks
+ * for have on Linux and macOS.
+ */
+function claim(dir: string, record: Claim): Claim | undefined {
+  const temporary = join(dir, `.ack-${crypto.randomUUID()}`);
+  try {
+    Deno.writeTextFileSync(temporary, JSON.stringify(record) + "\n", { mode: 0o600, createNew: true });
+    Deno.linkSync(temporary, join(dir, "ack.json"));
+    return undefined;
+  } catch (error) {
+    if (error instanceof Deno.errors.AlreadyExists) return readClaim(dir);
+    throw error;
+  } finally {
+    // Best effort: once the link exists the claim is committed, and a leftover private
+    // temporary file must not turn that into an error the caller would act on.
+    try {
+      Deno.removeSync(temporary);
+    } catch {
+      // Ignored deliberately; see above.
+    }
+  }
+}
+
+/**
+ * Report a run's state and who owns it, for any thread.
+ *
+ * This is read-only. It exists so that a thread finding another thread's run in a
+ * durable log learns that the run is not its watcher from the helper, rather than
+ * from reading state files and process IDs that cannot say which thread a callback
+ * will wake. `acknowledged` means the owner consumed the callback; a superseded run
+ * reports `acknowledged: false` with `superseded` naming the successor instead.
+ */
+export function status(dir: string, thread: string) {
+  const { manifest, state } = inspect(dir);
+  const existing = readClaim(dir);
+  return {
+    ...state,
+    acknowledged: existing !== undefined && existing.supersededBy === undefined,
+    currentThread: thread,
+    ownedByCurrentThread: manifest.thread === thread,
+    superseded: existing?.supersededBy ? { by: existing.supersededBy, at: existing.at } : null,
+  };
 }
 
 /** Bound startup and cancellation handshakes inside the helper, without waking the model. */
@@ -118,21 +227,77 @@ export async function stop(dir: string, thread: string) {
   });
 }
 
-/** Consume a matching terminal callback once; cancelled and duplicate messages cannot restart a flow. */
+/**
+ * Retire another thread's run on behalf of the current thread, which is taking over its flow.
+ *
+ * `id` is the run ID the flow's durable log records, so a mistyped or stale directory is
+ * refused rather than retired. Success means the retirement is committed: the owner's
+ * `ack` will refuse this run's callback whenever it arrives, including one already queued
+ * or still being queued. Supersession is refused when the owner has already acknowledged
+ * the callback (the owner may be running the flow) or another successor claimed the run
+ * first; repeating it from the same successor is harmless.
+ *
+ * Cancellation then goes through the same `cancel.json` request as `stop`, which the live
+ * runner (including one started by an older copy of this helper) handles for its own
+ * process group; nothing here signals a PID. `cleanup: "pending"` means the runner had not
+ * finished within `settle` milliseconds. That does not undo the retirement: the old
+ * watcher can at most queue a callback its owner will refuse. This never transfers the
+ * run's result to the caller.
+ */
+export async function supersede(dir: string, id: string, thread: string, settle = 15000) {
+  if (!uuid.test(thread)) throw new Error("Current CODEX_THREAD_ID is unavailable; do not guess another session");
+  const { manifest, state } = inspect(dir);
+  if (manifest.id !== id) throw new Error("Run ID does not match this run directory; check the durable log");
+  if (manifest.thread === thread) throw new Error("This run belongs to the current Codex thread; use stop instead");
+  const at = new Date().toISOString();
+  const prior = claim(dir, { id, at, supersededBy: thread });
+  if (prior && prior.supersededBy === undefined) {
+    throw new Error("The owning thread already acknowledged this run's callback and may be running the flow");
+  }
+  if (prior && prior.supersededBy !== thread) {
+    throw new Error(`Thread ${prior.supersededBy} already superseded this run`);
+  }
+  const superseded = { by: thread, at: prior?.at ?? at };
+  // From here on the retirement is committed. A failure while requesting or awaiting
+  // cancellation is reported as pending cleanup, not thrown, so that the successor
+  // still records the takeover and arms its own run.
+  try {
+    if (!exists(join(dir, "cancel.json"))) save(dir, "cancel.json", { id });
+    // `delivering` is not terminal: the runner may still be queueing to the owner.
+    const deadline = Date.now() + settle;
+    for (;;) {
+      const current = inspect(dir).state;
+      const settled = !["starting", "watching", "delivering"].includes(current.phase);
+      if (settled || Date.now() >= deadline) {
+        return { ...current, superseded, cleanup: settled ? "complete" : "pending" };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  } catch (error) {
+    return { ...state, superseded, cleanup: "pending", error: String(error) };
+  }
+}
+
+/**
+ * Consume a matching terminal callback once; cancelled, superseded, and duplicate
+ * messages cannot restart a flow.
+ */
 export function acknowledge(dir: string, id: string, thread: string) {
   const { state } = owned(dir, thread);
   if (state.id !== id) throw new Error("Callback run ID does not match the registered run");
-  if (exists(join(dir, "cancel.json")) || state.phase === "cancelled") return { ignored: "cancelled" };
+  // Supersession also requests cancellation, and the owner must learn that another thread
+  // now runs the flow, not merely that it stopped. `supersede` publishes its claim before
+  // `cancel.json`, so reading the claim after observing cancellation always sees it.
+  const cancelled = exists(join(dir, "cancel.json")) || state.phase === "cancelled";
+  const existing = readClaim(dir);
+  if (existing?.supersededBy) return { ignored: "superseded", by: existing.supersededBy };
+  if (cancelled) return { ignored: "cancelled" };
   if (!state.result) throw new Error("Watcher has not produced a terminal result");
-  try {
-    Deno.writeTextFileSync(join(dir, "ack.json"), JSON.stringify({ id, at: new Date().toISOString() }), {
-      mode: 0o600,
-      createNew: true,
-    });
-  } catch (error) {
-    if (error instanceof Deno.errors.AlreadyExists) return { ignored: "duplicate" };
-    throw error;
-  }
+  // The claim is what serializes this against a concurrent supersede; the check above
+  // only gives the common case a clear answer.
+  const prior = claim(dir, { id, at: new Date().toISOString() });
+  if (prior?.supersededBy) return { ignored: "superseded", by: prior.supersededBy };
+  if (prior) return { ignored: "duplicate" };
   return { ...state, stdoutPath: join(dir, "stdout.log"), stderrPath: join(dir, "stderr.log") };
 }
 
@@ -319,7 +484,9 @@ function currentThread() {
 if (import.meta.main) {
   const [action, dir, ...rest] = Deno.args;
   if (!dir) {
-    throw new Error("Usage: start NEW-RUN-DIR -- PROGRAM ARG... | status RUN-DIR | stop RUN-DIR | ack RUN-DIR RUN-ID");
+    throw new Error(
+      "Usage: start NEW-RUN-DIR -- PROGRAM ARG... | status RUN-DIR | stop RUN-DIR | supersede RUN-DIR RUN-ID | ack RUN-DIR RUN-ID",
+    );
   }
   if (action === "supervise") {
     supervise(dir);
@@ -330,9 +497,11 @@ if (import.meta.main) {
     const output = action === "start" && rest[0] === "--"
       ? await start(dir, rest.slice(1), { thread, cwd: Deno.cwd(), queue: ["codex"] })
       : action === "status"
-      ? { ...owned(dir, thread).state, acknowledged: exists(join(dir, "ack.json")) }
+      ? status(dir, thread)
       : action === "stop"
       ? await stop(dir, thread)
+      : action === "supersede" && rest.length === 1
+      ? await supersede(dir, rest[0], thread)
       : action === "ack" && rest.length === 1
       ? acknowledge(dir, rest[0], thread)
       : (() => {
@@ -386,6 +555,143 @@ Deno.test("stop after queueing latches cancellation without signaling a stale pr
     const stopped = await stop(dir, thread);
     assertEquals("alreadyTerminal" in stopped ? stopped.alreadyTerminal : false, true);
     assertEquals(acknowledge(dir, id, thread), { ignored: "cancelled" });
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/**
+ * Regression for a thread that resumed a flow and kept the previous thread's live run as
+ * its watcher: the helper's only answer was a refusal, so agents read state files and
+ * PIDs instead and concluded the run was fine. Status must name the owner for any thread.
+ */
+Deno.test("status reports a foreign run's owner instead of refusing it", async () => {
+  const dir = Deno.makeTempDirSync();
+  const owner = crypto.randomUUID();
+  const other = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: owner, id });
+    save(dir, "state.json", { thread: owner, id, phase: "watching" });
+    const foreign = status(dir, other);
+    assertEquals(foreign.ownedByCurrentThread, false);
+    assertEquals(foreign.thread, owner);
+    assertEquals(foreign.currentThread, other);
+    assertEquals(foreign.superseded, null);
+    assertEquals(status(dir, owner).ownedByCurrentThread, true);
+    // Reading status must not grant anything: lifecycle actions still refuse the foreign thread.
+    await assertRejects(() => stop(dir, other));
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/**
+ * A callback already queued to the old thread survives supersession. If that thread is ever
+ * resumed, its ack must refuse the callback, or two threads would drive the same flow.
+ */
+Deno.test("supersede checks the logged run and makes the owner's queued callback ignorable", async () => {
+  const dir = Deno.makeTempDirSync();
+  const owner = crypto.randomUUID();
+  const successor = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: owner, id });
+    save(dir, "state.json", { thread: owner, id, phase: "queued", result: { code: 0, signal: null } });
+    await assertRejects(() => supersede(dir, id, owner));
+    // A directory that does not hold the run the log names is refused before anything is written.
+    await assertRejects(() => supersede(dir, crypto.randomUUID(), successor));
+    assertEquals(exists(join(dir, "ack.json")), false);
+    const retired = await supersede(dir, id, successor);
+    assertEquals(retired.cleanup, "complete");
+    assertEquals(retired.superseded.by, successor);
+    // The same successor may retry after an interruption; a different one may not take the run as well.
+    assertEquals((await supersede(dir, id, successor)).superseded.by, successor);
+    await assertRejects(() => supersede(dir, id, crypto.randomUUID()));
+    assertEquals(acknowledge(dir, id, owner), { ignored: "superseded", by: successor });
+    assertEquals(status(dir, owner).superseded?.by, successor);
+    assertEquals(status(dir, owner).acknowledged, false);
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/** A directory whose records disagree is not a run, and supersession must leave no claim in it. */
+Deno.test("supersede refuses inconsistent run records without writing a claim", async () => {
+  const dir = Deno.makeTempDirSync();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: crypto.randomUUID(), id });
+    save(dir, "state.json", { thread: crypto.randomUUID(), id, phase: "watching" });
+    await assertRejects(() => supersede(dir, id, crypto.randomUUID()));
+    assertEquals(exists(join(dir, "ack.json")), false);
+    assertEquals(exists(join(dir, "cancel.json")), false);
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/**
+ * Runs acknowledged by an older copy of this helper have an `ack.json` without a trailing
+ * newline or `supersededBy`. They must still count as the owner's claim.
+ */
+Deno.test("a claim written by an older helper counts as the owner's acknowledgment", async () => {
+  const dir = Deno.makeTempDirSync();
+  const owner = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: owner, id });
+    save(dir, "state.json", { thread: owner, id, phase: "queued", result: { code: 0, signal: null } });
+    Deno.writeTextFileSync(join(dir, "ack.json"), JSON.stringify({ id, at: new Date().toISOString() }));
+    assertEquals(acknowledge(dir, id, owner), { ignored: "duplicate" });
+    await assertRejects(() => supersede(dir, id, crypto.randomUUID()), Error, "already acknowledged");
+    assertEquals(status(dir, owner).acknowledged, true);
+    // An older helper interrupted between creating and writing the file leaves it empty.
+    Deno.writeTextFileSync(join(dir, "ack.json"), "");
+    assertEquals(acknowledge(dir, id, owner), { ignored: "duplicate" });
+    await assertRejects(() => supersede(dir, id, crypto.randomUUID()), Error, "already acknowledged");
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/**
+ * The owner and a successor race for the same callback when the owner's thread is still
+ * loaded. Whichever claims first wins, so the flow never ends up driven by both.
+ */
+Deno.test("an owner's acknowledgment and a successor's supersession exclude each other", async () => {
+  const dir = Deno.makeTempDirSync();
+  const owner = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: owner, id });
+    save(dir, "state.json", { thread: owner, id, phase: "queued", result: { code: 0, signal: null } });
+    assertEquals("result" in acknowledge(dir, id, owner), true);
+    await assertRejects(() => supersede(dir, id, crypto.randomUUID()), Error, "already acknowledged");
+    assertEquals(exists(join(dir, "cancel.json")), false);
+    assertEquals(status(dir, owner).acknowledged, true);
+  } finally {
+    Deno.removeSync(dir, { recursive: true });
+  }
+});
+
+/**
+ * A runner that does not finish (or is mid-delivery to the owner) must not turn a committed
+ * retirement into an error, because the successor then cannot tell whether to rearm.
+ */
+Deno.test("supersede reports pending cleanup for a runner that has not settled", async () => {
+  const dir = Deno.makeTempDirSync();
+  const owner = crypto.randomUUID();
+  const successor = crypto.randomUUID();
+  const id = crypto.randomUUID();
+  try {
+    save(dir, "manifest.json", { thread: owner, id });
+    save(dir, "state.json", { thread: owner, id, phase: "delivering", result: { code: 0, signal: null } });
+    const retired = await supersede(dir, id, successor, 100);
+    assertEquals(retired.cleanup, "pending");
+    assertEquals(retired.phase, "delivering");
+    assertEquals(exists(join(dir, "cancel.json")), true);
+    assertEquals(acknowledge(dir, id, owner), { ignored: "superseded", by: successor });
   } finally {
     Deno.removeSync(dir, { recursive: true });
   }
@@ -460,6 +766,32 @@ Deno.test("stop signals the live watcher and does not queue a cancellation wake"
     assertEquals(state.phase, "cancelled");
     assertEquals(exists(join(directory, "cancelled.json")), true);
     assertEquals(exists(join(directory, "queued.json")), false);
+  } finally {
+    if (exists(join(dir, "state.json"))) await stop(dir, context.thread);
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+/**
+ * Supersession must stop a live foreign watcher through its own runner, so the old
+ * thread is never queued a wake for a flow it no longer runs.
+ */
+Deno.test("supersede cancels a live foreign watcher without queueing its owner", async () => {
+  const { directory, watcher, context } = await fixture();
+  const dir = join(directory, "run");
+  try {
+    await start(dir, [Deno.execPath(), "run", "-A", watcher, "30000", "0"], context);
+    await until(() => exists(join(directory, "ready.json")) ? true : undefined);
+    const successor = crypto.randomUUID();
+    const { manifest } = inspect(dir);
+    const state = await supersede(dir, manifest.id, successor);
+    assertEquals(state.phase, "cancelled");
+    assertEquals(state.cleanup, "complete");
+    assertEquals(state.superseded.by, successor);
+    assertEquals(exists(join(directory, "cancelled.json")), true);
+    assertEquals(exists(join(directory, "queued.json")), false);
+    // Supersession is recorded before cancellation, so the owner sees a takeover, not a plain stop.
+    assertEquals(acknowledge(dir, manifest.id, context.thread), { ignored: "superseded", by: successor });
   } finally {
     if (exists(join(dir, "state.json"))) await stop(dir, context.thread);
     Deno.removeSync(directory, { recursive: true });
