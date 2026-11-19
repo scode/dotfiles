@@ -3,10 +3,10 @@
 > [!WARNING]
 > **This skill bakes in assumptions that do not generalize.** In particular, the shell-out skill at the bottom of its
 > stack prescribes running delegate harnesses with all permission checks disabled — `codex --yolo`, `muse exec --yolo`,
-> `opencode run --agent build --auto`, and `claude --dangerously-skip-permissions` — so that delegates can work
-> unattended. Do not use it in any environment where that is not acceptable: shared machines, checkouts with secrets or
-> production credentials in reach, or anywhere you would not already grant the orchestrating session the same
-> unrestricted access.
+> `opencode run --agent build --auto`, `agy --dangerously-skip-permissions`, and `claude --dangerously-skip-permissions`
+> — so that delegates can work unattended. Do not use it in any environment where that is not acceptable: shared
+> machines, checkouts with secrets or production credentials in reach, or anywhere you would not already grant the
+> orchestrating session the same unrestricted access.
 
 An agent skill for a session running a frontier model. Invoke it with `Use scode-galaxy-brain to <goal>`. The current
 session keeps planning, judgment, quality gating, and all commits and PRs, and delegates suitable pieces of the work to
@@ -44,7 +44,8 @@ when a delegate runs on a foreign harness:
 - `scode-agent-delegation` owns everything between that answer and the orchestrator's verdict: the task spec, the run id
   and run directory, the checkpoint protocol, the gate, and the verdict vocabulary.
 - `scode-harness-shellout`, loaded by the delegation skill, picks which CLI runs an `external` route and owns the launch
-  commands and the observed-behavior notes for `codex exec`, `claude -p`, `muse exec`, `opencode run`, and `omp -p`.
+  commands and the observed-behavior notes for `codex exec`, `claude -p`, `muse exec`, `agy -p`, `opencode run`, and
+  `omp -p`.
 
 The one procedure file next to SKILL.md, `feedback.md`, is read when the user gives feedback. The reasoning behind the
 rules is archived under [lore/](lore/) and is not maintained.

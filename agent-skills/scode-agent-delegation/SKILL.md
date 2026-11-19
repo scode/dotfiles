@@ -21,8 +21,8 @@ whether writers may run concurrently and in which trees, and what to do with eac
 
 - The unit of work: its goal, scope, acceptance criteria, and the checks to run, from the caller's own decomposition.
 - The model, effort, and launch mechanism: `native`, `external` (the shell-out skill picks the CLI), or one of `codex
-  exec`, `claude -p`, `muse exec`, `opencode run`, or `omp -p`. With `external`, also any launch preference the caller
-  holds for the model, passed on to the shell-out skill unchanged.
+  exec`, `claude -p`, `muse exec`, `agy -p`, `opencode run`, or `omp -p`. With `external`, also any launch preference
+  the caller holds for the model, passed on to the shell-out skill unchanged.
 - Whether the delegate edits a tree (a writer) or is read-only.
 - After this skill has generated the run id (see The three-step start): the tree the delegate will edit, created and
   owned by the caller when the delegate is to be isolated, named by that run id.

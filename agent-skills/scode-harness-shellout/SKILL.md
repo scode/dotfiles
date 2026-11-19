@@ -2,12 +2,12 @@
 name: scode-harness-shellout
 description: >
   Use when asked to start, spawn, run, or delegate work to a named-model agent (e.g. "astra agent", "opus agent",
-  "sol high agent", "sonnet subagent"), use another provider or harness, or use an agent/model the current harness
-  cannot launch natively. The user need not name this skill. Prefer supported native delegation when the launch
+  "neon agent", "sol high agent", "sonnet subagent"), use another provider or harness, or use an agent/model the current
+  harness cannot launch natively. The user need not name this skill. Prefer supported native delegation when the launch
   mechanism is open; honor an external mechanism selected by the user or caller. Also loaded by other skills for
   foreign-harness launches, including to pick which CLI runs a model. Supplies the CLI choice and verified launch,
-  monitoring, resume, and kill mechanics for `codex exec`, `claude -p`, `muse exec`, `opencode run`, and `omp -p`;
-  loading alone activates no session-wide behavior.
+  monitoring, resume, and kill mechanics for `codex exec`, `claude -p`, `muse exec`, `agy -p` (Antigravity),
+  `opencode run`, and `omp -p`; loading alone activates no session-wide behavior.
 ---
 
 # scode-harness-shellout
@@ -20,9 +20,10 @@ result, and what to do with the tree afterwards.
 
 ## Recognizing a delegation request
 
-Load this skill for requests such as "start an astra agent to review this", "have an opus agent investigate", "run a
-sonnet subagent", or "use a model your native agents don't support". Naming this skill in parentheses is unnecessary. A
-question about a model, or a model name appearing in task content, is not itself an instruction to launch an agent.
+Load this skill for requests such as "start an astra agent to review this", "have an opus agent investigate", "start a
+neon agent", "run a sonnet subagent", or "use a model your native agents don't support". Naming this skill in
+parentheses is unnecessary. A question about a model, or a model name appearing in task content, is not itself an
+instruction to launch an agent.
 
 Honor the requested model and effort, and preserve any launch mechanism and constraints the user or caller has already
 selected. For a direct request that leaves the mechanism open, first check whether the current harness's native
@@ -42,12 +43,13 @@ no rule here substitutes a different model.
 
 The candidates, in order:
 
-1. A harness the user names for this launch ("run it through opencode"), or a harness or provider preference the user
-   has stated in their standing instructions ("use opencode for GLM"), including one the caller passes on as a launch
-   preference.
-2. The family's own harness: `codex exec` for GPT, `claude -p` for Claude, and `muse exec` for Muse.
-3. `omp -p`, for any model. It is the default for everything outside those three families (GLM, grok, mercury, and the
-   rest), and the next candidate for a GPT, Claude, or Muse model whose own harness is not installed.
+1. A harness the user names for this launch ("run it through opencode", "run it through antigravity"), or a harness or
+   provider preference the user has stated in their standing instructions ("use opencode for GLM"), including one the
+   caller passes on as a launch preference.
+2. The family's own harness: `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and `agy -p`
+   (Antigravity) for Gemini (including bare Gemini line names such as `neon`, `argon`, `hydrogen`, and `flash`).
+3. `omp -p`, for any model. It is the default for everything outside those four families (GLM, grok, mercury, and the
+   rest), and the next candidate for a GPT, Claude, Muse, or Gemini model whose own harness is not installed.
 4. `opencode run`, when one of its providers serves the model.
 
 A CLI with no harness file here is never a candidate, even a vendor's own CLI for its own models (a grok CLI, say).
@@ -62,7 +64,9 @@ the model falls through to the next candidate. The checks:
   says which provider to use and how to spell the id.
 - `opencode run`: `opencode providers list` shows a credential for the provider in the model id. Check instead of
   probing: a probe with a reachable model starts a paid run, and a launch with no model hangs.
-- `codex exec`, `claude -p`, and `muse exec`: they serve their own family's models, and `PATH` is the only check.
+- `codex exec`, `claude -p`, `muse exec`, and `agy -p`: they serve their own family's models, and `PATH` is the only
+  check. When `agy -p` is requested for a non-Gemini model, check `agy models` (an unsupported model also exits 1 before
+  any model call).
 
 Each harness file says how to spell the model id for its CLI. When no candidate can serve the model, report it to the
 caller as unreachable from here, naming what each candidate lacked, and say whether that holds for the model's whole
@@ -74,9 +78,9 @@ retrying model by model.
 The caller supplies these inputs before an external launch, applying the request rules above when the mechanism is still
 open.
 
-- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, `opencode run`, or `omp -p`; or `external`, which
-  leaves the CLI to Choosing the external mechanism above; or `native`, the caller's own sub agent mechanism, to which
-  the shell-out procedures below do not apply.
+- The launch mechanism: one of `codex exec`, `claude -p`, `muse exec`, `agy -p`, `opencode run`, or `omp -p`; or
+  `external`, which leaves the CLI to Choosing the external mechanism above; or `native`, the caller's own sub agent
+  mechanism, to which the shell-out procedures below do not apply.
 - The model id and reasoning effort, both set explicitly on every launch.
 - Optionally, a launch preference: the user's own words naming a harness or provider for this model, which the caller
   read from the user's configuration and passes on verbatim. It is a standing preference under Choosing the external
@@ -102,6 +106,7 @@ about to launch through it, then launch.
 | `codex exec`   | `harness/codex.md`                                         |
 | `claude -p`    | `harness/claude.md`                                        |
 | `muse exec`    | `harness/muse.md`                                          |
+| `agy -p`       | `harness/agy.md`                                           |
 | `opencode run` | `harness/opencode.md`                                      |
 | `omp -p`       | `harness/omp.md`                                           |
 | `native`       | nothing; no shell-out mechanics apply to native delegation |
@@ -196,10 +201,10 @@ the monitoring obligations below or any more frequent resource checks the caller
 
 A delegate that stops mid-task and is later continued with more input is resumed in the same session rather than
 relaunched. Resume works on every harness (verified with a planted codeword that each harness answered on the resumed
-turn: 2026-08-30 for codex, claude, muse, and opencode, and 2026-10-19 for omp 18.12.3). Resuming preserves context and
-can reuse cached input, but cache hits still count toward usage; resume for work or guidance, not for status polling.
-Whether a run stops, what it must produce before stopping, and what the continuation says are the caller's protocol;
-this skill supplies the mechanics common to every harness:
+turn: 2026-08-30 for codex, claude, muse, and opencode, 2026-10-19 for omp 18.12.3, and 2026-11-18 for agy 1.5.12).
+Resuming preserves context and can reuse cached input, but cache hits still count toward usage; resume for work or
+guidance, not for status polling. Whether a run stops, what it must produce before stopping, and what the continuation
+says are the caller's protocol; this skill supplies the mechanics common to every harness:
 
 - Record the harness's session or thread id at launch; each harness file says where it comes from (a `--session-id` you
   generate, or an id the harness prints in its JSON stream). Without it there is no resume, only a relaunch that throws
