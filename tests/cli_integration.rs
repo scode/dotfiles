@@ -149,6 +149,23 @@ fn managed_block_body(contents: &str, begin: &str, end: &str) -> String {
     contents[body_start..end_at].to_string()
 }
 
+/// Asserts that Claude Code's commit and PR attribution is switched off.
+///
+/// The shared agent instructions forbid Co-Authored-By trailers and "Generated
+/// with Claude Code" lines, but agents kept following the harness default
+/// anyway. These managed settings turn that default off for local sessions, so
+/// losing them in a refactor of the settings feature would bring the trailers
+/// back without any test noticing. This checks the written JSON only, not
+/// Claude Code's runtime behavior.
+fn assert_claude_attribution_disabled(settings: &serde_json::Value) {
+    assert_eq!(settings["attribution"]["commit"], serde_json::json!(""));
+    assert_eq!(settings["attribution"]["pr"], serde_json::json!(""));
+    assert_eq!(
+        settings["attribution"]["sessionUrl"],
+        serde_json::json!(false)
+    );
+}
+
 fn assert_no_leiter_settings(settings: &serde_json::Value) {
     let rendered = serde_json::to_string(settings).unwrap();
     assert!(
@@ -209,6 +226,7 @@ fn test_install_creates_symlinks() {
         serde_json::json!("~/bin/claude-statusline.sh")
     );
     assert_expected_claude_allow(&settings);
+    assert_claude_attribution_disabled(&settings);
 
     // The managed shell blocks are the only registrations that write a plain
     // text file the installer does not own, so it is worth confirming that the
@@ -960,6 +978,41 @@ fn test_all_symlinks_are_relative() {
     }
 }
 
+/// Install rewrites a boolean `attribution` into the managed object form.
+///
+/// Newer Claude Code accepts `"attribution": false` as shorthand, and the
+/// managed leaves under `attribution` cannot be written through a non-object.
+/// Before main.rs dropped the boolean first, a valid shorthand made the whole
+/// settings merge fail, taking the permissions and sandbox settings with it.
+/// Both booleans are covered because each is a separate exact-match removal.
+#[test]
+fn test_install_replaces_boolean_claude_attribution_with_object_form() {
+    for shorthand in ["false", "true"] {
+        let fake_home = setup_fake_home();
+        std::fs::write(
+            fake_home.path().join(".claude/settings.json"),
+            format!(r#"{{"attribution": {shorthand}, "model": "opus"}}"#),
+        )
+        .unwrap();
+
+        let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+            .arg("install")
+            .env("HOME", fake_home.path())
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "install over attribution={shorthand} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let settings = read_json(&fake_home, ".claude/settings.json");
+        assert_claude_attribution_disabled(&settings);
+        assert_expected_claude_allow(&settings);
+        assert_eq!(settings["model"], serde_json::json!("opus"));
+    }
+}
+
 /// The settings fixture stacks every historical leiter shape into one file:
 /// absolute-path and ~ permission spellings, plus all three hook command
 /// generations. No real machine ever had them all at once, but this proves
@@ -1173,6 +1226,7 @@ fn test_install_migrates_legacy_claude_settings_symlink() {
         serde_json::json!("~/bin/claude-statusline.sh")
     );
     assert_expected_claude_allow(&settings);
+    assert_claude_attribution_disabled(&settings);
     assert_no_leiter_settings(&settings);
 }
 
