@@ -137,26 +137,29 @@ The lines are:
 - GPT: sol, terra, luna, astra.
 - Claude: haiku, sonnet, opus, fable.
 - Muse: muse-spark.
+- Gemini: neon, argon, hydrogen, flash.
 - GLM: glm-flash.
 
 Search `agent-skills/` and `payload/` for the current names; `lore/` is history and is not updated. The places known to
 carry model names are the `scode-model-routing` tables (`SKILL.md`, `inventory.md`, and the eval tables in its
 `AGENTS.md`), the `scode-harness-shellout` harness files (the codex launch template and its list of current ids, the
-claude alias list, the muse and opencode model ids), the `scode-build-goal` review defaults in `SKILL.md` and `SPEC.md`,
-the example run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, the `scode-shepherd`
-worker and reviewer defaults (in `scripts/shepherd`, `SKILL.md`, `SPEC.md`, and the smoke run in `AGENTS.md`) and its
-list of current ids in `SKILL.md`, and the codex launchers in `payload/shellrc`.
+claude alias list, the muse and opencode model ids, and the agy model ids with their effort levels), the agy eval cases
+in `scode-harness-shellout/AGENTS.md`, the `scode-build-goal` review defaults in `SKILL.md` and `SPEC.md`, the example
+run name in `scode-agent-delegation`, the eval table in `scode-galaxy-brain/AGENTS.md`, the `scode-shepherd` worker and
+reviewer defaults (in `scripts/shepherd`, `SKILL.md`, `SPEC.md`, and the smoke run in `AGENTS.md`) and its list of
+current ids in `SKILL.md`, and the codex launchers in `payload/shellrc`.
 
-The work differs by family. GPT, Muse, and GLM ids are passed to their CLIs literally, so a stale one keeps launching
-the old model, and bumping the id is the fix. Claude models are named everywhere by their plain harness alias (`haiku`,
-`sonnet`, `opus`, `fable`), which is also what gets passed at launch and already follows the newest release. For Claude,
-confirm each alias still resolves to the newest release of its line (a hello-world through `claude -p --output-format
-json` reports the concrete model under `modelUsage`). If an alias lags the newest release, report it rather than pinning
-a versioned id in its place. Replace any versioned Claude name that has crept into a table or label with the plain
-alias. The deliberate versioned names in `scode-model-routing` stay as they are: the full ids in its launch paragraph,
-the former-label lists in its `SKILL.md` and `SPEC.md`, and the eval rows that exercise them.
+The work differs by family. GPT, Muse, Gemini, and GLM ids are passed to their CLIs literally, so a stale one keeps
+launching the old model, and bumping the id is the fix. Claude models are named everywhere by their plain harness alias
+(`haiku`, `sonnet`, `opus`, `fable`), which is also what gets passed at launch and already follows the newest release.
+For Claude, confirm each alias still resolves to the newest release of its line (a hello-world through `claude -p
+--output-format json` reports the concrete model under `modelUsage`). If an alias lags the newest release, report it
+rather than pinning a versioned id in its place. Replace any versioned Claude name that has crept into a table or label
+with the plain alias. The deliberate versioned names in `scode-model-routing` stay as they are: the full ids in its
+launch paragraph, the former-label lists in its `SKILL.md` and `SPEC.md`, and the eval rows that exercise them. So do
+the Claude ids in the agy harness file, because `agy` takes only versioned ids and has no plain alias.
 
 Before switching a literal id, launch a hello-world through the CLI that will use it (for GPT, `codex exec` through the
-configured provider) and confirm it answers on the new model; a model the local proxy does not serve yet stays on the
-old id until it does. A version bump keeps the model's existing placements in the routing tables; recalibrating them is
-separate work.
+configured provider; for Gemini, `agy` after checking `agy models`) and confirm it answers on the new model; a model the
+local proxy does not serve yet stays on the old id until it does. A version bump keeps the model's existing placements
+in the routing tables; recalibrating them is separate work.

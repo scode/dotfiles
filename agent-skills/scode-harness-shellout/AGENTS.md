@@ -36,13 +36,14 @@ and judge the answer against the expected answers below.
 The fixed question list for this skill, run by the PR that creates it and re-run whenever a harness file, the read-when
 table, the external mechanism rule, or the list of caller-supplied inputs changes:
 
-- The exact launch line for each of the five harnesses, given a model, an effort, a prompt file, and a result path.
+- The exact launch line for each of the six harnesses, given a model, an effort, a prompt file, and a result path.
   Expected: the template from that harness file with the caller's values substituted, `< /dev/null` kept, and the effort
-  passed explicitly.
-- The exact writer launch and resume lines for each of the five, given a session or thread id. Expected: the id's source
+  passed explicitly (for `agy`, flags before `-p="$(cat <prompt-file>)"`, not `agy -p --model ...`).
+- The exact writer launch and resume lines for each of the six, given a session or thread id. Expected: the id's source
   per harness (`--session-id "$(uuidgen)"` for claude and muse; `thread_id` from the `--json` stream for codex;
-  `sessionID` from the first event for opencode; the `id` of the first `--mode json` event for omp), the same flags and
-  working directory or workspace on the resume, and where the final message lands on the resumed turn.
+  `conversation_id` from the `--output-format stream-json` `init` event or `--output-format json` for agy; `sessionID`
+  from the first event for opencode; the `id` of the first `--mode json` event for omp), the same flags and working
+  directory or workspace on the resume, and where the final message lands on the resumed turn.
 - The wake-up interval and the kill rule. Expected: at least every 30 minutes, sooner for short runs; kill by pid
   walking descendants first; never `pkill -f`.
 - A codex run without `--json` whose log is stuck at `Reading additional input from stdin...` with no version header.
@@ -58,6 +59,9 @@ table, the external mechanism rule, or the list of caller-supplied inputs change
 - An omp run whose stdout stays empty while stderr repeats `Still starting after Ns — phase: readPipedInput` with N
   counting up (after the `Reading prompt from piped stdin...` notice). Expected: the startup hang; kill and relaunch
   with the `< /dev/null` redirect, not wait. The repeating lines are not liveness.
+- An agy `--conversation <id>` resume that exits 0 while stderr prints `warning: conversation "<id>" not found` and the
+  returned `conversation_id` differs from `<id>`. Expected: a fresh session, not a resume; report it to the caller as
+  such.
 - "What does loading this skill make the session do?" Expected: nothing; it is inert until a caller supplies the inputs
   listed in `SKILL.md`.
 
@@ -69,6 +73,13 @@ a delegation request and requiring a shell-out:
   read its codex harness file before constructing a `codex exec` launch.
 - "Have an opus agent investigate" in a Codex session without native Claude support. Expected: load this skill and read
   its claude harness file before constructing a `claude -p` launch.
+- "Start a neon agent to review this" (or "have a neon high agent investigate") in a session without native Gemini
+  support. Expected: load this skill, pick `agy -p` as Gemini's own harness, read `harness/agy.md`, and construct an
+  `agy` launch using `--model gemini-4-neon --effort <level>` and `-p="$(cat <prompt-file>)"` (never `--model neon` and
+  never `agy -p --model ...`).
+- A "neon" request when `agy` is missing from `PATH`. Expected: `omp -p` on `openrouter`, not a refusal.
+- A request naming Antigravity or `agy` explicitly ("use antigravity to run a sonnet agent"). Expected: load this skill
+  and read `harness/agy.md` before constructing an `agy` launch, checking `agy models` for the non-Gemini model.
 - A request that names omp as the mechanism, such as "use omp to run a mercury agent". Expected: load this skill and
   read its omp harness file before constructing an `omp -p` launch; when several mercury models exist on `openrouter`,
   ask which one.
