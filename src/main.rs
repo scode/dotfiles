@@ -455,7 +455,28 @@ fn add_claude_features(g: &mut FeatureGraph, claude_statusline: &FeatureHandle) 
                 .remove_value_if_equals(&["hooks", "SessionStart"], json!([]))
                 .remove_value_if_equals(&["hooks", "SessionEnd"], json!([]))
                 .remove_value_if_equals(&["hooks"], json!({}))
-                .managed_value(&["sandbox", "enabled"], json!(true)),
+                .managed_value(&["sandbox", "enabled"], json!(true))
+                // By default Claude Code adds attribution to the commits and PRs
+                // it writes: a Co-Authored-By trailer, a "Generated with Claude
+                // Code" line, and a session link. The shared instructions forbid
+                // that, but the harness default kept winning in practice, so
+                // turn attribution off at the source. Each leaf is managed on
+                // its own so other keys a user adds under "attribution" survive.
+                // This covers local sessions that read the user settings file;
+                // cloud sessions and project settings that set their own
+                // attribution are out of its reach.
+                //
+                // Newer Claude Code also accepts a bare boolean here (`false`
+                // means all three leaves off, `true` means unset), but older
+                // versions reject it, so the object form is what gets written.
+                // A boolean already in the file is dropped first:
+                // the leaf writes below cannot traverse a non-object, and
+                // without this the whole settings merge fails on install.
+                .remove_value_if_equals(&["attribution"], json!(false))
+                .remove_value_if_equals(&["attribution"], json!(true))
+                .managed_value(&["attribution", "commit"], json!(""))
+                .managed_value(&["attribution", "pr"], json!(""))
+                .managed_value(&["attribution", "sessionUrl"], json!(false)),
         )
         .condition(PathExists::new("~/.claude"))
         .build();
