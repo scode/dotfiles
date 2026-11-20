@@ -21,7 +21,13 @@
  * One read of a PR's check rollup. `startedAt` pins when a run started (for a run left over from before the PR left
  * draft, say); without it a run reads as started at the moment of the read.
  */
-export type CheckFrame = { name: string; status: string; conclusion: string; startedAt?: string }[];
+export type CheckFrame = {
+  name: string;
+  workflowName?: string;
+  status: string;
+  conclusion: string;
+  startedAt?: string;
+}[];
 
 export type Pr = {
   number: number;
@@ -164,7 +170,7 @@ function rollup(s: State, pr: Pr): unknown[] {
   return frame.map((c) => ({
     __typename: "CheckRun",
     name: c.name,
-    workflowName: "CI",
+    workflowName: c.workflowName ?? "CI",
     status: c.status,
     conclusion: c.status === "COMPLETED" ? c.conclusion : "",
     startedAt: c.startedAt ?? t,

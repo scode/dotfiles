@@ -20,7 +20,7 @@
  * - `ci [--prs 12,13] [--workflow <file>]`: dispatch one CI run per PR without changing draft state. See "Dispatching
  *   CI".
  * - `land [--through <PR-or-bookmark>] [--expect 12,13] [--plan-only] [--resume] [--no-cleanup] [--check-timeout <min>]
- *   [--allow-no-checks] [--ignore-check <names>] [--accept-skipped-check <PR:workflow/job,...>]`: CI-gated landing,
+ *   [--allow-no-checks] [--ignore-check <name>] [--accept-skipped-check <PR:workflow/job>]`: CI-gated landing,
  *   one squash commit per PR, bottom-up. See "CI-gated landing".
  * - `fast-land [--through <PR-or-bookmark>] [--expect 12,13,14] [--plan-only] [--no-cleanup] [--resume]`: landing
  *   without waiting for CI. See "Fast landing".
@@ -2326,6 +2326,21 @@ const isStatus = (c: Check) => c.__typename === "StatusContext" || (c.status ===
 const checkName = (c: Check) => isStatus(c) ? `status:${c.context}` : `${c.workflowName ?? ""}/${c.name ?? "?"}`;
 
 /**
+ * Formats one check name for inline display in narration and error lists. Names without commas, quotes, or line breaks
+ * print bare; any name with one is JSON-quoted so comma-separated display lists keep clear boundaries (this is display
+ * text, not shell quoting — pasteable command-line arguments use `quoteArg`).
+ */
+function formatCheckName(name: string): string {
+  return /[,"\r\n]/.test(name) ? JSON.stringify(name) : name;
+}
+
+function formatCheckNames(checks: Check[]): string {
+  return checks.map((c) => formatCheckName(checkName(c))).join(", ");
+}
+
+type UnclassifiedSkip = { name: string; actions: boolean };
+
+/**
  * Keeps the newest entry per Actions job and per status context. The raw rollup lists runs from every check suite on
  * the head, so a superseded run (a re-run flake, a run cancelled by a newer one, the draft-time skip of a workflow that
  * ran again on ready) sits next to its replacement, and classifying the raw list would block correctly configured
@@ -2419,7 +2434,7 @@ function checkVerdict(
   acceptSkipped: string[] = [],
   now = Date.now(),
   replaceSec = 120,
-): { v: Verdict; detail: string } {
+): { v: Verdict; detail: string; unclassified?: UnclassifiedSkip[] } {
   const bad = new Set(["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE", "ERROR"]);
   const superseded = new Set(["CANCELLED", "STALE"]);
   const ignored = (c: Check) => ignore.some((n) => n === c.name || n === c.context || n === checkName(c));
@@ -2432,15 +2447,15 @@ function checkVerdict(
   if (failed.length > 0) {
     return {
       v: "failed",
-      detail: failed.map((c) => `${checkName(c)}=${isStatus(c) ? c.state : c.conclusion}`).join(", "),
+      detail: failed.map((c) => `${formatCheckName(checkName(c))}=${isStatus(c) ? c.state : c.conclusion}`).join(", "),
     };
   }
   const pending = checks.filter((c) => isStatus(c) ? c.state !== "SUCCESS" : c.status !== "COMPLETED");
-  if (pending.length > 0) return { v: "pending", detail: `pending: ${pending.map(checkName).join(", ")}` };
+  if (pending.length > 0) return { v: "pending", detail: `pending: ${formatCheckNames(pending)}` };
   if (awaitingReplacement.length > 0) {
     return {
       v: "pending",
-      detail: `cancelled, waiting for a replacement run: ${awaitingReplacement.map(checkName).join(", ")}`,
+      detail: `cancelled, waiting for a replacement run: ${formatCheckNames(awaitingReplacement)}`,
     };
   }
   if (suitesRunning.length > 0) return { v: "pending", detail: `suites still running: ${suitesRunning.join(", ")}` };
@@ -2457,16 +2472,15 @@ function checkVerdict(
   if (stale.length > 0) {
     return {
       v: graceOver ? "stale-skipped" : "pending",
-      detail: `unclassified skipped checks: ${stale.map(checkName).join(", ")}`,
+      detail: `unclassified skipped checks: ${formatCheckNames(stale)}`,
+      unclassified: stale.map((c) => ({ name: checkName(c), actions: Boolean(c.workflowName) })),
     };
   }
   if (checks.every((c) => !isStatus(c) && c.conclusion === "SKIPPED")) {
-    return { v: "none", detail: `only skipped checks: ${checks.map(checkName).join(", ")}` };
+    return { v: "none", detail: `only skipped checks: ${formatCheckNames(checks)}` };
   }
-  const accepted = acceptedSkips.length > 0
-    ? `; accepted skipped check: ${acceptedSkips.map(checkName).join(", ")}`
-    : "";
-  return { v: "passed", detail: checks.map(checkName).join(", ") + accepted };
+  const accepted = acceptedSkips.length > 0 ? `; accepted skipped check: ${formatCheckNames(acceptedSkips)}` : "";
+  return { v: "passed", detail: formatCheckNames(checks) + accepted };
 }
 
 /**
@@ -2558,7 +2572,7 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts): Promise<Verdic
     await honorStop(ctx, where);
     const elapsed = (Date.now() - start) / 1000;
     const graceOver = elapsed >= opts.graceSec;
-    const { v, detail, trigger } = await readVerdict(
+    const { v, detail, trigger, unclassified } = await readVerdict(
       ctx,
       "E_LAND_READ_CHECKS",
       e,
@@ -2582,11 +2596,25 @@ async function waitForChecks(ctx: Ctx, e: Entry, opts: LandOpts): Promise<Verdic
         return v;
       }
       if (v === "stale-skipped") {
+        const actions = (unclassified ?? []).filter((u) => u.actions);
+        const other = (unclassified ?? []).filter((u) => !u.actions);
+        const parts: string[] = [];
+        if (actions.length > 0) {
+          parts.push(
+            `verify each workflow at this head before resuming with:\n` +
+              actions.map((u) => `  --accept-skipped-check ${quoteArg(`${e.pr}:${u.name}`)}`).join("\n"),
+          );
+        }
+        if (other.length > 0) {
+          parts.push(
+            `non-Actions skipped checks (cannot be accepted with --accept-skipped-check):\n` +
+              other.map((u) => `  ${formatCheckName(u.name)}`).join("\n"),
+          );
+        }
         fail(
           "E_LAND_UNCLASSIFIED_SKIP",
-          `PR #${e.pr} has ${detail} on ${e.sha} after ${opts.graceSec}s. A skipped job may be conditional or may ` +
-            `hide draft-gated validation; verify its workflow at this head before using ` +
-            `--accept-skipped-check ${e.pr}:workflow/job`,
+          `PR #${e.pr} has unclassified skipped checks on ${e.sha} after ${opts.graceSec}s. A skipped job may be ` +
+            `conditional or may hide draft-gated validation; ${parts.join("\n")}`,
         );
       }
       fail(
@@ -3065,7 +3093,7 @@ async function fastLand(
  * PR numbers are always named by flags.
  */
 // deno-fmt-ignore
-const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?: boolean }>([
+const COMMANDS = new Map<string, { strings: string[]; collect?: string[]; booleans: string[]; paths?: boolean }>([
   ["init",      { strings: [],                                                     booleans: [] }],
   ["status",    { strings: [],                                                     booleans: [] }],
   ["submit",    { strings: [],                                                     booleans: ["update-text", "partial"] }],
@@ -3075,7 +3103,7 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
   ["publish",   { strings: ["prs"],                                                booleans: [] }],
   ["goto",      { strings: ["pr"],                                                 booleans: [] }],
   ["ci",        { strings: ["prs", "workflow"],                                    booleans: [] }],
-  ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check", "accept-skipped-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
+  ["land",      { strings: ["through", "expect", "check-timeout", "ignore-check", "accept-skipped-check"], collect: ["ignore-check", "accept-skipped-check"], booleans: ["plan-only", "no-cleanup", "resume", "allow-no-checks"] }],
   ["fast-land", { strings: ["through", "expect"],                                  booleans: ["plan-only", "no-cleanup", "resume"] }],
   ["stop",      { strings: [],                                                     booleans: [] }],
 ]);
@@ -3084,21 +3112,39 @@ const COMMANDS = new Map<string, { strings: string[]; booleans: string[]; paths?
  * Bind each declared conditional skip to one PR and one exact Actions workflow/job name. A name without a PR would
  * carry a catalog-only exception into an application PR later in the same stack, where that job may be essential.
  * No wildcard or bare job name is accepted; an unmatched declaration has no effect.
+ *
+ * Each `--accept-skipped-check` flag carries one literal `PR:workflow/job` entry (repeat the flag for several checks).
+ * Values are never split on commas or trimmed, so job names containing commas, colons, quotes, or surrounding spaces
+ * (such as unexpanded matrix expressions like `build-local-artifacts (${{ join(matrix.targets, ', ') }})`) are matched
+ * verbatim and one argument can never accidentally exempt a second check.
  */
-function parseAcceptedSkips(raw: string | undefined): Map<number, string[]> {
+function parseAcceptedSkips(raw: readonly string[] | undefined): Map<number, string[]> {
   const byPr = new Map<number, string[]>();
-  if (raw === undefined) return byPr;
-  for (const item of raw.split(",")) {
-    const match = /^([1-9][0-9]*):([^/]+\/.+)$/.exec(item.trim());
+  for (const value of raw ?? []) {
+    const match = /^([1-9][0-9]*):([^/]+)\/(.+)$/.exec(value);
     const pr = match ? Number(match[1]) : NaN;
-    if (!match || !Number.isSafeInteger(pr)) {
-      usage("E_USAGE_ACCEPT_SKIPPED_CHECK", `--accept-skipped-check needs PR:workflow/job entries, got '${item}'`);
+    if (!match || !Number.isSafeInteger(pr) || match[2].trim() === "" || match[3].trim() === "") {
+      usage("E_USAGE_ACCEPT_SKIPPED_CHECK", `--accept-skipped-check needs PR:workflow/job, got '${value}'`);
     }
+    const name = `${match[2]}/${match[3]}`;
     const names = byPr.get(pr) ?? [];
-    if (!names.includes(match[2])) names.push(match[2]);
+    if (!names.includes(name)) names.push(name);
     byPr.set(pr, names);
   }
   return byPr;
+}
+
+/**
+ * Reads `--ignore-check` flags, one literal check name per flag (job name, status context, or `workflow/job`; repeat
+ * the flag for several checks). Values are never split on commas or trimmed so check names are matched verbatim.
+ */
+function parseIgnoredChecks(raw: readonly string[] | undefined): string[] {
+  const names: string[] = [];
+  for (const item of raw ?? []) {
+    if (item.trim() === "") usage("E_USAGE_IGNORE_CHECK", "--ignore-check needs a non-empty check name");
+    if (!names.includes(item)) names.push(item);
+  }
+  return names;
 }
 
 async function main() {
@@ -3154,10 +3200,8 @@ async function main() {
       resume: !!args.resume,
       timeoutSec: minutes * 60,
       allowNoChecks: !!args["allow-no-checks"],
-      ignore: args["ignore-check"] === undefined
-        ? []
-        : String(args["ignore-check"]).split(",").map((n) => n.trim()).filter(Boolean),
-      acceptSkipped: parseAcceptedSkips(args["accept-skipped-check"] as string | undefined),
+      ignore: parseIgnoredChecks(args["ignore-check"] as string[] | undefined),
+      acceptSkipped: parseAcceptedSkips(args["accept-skipped-check"] as string[] | undefined),
     });
   } else {
     await fastLand(ctx, {
@@ -3184,6 +3228,7 @@ function parseCli(argv: string[]) {
   const args = parseArgs(rest, {
     // `_` keeps positional paths as strings; otherwise `007` would come back as the number 7.
     string: [...strings, "_"],
+    collect: spec.collect ?? [],
     boolean: spec.booleans,
     default: { dir: ".", remote: "origin", top: "@" },
     unknown: (flag) => {
@@ -3199,7 +3244,10 @@ function parseCli(argv: string[]) {
   // would put every unrelated change into the PR.
   if (args._.some((p) => String(p) === "")) usage("E_USAGE_EMPTY_PATH", "a path argument is empty");
   for (const s of strings) {
-    if (typeof args[s] === "string" && args[s] === "") usage("E_USAGE_EMPTY_VALUE", `--${s} needs a value`);
+    const val: unknown = args[s];
+    if (val === "" || (Array.isArray(val) && val.some((v) => v === ""))) {
+      usage("E_USAGE_EMPTY_VALUE", `--${s} needs a value`);
+    }
   }
   return { command: command as string, args: args as Record<string, unknown> };
 }
@@ -3361,17 +3409,65 @@ Deno.test("parseCli keeps per-command options, including --no-cleanup, and rejec
   assertEquals(parseCli(["submit", "--update-text"]).args["update-text"], true);
   assertEquals(parseCli(["land", "--through", "#12", "--allow-no-checks"]).args.through, "#12");
   assertEquals(
-    parseAcceptedSkips("86:CI/catalog-check,87:CI/fmt,87:CI/test"),
+    parseCli([
+      "land",
+      "--accept-skipped-check",
+      "155:Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})",
+      "--accept-skipped-check",
+      "155:CI/test-macos",
+      "--ignore-check",
+      "Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})",
+      "--ignore-check",
+      "exp",
+    ]).args["accept-skipped-check"],
+    ["155:Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})", "155:CI/test-macos"],
+  );
+  assertEquals(
+    parseCli([
+      "land",
+      "--ignore-check",
+      "Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})",
+      "--ignore-check",
+      "exp",
+    ]).args["ignore-check"],
+    ["Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})", "exp"],
+  );
+  assertEquals(
+    parseAcceptedSkips(["86:CI/catalog-check", "87:CI/fmt", "87:CI/test"]),
     new Map([
       [86, ["CI/catalog-check"]],
       [87, ["CI/fmt", "CI/test"]],
     ]),
   );
-  assertThrows(() => parseAcceptedSkips("CI/catalog-check"), JjstackError, "PR:workflow/job");
-  assertThrows(() => parseAcceptedSkips("86:catalog-check"), JjstackError, "PR:workflow/job");
+  const cargoDist = "Release/build-local-artifacts (${{ join(matrix.targets, ', ') }})";
+  assertEquals(parseAcceptedSkips([`155:${cargoDist}`]), new Map([[155, [cargoDist]]]));
+  assertEquals(
+    parseAcceptedSkips([`155:${cargoDist}`, "155:CI/test-macos", "155:CI/test-macos"]),
+    new Map([[155, [cargoDist, "CI/test-macos"]]]),
+  );
+  // One flag value is never split on commas or trimmed, so an entry containing `, 1:CI/...`, a comma in the workflow
+  // name, or trailing spaces stays one literal check name and cannot exempt a second check.
+  assertEquals(
+    parseAcceptedSkips(["1:CI/optional, 1:CI/must-run", "87:Release, preview/b", "86:CI/job "]),
+    new Map([
+      [1, ["CI/optional, 1:CI/must-run"]],
+      [87, ["Release, preview/b"]],
+      [86, ["CI/job "]],
+    ]),
+  );
+  assertThrows(() => parseAcceptedSkips(["CI/catalog-check"]), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips(["86:catalog-check"]), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips(["0:CI/test"]), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips([" 86:CI/test"]), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips(["86: /test"]), JjstackError, "PR:workflow/job");
+  assertThrows(() => parseAcceptedSkips(["86:CI/   "]), JjstackError, "PR:workflow/job");
+  assertEquals(parseIgnoredChecks([cargoDist, "exp", " job ", cargoDist]), [cargoDist, "exp", " job "]);
+  assertThrows(() => parseIgnoredChecks(["   "]), JjstackError, "non-empty check name");
   assertThrows(() => parseCli(["submit", "--expect", "1"]), JjstackError, "unknown option");
   assertThrows(() => parseCli(["status", "extra"]), JjstackError, "unexpected arguments");
   assertThrows(() => parseCli(["status", "--top="]), JjstackError, "needs a value");
+  assertThrows(() => parseCli(["land", "--accept-skipped-check="]), JjstackError, "needs a value");
+  assertThrows(() => parseCli(["land", "--ignore-check", "a", "--ignore-check="]), JjstackError, "needs a value");
   assertThrows(() => parseCli(["nope"]), JjstackError, "unknown command");
   assertThrows(() => parseCli([]), JjstackError, "unknown command");
   // Positional arguments are paths, and only commands that take paths accept them, as strings even when numeric.
@@ -3660,6 +3756,67 @@ Deno.test("checkVerdict separates pass, fail, pending, no verdict, and ambiguous
     checkVerdict([run("lint", "SUCCESS"), run("exp", "FAILURE")], { running: [], postReady: true }, undefined, false, [
       "exp",
     ]).v,
+    "passed",
+  );
+  // A job name with a comma (such as cargo-dist's unexpanded matrix expression) is honored verbatim and quoted in
+  // inline details so comma-separated lists stay unambiguous.
+  const commaJob = "build-local-artifacts (${{ join(matrix.targets, ', ') }})";
+  const commaSkip = { ...run(commaJob, "SKIPPED"), workflowName: "Release" };
+  const commaUnclassified = checkVerdict(
+    [run("lint", "SUCCESS"), commaSkip, run("test-macos", "SKIPPED")],
+    { running: [], postReady: false },
+    readyAt,
+    true,
+    [],
+    [],
+    late,
+  );
+  assertEquals(commaUnclassified.v, "stale-skipped");
+  assertEquals(
+    commaUnclassified.detail,
+    `unclassified skipped checks: ${JSON.stringify(`Release/${commaJob}`)}, PR/test-macos`,
+  );
+  assertEquals(commaUnclassified.unclassified, [
+    { name: `Release/${commaJob}`, actions: true },
+    { name: "PR/test-macos", actions: true },
+  ]);
+  const commaAccepted = checkVerdict(
+    [run("lint", "SUCCESS"), commaSkip],
+    { running: [], postReady: false },
+    readyAt,
+    true,
+    [],
+    [`Release/${commaJob}`],
+    late,
+  );
+  assertEquals(commaAccepted.v, "passed");
+  assertEquals(
+    commaAccepted.detail,
+    `PR/lint, ${JSON.stringify(`Release/${commaJob}`)}; accepted skipped check: ${
+      JSON.stringify(`Release/${commaJob}`)
+    }`,
+  );
+  const commaFailed = checkVerdict(
+    [run("lint", "SUCCESS"), { ...commaSkip, conclusion: "FAILURE" }],
+    { running: [], postReady: true },
+    undefined,
+    false,
+    [],
+    [],
+    late,
+  );
+  assertEquals(commaFailed.v, "failed");
+  assertEquals(commaFailed.detail, `${JSON.stringify(`Release/${commaJob}`)}=FAILURE`);
+  assertEquals(
+    checkVerdict(
+      [run("lint", "SUCCESS"), { ...commaSkip, conclusion: "FAILURE" }],
+      { running: [], postReady: true },
+      undefined,
+      false,
+      [`Release/${commaJob}`],
+      [],
+      late,
+    ).v,
     "passed",
   );
   const status = (state: string): Check => ({ __typename: "StatusContext", context: "ci/legacy", state });
