@@ -1124,6 +1124,143 @@ Deno.test("land accepts a declared conditional skip on a previously validated he
 });
 
 /**
+ * Unexpanded matrix job names (such as cargo-dist's `build-local-artifacts (${{ join(matrix.targets, ', ') }})`) carry
+ * commas, spaces, and single quotes. The refusal must list each check as a copyable flag, and resuming with repeated
+ * `--accept-skipped-check` flags (or `--ignore-check` for an optional failing check) must honor those names verbatim.
+ */
+Deno.test("land handles check names containing commas in --accept-skipped-check and --ignore-check", async () => {
+  const commaJob = "build-local-artifacts (${{ join(matrix.targets, ', ') }})";
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.05";
+    await stackOf(w, 1);
+    const sha = (await $`git --git-dir ${w.remote} rev-parse pr1`.env(w.env).text()).trim();
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    await editState(w, (s) => {
+      s.prs[0].isDraft = false;
+      s.prs[0].readyAt = [hourAgo];
+      s.suiteCreatedAt[sha] = hourAgo;
+      s.defaultChecks = [
+        { name: "test-linux", status: "COMPLETED", conclusion: "SUCCESS", startedAt: hourAgo },
+        { name: commaJob, workflowName: "Release", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+        { name: "test-macos", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+      ];
+    });
+    const r = await jjstack(w, ["land", "--expect", "1"]);
+    assertEquals(r.code, 3, r.err);
+    assertStringIncludes(r.err, "code=E_LAND_UNCLASSIFIED_SKIP");
+    assertStringIncludes(
+      r.out,
+      `unclassified skipped checks: ${JSON.stringify(`Release/${commaJob}`)}, CI/test-macos`,
+    );
+    assertStringIncludes(
+      r.err,
+      `  --accept-skipped-check '1:Release/build-local-artifacts (\${{ join(matrix.targets, '\\'', '\\'') }})'`,
+    );
+    assertStringIncludes(r.err, "  --accept-skipped-check 1:CI/test-macos");
+    // Replay the exact emitted flag lines through a real shell to prove their quoting survives bash untouched.
+    const emittedFlags = r.err.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("--accept-skipped-check "));
+    assertEquals(emittedFlags.length, 2);
+    const replayed = await $`bash -c ${`${SCRIPT} land --dir ${w.work} --expect 1 --resume ${emittedFlags.join(" ")}`}`
+      .env(w.env).noThrow().stdout("piped").stderr("piped");
+    assertEquals(replayed.code, 0, replayed.stderr);
+    assertStringIncludes(
+      replayed.stdout,
+      `accepted skipped check: ${JSON.stringify(`Release/${commaJob}`)}, CI/test-macos`,
+    );
+    assertEquals((await readState(w)).prs[0].state, "MERGED");
+  });
+
+  // One `--accept-skipped-check` argument is strictly literal: a job name containing `, 1:CI/...` never splits to
+  // exempt another skipped job, and a skipped non-Actions app check gets no flag and keeps blocking.
+  await withWorld(async (w) => {
+    w.env.JJSTACK_TIME_SCALE = "0.05";
+    await stackOf(w, 1);
+    const sha = (await $`git --git-dir ${w.remote} rev-parse pr1`.env(w.env).text()).trim();
+    const hourAgo = new Date(Date.now() - 3600_000).toISOString();
+    await editState(w, (s) => {
+      s.prs[0].isDraft = false;
+      s.prs[0].readyAt = [hourAgo];
+      s.suiteCreatedAt[sha] = hourAgo;
+      s.defaultChecks = [
+        { name: "test-linux", status: "COMPLETED", conclusion: "SUCCESS", startedAt: hourAgo },
+        { name: "optional, 1:CI/must-run", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+        { name: "must-run", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+        { name: "external-app", workflowName: "", status: "COMPLETED", conclusion: "SKIPPED", startedAt: hourAgo },
+      ];
+    });
+    const refused = await jjstack(w, ["land", "--expect", "1"]);
+    assertEquals(refused.code, 3, refused.err);
+    assertStringIncludes(refused.err, "code=E_LAND_UNCLASSIFIED_SKIP");
+    assertStringIncludes(refused.err, "  --accept-skipped-check '1:CI/optional, 1:CI/must-run'");
+    assertStringIncludes(refused.err, "  --accept-skipped-check 1:CI/must-run");
+    assertStringIncludes(
+      refused.err,
+      "non-Actions skipped checks (cannot be accepted with --accept-skipped-check):\n  /external-app",
+    );
+    assert(!refused.err.includes("--accept-skipped-check 1:/external-app"));
+    // Accepting only the compound-named job must NOT also exempt `CI/must-run` or `/external-app`.
+    const partial = await jjstack(w, [
+      "land",
+      "--expect",
+      "1",
+      "--resume",
+      "--accept-skipped-check",
+      "1:CI/optional, 1:CI/must-run",
+    ]);
+    assertEquals(partial.code, 3, partial.err);
+    assertStringIncludes(partial.err, "code=E_LAND_UNCLASSIFIED_SKIP");
+    assertStringIncludes(partial.err, "  --accept-skipped-check 1:CI/must-run");
+    assertStringIncludes(partial.err, "  /external-app");
+    assert(!partial.err.includes("optional, 1:CI/must-run"));
+    // Accepting both Actions jobs still leaves the skipped app check blocking.
+    const appBlocked = await jjstack(w, [
+      "land",
+      "--expect",
+      "1",
+      "--resume",
+      "--accept-skipped-check",
+      "1:CI/optional, 1:CI/must-run",
+      "--accept-skipped-check",
+      "1:CI/must-run",
+    ]);
+    assertEquals(appBlocked.code, 3, appBlocked.err);
+    assertStringIncludes(appBlocked.err, "code=E_LAND_UNCLASSIFIED_SKIP");
+    assertStringIncludes(
+      appBlocked.err,
+      "non-Actions skipped checks (cannot be accepted with --accept-skipped-check):\n  /external-app",
+    );
+    assert(!appBlocked.err.includes("--accept-skipped-check "));
+    assertEquals((await readState(w)).prs[0].state, "OPEN");
+  });
+
+  await withWorld(async (w) => {
+    await stackOf(w, 1);
+    await editState(w, (s) => {
+      s.defaultChecks = [
+        { name: "test-linux", status: "COMPLETED", conclusion: "SUCCESS" },
+        { name: commaJob, workflowName: "Release", status: "COMPLETED", conclusion: "FAILURE" },
+        { name: "flaky-optional", status: "COMPLETED", conclusion: "FAILURE" },
+      ];
+    });
+    const blocked = await jjstack(w, ["land", "--expect", "1"]);
+    assertEquals(blocked.code, 4, blocked.err);
+    assertStringIncludes(blocked.err, `${JSON.stringify(`Release/${commaJob}`)}=FAILURE`);
+    const ignored = await jjstack(w, [
+      "land",
+      "--expect",
+      "1",
+      "--resume",
+      "--ignore-check",
+      `Release/${commaJob}`,
+      "--ignore-check",
+      "flaky-optional",
+    ]);
+    assertEquals(ignored.code, 0, ignored.err);
+    assertEquals((await readState(w)).prs[0].state, "MERGED");
+  });
+});
+
+/**
  * A request to merge anyway after CI blocks a partial landing must keep its `--through` boundary. The fast path still
  * plans and merges through the script, then restacks the upper PR without merging it or broadening the user's request.
  */

@@ -319,8 +319,8 @@ host alias from `~/.ssh/config` does not name the host and is refused; use the r
   will not open a second PR for the same branch). A `JJSTACK_WARN` line names an open PR based on a stack bookmark whose
   own head is not in the stack.
 - `land [--through <PR-or-bookmark>] [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup] [--check-timeout
-  <minutes>] [--allow-no-checks] [--ignore-check <names>] [--accept-skipped-check <PR:workflow/job,...>]`: CI-gated
-  landing; see "Landing stacked PRs".
+  <minutes>] [--allow-no-checks] [--ignore-check <name>] [--accept-skipped-check <PR:workflow/job>]`: CI-gated landing;
+  see "Landing stacked PRs".
 - `fast-land [--through <PR-or-bookmark>] [--expect <PRs>] [--plan-only] [--resume] [--no-cleanup]`: landing without CI;
   see "Fast path merge".
 - `stop`: asks a running `land` or `fast-land` in the same checkout to stop at its next safe point, which is before it
@@ -453,8 +453,9 @@ GitHub cancels runs a newer event supersedes and the replacement can take a whil
 replaced by then is a failure. Every poll and retry backs off from one second to at most one read a minute.
 
 Every check blocks by default: the script cannot tell a required check from an optional one on a repo without branch
-protection. When a check fails that the user says is optional, rerun with `--ignore-check <name>` (comma-separated; a
-job name, a status context, or `workflow/job`), and say you did. Do not decide a check is optional yourself.
+protection. When a check fails that the user says is optional, rerun with `--ignore-check <name>` (one exact job name,
+status context, or `workflow/job` per flag, not a comma-separated list; repeat the flag for several checks), and say you
+did. Do not decide a check is optional yourself.
 
 "No CI verdict" covers a PR with no checks or one whose checks were all skipped. When `land` stops with
 `E_LAND_NO_CHECKS`, recheck the repo's CI instructions, workflow triggers, and other automatic PR checks. If the repo
@@ -464,12 +465,14 @@ do; triggering a run (the script's `ci`, where a workflow allows `workflow_dispa
 
 A check skipped in an Actions run from before the PR left draft is ambiguous. It may be intentionally inapplicable to
 the diff, or it may have skipped required validation because the PR was a draft. `land` waits two minutes for a
-replacement, then stops with `E_LAND_UNCLASSIFIED_SKIP`; its message does not claim the cause. Inspect the workflow
-version at the reviewed head, including the job's `if:` and any upstream change detector, and compare it with this PR's
-diff. If that proves the job was intentionally inapplicable independent of draft state, resume with
-`--accept-skipped-check <PR:workflow/job>` and report the evidence. Use comma-separated entries for several jobs or PRs.
-Each entry applies only to that exact Actions job on that PR, and only while it is `SKIPPED`; a failure or pending run
-still blocks, and an all-skipped rollup remains no verdict. Do not use the flag for a job whose condition is unclear or
+replacement, then stops with `E_LAND_UNCLASSIFIED_SKIP`, listing a shell-quoted `--accept-skipped-check` flag for each
+Actions job without claiming the cause (a skipped check from another app has no workflow name and is listed separately
+without a flag, since it cannot be accepted this way). Inspect the workflow version at the reviewed head, including the
+job's `if:` and any upstream change detector, and compare it with this PR's diff. If that proves the job was
+intentionally inapplicable independent of draft state, resume with `--accept-skipped-check <PR:workflow/job>` (one exact
+entry per flag, not a comma-separated list; repeat the flag for several jobs or PRs) and report the evidence. Each entry
+applies only to that exact Actions job on that PR, and only while it is `SKIPPED`; a failure or pending run still
+blocks, and an all-skipped rollup remains no verdict. Do not use the flag for a job whose condition is unclear or
 draft-gated. `--ignore-check` and `--allow-no-checks` have broader effects and are not substitutes for this declaration.
 
 Lines starting with `JJSTACK_` are the ledger. `JJSTACK_PLAN` lists what will land and what will be restacked.
