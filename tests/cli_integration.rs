@@ -23,6 +23,7 @@ fn setup_fake_home_without_graphite_source() -> TempDir {
     std::fs::create_dir_all(home.path().join(".pi/agent")).unwrap();
     std::fs::create_dir_all(home.path().join(".omp/agent")).unwrap();
     std::fs::create_dir_all(home.path().join(".qwen")).unwrap();
+    std::fs::create_dir_all(home.path().join(".gemini/config")).unwrap();
     std::fs::create_dir_all(
         home.path()
             .join("Library/Application Support/com.mitchellh.ghostty"),
@@ -43,6 +44,7 @@ const SKILLS_ROOTS: &[&str] = &[
     ".pi/agent/skills",
     ".omp/agent/skills",
     ".qwen/skills",
+    ".gemini/config/skills",
 ];
 
 /// Where the shared instruction blob is symlinked for harnesses that read a
@@ -59,6 +61,7 @@ const NATIVE_INSTRUCTION_LINKS: &[&str] = &[
     ".pi/agent/AGENTS.md",
     ".omp/agent/AGENTS.md",
     ".qwen/QWEN.md",
+    ".gemini/config/AGENTS.md",
 ];
 
 /// Goose's copy of the instruction blob, relative to the fake home.
@@ -338,12 +341,12 @@ fn test_install_creates_symlinks() {
 ///
 /// Claude and Codex list their skill entries one by one in `src/main.rs`
 /// (their sections carry migration cleanups), while Muse, OpenCode, Goose, Pi,
-/// omp, and Qwen Code derive theirs from a shared list. Nothing but this test
-/// ties the two spellings together, so a skill added to one and forgotten in
-/// the other would install for some harnesses only and nobody would notice
-/// until a dependency load failed on the harness that lacked it. Comparing
-/// resolved targets rather than names also catches an explicit entry whose
-/// destination name is right but whose source is a different skill.
+/// omp, Qwen Code, and Antigravity derive theirs from a shared list. Nothing
+/// but this test ties the two spellings together, so a skill added to one and
+/// forgotten in the other would install for some harnesses only and nobody
+/// would notice until a dependency load failed on the harness that lacked it.
+/// Comparing resolved targets rather than names also catches an explicit entry
+/// whose destination name is right but whose source is a different skill.
 #[test]
 fn test_all_harnesses_install_the_same_skills() {
     let fake_home = setup_fake_home();
@@ -778,6 +781,40 @@ fn test_pi_and_omp_need_their_agent_directory() {
     }
 }
 
+/// Antigravity is gated on `~/.gemini/config`, not on `~/.gemini`.
+///
+/// `~/.gemini` is shared with the separate Gemini CLI and holds runtime state,
+/// whereas Antigravity creates `~/.gemini/config` for personal customizations.
+/// A gate on `~/.gemini` would fail install rather than skip when `config/` is
+/// absent (nothing here creates missing parents) and would treat Gemini CLI
+/// machines as Antigravity installs. With only `~/.gemini` present, install
+/// must succeed and leave `~/.gemini` untouched.
+#[test]
+fn test_antigravity_needs_its_config_directory() {
+    let fake_home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(fake_home.path().join(".gemini")).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_dotfiles"))
+        .arg("install")
+        .env("HOME", fake_home.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let entries: Vec<_> = std::fs::read_dir(fake_home.path().join(".gemini"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(
+        entries.is_empty(),
+        "~/.gemini without a config directory should be left empty, got: {entries:?}"
+    );
+}
+
 #[test]
 fn test_graphite_skill_is_skipped_when_source_missing() {
     let fake_home = setup_fake_home_without_graphite_source();
@@ -950,6 +987,8 @@ fn test_all_symlinks_are_relative() {
         ".omp/agent/AGENTS.md",
         ".qwen/QWEN.md",
         ".qwen/skills/jjstack",
+        ".gemini/config/AGENTS.md",
+        ".gemini/config/skills/jjstack",
         ".claude/skills/pre-pr-review-swarm",
         ".claude/skills/scode-dist-rust-setup",
         ".claude/skills/jjstack",

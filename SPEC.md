@@ -120,6 +120,19 @@ on machines without that directory. These are Qwen Code's default native paths; 
 `QWEN_HOME` or `context.fileName` setting. Uninstall removes the owned links and removes the skills directory only if it
 is empty, preserving user-added files under the usual container and symlink ownership rules above.
 
+## Antigravity Instructions and Skills
+
+When `~/.gemini/config` already exists, `install` symlinks `agent-instructions/AGENTS.md` to
+`~/.gemini/config/AGENTS.md` and installs the same shared and conditional external skills as the other harnesses into
+`~/.gemini/config/skills`. It does not create `~/.gemini/config` on machines that lack it (including machines that have
+only `~/.gemini`). Both paths are Antigravity's documented personal paths for Antigravity App and Antigravity CLI
+(`agy`), and `~/.gemini/config/skills` is also documented for Antigravity IDE; Antigravity's rules docs do not list
+`~/.gemini/config/AGENTS.md` for Antigravity IDE & Extensions (which use `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`,
+or `~/.gemini/config/rules/*.md`). The installer does not target CLI-only (`~/.gemini/antigravity-cli/skills`,
+`~/.gemini/skills`) or legacy IDE (`~/.gemini/antigravity/skills`) roots. Uninstall removes the owned links and removes
+the skills directory only if it is empty, preserving user-added files under the usual container and symlink ownership
+rules above.
+
 ## Managed JSON Ownership
 
 `JsonManaged` edits user-owned JSON files and owns only the paths its `managed_*` operations declare. Declaring a path
