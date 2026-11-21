@@ -12,9 +12,28 @@ type ObjectValue = Record<string, unknown>;
 type Range = [number, number];
 type Source = { path: string; sha256: string; ranges: Range[]; lines: string[] };
 /** A delivered tool result; `rejected` names why its packets cannot earn coverage, if they cannot. */
-type Result = { text: string; ref: string; failed: boolean; rejected?: string };
+type Result = { text: string; ref: string; failed: boolean; rejected?: string; forceReject?: boolean };
 const BEGIN = "PERSISTENT_REVIEW_READ_V1\n";
 const END = "\nPERSISTENT_REVIEW_END_V1";
+/**
+ * Frame packets on standalone marker lines while accepting LF or CRLF around the outer markers (`agy`'s
+ * `run_command` PTY turns raw LF in stdout into CRLF without touching JSON-escaped newlines inside `"text"`).
+ * The closing lookahead allows a line break, EOF, or an immediately concatenated next packet while rejecting
+ * trailing suffix text on the marker line.
+ */
+const BEGIN_RE = /(?:^|\n)PERSISTENT_REVIEW_READ_V1\r?\n/;
+const END_RE = /\r?\nPERSISTENT_REVIEW_END_V1(?=\r?\n|$|PERSISTENT_REVIEW_READ_V1\r?\n)/;
+/**
+ * Verified `agy` 1.5.14 `run_command` output envelope, separating harness-authored timestamps and exit/signal
+ * status from command stdout after `Command output:\n`. Matching only before that boundary prevents command
+ * stdout from impersonating exit or truncation metadata, and prevents unverified tool outputs from earning
+ * coverage.
+ */
+const AGY_CMD_HEADER_RE =
+  /^(?:Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?)?(Command exited with code (\d+)\.|Command was terminated by signal or canceled\.)\n\nCommand output:\n/;
+const AGY_CMD_EMPTY_RE =
+  /^(?:Created At: [^\n]*\n(?:Completed At: [^\n]*\n)?)?(?:Command exited with code \d+\.|Command was terminated by signal or canceled\.)\n\nNo output from the command\.$/;
+const AGY_TRUNCATED_PREFIX = "The tool's output was truncated due to being too long.";
 const MAX_PACKET = 24000;
 /**
  * Codex persists a tool result in full but sends the model only about 12,000 tokens of it (the rollout's
@@ -27,10 +46,11 @@ const CODEX_MAX_DELIVERED_BYTES = 40000;
 /** Keep the skipped-kind reports compact even when a transcript invents many record kinds. */
 const MAX_IGNORED_KINDS = 64;
 /**
- * Skipped record kinds checked to carry no delivery, from Codex 0.153.4-0.166.0 rollouts and a Claude Code
- * 2.1.308 verbose stream. This list only decides which report bucket a skipped kind lands in: known kinds go
- * to `ignored`, anything else to `unrecognized`, where the orchestrator judges whether a read may have been
- * missed. It never decides whether the audit runs, so leaving a kind off it costs a judgment call, not an abort.
+ * Skipped record kinds checked to carry no delivery, from Codex 0.153.4-0.166.0 rollouts, a Claude Code
+ * 2.1.308 verbose stream, and `agy` 1.5.14 `stream-json` logs. This list only decides which report bucket a
+ * skipped kind lands in: known kinds go to `ignored`, anything else to `unrecognized`, where the orchestrator
+ * judges whether a read may have been missed. It never decides whether the audit runs, so leaving a kind off
+ * it costs a judgment call, not an abort.
  */
 // deno-fmt-ignore
 const KNOWN_SKIPPED = new Set([
@@ -41,6 +61,8 @@ const KNOWN_SKIPPED = new Set([
   "system:task_started", "system:task_progress", "system:task_updated", "system:task_notification",
   "system:background_tasks_changed", "system:compact_boundary",
   "assistant:text", "assistant:thinking", "assistant:redacted_thinking", "user:text", "user:string",
+  "step_update:user_input", "step_update:agent_response", "step_update:system_message", "step_update:subagent",
+  "result:SUCCESS",
   "result_block:input_image", "result_block:image", "result_block:tool_reference",
 ]);
 
@@ -172,29 +194,148 @@ function resultText(value: unknown, skip: (kind: string) => void): string {
   }).join("");
 }
 
+/** Return only the harness wrapper text preceding the first read packet, so quoted source text cannot match wrapper patterns. */
+function wrapperBeforePacket(text: string): string {
+  const match = BEGIN_RE.exec(text);
+  return match ? text.slice(0, match.index) : text;
+}
+
 /** Check harness wrappers only; words in the quoted source are not execution status. */
 function codexFailed(text: string): boolean {
-  const wrapper = text.split(BEGIN, 1)[0];
+  const wrapper = wrapperBeforePacket(text);
   return /(?:^|\n)(?:Script failed\b|Process exited with code [1-9]\d*\b|exit_code=[1-9]\d*\b)/.test(wrapper);
 }
 
 /**
- * Yield every tool result delivered to the audited reviewer, from the checked Codex rollout or Claude verbose
- * stream, never raw Codex command events.
+ * True when an `agy` `run_command` invocation targets `evidence read`. Used only to report clipped reads whose
+ * outer markers were both lost in a middle truncation without listing unrelated truncated commands (such as test
+ * runs) in `rejected`. Never grants coverage.
+ */
+function isAgyEvidenceRead(params: unknown): boolean {
+  if (!isObject(params) || typeof params.CommandLine !== "string") return false;
+  return /(?:^|[\s/'";&|])evidence\s+read\b/.test(params.CommandLine);
+}
+
+/**
+ * Per-file `agy` tool call state. Calls are buffered until the turn stream ends so conflicting terminal updates
+ * invalidate each other in either order and so each terminal result can be checked for a subsequent
+ * `agent_response` `DONE` proving the model actually ran after the tool completed.
+ */
+type AgyCall = {
+  name: string;
+  stepIndex: number;
+  terminal?: {
+    state: string;
+    output: unknown;
+    error: unknown;
+    parameters: unknown;
+    ref: string;
+  };
+  deliveredToModel: boolean;
+  conflictReason?: string;
+  conflictRef?: string;
+  conflictTexts: string[];
+};
+
+/**
+ * Resolve one completed `agy` turn file's buffered calls into delivered results. Only `run_command`'s verified
+ * string envelope (`Command exited with code 0.\n\nCommand output:\n...`), paired with a matching non-conflicting
+ * `ACTIVE` call and followed by a subsequent `agent_response` `DONE`, can supply packet text for coverage.
+ */
+function* flushAgyFile(
+  agyCalls: Map<number, AgyCall>,
+  agyOrphans: Result[],
+  skip: (kind: string) => void,
+  counts: { unfinished: number },
+): Generator<Result> {
+  for (const orphan of agyOrphans) yield orphan;
+  agyOrphans.length = 0;
+  for (const call of agyCalls.values()) {
+    if (!call.terminal) {
+      counts.unfinished++;
+      continue;
+    }
+    if (call.conflictReason) {
+      yield {
+        text: call.conflictTexts.join("\n"),
+        ref: call.conflictRef ?? call.terminal.ref,
+        failed: false,
+        rejected: call.conflictReason,
+      };
+      continue;
+    }
+    const { state, output, error, parameters, ref } = call.terminal;
+    const hasToolError = state !== "DONE" || (error !== undefined && error !== null);
+    if (output === undefined) {
+      yield { text: "", ref, failed: hasToolError };
+      continue;
+    }
+    if (typeof output !== "string") {
+      skip(`result_content:${output === null ? "null" : Array.isArray(output) ? "array" : typeof output}`);
+      yield { text: "", ref, failed: hasToolError };
+      continue;
+    }
+    if (output.startsWith(AGY_TRUNCATED_PREFIX)) {
+      if (
+        BEGIN_RE.test(output) || END_RE.test(output) || (call.name === "run_command" && isAgyEvidenceRead(parameters))
+      ) {
+        yield {
+          text: output,
+          ref,
+          failed: false,
+          rejected: "Harness clipped the result; reread a smaller range",
+          forceReject: true,
+        };
+      } else {
+        yield { text: "", ref, failed: hasToolError };
+      }
+      continue;
+    }
+    if (call.name === "run_command") {
+      const header = AGY_CMD_HEADER_RE.exec(output);
+      if (header) {
+        const body = output.slice(header[0].length);
+        const cmdFailed = header[2] !== "0";
+        const rejected = !call.deliveredToModel ? "No subsequent model response after tool output" : undefined;
+        yield { text: body, ref, failed: hasToolError || cmdFailed, rejected };
+        continue;
+      }
+      if (AGY_CMD_EMPTY_RE.test(output)) {
+        yield { text: "", ref, failed: hasToolError };
+        continue;
+      }
+      skip("agy_envelope:run_command");
+      yield { text: output, ref, failed: false, rejected: "Unverified agy tool output envelope" };
+      continue;
+    }
+    // Non-run_command tools (e.g. read_file size summaries) have no verified delivered-source envelope.
+    if (BEGIN_RE.test(output) || END_RE.test(output)) {
+      yield { text: output, ref, failed: false, rejected: `Unverified agy tool output (${call.name})` };
+    } else {
+      yield { text: "", ref, failed: hasToolError };
+    }
+  }
+  agyCalls.clear();
+}
+
+/**
+ * Yield every tool result delivered to the audited reviewer, from the checked Codex rollout, Claude verbose
+ * stream, or `agy` `stream-json` logs, never raw Codex command events.
  *
  * The audit aborts only when continuing could misattribute identity: a log from another session or cwd, a log
- * with no initialization, or messages before their log's init. Everything else degrades to "no credit". Records
+ * with no initialization, or messages/steps before their log's init. Everything else degrades to "no credit". Records
  * that are not tool calls or results (lifecycle events, messages, reasoning, compaction, hooks, task notices,
  * subagent traffic, and whatever a harness adds next) are skipped and counted, in `ignored` when the kind is
  * known to carry no delivery and in `unrecognized` otherwise. Tool results that
- * cannot be trusted (no matching call, client-authored, possibly clipped, an unclear error flag) are yielded
- * with a `rejected` reason. Calls that never got a result are counted in `unfinished`. A format change therefore
- * shows up as missing coverage plus an `unrecognized` kind, never as false coverage and never as an abort.
+ * cannot be trusted (no matching call, client-authored, possibly clipped, an unclear error flag, conflicting
+ * updates, or no subsequent model turn on `agy`) are yielded with a `rejected` reason. Calls that never got a
+ * result are counted in `unfinished`. A format change therefore shows up as missing coverage plus an `unrecognized`
+ * kind, never as false coverage and never as an abort.
  *
- * Do not reintroduce allowlists of record, tool, family or block types. Each one broke valid audits as soon as
- * a harness added something (Codex function calls, agent messages, string and image outputs, late exec results;
- * Claude hooks, synthetic user text, subagent records, ToolSearch references, repeated inits), and rejecting
- * those bought no protection: they can only lower coverage, never raise it.
+ * Do not reintroduce allowlists of record, tool, family or block types that abort the audit. Each one broke valid
+ * audits as soon as a harness added something (Codex function calls, agent messages, string and image outputs,
+ * late exec results; Claude hooks, synthetic user text, subagent records, ToolSearch references, repeated inits),
+ * and rejecting those bought no protection: they can only lower coverage, never raise it.
  */
 async function* delivered(
   backend: string,
@@ -203,21 +344,32 @@ async function* delivered(
   paths: string[],
   counts: { ignored: Map<string, number>; unrecognized: Map<string, number>; unfinished: number },
 ): AsyncGenerator<Result> {
-  requireThat(["codex", "claude"].includes(backend), "Supported backends: codex, claude");
+  requireThat(["codex", "claude", "agy"].includes(backend), "Supported backends: codex, claude, agy");
   const skip = (raw: string) => {
-    // Subagent records and Claude turn results are skipped whatever their inner type.
-    const known = KNOWN_SKIPPED.has(raw) || raw.startsWith("nested:") || raw.startsWith("result:");
+    // Subagent records and Claude turn results are skipped whatever their inner type. On `agy`, only
+    // `result:SUCCESS` is in KNOWN_SKIPPED; `result:ERROR` and `result:invalid` surface in `unrecognized`.
+    const known = KNOWN_SKIPPED.has(raw) || raw.startsWith("nested:") ||
+      (backend !== "agy" && raw.startsWith("result:"));
     const bucket = known ? counts.ignored : counts.unrecognized;
     let kind = raw.slice(0, 80);
     if (!bucket.has(kind) && bucket.size >= MAX_IGNORED_KINDS) kind = "other";
     bucket.set(kind, (bucket.get(kind) ?? 0) + 1);
   };
   const initialized = new Set<string>();
-  // Results pair with calls by ID across all supplied logs, so a result in a resumed log may complete a call
-  // from an earlier one. The value counts results; a call may have several (see the Codex branch).
+  // Results pair with calls by ID across all supplied logs on Codex/Claude, so a result in a resumed log may
+  // complete a call from an earlier one. The value counts results; a call may have several (see the Codex branch).
   const calls = new Map<string, number>();
+  // `agy` runs each turn in its own process and does not carry live tool calls across turns, so its calls are
+  // scoped per file and flushed at file boundaries.
+  const agyCalls = new Map<number, AgyCall>();
+  const agyOrphans: Result[] = [];
+  let agyCurrentPath: string | undefined;
   const orphan = "No matching tool call in the supplied logs";
   for await (const { row, ref, path } of records(paths)) {
+    if (backend === "agy" && agyCurrentPath !== undefined && path !== agyCurrentPath) {
+      yield* flushAgyFile(agyCalls, agyOrphans, skip, counts);
+    }
+    agyCurrentPath = path;
     const type = typeof row.type === "string" ? row.type : "?";
     if (backend === "codex") {
       if (type === "session_meta") {
@@ -271,6 +423,133 @@ async function* delivered(
       continue;
     }
 
+    if (backend === "agy") {
+      // Top-level conversation_id must match whenever present, including on skipped or unknown events.
+      requireThat(row.conversation_id === undefined || row.conversation_id === session, `Session mismatch: ${ref}`);
+      const event = typeof row.event === "string" ? row.event : "?";
+      if (event === "init") {
+        const init = isObject(row.init) ? row.init : undefined;
+        requireThat(row.conversation_id === session && init?.cwd === cwd, `Session/cwd mismatch: ${ref}`);
+        initialized.add(path);
+        continue;
+      }
+      if (event === "result") {
+        if (!isObject(row.result)) {
+          skip("result:invalid");
+          continue;
+        }
+        requireThat(row.result.conversation_id === session, `Session mismatch: ${ref}`);
+        skip(`result:${typeof row.result.status === "string" ? row.result.status : "invalid"}`);
+        continue;
+      }
+      if (event !== "step_update") {
+        skip(event);
+        continue;
+      }
+      const step = isObject(row.step_update) ? row.step_update : undefined;
+      if (!step) {
+        requireThat(initialized.has(path), `Missing agy init: ${ref}`);
+        skip("step_update:invalid");
+        continue;
+      }
+      // Every step_update belongs to the audited conversation and must follow an init in its own turn log.
+      requireThat(step.conversation_id === session, `Session mismatch: ${ref}`);
+      requireThat(initialized.has(path), `Missing agy init: ${ref}`);
+      const stepType = typeof step.step_type === "string" ? step.step_type : "?";
+      const state = typeof step.state === "string" ? step.state : "?";
+      if (stepType !== "tool") {
+        // A completed agent_response after a terminated tool step proves the model ran after that tool finished.
+        if (stepType === "agent_response" && state === "DONE") {
+          const responseIdx = Number.isSafeInteger(step.step_index) ? (step.step_index as number) : undefined;
+          for (const call of agyCalls.values()) {
+            if (call.terminal && (responseIdx === undefined || responseIdx > call.stepIndex)) {
+              call.deliveredToModel = true;
+            }
+          }
+        }
+        skip(`step_update:${stepType}`);
+        continue;
+      }
+      if (!Number.isSafeInteger(step.step_index) || (step.step_index as number) < 0) {
+        skip("step_update:tool:no_index");
+        continue;
+      }
+      if (!isObject(step.tool_info)) {
+        skip("step_update:tool:no_info");
+        continue;
+      }
+      const outerName = typeof step.tool_name === "string" && step.tool_name.length ? step.tool_name : undefined;
+      const innerName = typeof step.tool_info.name === "string" && step.tool_info.name.length
+        ? step.tool_info.name
+        : undefined;
+      if (!outerName && !innerName) {
+        skip("step_update:tool:no_name");
+        continue;
+      }
+      if (outerName && innerName && outerName !== innerName) {
+        skip("step_update:tool:name_mismatch");
+        continue;
+      }
+      const name = outerName ?? innerName!;
+      const stepIndex = step.step_index as number;
+      if (state === "ACTIVE") {
+        const existing = agyCalls.get(stepIndex);
+        if (!existing) {
+          agyCalls.set(stepIndex, { name, stepIndex, deliveredToModel: false, conflictTexts: [] });
+        } else if (existing.terminal || existing.name !== name) {
+          existing.conflictReason ??= "Conflicting terminal updates for step";
+          existing.conflictRef ??= ref;
+          if (typeof existing.terminal?.output === "string") existing.conflictTexts.push(existing.terminal.output);
+        }
+        continue;
+      }
+      if (state === "DONE" || state === "ERROR" || state === "FAILED" || state === "CANCELLED") {
+        const existing = agyCalls.get(stepIndex);
+        if (!existing) {
+          const text = typeof step.tool_info.output === "string" ? step.tool_info.output : "";
+          agyOrphans.push({ text, ref, failed: false, rejected: orphan });
+          continue;
+        }
+        if (existing.name !== name) {
+          existing.terminal ??= {
+            state,
+            output: step.tool_info.output,
+            error: step.tool_info.error,
+            parameters: step.tool_info.parameters,
+            ref,
+          };
+          existing.conflictReason ??= "Tool identity mismatch with call";
+          existing.conflictRef ??= ref;
+          if (typeof existing.terminal.output === "string") existing.conflictTexts.push(existing.terminal.output);
+          if (typeof step.tool_info.output === "string") existing.conflictTexts.push(step.tool_info.output);
+          continue;
+        }
+        if (!existing.terminal) {
+          existing.terminal = {
+            state,
+            output: step.tool_info.output,
+            error: step.tool_info.error,
+            parameters: step.tool_info.parameters,
+            ref,
+          };
+          continue;
+        }
+        // Identical replays are deduplicated; any conflicting second terminal invalidates both updates.
+        const same = existing.terminal.state === state &&
+          JSON.stringify(existing.terminal.output) === JSON.stringify(step.tool_info.output) &&
+          JSON.stringify(existing.terminal.error) === JSON.stringify(step.tool_info.error);
+        if (!same) {
+          existing.conflictReason ??= "Conflicting terminal updates for step";
+          existing.conflictRef ??= ref;
+          if (typeof existing.terminal.output === "string") existing.conflictTexts.push(existing.terminal.output);
+          if (typeof step.tool_info.output === "string") existing.conflictTexts.push(step.tool_info.output);
+        }
+        continue;
+      }
+      skip(`tool_state:${state}`);
+      continue;
+    }
+
     // Claude: every record that names a session must name this one, so mixed streams still fail even
     // through records that are otherwise skipped.
     requireThat(row.session_id === undefined || row.session_id === session, `Session mismatch: ${ref}`);
@@ -316,10 +595,11 @@ async function* delivered(
       }
     }
   }
+  if (backend === "agy") yield* flushAgyFile(agyCalls, agyOrphans, skip, counts);
   requireThat(initialized.size === paths.length, "Missing session initialization");
   // A call without a result is usually a turn still running; the audit cannot credit what has not arrived,
   // so it reports the count and lets the caller re-audit after the turn boundary.
-  counts.unfinished = [...calls.values()].filter((n) => n === 0).length;
+  counts.unfinished += [...calls.values()].filter((n) => n === 0).length;
 }
 
 /** Merge overlaps before subtracting coverage so repeated reads cannot inflate progress. */
@@ -357,26 +637,39 @@ async function audit(backend: string, session: string, cwd: string, sources: Sou
   let results = 0;
   for await (const result of delivered(backend, session, cwd, paths, counts)) {
     results++;
-    // Only a rejected result that holds a packet loses anything; listing the rest would bury the ones that matter.
+    // Only a rejected result that holds a packet (or an explicitly clipped evidence-read call) loses anything;
+    // listing unrelated rejected commands would bury the ones that matter.
     if (result.rejected) {
-      if (result.text.includes(BEGIN)) rejected.push({ ref: result.ref, reason: result.rejected });
+      if (result.forceReject || BEGIN_RE.test(result.text) || END_RE.test(result.text)) {
+        rejected.push({ ref: result.ref, reason: result.rejected });
+      }
       continue;
     }
-    if (/(?:^|\n)Warning: truncated output/.test(result.text.split(BEGIN, 1)[0])) {
+    const wrapper = wrapperBeforePacket(result.text);
+    // Codex middle clipping prepends `Warning: truncated output` in its tool wrapper; restrict it to Codex so
+    // command stdout on other backends cannot impersonate a Codex truncation notice.
+    if (backend === "codex" && /(?:^|\n)Warning: truncated output/.test(wrapper)) {
       rejected.push({ ref: result.ref, reason: "Harness clipped the result; reread a smaller range" });
       continue;
     }
+    // A lone closing marker with no opener indicates a head-clipped packet rather than a clean non-read result.
+    if (!BEGIN_RE.test(result.text) && END_RE.test(result.text)) {
+      rejected.push({ ref: result.ref, reason: "Clipped read packet; reread a smaller range" });
+      continue;
+    }
     let rest = result.text;
-    while (rest.includes(BEGIN)) {
-      rest = rest.slice(rest.indexOf(BEGIN) + BEGIN.length);
-      const stop = rest.indexOf(END);
-      if (stop < 0) {
+    for (;;) {
+      const open = BEGIN_RE.exec(rest);
+      if (!open) break;
+      rest = rest.slice(open.index + open[0].length);
+      const close = END_RE.exec(rest);
+      if (!close) {
         rejected.push({ ref: result.ref, reason: "Clipped read packet; reread a smaller range" });
         break;
       }
-      const raw = rest.slice(0, stop);
+      const raw = rest.slice(0, close.index);
       const value = parse(raw);
-      rest = rest.slice(stop + END.length);
+      rest = rest.slice(close.index + close[0].length);
       const path = string(value.path);
       const start = integer(value.start), end = integer(value.end);
       // Validate the fields that identify delivered text. Object ordering, additive metadata and the
@@ -818,7 +1111,11 @@ async function fixture(work: (root: string, item: Source) => Promise<void>) {
 }
 
 /** These envelopes retain the checked backend fields and deliberately omit unrelated assistant prose. */
-function logRows(backend: string, text: string, options: { id?: string; failed?: boolean } = {}): ObjectValue[] {
+function logRows(
+  backend: string,
+  text: string,
+  options: { id?: string; step?: number; failed?: boolean } = {},
+): ObjectValue[] {
   const id = options.id ?? "call-1";
   if (backend === "codex") {
     return [
@@ -829,6 +1126,49 @@ function logRows(backend: string, text: string, options: { id?: string; failed?:
         type: "response_item",
         payload: { type: "custom_tool_call_output", call_id: id, output: [{ type: "input_text", text }] },
       },
+    ];
+  }
+  if (backend === "agy") {
+    const step = options.step ?? 3;
+    const output =
+      `Created At: 2026-11-21T08:00:00-08:00\nCompleted At: 2026-11-21T08:00:00-08:00\nCommand exited with code ${
+        options.failed ? 1 : 0
+      }.\n\nCommand output:\n${text}`;
+    return [
+      { event: "init", conversation_id: "session", init: { model: "gemini-4-neon", cwd: "/repo" } },
+      {
+        event: "step_update",
+        step_update: {
+          conversation_id: "session",
+          step_index: step,
+          state: "ACTIVE",
+          step_type: "tool",
+          tool_name: "run_command",
+          tool_info: { name: "run_command", parameters: { CommandLine: "evidence read" } },
+        },
+      },
+      {
+        event: "step_update",
+        step_update: {
+          conversation_id: "session",
+          step_index: step,
+          state: "DONE",
+          step_type: "tool",
+          tool_name: "run_command",
+          tool_info: { name: "run_command", parameters: { CommandLine: "evidence read" }, output },
+        },
+      },
+      {
+        event: "step_update",
+        step_update: {
+          conversation_id: "session",
+          step_index: step + 1,
+          state: "DONE",
+          step_type: "agent_response",
+          usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 },
+        },
+      },
+      { event: "result", result: { conversation_id: "session", status: "SUCCESS", response: "ok" } },
     ];
   }
   return [
@@ -851,7 +1191,7 @@ async function saveLog(path: string, rows: ObjectValue[]) {
   await Deno.writeTextFile(path, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
 }
 
-for (const backend of ["codex", "claude"]) {
+for (const backend of ["codex", "claude", "agy"]) {
   // Evidence depends on decoded source values, not the producer's particular JSON serialization.
   Deno.test(`${backend}: harmless packet formatting and metadata do not change verified delivery`, () =>
     fixture(async (root, item) => {
@@ -874,10 +1214,12 @@ for (const backend of ["codex", "claude"]) {
       await fails(() => audit(backend, "session", "/repo", [item], [path]), "range exceeds");
     }));
   // Production budgets prevent oversized new reads; they are not grounds for discarding existing exact delivery.
+  // On `agy`, `run_command` itself caps output at 10,240 bytes, so test >200 short lines there rather than >24 KiB.
   Deno.test(`${backend}: producer read budgets do not invalidate fully delivered matching text`, () =>
     fixture(async (root, item) => {
       const path = `${root}/log`;
-      for (const text of ["line\n".repeat(201), "x".repeat(MAX_PACKET + 1)]) {
+      const cases = backend === "agy" ? ["line\n".repeat(201)] : ["line\n".repeat(201), "x".repeat(MAX_PACKET + 1)];
+      for (const text of cases) {
         await Deno.writeTextFile(item.path, text);
         const large = await source(item.path);
         const value = { path: large.path, sha256: large.sha256, start: 1, end: large.lines.length, text };
@@ -953,7 +1295,9 @@ for (const backend of ["codex", "claude"]) {
   Deno.test(`${backend}: unknown non-tool records are counted but never earn or block coverage`, () =>
     fixture(async (root, item) => {
       const path = `${root}/log`;
-      const future = { type: "future_record", session_id: "session", output: packet(item, 2, 3) };
+      const future = backend === "agy"
+        ? { event: "future_record", conversation_id: "session", output: packet(item, 2, 3) }
+        : { type: "future_record", session_id: "session", output: packet(item, 2, 3) };
       await saveLog(path, [...logRows(backend, packet(item, 1, 1)), future]);
       const report = await audit(backend, "session", "/repo", [item], [path]);
       equal(report.sources[0].missing, [[2, 3]]);
@@ -1297,7 +1641,7 @@ Deno.test("Codex non-tool response items and lifecycle records are skipped and c
     await fails(() => audit("codex", "session", "/repo", [item], [path]), "native subagent rollouts cannot be audited");
   }));
 
-for (const backend of ["codex", "claude"]) {
+for (const backend of ["codex", "claude", "agy"]) {
   Deno.test(`${backend}: context packets outside the manifest are visible but cannot supply coverage`, () =>
     fixture(async (root, item) => {
       const other = { ...item, path: `${root}/not-in-manifest.txt` };
@@ -1518,4 +1862,358 @@ Deno.test("dispose refuses a decision about an unregistered log, or a record or 
     await Deno.writeTextFile(event, JSON.stringify(dispositionEvent({ log: a, id: "f2", line: 2 })));
     await main(["dispose", decisions, event]);
     equal((await consolidate(decisions, [a])).counts, { verified: 1 });
+  }));
+
+/**
+ * `agy`'s `run_command` executes under a PTY that converts raw LF to CRLF around packet markers while leaving
+ * JSON-escaped newlines (including CRLF inside the source file) intact. Resumes write fresh stream files with
+ * higher step indices and must preserve both `conversation_id` and `init.cwd`; a silent fresh-session resume
+ * (when `--conversation` is not found) or a wrong-cwd resume must fail visibly.
+ */
+Deno.test("agy PTY CRLF packets and multi-turn resumes verify coverage and catch identity drift", () =>
+  fixture(async (root, item) => {
+    const first = `${root}/turn1.jsonl`, second = `${root}/turn2.jsonl`;
+    const ptyPacket = (start: number, end: number) => packet(item, start, end).replaceAll("\n", "\r\n") + "\r\n";
+    await saveLog(first, logRows("agy", ptyPacket(1, 1), { step: 3 }));
+    await saveLog(second, logRows("agy", ptyPacket(2, 3), { step: 11 }));
+    const report = await audit("agy", "session", "/repo", [item], [first, second]);
+    equal(report.status, "complete");
+    equal(report.sources[0].covered, [[1, 3]]);
+    equal(report.evidence.map(({ ref }) => ref), [`${first}:3`, `${second}:3`]);
+
+    // A failed resume (`conversation "<id>" not found`) allocates a new conversation_id and must fail the audit.
+    const freshSession = logRows("agy", ptyPacket(2, 3), { step: 3 }).map((row) =>
+      JSON.parse(JSON.stringify(row).replaceAll('"session"', '"new-session"'))
+    );
+    await saveLog(second, freshSession);
+    await fails(() => audit("agy", "session", "/repo", [item], [first, second]), "Session mismatch");
+
+    // Resuming from a different directory changes init.cwd and must fail the audit.
+    const wrongCwd = logRows("agy", ptyPacket(2, 3), { step: 11 }).map((row) =>
+      row.event === "init" ? { ...row, init: { model: "gemini-4-neon", cwd: "/other" } } : row
+    );
+    await saveLog(second, wrongCwd);
+    await fails(() => audit("agy", "session", "/repo", [item], [first, second]), "Session/cwd mismatch");
+  }));
+
+/**
+ * `agy` middle-truncates `run_command` outputs above 10,240 bytes, leaving both outer packet markers intact while
+ * cutting the JSON payload in half. That must be rejected as clipped instead of aborting with a JSON syntax error,
+ * clipped `evidence read` calls whose markers were both lost must still be rejected, truncated non-packet commands
+ * (such as test runs) must stay out of `rejected`, and command stdout or source text containing wrapper lookalikes
+ * must neither block a valid read nor mask a malformed packet.
+ */
+Deno.test("agy middle clipping, exit wrappers and tool errors reject packets without false positives", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const full = packet(item, 1, 3).replaceAll("\n", "\r\n");
+    const clipped = "The tool's output was truncated due to being too long. " +
+      "You can find the full output in a file at file:///brain/steps/7/output.txt.\n\n" +
+      "Here is a preview with the middle of the output truncated:\n" +
+      "Created At: 2026-11-21T08:00:00-08:00\nCommand exited with code 0.\n\nCommand output:\n" +
+      full.slice(0, 60) + "\n<truncated 500 of 600 bytes from the middle of the output>\n" + full.slice(-30);
+    const [init, active, done, response, footer] = logRows("agy", full);
+    const withOutput = (output: unknown, extra: ObjectValue = {}) => {
+      const su = object(done.step_update);
+      const info = { ...object(su.tool_info), ...extra };
+      if (output === undefined) delete info.output;
+      else info.output = output;
+      return { ...done, step_update: { ...su, tool_info: info } };
+    };
+    await saveLog(path, [init, active, withOutput(clipped), response, footer]);
+    const truncReport = await audit("agy", "session", "/repo", [item], [path]);
+    equal(truncReport.status, "incomplete");
+    equal(truncReport.rejected.map(({ reason }) => reason), ["Harness clipped the result; reread a smaller range"]);
+
+    // Even if both outer markers were lost in a clipped `evidence read` command, it is still reported as clipped.
+    const clippedNoMarkers = "The tool's output was truncated due to being too long.\n...middle lost...";
+    await saveLog(path, [init, active, withOutput(clippedNoMarkers), response, footer]);
+    const lostMarkerClip = await audit("agy", "session", "/repo", [item], [path]);
+    equal(lostMarkerClip.status, "incomplete");
+    equal(lostMarkerClip.rejected.map(({ reason }) => reason), ["Harness clipped the result; reread a smaller range"]);
+
+    // A truncated non-packet command (e.g. cargo test) alongside a complete read must not pollute `rejected`.
+    const bigNonPacket = "The tool's output was truncated due to being too long.\n...test output...";
+    const [, active2, done2] = logRows("agy", "unused", { step: 5 });
+    const active2Su = object(active2.step_update);
+    const done2Su = object(done2.step_update);
+    const active2Test = {
+      ...active2,
+      step_update: { ...active2Su, tool_info: { name: "run_command", parameters: { CommandLine: "cargo test" } } },
+    };
+    const done2Trunc = {
+      ...done2,
+      step_update: {
+        ...done2Su,
+        tool_info: { name: "run_command", parameters: { CommandLine: "cargo test" }, output: bigNonPacket },
+      },
+    };
+    const laterResponse = { ...response, step_update: { ...object(response.step_update), step_index: 6 } };
+    await saveLog(path, [init, active, done, active2Test, done2Trunc, laterResponse, footer]);
+    const cleanReport = await audit("agy", "session", "/repo", [item], [path]);
+    equal([cleanReport.status, cleanReport.rejected.length], ["complete", 0]);
+
+    // Non-zero exit (background or foreground), signal termination, and tool ERROR / tool_info.error all reject.
+    for (
+      const row of [
+        withOutput(`Command exited with code 2.\n\nCommand output:\n${full}`),
+        withOutput(`Command was terminated by signal or canceled.\n\nCommand output:\n${full}`),
+        withOutput(
+          `Command exited with code 0.\n\nCommand output:\n${full}`,
+          { error: { type: "TOOL_ERROR", message: "boom" } },
+        ),
+        {
+          ...withOutput(`Command exited with code 0.\n\nCommand output:\n${full}`),
+          step_update: {
+            ...object(withOutput(`Command exited with code 0.\n\nCommand output:\n${full}`).step_update),
+            state: "ERROR",
+          },
+        },
+      ]
+    ) {
+      await saveLog(path, [init, active, row, response, footer]);
+      const failed = await audit("agy", "session", "/repo", [item], [path]);
+      equal(failed.status, "incomplete");
+      equal(failed.rejected.map(({ reason }) => reason), ["Tool reported failure"]);
+    }
+
+    // Wrapper lookalikes emitted in command stdout after `Command output:\n` must not trigger exit or clipping checks.
+    const stdoutLookalike = `Command exited with code 18.\nWarning: truncated output\n${full}`;
+    await saveLog(path, logRows("agy", stdoutLookalike));
+    equal((await audit("agy", "session", "/repo", [item], [path])).status, "complete");
+
+    // Source text containing agy's truncation or failure wording must not trigger wrapper checks.
+    await Deno.writeTextFile(
+      item.path,
+      "The tool's output was truncated due to being too long.\nCommand exited with code 1.\n",
+    );
+    const tricky = await source(item.path);
+    await saveLog(path, logRows("agy", packet(tricky, 1, 2)));
+    equal((await audit("agy", "session", "/repo", [tricky], [path])).status, "complete");
+    await saveLog(path, logRows("agy", packet(tricky, 1, 2) + BEGIN + "invalid json" + END));
+    await fails(() => audit("agy", "session", "/repo", [tricky], [path]), "Malformed");
+  }));
+
+/**
+ * Adversarial counterexamples for `agy`: unverified tool outputs (non-string arrays, non-run_command tools, or
+ * unfamiliar run_command wrappers), bare ACTIVE calls, tool-name mismatches, conflicting terminal updates in
+ * either order, cross-file step reuse, and stopped/errored streams without a subsequent `agent_response` `DONE`
+ * must never earn coverage. Identical terminal replays stay valid, and standalone-line packet framing must reject
+ * prefixed/suffixed marker substrings while flagging lone closing markers.
+ */
+Deno.test("agy rejects unverified telemetry, conflicting updates, stopped streams, and unanchored markers", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`, second = `${root}/log2`;
+    const full = packet(item, 1, 3);
+    const [init, active, done, response, footer] = logRows("agy", full, { step: 3 });
+    const doneWith = (overrides: ObjectValue, infoOverrides: ObjectValue = {}) => {
+      const su = object(done.step_update);
+      return {
+        ...done,
+        step_update: {
+          ...su,
+          ...overrides,
+          tool_info: { ...object(su.tool_info), ...infoOverrides },
+        },
+      };
+    };
+
+    // Non-string array output (e.g. `[{type: "metadata", text: packet}]`) lands in unrecognized and earns nothing.
+    await saveLog(path, [init, active, doneWith({}, { output: [{ type: "metadata", text: full }] }), response, footer]);
+    const arrayOut = await audit("agy", "session", "/repo", [item], [path]);
+    equal([arrayOut.status, arrayOut.unrecognized["result_content:array"]], ["incomplete", 1]);
+
+    // Unverified run_command wrapper (e.g. synthetic in-progress text) or non-run_command string output earns nothing.
+    await saveLog(path, [init, active, doneWith({}, { output: `In progress:\n${full}` }), response, footer]);
+    const badEnv = await audit("agy", "session", "/repo", [item], [path]);
+    equal(badEnv.status, "incomplete");
+    equal(badEnv.unrecognized["agy_envelope:run_command"], 1);
+    equal(badEnv.rejected.map(({ reason }) => reason), ["Unverified agy tool output envelope"]);
+
+    const activeRead = {
+      ...active,
+      step_update: {
+        ...object(active.step_update),
+        tool_name: "read_file",
+        tool_info: { name: "read_file", parameters: { Path: item.path } },
+      },
+    };
+    const doneRead = doneWith({ tool_name: "read_file" }, { name: "read_file", output: full });
+    await saveLog(path, [init, activeRead, doneRead, response, footer]);
+    const readTool = await audit("agy", "session", "/repo", [item], [path]);
+    equal(readTool.status, "incomplete");
+    equal(readTool.rejected.map(({ reason }) => reason), ["Unverified agy tool output (read_file)"]);
+
+    // Bare ACTIVE without tool_info cannot authorize a later DONE.
+    const bareActive = {
+      event: "step_update",
+      step_update: { conversation_id: "session", step_index: 3, state: "ACTIVE", step_type: "tool" },
+    };
+    await saveLog(path, [init, bareActive, done, response, footer]);
+    const bare = await audit("agy", "session", "/repo", [item], [path]);
+    equal([bare.status, bare.unrecognized["step_update:tool:no_info"]], ["incomplete", 1]);
+    equal(bare.rejected.map(({ reason }) => reason), ["No matching tool call in the supplied logs"]);
+
+    // ACTIVE read_file followed by DONE run_command on the same step_index fails tool identity matching.
+    await saveLog(path, [init, activeRead, done, response, footer]);
+    const mismatch = await audit("agy", "session", "/repo", [item], [path]);
+    equal(mismatch.status, "incomplete");
+    equal(mismatch.rejected.map(({ reason }) => reason), ["Tool identity mismatch with call"]);
+
+    // Conflicting terminal updates invalidate each other in BOTH orders; an identical replay stays valid.
+    const emptyDone = doneWith({}, { output: "Command exited with code 0.\n\nNo output from the command." });
+    for (const pair of [[done, emptyDone], [emptyDone, done]]) {
+      await saveLog(path, [init, active, ...pair, response, footer]);
+      const conflict = await audit("agy", "session", "/repo", [item], [path]);
+      equal(conflict.status, "incomplete");
+      equal(conflict.rejected.map(({ reason }) => reason), ["Conflicting terminal updates for step"]);
+    }
+    await saveLog(path, [init, active, done, done, response, footer]);
+    equal((await audit("agy", "session", "/repo", [item], [path])).status, "complete");
+
+    // Cross-file step_index reuse from an earlier turn cannot authorize a terminal without an ACTIVE in its own file.
+    await saveLog(path, [init, active, emptyDone, response, footer]);
+    await saveLog(second, [init, done, response, footer]);
+    const crossFile = await audit("agy", "session", "/repo", [item], [path, second]);
+    equal(crossFile.status, "incomplete");
+    equal(crossFile.rejected.map(({ reason }) => reason), ["No matching tool call in the supplied logs"]);
+
+    // Stopped streams without a subsequent `agent_response` `DONE` never certify delivery.
+    for (
+      const tail of [
+        [],
+        [{ event: "result", result: { conversation_id: "session", status: "ERROR", error: "boom" } }],
+        [{ event: "result", result: "not-an-object" }],
+        [footer],
+      ]
+    ) {
+      await saveLog(path, [init, active, done, ...tail]);
+      const stopped = await audit("agy", "session", "/repo", [item], [path]);
+      equal(stopped.status, "incomplete");
+      equal(stopped.rejected.map(({ reason }) => reason), ["No subsequent model response after tool output"]);
+    }
+
+    // Interrupted turn: read 1 followed by agent_response DONE earns coverage; trailing read 2 before EOF does not.
+    const [, active1, done1, resp1] = logRows("agy", packet(item, 1, 1), { step: 3 });
+    const [, active2, done2] = logRows("agy", packet(item, 2, 3), { step: 5 });
+    await saveLog(path, [init, active1, done1, resp1, active2, done2]);
+    const partial = await audit("agy", "session", "/repo", [item], [path]);
+    equal(partial.sources[0].covered, [[1, 1]]);
+    equal(partial.sources[0].missing, [[2, 3]]);
+    equal(partial.rejected.map(({ reason }) => reason), ["No subsequent model response after tool output"]);
+
+    // Standalone-line framing: prefixed opener / suffixed closer earn nothing; diagnostic opener does not break a
+    // valid packet; lone closer is rejected as clipped.
+    await saveLog(path, logRows("agy", `prefix ${full}_suffix`));
+    equal((await audit("agy", "session", "/repo", [item], [path])).status, "incomplete");
+    await saveLog(path, logRows("agy", `Note about PERSISTENT_REVIEW_READ_V1\n${full}\n`));
+    equal((await audit("agy", "session", "/repo", [item], [path])).status, "complete");
+    await saveLog(path, logRows("agy", `truncated head\nPERSISTENT_REVIEW_END_V1\n`));
+    const loneClose = await audit("agy", "session", "/repo", [item], [path]);
+    equal(loneClose.status, "incomplete");
+    equal(loneClose.rejected.map(({ reason }) => reason), ["Clipped read packet; reread a smaller range"]);
+  }));
+
+/**
+ * Non-tool step updates (`user_input`, `agent_response`, `system_message`, `subagent`) and `SUCCESS` `result`
+ * events are routine `agy` traffic that must be ignored without earning coverage, while unfamiliar step types,
+ * tool states, and non-SUCCESS/malformed `result` payloads degrade to `unrecognized`. Identity checks
+ * (`conversation_id`, per-log `init`) must remain fatal even on skipped records and startup errors.
+ */
+Deno.test("agy lifecycle records, subagents, unfinished calls and identity gates behave consistently", () =>
+  fixture(async (root, item) => {
+    const path = `${root}/log`;
+    const [init, active, done, response, footer] = logRows("agy", packet(item, 1, 1), { step: 3 });
+    const step = (step_index: number, step_type: string, extra: ObjectValue = {}) => ({
+      event: "step_update",
+      step_update: { conversation_id: "session", step_index, state: "DONE", step_type, ...extra },
+    });
+    const denied = {
+      event: "step_update",
+      step_update: {
+        conversation_id: "session",
+        step_index: 6,
+        state: "DONE",
+        step_type: "tool",
+        tool_name: "run_command",
+        tool_info: { name: "run_command", parameters: { CommandLine: "echo hi" } },
+      },
+    };
+    const activeDenied = { ...denied, step_update: { ...denied.step_update, state: "ACTIVE" } };
+    const pendingTool = {
+      event: "step_update",
+      step_update: {
+        conversation_id: "session",
+        step_index: 7,
+        state: "ACTIVE",
+        step_type: "tool",
+        tool_name: "run_command",
+        tool_info: { name: "run_command", parameters: {} },
+      },
+    };
+    const queuedTool = {
+      event: "step_update",
+      step_update: {
+        conversation_id: "session",
+        step_index: 9,
+        state: "QUEUED",
+        step_type: "tool",
+        tool_name: "run_command",
+        tool_info: { name: "run_command", parameters: {} },
+      },
+    };
+    await saveLog(path, [
+      init,
+      step(0, "user_input"),
+      step(1, "agent_response"),
+      active,
+      done,
+      response,
+      step(5, "system_message"),
+      step(5, "subagent", {
+        tool_name: "invoke_subagent",
+        subagent_info: { subagents: [{ conversation_id: "child-session" }], output: packet(item, 2, 3) },
+      }),
+      activeDenied,
+      denied,
+      pendingTool,
+      step(8, "future_step_type", { output: packet(item, 2, 3) }),
+      queuedTool,
+      footer,
+    ]);
+    const report = await audit("agy", "session", "/repo", [item], [path]);
+    equal(report.sources[0].covered, [[1, 1]]);
+    equal(report.sources[0].missing, [[2, 3]]);
+    equal(report.unfinished_calls, 1);
+    equal(Object.keys(report.ignored), [
+      "result:SUCCESS",
+      "step_update:agent_response",
+      "step_update:subagent",
+      "step_update:system_message",
+      "step_update:user_input",
+    ]);
+    equal(report.unrecognized, { "step_update:future_step_type": 1, "tool_state:QUEUED": 1 });
+
+    // Identity failures remain fatal across init, step_update, result, and startup-error records.
+    await saveLog(path, [{ event: "result", result: { conversation_id: "", status: "ERROR" } }]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Session mismatch");
+    await saveLog(path, [init, { event: "result", result: { status: "SUCCESS" } }]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Session mismatch");
+    await saveLog(path, [step(0, "user_input"), init]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Missing agy init");
+    await saveLog(path, [
+      init,
+      { event: "step_update", step_update: { step_index: 0, state: "DONE", step_type: "user_input" } },
+    ]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Session mismatch");
+    await saveLog(path, [
+      init,
+      active,
+      done,
+      response,
+      { event: "result", result: { conversation_id: "other", status: "SUCCESS" } },
+    ]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Session mismatch");
+    await saveLog(path, [init, { ...init, init: { model: "gemini-4-neon", cwd: "/other" } }]);
+    await fails(() => audit("agy", "session", "/repo", [item], [path]), "Session/cwd mismatch");
   }));

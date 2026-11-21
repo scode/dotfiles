@@ -57,6 +57,17 @@ exit $s
 Take the command lines themselves from the harness file, not from this sketch. Later turns resume with the recorded
 thread ID and audit the same rollout, which resumes append to.
 
+For `agy`, place the entire run directory — including findings, progress, and event files that reviewers write — outside
+`~/.gemini/antigravity-cli/brain/` (for example under `mktemp -d`), because `agy`'s file tools refuse writes inside
+another conversation's brain directory. Take the launch, resume, `conversation_id`, and `result.response` extraction
+commands from `harness/agy.md` (use the canonical working directory `pwd -P` on every turn, validate the prompt file
+before launching, write extracted files atomically, and preserve the first accepted `conversation_id` from `init` even
+on an interrupted turn so the handle is recoverable without accepting the turn as successful). On later turns, pass the
+recorded `conversation_id` and every completed turn's stream file in order to `evidence audit agy`. If `agy` exits
+nonzero, still run the audit when an ID was captured and exit with `agy`'s status; if `agy` exits 0 but extracting the
+ID, validating a matching `SUCCESS` result footer, or running `evidence audit` fails, exit nonzero rather than masking
+post-processing failure as a clean turn.
+
 ## Queue a turn
 
 ```text
@@ -106,5 +117,10 @@ chronological notes.
 
 An exit of `lost` means nothing of the turn's process group is left and it recorded no exit status, or it never started
 within 30 seconds of being launched. Treat it as a failed turn, not an empty one. Before resuming that reviewer, confirm
-that its session is not still being written (for Codex, that the rollout has stopped growing), since a process that left
-the turn's group could still be running it.
+that its session is not still being written (for Codex, that the rollout has stopped growing; for Claude, that the
+turn's stream file has stopped growing), since a process that left the turn's group could still be running it. On `agy`,
+a quiet stream file is not sufficient on its own because tool commands run in separate sessions and process groups that
+can outlive the wrapper or `agy` and still append to the findings log; confirm `agy` and any detached tool writers for
+that run have exited and reconcile `evidence events` from the last audited offset (rather than trusting a frozen
+`findings_end_line`) before resuming, or retain findings and stop the group incomplete if quiescence cannot be
+established.

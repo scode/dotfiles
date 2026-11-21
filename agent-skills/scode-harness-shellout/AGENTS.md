@@ -62,6 +62,11 @@ table, the external mechanism rule, or the list of caller-supplied inputs change
 - An agy `--conversation <id>` resume that exits 0 while stderr prints `warning: conversation "<id>" not found` and the
   returned `conversation_id` differs from `<id>`. Expected: a fresh session, not a resume; report it to the caller as
   such.
+- How to inspect delivered tool results from an `agy -p --output-format stream-json` run. Expected: retain every turn's
+  stream separately; match `init`'s `conversation_id` and `init.cwd`; pair `step_type: "tool"` `ACTIVE` and terminal
+  updates by `step_index` and tool identity; require a subsequent `agent_response` `DONE` to establish model delivery;
+  parse `run_command`'s wrapper before `Command output:\n` for exit/signal status and the 10,240-byte middle-truncation
+  notice; do not treat `read_file`'s size summary or `step_type: "subagent"` as delivered file text.
 - "What does loading this skill make the session do?" Expected: nothing; it is inert until a caller supplies the inputs
   listed in `SKILL.md`.
 

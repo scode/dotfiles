@@ -6,14 +6,15 @@ generated inputs, prompts, results and transcripts in private scratch space. Pro
 
 ## Real reviewer exercises
 
-Exercise both Codex and Claude, with concurrent independent functional groups. Name the reviewer model and effort,
-charter, mandatory scope and result destination. Use stable text whose required ranges are easy to identify. A large
-numbered sequence with a consistency charter works without needing planted defects or a finding quota.
+Exercise Codex, Claude, and Antigravity (`agy`), with concurrent independent functional groups. Name the reviewer model
+and effort, charter, mandatory scope and result destination. Use stable text whose required ranges are easy to identify.
+A large numbered sequence with a consistency charter works without needing planted defects or a finding quota.
 
-Constrain one first-turn helper packet with a deliberately small output allowance to trigger clipping. Let the reviewer
-return before it has consumed the whole group. Subsequent turns can repair through smaller packets. Preserve every
-turn's evidence. Check that the orchestrator continues while making progress without inventing a deadline or asking for
-a time budget, including when loading the shellout dependency.
+Constrain one first-turn helper packet with a deliberately small output allowance to trigger clipping (on `agy`, whose
+`run_command` cap is fixed at 10,240 bytes, request a ~150-line read of ~100-byte lines on turn 1 so it exceeds that
+cap). Let the reviewer return before it has consumed the whole group. Subsequent turns can repair through smaller
+packets. Preserve every turn's evidence. Check that the orchestrator continues while making progress without inventing a
+deadline or asking for a time budget, including when loading the shellout dependency.
 
 Inspect the outcome independently:
 
@@ -43,10 +44,11 @@ Inspect the outcome independently:
   kept distinct from deduplicated findings? Do cross-group interface questions receive synthesis?
 
 The shellout harness files describe version-specific evidence sources. Probe current local representations before
-crediting them: a Codex raw command event can contain more than its delivered result, and Claude Read can declare
-clipping in structured metadata without a literal marker in its text. Native Read is not automatically credited by the
-narrow helper. Success on one backend does not establish the other's semantics. Keep verified observations separate from
-a child's claims.
+crediting them: a Codex raw command event can contain more than its delivered result, Claude Read can declare clipping
+in structured metadata without a literal marker in its text, and `agy` `run_command` middle-truncates combined output
+above 10,240 bytes while `read_file` emits only a size summary in `stream-json`. Native Read is not automatically
+credited by the narrow helper. Success on one backend does not establish another's semantics. Keep verified observations
+separate from a child's claims.
 
 ## Discovery and failure cases
 
@@ -107,35 +109,42 @@ artifacts, and stale or missing neighboring source. Builds must preserve the old
 concurrent source edit. These checks do not run a real reviewer or establish CentOS compatibility from a successful
 native or Ubuntu test.
 
-Run `deno check` and `deno test -A` on `evidence.ts`. Cover both delivered-result schemas, every Codex tool family seen
-in real rollouts, false raw-stdout coverage, unknown records and blocks, wrong session/cwd, orphan and repeated results,
-unfinished calls, malformed/trailing records, source drift, corrupt and clipped packets, oversized Codex results,
-overlapping ranges, resumed streams, failed tools, empty findings, finding revisions/withdrawals, and log-owner
-identity. Unknown records, blocks and result shapes must never abort the audit or earn coverage, even when they quote
-packets; they must appear in `unrecognized`. Identity and packet-integrity failures must visibly fail without a partial
-success report. Give a cold orchestrator a report whose missing ranges match reads the reviewer claims and whose
-`unrecognized` holds a plausible tool-output kind: it must treat that as a format failure, ask before direct inspection
-with the token-cost warning, and retain findings, rather than requesting the same reads again or calling coverage
-complete.
+Run `deno fmt --check --line-width=120`, `deno check`, and `deno test -A` on `evidence.ts`. Cover all three
+delivered-result schemas (Codex, Claude, and `agy`), every Codex tool family seen in real rollouts, false raw-stdout
+coverage, `agy` PTY CRLF packets, verified `run_command` envelope parsing (including wrapper lookalikes in stdout and
+unverified tool telemetry), tool identity mismatches and conflicting/replayed terminal updates, stopped/errored streams
+without a subsequent `agent_response` `DONE`, middle clipping (including lost-marker clipped `evidence read` calls),
+non-zero/signal exit wrappers, and fresh-session resume mismatches, unknown records and blocks, wrong session/cwd,
+orphan and repeated results, unfinished calls, malformed/trailing records, source drift, corrupt and clipped packets,
+oversized Codex results, overlapping ranges, resumed streams, failed tools, empty findings, finding
+revisions/withdrawals, and log-owner identity. Unknown records, blocks and result shapes must never abort the audit or
+earn coverage, even when they quote packets; they must appear in `unrecognized`. Identity and packet-integrity failures
+must visibly fail without a partial success report. Give a cold orchestrator a report whose missing ranges match reads
+the reviewer claims and whose `unrecognized` holds a plausible tool-output kind: it must treat that as a format failure,
+ask before direct inspection with the token-cost warning, and retain findings, rather than requesting the same reads
+again or calling coverage complete.
 
-Before trusting a parser change, run the audit with a throwaway manifest over the local corpus of real Codex rollouts
-and fresh Claude `-p --verbose` streams that use subagents, ToolSearch and background tasks. Every completed top-level
-transcript should parse, and `unrecognized` should be empty for the shapes already checked; failures should be limited
-to unfinished writes and unverified identity cases.
+Before trusting a parser change, run the audit with a throwaway manifest over the local corpus of real Codex rollouts,
+fresh Claude `-p --verbose` streams that use subagents, ToolSearch and background tasks, and fresh `agy -p
+--output-format stream-json` streams that use subagents, background commands, clipping, non-zero exits, and resumes.
+Every completed top-level transcript should parse, and `unrecognized` should be empty for the shapes already checked;
+failures should be limited to unfinished writes and unverified identity cases.
 
 Include Codex top-level `compacted` records between original calls/results and after completed reads. Coverage must
 survive when original delivery exists; packets found only in compaction summaries or replacement history must not fill
 gaps. Mutated compaction envelopes are skipped like other non-tool records and must not change coverage.
 
-For both backends, mix valid required-source packets with context packets from another manifest. The audit must report
-the latter without certifying them, credit only matched mandatory text, preserve gaps, and avoid loading foreign source
-paths. Fully covered mandatory scope may complete despite extra context. Malformed foreign packets must still fail.
+For all three backends, mix valid required-source packets with context packets from another manifest. The audit must
+report the latter without certifying them, credit only matched mandatory text, preserve gaps, and avoid loading foreign
+source paths. Fully covered mandatory scope may complete despite extra context. Malformed foreign packets must still
+fail.
 
-For both backends, vary JSON key order, additive packet metadata, spacing and digest case while preserving essential
-values. Coverage must remain identical. Fully delivered matching packets above producer line/byte budgets remain valid
-evidence, while `read` still enforces its own budgets. Blank JSONL separators preserve physical references; blank-only
-required logs remain errors. Corrupt text, version mismatches, invalid source bounds and undecodable tool results must
-continue to fail, including after earlier successful coverage.
+For all three backends, vary JSON key order, additive packet metadata, spacing and digest case while preserving
+essential values. Coverage must remain identical. Fully delivered matching packets above producer line/byte budgets
+remain valid evidence (on `agy`, within the verified `run_command` size cap), while `read` still enforces its own
+budgets. Blank JSONL separators preserve physical references; blank-only required logs remain errors. Corrupt text,
+version mismatches, invalid source bounds and undecodable tool results must continue to fail, including after earlier
+successful coverage.
 
 ## Orchestration cost cases
 

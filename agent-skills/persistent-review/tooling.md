@@ -33,58 +33,83 @@ Tell the reviewer to read mandatory text with:
 ```
 
 Reads contain at most 200 lines and 24,000 encoded bytes. Use fewer lines if the helper rejects a range or the harness
-clips the result. Each output packet includes source identity, version, exact text and range between versioned markers.
-The audit compares the delivered text with the retained source; it does not trust the packet's claimed hash or range.
-Surface stdout directly in the model's tool result. Do not JSON-encode it again, summarize it, or hide it in an
-artifact. Native Read, arbitrary shell output, direct prompts, images, and raw command events are not automatically
-credited. They may help investigation, but mandatory text still needs supported packets or an explicitly approved manual
-audit.
+clips the result. On `agy`, `run_command` truncates combined wrapper and output above 10,240 bytes (10 KiB), so tell
+`agy` reviewers in their briefs to size reads by encoded bytes (under about 9,000 bytes — roughly 80 typical lines — per
+call) to avoid clipping. Because `evidence read` splits only on line boundaries, a single required line whose encoded
+packet already exceeds 10,240 bytes cannot be repaired by repeating a one-line read on `agy`; route that range to the
+explicit manual-inspection approval path or report it incomplete. Each output packet includes source identity, version,
+exact text and range between versioned markers. The audit compares the delivered text with the retained source; it does
+not trust the packet's claimed hash or range. Surface stdout directly in the model's tool result. Do not JSON-encode it
+again, summarize it, or hide it in an artifact. Native Read, arbitrary shell output, direct prompts, images, and raw
+command events are not automatically credited. They may help investigation, but mandatory text still needs supported
+packets or an explicitly approved manual audit.
 
 ## Audit completed turns
 
 ```text
 /skill/evidence audit codex THREAD_ID /reviewer/cwd /run/group/manifest.json /run/group/rollout.jsonl
 /skill/evidence audit claude SESSION_ID /reviewer/cwd /run/group/manifest.json /run/group/turn1.jsonl /run/group/turn2.jsonl
+/skill/evidence audit agy CONVERSATION_ID /reviewer/cwd /run/group/manifest.json /run/group/turn1.jsonl /run/group/turn2.jsonl
 ```
 
 Supply the expected reviewer ID and working directory, not values inferred from an arbitrary log. Codex needs the exact
 persisted rollout, including resumes, rather than `--json` command events. Claude needs every completed turn's verbose
-stream in order. Use the dependency's capture and identity mechanics. Do not concatenate overlapping exports or mix
-reviewers. The helper joins calls/results and validates each log's session and cwd before crediting packets.
+stream in order. `agy` needs every completed turn's `--output-format stream-json` stream in order. Use the dependency's
+capture and identity mechanics. Do not concatenate overlapping exports or mix reviewers. The helper joins calls/results
+and validates each log's session and cwd before crediting packets.
 
-NOTE: The audit is built not to break when a harness adds a command, tool, record type or content shape, and both Codex
-and Claude Code add them often. It aborts only when continuing could misattribute identity or certify text that does not
-match the pinned source. Everything else becomes "no credit" plus a report entry, and you decide what it means.
+NOTE: The audit is built not to break when a harness adds a command, tool, record type or content shape, and harnesses
+add them often. It aborts only when continuing could misattribute identity or certify text that does not match the
+pinned source. Everything else becomes "no credit" plus a report entry, and you decide what it means.
 
 Only tool results can earn coverage. On Codex a tool call or result is any `response_item` payload with a string
 `call_id`, whatever its tool family; a result's type ends in `_output`. On Claude they are assistant `tool_use` blocks
-and user `tool_result` blocks. A result earns coverage only when a call with its ID appears earlier in the supplied
-logs. Its text is either a string or the `text` of each block in an array. Other blocks (images, ToolSearch references,
-a renamed text block) and non-array content contribute nothing. One Codex call may have several results, because a
-code-mode `exec` cell that outlives its yield delivers its later output under the original call ID. These
-representations were checked against Codex 0.153.4 through 0.163.0 rollouts and a Claude Code 2.1.308 verbose stream.
-That is not a promise about every version.
+and user `tool_result` blocks. On `agy` they are `event: "step_update"` records with `step_type: "tool"` and a
+non-negative integer `step_index`, where `state: "ACTIVE"` (with `tool_info` and tool name) registers the call within
+that turn file, terminal states (`DONE`, `ERROR`, `FAILED`, `CANCELLED`) must match the call's tool name without
+conflicting updates on the same step, and a subsequent `step_type: "agent_response"` (`state: "DONE"`) later in the same
+stream establishes that the model actually ran after the tool output arrived. A result earns coverage only when a call
+with its ID appears earlier in the supplied logs (or in the same turn file on `agy`). On Codex and Claude, result text
+is a string or the `text` of each block in an array; other blocks (images, ToolSearch references, a renamed text block)
+and non-array content contribute nothing. On `agy`, only a string `tool_info.output` in `run_command`'s verified header
+envelope (`Command exited with code 0.\n\nCommand output:\n...`) can earn coverage; non-string outputs and unfamiliar
+`run_command` envelopes land in `unrecognized`, and other tools' string outputs (such as `read_file`'s size summary)
+never earn coverage. One Codex call may have several results, because a code-mode `exec` cell that outlives its yield
+delivers its later output under the original call ID. These representations were checked against Codex 0.153.4 through
+0.163.0 rollouts, a Claude Code 2.1.308 verbose stream, and `agy` 1.5.14 `stream-json` logs. That is not a promise about
+every version.
 
 Codex persists each tool result in full but sends the model only about 12,000 tokens of it, and when it cuts, the
 rollout text carries no marker. A Codex result over 40,000 bytes therefore earns no coverage. That bound comes from
 local measurement, not documentation: oversized results added only 11-14k input tokens, and packet-bearing results
-stayed under 40k characters. Keep each `evidence read` in its own tool call so its result stays small.
+stayed under 40k characters. On `agy`, `run_command` truncates combined output above 10,240 bytes from the middle and
+prepends `The tool's output was truncated due to being too long.` in `tool_info.output`, and its PTY converts raw LF in
+command stdout to CRLF; clipped packet-bearing or `evidence read` results are rejected without polluting `rejected` with
+unrelated truncated commands, and packet markers match on standalone LF or CRLF lines. Exit status (`Command exited with
+code N.`, `Command was terminated by signal or canceled.`) is parsed only from `run_command`'s header before `Command
+output:\n`, so command stdout cannot impersonate a failure or truncation notice, and non-zero exits or signal
+termination are rejected as tool failures even when `state` is `DONE`. Keep each `evidence read` in its own tool call so
+its result stays small.
 
 The report separates what it could not use, so silence never stands in for a claim:
 
-- `rejected` lists packet-bearing results that earned nothing, with a reason: no matching call, client-authored, larger
-  than Codex reliably delivers, reported failure (including an error flag the helper cannot read), or clipped.
+- `rejected` lists packet-bearing (or clipped `evidence read`) results that earned nothing, with a reason: no matching
+  call, tool identity mismatch, conflicting terminal updates, no subsequent model response after tool output, unverified
+  `agy` tool output envelope, client-authored, larger than Codex reliably delivers, reported failure (including an error
+  flag the helper cannot read), or clipped.
 - `unfinished_calls` counts calls that have no result yet, usually because the turn is still running. Re-audit after the
   turn boundary.
 - `ignored` counts skipped records of kinds known to carry no delivery: Codex lifecycle records, messages, reasoning,
   agent messages, server-side searches and tool definitions (`additional_tools`, seen from 0.166.0); Claude hooks, task
-  notices, turn results, thinking, synthetic user text, and subagent records; image and ToolSearch result blocks. These
+  notices, turn results, thinking, synthetic user text, and subagent records; `agy` user input, streamed agent
+  responses, system messages, subagent launches, and `SUCCESS` turn results; image and ToolSearch result blocks. These
   need no attention.
-- `unrecognized` counts skipped records and result blocks of any other kind. They earn nothing, even when they quote a
-  complete packet. A non-empty `unrecognized` means the harness wrote something this helper has not seen. Judge whether
-  it could hold reads the audit missed: if the missing ranges match reads the reviewer reports making and an
-  `unrecognized` kind plausibly carries tool output, treat it as a format change and take the manual-inspection path
-  below rather than asking for the same reads again. Otherwise trust the report as usual.
+- `unrecognized` counts skipped records and result blocks of any other kind (including non-`SUCCESS` or malformed `agy`
+  `result` records, non-string `agy` tool outputs, and unfamiliar `agy` `run_command` envelopes). They earn nothing,
+  even when they quote a complete packet. A non-empty `unrecognized` means the harness wrote something this helper has
+  not seen. Judge whether it could hold reads the audit missed: if the missing ranges match reads the reviewer reports
+  making and an `unrecognized` kind plausibly carries tool output, treat it as a format change and take the
+  manual-inspection path below rather than asking for the same reads again. Otherwise trust the report as usual.
 
 Identity checks still apply around everything that is skipped. Each Codex log needs exactly one `session_meta` with the
 expected thread ID and cwd before any other record. Rollouts of native Codex subagents cannot be audited, because what
@@ -95,7 +120,16 @@ skipped records. Each Claude log needs a `system/init` with the expected session
 user message. Later inits in the same log, which appear when a finished background task starts another turn, must match
 too. Claude records with a non-null `parent_tool_use_id` belong to a subagent and were delivered to it, not the
 reviewer; the subagent's answer reaches the reviewer as the result of its `Agent` call and is audited like any other
-result.
+result. On `agy`, top-level `conversation_id` when present, every `step_update.conversation_id`, and every `result`
+object's `conversation_id` must name the expected conversation (child IDs nested under `subagent_info` identify
+subagents, not the parent; unknown future event kinds are checked for top-level `conversation_id` only and otherwise
+land in `unrecognized` with zero credit). Each `agy` log needs an `init` event with the expected `conversation_id` and
+`init.cwd` before its first `step_update`; repeated inits must match too. This catches both wrong working directories
+and silent fresh-session resumes when `--conversation` is not found. Use the canonical directory path (`pwd -P`) for
+both launch and resume, since `agy`'s `init.cwd` records the logical launch path. Native Antigravity subagents
+(`invoke_subagent`) cannot be audited as reviewers; run Antigravity reviewers through `agy -p --output-format
+stream-json`. In an `agy` reviewer's stream, `step_type: "subagent"` launches carry no parent tool output and earn no
+coverage.
 
 Codex's top-level `compacted` record is context management. Original call/result evidence before compaction remains
 valid, and neither the summary nor the replacement history can prove delivery of missing text. If original results are
