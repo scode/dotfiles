@@ -61,7 +61,12 @@ parsing, output formats, exit codes, stdin handling, resume, and process layout 
   across the conversation, not per turn (verified with a two-turn resume whose one-word second turn reported the first
   turn's output and thinking tokens plus its own). The last turn's `result.usage` is therefore the run's total, and
   summing across launch and resumes double-counts earlier turns. A single turn's usage is the difference from the
-  previous turn's `result.usage`; individual `agent_response` `step_update` events carry per-step usage.
+  previous turn's `result.usage`; individual `agent_response` `step_update` events carry per-step usage. Read
+  `result.usage` only from `SUCCESS` results whose `conversation_id` matches the recorded session: a startup error emits
+  zero counters with an empty `conversation_id`, and an accidental fresh-session resume emits counters under a new ID.
+  Preserve the last valid snapshot when a turn ends without a footer (and note that the next valid delta spans the gap),
+  and do not sum `total_tokens` with `input_tokens` or `output_tokens` (`total_tokens` already equals `input_tokens +
+  output_tokens`, while `cache_read_tokens` and `thinking_tokens` are reported separately).
 - `--print-timeout` defaults to `0s` (wait until the turn completes); leave it unset so the outer orchestrator owns
   monitoring and deadlines. If set and tripped, `agy` exits 3 with `finished_reason: "print_timeout"` and partial or
   empty output.
@@ -80,8 +85,12 @@ parsing, output formats, exit codes, stdin handling, resume, and process layout 
     -p="$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
   ```
 
-  Record `conversation_id` from the `init` event (`jq -rs '.[0].conversation_id' <result-file>`). Resume with the same
-  flags, tree, and `--conversation <id>`, writing to fresh result and log files so the launch stream is kept:
+  Record `conversation_id` from the `init` event rather than assuming row 0 or slurping the whole stream (`jq -rn
+  'first(inputs | select(.event == "init") | .conversation_id // empty)' <result-file>` — this also recovers the ID from
+  an interrupted stream whose final line was cut off). Read the final response only from a valid `SUCCESS` result
+  matching that `conversation_id`: `jq -r --arg cid "$cid" 'select(.event == "result" and .result.conversation_id ==
+  $cid and .result.status == "SUCCESS") | .result.response' <result-file>`. Resume with the same flags, tree, and
+  `--conversation <id>`, writing to fresh result and log files so the launch stream is kept:
 
   ```sh
   cd <tree> && agy --model <model> --effort <level> --dangerously-skip-permissions --output-format stream-json \
@@ -93,7 +102,9 @@ parsing, output formats, exit codes, stdin handling, resume, and process layout 
   (`.result.response` in `stream-json`, `.response` in `json`). Pass `--model`, `--effort`, and
   `--dangerously-skip-permissions` again on the resume; they are launch options, not session state you can count on. The
   conversation's working directory stays bound to the launch directory even when resumed from a different directory
-  (verified), so keep the launch tree until the delegate is finished and still `cd <tree>` on resume.
+  (verified on 1.5.12), while `init.cwd` in `stream-json` reports the logical launch directory (`PWD`, not `realpath`
+  across symlinks — verified on 1.5.14 with both a separate directory and a symlink alias), so keep the launch tree
+  until the delegate is finished and `cd` to the same canonical path on launch and resume.
 - Fresh-session resume signature: an unknown `--conversation <id>` does not fail. `agy` prints `warning: conversation
   "<id>" not found` to stderr, allocates a new `conversation_id`, runs the prompt as a fresh session, and exits 0
   (verified). After every resume, check stderr for that warning and confirm the returned `conversation_id` matches the
@@ -107,3 +118,47 @@ parsing, output formats, exit codes, stdin handling, resume, and process layout 
 - Foreign-harness monitoring rules in `SKILL.md` apply unchanged: run long delegates in the background, use
   `--output-format stream-json` when a long run needs liveness visibility, and use the hard deadline for the kill
   decision.
+- Scratch directories an `agy` delegate will write to with `write_file` or `edit_file` must live outside
+  `~/.gemini/antigravity-cli/brain/`: on `agy` 1.5.14, those tools reject paths under another conversation's brain
+  directory (`files must be written to the correct artifact directory`). Use a fresh `mktemp -d` instead.
+
+## Inspecting delivered tool results
+
+When the caller needs the tool conversation, retain `--output-format stream-json` stdout for every turn, including
+resumes, in a separate file per turn rather than only the final response. Each turn's stream begins with `event: "init"`
+carrying top-level `conversation_id` and `init.cwd`. Every `event: "step_update"` carries `step_update.conversation_id`
+and a conversation-global `step_index`, and `event: "result"` carries `result.conversation_id`. Confirm every stream's
+`conversation_id` and `init.cwd` match the recorded session and working directory — especially on resumes, where an
+unknown `--conversation <id>` silently allocates a new conversation instead of failing.
+
+Tool calls appear as `event: "step_update"` with `step_type: "tool"` and `state: "ACTIVE"`, paired by `step_index` and
+tool identity within that turn's stream with their terminal update (`state: "DONE"`, `"ERROR"`, `"FAILED"`, or
+`"CANCELLED"`). Inspect `step_update.tool_info.output` and `step_update.tool_info.error`, as well as `state`. Because
+the CLI emits the tool's terminal update before sending that result to the model, a tool result establishes delivery to
+the model only when followed later in that same stream by a completed `step_type: "agent_response"` (`state: "DONE"`):
+an interrupted stream, an `ERROR` result right after the tool step, or a `SUCCESS` result after an auto-denied tool
+(which emits no subsequent `agent_response`) does not establish that the model saw the output.
+
+Antigravity CLI (`agy`) 1.5.14 was checked with small and oversized `run_command` calls, background commands, non-zero
+exits, signal termination, `read_file`, subagents, symlinked directories, and a same-conversation resume:
+
+- `run_command` runs under a PTY (converting raw LF in command stdout to CRLF) and wraps its string `tool_info.output`
+  with optional `Created At:` / `Completed At:` lines, then `Command exited with code <N>.` (or `Command was terminated
+  by signal or canceled.`), then a blank line and `Command output:\n` (or `No output from the command.`). A non-zero
+  exit or signal termination still arrives with `state: "DONE"` and no `tool_info.error`, so failure must be checked in
+  that header before `Command output:\n` (never inside command stdout) as well as `state` and `tool_info.error`.
+- `run_command` truncates combined wrapper and output above 10,240 bytes (10 KiB) from the middle, prepending `The
+  tool's output was truncated due to being too long. You can find the full output in a file at file://...` and inserting
+  a `<truncated N of M bytes from the middle of the output>` marker. Both foreground and background `run_command` steps
+  place this delivered (truncated) text in `step_update.tool_info.output`. The full-output file named in that notice is
+  available for a later read, not evidence that the agent already received its contents.
+- `read_file` puts only a short size summary (such as `27 lines, 2452 bytes`) in `tool_info.output`, not the file text.
+  Do not treat `tool_info.output` from tools without a verified delivered-output format as delivered source.
+- `invoke_subagent` steps appear with `step_type: "subagent"`, not `"tool"`, and subagent tool results do not appear in
+  the parent's `stream-json`.
+
+These observations establish those tool shapes on `agy` 1.5.14, not every tool or CLI version. Inspect actual result
+shapes before trusting other tools or versions as delivered-content evidence. Native subagent conversations
+(`invoke_subagent`) persist `transcript.jsonl` / `transcript_full.jsonl` without embedded session/cwd records or
+call/result pairing IDs; parent-side subagent summaries do not establish what a child received. The stream itself is
+trusted as captured; if the delegate shares write authority with the capture path, isolate the capture path outside it.

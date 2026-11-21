@@ -26,8 +26,8 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   Reviewers and the orchestrator do not reproduce bugs or write reproductions unless the caller explicitly requests that
   work. Existing tests and builds remain allowed; execution is not required to substantiate a finding. Reports
   distinguish source-supported conclusions from behavior observed during execution.
-- Codex and Claude reviewers are supported. Other reviewer backends are reported unsupported without substitution.
-  Installation remains shared across all seven caller harnesses.
+- Codex, Claude, and Antigravity (`agy`) reviewers are supported. Other reviewer backends are reported unsupported
+  without substitution. Installation remains shared across all nine caller harnesses.
 
 ## Stable scope and evidence
 
@@ -46,14 +46,24 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - The bundled Deno helper verifies complete read packets in actual delivered tool results against pinned UTF-8 source
   text, including exact range content and source version. It validates reviewer session/cwd and call/result pairing. It
   emits compact coverage and evidence references without echoing source or reasoning. Codex's persisted delivered
-  results and Claude's verbose stream are supported; raw Codex command stdout is never substituted.
+  results, Claude's verbose stream, and `agy`'s `stream-json` output are supported; raw Codex command stdout is never
+  substituted.
 - The audit must not break when a harness adds a command, tool, record type, or content shape. It aborts only when
   continuing could misattribute identity or certify text that does not match pinned source; everything else degrades to
   no credit plus a report entry. No allowlist of record, tool, family, or block types may decide whether it runs.
 - Only tool results can earn coverage: Codex `response_item` payloads with a string call ID (any family; results end in
-  `_output`) and Claude `tool_use`/`tool_result` blocks. A result needs an earlier call with its ID in the supplied
-  logs; Codex calls may have several results. Result text comes from a string or the text of array blocks. Codex results
-  over 40,000 bytes earn nothing, because Codex delivers about 12,000 tokens without marking the cut.
+  `_output`), Claude `tool_use`/`tool_result` blocks, and `agy` `step_update` `run_command` events paired by
+  `step_index` and tool identity within their turn file (`ACTIVE` to a non-conflicting terminal state, followed by a
+  subsequent `agent_response` `DONE` in that same turn stream). A result needs an earlier call with its ID in the
+  supplied logs; Codex calls may have several results, while conflicting `agy` terminal updates on one step invalidate
+  each other regardless of order. Codex and Claude result text comes from a string or the text of array blocks; `agy`
+  accepts only the verified string `run_command` envelope (separating the exit/signal header from command stdout at
+  `Command output:\n`) and rejects unverified tool outputs or non-string shapes without aborting. Codex results over
+  40,000 bytes earn nothing, because Codex delivers about 12,000 tokens without marking the cut. On `agy`, `run_command`
+  truncates combined output above 10,240 bytes with a wrapper notice before the packet and converts raw LF in command
+  stdout to CRLF; clipped packet-bearing (or `evidence read`) results earn nothing, packets match on standalone LF or
+  CRLF marker lines, and a single required line whose encoded packet already exceeds 10,240 bytes cannot be repaired by
+  re-reading and takes the manual-approval or incomplete path.
 - The report keeps unusable material visible: packet-bearing results that earned nothing in `rejected` with a reason,
   calls without results in `unfinished_calls`, skipped kinds known to carry no delivery in `ignored`, and any other
   skipped kind in `unrecognized`. Skipped records never earn coverage, even when they quote packets, and compaction
@@ -62,7 +72,13 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - Skipping does not weaken identity. Each Codex log has exactly one matching `session_meta` before other records; native
   subagent rollouts fail with a diagnostic that names them as unsupported. Every Claude record that names a session
   names the expected one, and each log has a matching `system/init` before its first message; repeated inits must also
-  match.
+  match. On `agy`, top-level `conversation_id` when present, every `step_update.conversation_id`, and every `result`
+  object's `conversation_id` must name the expected conversation (child IDs nested inside `subagent_info` are subagent
+  identities, not the parent's), and each log has a matching `init` (`conversation_id` and `cwd`) before its first
+  `step_update`; repeated inits must also match, and non-object `result` payloads or non-`SUCCESS` results land in
+  `unrecognized` rather than `ignored`. The audit trusts the captured stream as written; keeping snapshots, manifests,
+  and capture paths outside a reviewer's write authority is an operational boundary when the reviewer is in the threat
+  model.
 - Structurally valid read packets for paths outside the audited manifest are reported explicitly with claimed ranges and
   raw references. They are unverified context and earn no credit, do not load additional sources, and never expand
   mandatory scope. Malformed required fields still fail; missing required ranges remain missing.
@@ -186,8 +202,8 @@ declared dependency; review scope, evidence judgment, persistence, and completio
   the same reviewer session. Otherwise an observable shellout path is considered even if native supports the requested
   model. Explicit mechanism choices are honored; unavailable evidence or continuation is reported rather than silently
   changing the mechanism, model, backend, effort, or promised standard.
-- Before choosing external evidence, the dependency and relevant Codex or Claude harness file are read through the
-  canonical loading contract. Harness files own launch and evidence-access mechanics. Local deviations require
+- Before choosing external evidence, the dependency and relevant Codex, Claude, or `agy` harness file are read through
+  the canonical loading contract. Harness files own launch and evidence-access mechanics. Local deviations require
   verification of the relevant delivery semantics, not assumptions based on a harness name or JSON availability.
 
 ## Productive discovery

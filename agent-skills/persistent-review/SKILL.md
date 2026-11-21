@@ -14,9 +14,9 @@ requires later-turn synthesis. Delivery evidence establishes neither attention n
 saturation. Do not inspect or require hidden chain of thought.
 
 Loading this skill authorizes no launch by itself and creates no session-wide policy. Apply it to the requested review
-only. Codex and Claude are the supported reviewer backends; report other reviewer backends as unsupported. This does not
-restrict which harness may orchestrate the review. Do not import lenses, panels, finding taxonomies, automatic fixes, or
-VCS ranges from another review workflow.
+only. Codex, Claude, and Antigravity (`agy`) are the supported reviewer backends; report other reviewer backends as
+unsupported. This does not restrict which harness may orchestrate the review. Do not import lenses, panels, finding
+taxonomies, automatic fixes, or VCS ranges from another review workflow.
 
 ## Set the review contract
 
@@ -179,13 +179,13 @@ meet this contract, report the limitation instead of silently changing it. If ne
 usable shellout path meets the evidence and continuation requirements, report an incomplete review.
 
 For shellout, load the dependency below. Before choosing an external evidence source, read its relevant harness file:
-`harness/codex.md` for `codex exec`, or `harness/claude.md` for `claude -p`. Those files own launch, capture, transcript
-access, resume, monitoring, and termination mechanics. Use their verified delivery semantics, not an assumed JSON shape
-or the largest available output dump. When the local tools differ, verify the relevant semantics before crediting
-evidence. Do not duplicate launch templates here. Read `tooling.md` and use its `evidence` launcher for normal coverage
-audits and helper failure handling. The helper checks actual delivered read packets against pinned source text and
-returns ranges and evidence references, without pulling code or unrelated transcript content into the orchestrator's
-context.
+`harness/codex.md` for `codex exec`, `harness/claude.md` for `claude -p`, or `harness/agy.md` for `agy -p`. Those files
+own launch, capture, transcript access, resume, monitoring, and termination mechanics. Use their verified delivery
+semantics, not an assumed JSON shape or the largest available output dump. When the local tools differ, verify the
+relevant semantics before crediting evidence. Do not duplicate launch templates here. Read `tooling.md` and use its
+`evidence` launcher for normal coverage audits and helper failure handling. The helper checks actual delivered read
+packets against pinned source text and returns ranges and evidence references, without pulling code or unrelated
+transcript content into the orchestrator's context.
 
 A tool failure is not an empty or successful audit. Report its diagnostic and preserve findings. Retry a known clipped
 read with smaller packets, or an unfinished log after the writer reaches a turn boundary. The audit does not fail on
