@@ -34,21 +34,21 @@ The general rule: never assume a clean slate. If a path was previously installed
 
 Shared agent skills live in `agent-skills/`. When the user asks to view, modify, or discuss a skill, look there — not in
 `~/.claude/skills/`, `~/.codex/skills/`, `~/.config/muse/skills/`, `~/.config/opencode/skills/`,
-`~/.config/goose/skills/`, `~/.pi/agent/skills/`, `~/.omp/agent/skills/`, `~/.qwen/skills/`, or the old
-`payload/dot_claude/skills/` path.
+`~/.config/goose/skills/`, `~/.pi/agent/skills/`, `~/.omp/agent/skills/`, `~/.qwen/skills/`, `~/.gemini/config/skills/`,
+or the old `payload/dot_claude/skills/` path.
 
-Every skill is installed for all eight harnesses (Claude Code, Codex, Muse Code, OpenCode, Goose, Pi, Oh My Pi, Qwen
-Code). When adding, renaming, or removing a skill, update the explicit Claude and Codex entries in `src/main.rs` _and_
-the `SHARED_AGENT_SKILLS` list that drives the Muse, OpenCode, Goose, Pi, omp, and Qwen Code entries; the integration
-test that compares the installed sets will otherwise fail.
+Every skill is installed for all nine harnesses (Claude Code, Codex, Muse Code, OpenCode, Goose, Pi, Oh My Pi, Qwen
+Code, Antigravity). When adding, renaming, or removing a skill, update the explicit Claude and Codex entries in
+`src/main.rs` _and_ the `SHARED_AGENT_SKILLS` list that drives the Muse, OpenCode, Goose, Pi, omp, Qwen Code, and
+Antigravity entries; the integration test that compares the installed sets will otherwise fail.
 
 ## Agent Instructions
 
 Shared installed agent instructions live in `agent-instructions/`. When changing the shared agent instruction blob that
 gets installed as `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.config/opencode/AGENTS.md`,
-`~/.config/goose/AGENTS.md`, `~/.pi/agent/AGENTS.md`, `~/.omp/agent/AGENTS.md`, and `~/.qwen/QWEN.md`, edit
-`agent-instructions/AGENTS.md`, not the old `payload/dot_claude/CLAUDE.md` path. The Goose one is a copy in a managed
-block, not a symlink (see `SPEC.md`), so it changes only when install runs again.
+`~/.config/goose/AGENTS.md`, `~/.pi/agent/AGENTS.md`, `~/.omp/agent/AGENTS.md`, `~/.qwen/QWEN.md`, and
+`~/.gemini/config/AGENTS.md`, edit `agent-instructions/AGENTS.md`, not the old `payload/dot_claude/CLAUDE.md` path. The
+Goose one is a copy in a managed block, not a symlink (see `SPEC.md`), so it changes only when install runs again.
 
 ## Lore
 

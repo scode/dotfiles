@@ -91,10 +91,11 @@ fn add_agent_cleanup_features(g: &mut FeatureGraph, agent_owner: &str, agents_di
 /// Claude and Codex still spell their entries out one by one in
 /// `add_claude_features` and `add_codex_features`, because those sections
 /// interleave migration cleanups for paths earlier installer versions wrote;
-/// the Muse, OpenCode, Goose, Pi, omp, and Qwen Code sections below derive
-/// theirs from this list. A test in `tests/cli_integration.rs` checks that
-/// every harness ends up with the same set, so a skill added to one place and
-/// not the other fails CI rather than installing for some harnesses only.
+/// the Muse, OpenCode, Goose, Pi, omp, Qwen Code, and Antigravity sections
+/// below derive theirs from this list. A test in `tests/cli_integration.rs`
+/// checks that every harness ends up with the same set, so a skill added to
+/// one place and not the other fails CI rather than installing for some
+/// harnesses only.
 const SHARED_AGENT_SKILLS: &[&str] = &[
     "agent-resumeable",
     "farhelm-plan-status",
@@ -242,9 +243,10 @@ fn add_opencode_features(g: &mut FeatureGraph) {
 /// The `#` marker lines read as Markdown headings. That is harmless, since
 /// goose passes the file to the model as plain text.
 ///
-/// NOTE: Goose expands `@path` tokens in these files as file imports, which no
-/// other harness does. The shared blob has none today; one added later would
-/// make goose try to inline whatever that path resolves to.
+/// NOTE: Goose expands `@path` tokens in these files as file imports (and
+/// Antigravity expands `@[label](path)` includes and `@filename` references).
+/// The shared blob has none today; one added later would make Goose try to
+/// inline whatever that path resolves to.
 fn add_goose_features(g: &mut FeatureGraph) {
     g.add(
         "goose-md",
@@ -338,6 +340,47 @@ fn add_qwen_features(g: &mut FeatureGraph) {
     .build();
 
     add_shared_skill_features(g, "qwen", "~/.qwen", "~/.qwen/skills");
+}
+
+/// Antigravity reads personal instructions from `~/.gemini/config/AGENTS.md`
+/// and personal skills from `~/.gemini/config/skills`. Both are Antigravity's
+/// documented personal paths for Antigravity App and Antigravity CLI (`agy`),
+/// and `~/.gemini/config/skills` is also documented for Antigravity IDE —
+/// unlike CLI-only roots (`~/.gemini/antigravity-cli/skills`,
+/// `~/.gemini/skills`) or the legacy IDE root (`~/.gemini/antigravity/skills`).
+/// Antigravity's rules docs do not list `~/.gemini/config/AGENTS.md` for
+/// Antigravity IDE & Extensions (which list `~/.gemini/AGENTS.md`,
+/// `~/.gemini/GEMINI.md`, and `~/.gemini/config/rules/*.md`).
+///
+/// Relative symlinks into this repository work for both the instruction file
+/// and skill directories, including reading sidecar files next to `SKILL.md`
+/// (verified against `agy 1.5.13` in an isolated `HOME`; App and IDE were not
+/// tested directly). Antigravity expands `@[label](path)` includes and
+/// `@filename` references in `AGENTS.md` and caps each rule file at 24,000
+/// bytes after include expansion; `agent-instructions/AGENTS.md` has no `@`
+/// tokens and is well under 24 KB today, but growing it past the cap will
+/// truncate it on load.
+///
+/// Both are gated on `~/.gemini/config` rather than `~/.gemini`. `~/.gemini`
+/// is shared with the separate Gemini CLI and holds runtime state, whereas
+/// Antigravity creates `~/.gemini/config` for its own configuration. Gating on
+/// `~/.gemini` would also fail install on a machine without `config/`, since
+/// neither `ManagedDirectory` nor `PayloadSymlink` creates missing parent
+/// directories.
+fn add_antigravity_features(g: &mut FeatureGraph) {
+    g.add(
+        "antigravity-md",
+        PayloadSymlink::new("agent-instructions/AGENTS.md", "~/.gemini/config/AGENTS.md"),
+    )
+    .condition(PathExists::new("~/.gemini/config"))
+    .build();
+
+    add_shared_skill_features(
+        g,
+        "antigravity",
+        "~/.gemini/config",
+        "~/.gemini/config/skills",
+    );
 }
 
 fn add_zed_features(g: &mut FeatureGraph) {
@@ -1116,6 +1159,7 @@ fn features() -> FeatureGraph {
     add_pi_features(&mut g);
     add_omp_features(&mut g);
     add_qwen_features(&mut g);
+    add_antigravity_features(&mut g);
     add_shell_features(&mut g);
     g
 }
