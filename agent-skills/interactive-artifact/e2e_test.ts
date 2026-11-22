@@ -700,3 +700,75 @@ Deno.test({
     }
   },
 });
+
+/**
+ * Guard against pill choices collapsing into vertical text columns when they contain inline markup.
+ *
+ * A pill styled with `display: inline-flex` turns every text run and inline `<code>` child into its own flex column,
+ * squeezing text into narrow vertical strips and blowing `border-radius: 999px` into an oversized oval. This test
+ * renders a long pill choice with multiple `<code>` elements inside a question list and verifies that it wraps as
+ * normal inline text inside its parent's bounds and still toggles selection when clicked.
+ */
+Deno.test({
+  name: "pill choices with inline code wrap cleanly without column collapse or overflow",
+  ignore: !chrome,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-pill-wrap-" });
+    const pagePath = join(dir, "page.html");
+    await Deno.writeTextFile(
+      pagePath,
+      `<h1>Pill layout check</h1>
+<ol class="questions">
+  <li data-pick="delivery">
+    <span class="q">How should credentials be delivered?</span>
+    <span data-value="cli">One-time cleanup of <code>~/.codex/config.toml</code> plus per-launch <code>-c</code> overrides with the token in an env var (note: raw <code>codex</code> in a shell tab does not receive the override, and an unstamped <code>config.toml</code> bearer stays untouched).</span>
+    <span data-value="short">Short choice</span>
+  </li>
+</ol>`,
+    );
+    const { url, server } = await startServer(pagePath);
+    const browser = await chromium.launch({ executablePath: chrome });
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      await page.goto(url);
+      const pill = page.locator('[data-value="cli"]');
+      await pill.waitFor();
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+
+      const metrics = await pill.evaluate((el) => {
+        const li = el.closest("li")!;
+        const cs = getComputedStyle(el);
+        const pillRect = el.getBoundingClientRect();
+        const liRect = li.getBoundingClientRect();
+        const codes = [...el.querySelectorAll("code")].map((c) => c.getBoundingClientRect());
+        return {
+          display: cs.display,
+          pillWidth: pillRect.width,
+          pillHeight: pillRect.height,
+          liWidth: liRect.width,
+          // Check that the inline <code> spans are not forced into separate tall columns: none should exceed 2 lines.
+          maxCodeHeight: Math.max(...codes.map((r) => r.height)),
+        };
+      });
+      assertEquals(metrics.display, "inline-block");
+      assertEquals(
+        metrics.pillWidth <= metrics.liWidth + 1,
+        true,
+        `pill overflowed parent: ${JSON.stringify(metrics)}`,
+      );
+      // At ~650px width, ~240 chars wraps to 3-5 lines (~80-140px); column collapse produced >350px.
+      assertEquals(metrics.pillHeight < 200, true, `pill collapsed into tall columns: ${JSON.stringify(metrics)}`);
+      assertEquals(metrics.maxCodeHeight < 45, true, `inline code wrapped awkwardly: ${JSON.stringify(metrics)}`);
+
+      await pill.click();
+      assertEquals(await pill.getAttribute("aria-pressed"), "true");
+    } finally {
+      await browser.close();
+      server.kill("SIGTERM");
+      await server.status;
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});

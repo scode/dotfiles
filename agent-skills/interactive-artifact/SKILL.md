@@ -156,8 +156,10 @@ user clicks a choice to select it and clicks it again to clear it. Each picker g
 
 Option cards become selectable cards (`<div class="options" data-pick="backend">` with `<article class="option"
 data-value="sqlite">` children); any other choice element renders as a pill. A question list item with `data-pick` and
-`<span data-value>` choices is the usual way to ask a question with fixed answers. `examples/interactive.html` has
-single, multiple, and text-free pickers, and a draft to try comments and suggestions on.
+`<span data-value>` choices is the usual way to ask a question with fixed answers. Keep pill labels brief — a few words;
+when choices need multi-sentence explanations or tradeoffs, put that prose in the question body above short pills or use
+option cards instead. `examples/interactive.html` has single, multiple, and text-free pickers, and a draft to try
+comments and suggestions on.
 
 ## Presentation patterns
 
