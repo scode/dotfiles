@@ -262,12 +262,12 @@ body {
 
 .ia-page {
   min-width: 0;
-  padding: 4rem 1.5rem 6rem;
+  padding: 4rem 1.5rem 3rem;
 }
 
 @media (max-width: 40rem) {
   .ia-page {
-    padding: 3.5rem 1rem 4rem;
+    padding: 3.5rem 1rem 3rem;
   }
 }
 
@@ -1686,10 +1686,15 @@ ins.ia-ins {
   color: var(--text);
   border-color: var(--border-strong);
 }
+.ia-dock {
+  max-width: 100%;
+}
 .ia-bar {
   display: none;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.4rem;
+  max-width: 100%;
   padding: 0.35rem;
   border-radius: 1.4rem;
   background: var(--surface);
@@ -1712,8 +1717,10 @@ ins.ia-ins {
   }
 }
 .ia-note {
-  width: min(20rem, calc(100vw - 11rem));
-  max-height: 10rem;
+  flex: 1 1 16rem;
+  min-width: min(10rem, 100%);
+  max-width: 100%;
+  max-height: min(10rem, 22vh);
   resize: none;
   border: 0;
   outline: none;
@@ -1727,10 +1734,42 @@ ins.ia-ins {
 .ia-note::placeholder {
   color: var(--muted);
 }
+.ia-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  margin-left: auto;
+}
+.ia-partial {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 550 0.875rem/1.2 var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ia-partial:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ia-partial:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .ia-send {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  max-width: 100%;
   padding: 0.55rem 0.8rem 0.55rem 1rem;
   border: 0;
   border-radius: 999px;
@@ -1755,6 +1794,9 @@ ins.ia-ins {
   font-size: 0.75rem;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.ia-count[hidden] {
+  display: none;
 }
 
 .ia-toast {
@@ -1815,6 +1857,8 @@ ins.ia-ins {
   column-gap: 0.6rem;
   align-items: center;
   max-width: min(24rem, calc(100vw - 2rem));
+  max-height: min(12rem, 30vh);
+  overflow-y: auto;
   padding: 0.65rem 0.9rem;
   border-radius: var(--radius);
   background: var(--surface);

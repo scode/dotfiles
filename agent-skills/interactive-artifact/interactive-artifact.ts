@@ -23,7 +23,7 @@
  *   interactive-artifact wait PAGE.html [--json] [--timeout 0]
  *   interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
  *   interactive-artifact anchor PAGE.html ID --file PATH
- *   interactive-artifact status PAGE.html working|done [--file PATH]
+ *   interactive-artifact status PAGE.html working|ready|done [--file PATH]
  */
 import { parseArgs } from "jsr:@std/cli@1.0.32/parse-args";
 import { serveDir } from "jsr:@std/http@1.1.4/file-server";
@@ -113,15 +113,22 @@ type State = {
   picks: Record<string, Pick>;
   /** Canonical form of each pick at the last submit; a pick whose canonical form differs is pending. */
   picksSent: Record<string, string>;
+  /**
+   * Whether the latest submission was partial (the user is still working through this pass). Server-owned and
+   * persisted so an empty closing submit (Finish) is allowed only while a pass is open, and `wait` preserves
+   * `working` status while background follow-up work runs during the pass.
+   */
+  partialOpen: boolean;
   /** What the agent is doing about the user's latest submission, shown on the page; see applyStatus. */
   status: AgentStatus;
 };
 
 /**
  * The agent's side of the conversation, as the page shows it. After a submit: `sent` until `wait` hands the submission
- * to the agent, then `thinking`. From there the agent either says `working` (it is updating the page) and later starts
- * `wait` again, which shows as `ready`, or says `done` (it is finished with the page; the user goes back to the chat).
- * `message` is an optional line from the agent shown with it.
+ * to the agent, then `thinking`. From there the agent either says `working` (it is handling the submission) and later
+ * returns to `ready` — automatically when `wait` starts after a full submission, or explicitly via `status ready` once
+ * follow-up work from a partial submission finishes — or says `done` (it is finished with the page; the user goes back
+ * to the chat). `message` is an optional line from the agent shown with it.
  */
 type AgentStatus = { state: "idle" | "sent" | "thinking" | "working" | "ready" | "done"; message: string };
 
@@ -140,6 +147,8 @@ type Submission = {
   seq: number;
   page: string;
   at: string;
+  /** True when the user sent an in-progress update and intends to keep going through the page. */
+  partial?: boolean;
   note: string;
   items: SubmissionItem[];
   withdrawn: string[];
@@ -155,6 +164,7 @@ function emptyState(): State {
     annotations: [],
     picks: {},
     picksSent: {},
+    partialOpen: false,
     status: { state: "idle", message: "" },
   };
 }
@@ -254,6 +264,10 @@ export function allocateId(state: State): number {
  * Turn everything pending into one submission and mark it sent, or return null when there is nothing to send.
  * Pending means: an unsent draft, a never-sent suggestion that changes its text, a withdrawal of something the
  * agent has seen, a pick that differs from the last submit, or the note.
+ *
+ * A non-partial submission with nothing new pending is still valid while `state.partialOpen` is true: that is how
+ * the user closes a partial pass when the rest of the page needs no further answers. An empty partial submission is
+ * always refused, and pass-open eligibility comes solely from server-owned `state.partialOpen`.
  */
 export function takeSubmission(
   state: State,
@@ -261,6 +275,7 @@ export function takeSubmission(
   page: string,
   at: Date,
   onPage?: string[],
+  partial = false,
 ): Submission | null {
   const items: SubmissionItem[] = [];
   const withdrawn: string[] = [];
@@ -302,36 +317,55 @@ export function takeSubmission(
   }
 
   note = note.trim();
-  if (!items.length && !withdrawn.length && !picks.some((p) => p.changed) && !note) return null;
+  const hasPending = Boolean(items.length || withdrawn.length || picks.some((p) => p.changed) || note);
+  if (!hasPending && (partial || !state.partialOpen)) return null;
   state.annotations = kept;
   // Only what was reported counts as sent. An answer to a picker that is off the page stays pending, so if the
   // question comes back, the agent still hears the answer instead of seeing it as "unchanged".
   for (const [id, p] of Object.entries(state.picks)) if (!shown || shown.has(id)) state.picksSent[id] = canonPick(p);
   state.note = "";
+  state.partialOpen = partial;
   state.submissions += 1;
   state.rev += 1;
-  return { seq: state.submissions, page, at: at.toISOString(), note, items, withdrawn, picks };
+  return { seq: state.submissions, page, at: at.toISOString(), partial, note, items, withdrawn, picks };
 }
 
 /**
- * Apply a status report from the agent's side. `listening` is what `wait` sends when it starts: the agent is ready for
- * more, which is news only after it has been reading or working (or had said it was done and changed its mind);
- * otherwise, say before anything was submitted, nothing changes. The other states come from `wait` itself (`thinking`)
- * or from the agent (`working`, `done`). Returns whether the shown status changed.
+ * Apply a status report from the agent's side. Returns whether `state` changed (status or `partialOpen`).
+ *
+ * `hasUnread` tells this function whether unconsumed submissions are sitting on disk: while true, every report is a
+ * no-op so `sent` stays visible until `wait` consumes them (`POST status` separately returns 409 for `done` while
+ * unread). `listening` (sent when `wait` starts) flips `sent`, `thinking`, `working`, or `done` to `ready`, except
+ * that `working` stays intact while `state.partialOpen` is true so background work from a partial submission remains
+ * visible. Explicit `ready` clears `working`/`thinking` or updates a `ready` message. `done` clears `partialOpen`.
  */
-export function applyStatus(state: State, report: string, message: string): boolean {
+export function applyStatus(state: State, report: string, message: string, hasUnread: boolean): boolean {
+  if (hasUnread) return false;
   const cur = state.status ?? { state: "idle", message: "" };
   let next: AgentStatus;
+  let clearPartial = false;
   if (report === "listening") {
-    if (!["thinking", "working", "done"].includes(cur.state)) return false;
+    if (cur.state === "working" && state.partialOpen) return false;
+    if (!["sent", "thinking", "working", "done"].includes(cur.state)) return false;
     next = { state: "ready", message: "" };
-  } else if (report === "thinking" || report === "working" || report === "done") {
-    next = { state: report, message };
+  } else if (report === "ready") {
+    if (!["thinking", "working", "ready"].includes(cur.state)) return false;
+    next = { state: "ready", message };
+  } else if (report === "working") {
+    if (cur.state === "done") return false;
+    next = { state: "working", message };
+  } else if (report === "thinking") {
+    if (!["idle", "sent"].includes(cur.state)) return false;
+    next = { state: "thinking", message };
+  } else if (report === "done") {
+    next = { state: "done", message };
+    clearPartial = state.partialOpen;
   } else {
     return false;
   }
-  if (next.state === cur.state && next.message === cur.message) return false;
+  if (next.state === cur.state && next.message === cur.message && !clearPartial) return false;
   state.status = next;
+  if (clearPartial) state.partialOpen = false;
   state.rev += 1;
   return true;
 }
@@ -381,11 +415,16 @@ function collapse(text: string): string {
 }
 
 /**
- * Render a submission as Markdown for the agent to read. Original and replacement text sit in blockquotes
+ * Render one submission's body as Markdown without the batch footer. Original and replacement text sit in blockquotes
  * rather than inline quotes, so text that itself contains quotes or newlines stays unambiguous.
  */
-export function formatSubmission(s: Submission, pagePath: string): string {
-  const out = [`# interactive-artifact submission ${s.seq} (${basename(s.page)}, ${s.at})`, ""];
+function formatSubmissionBody(s: Submission): string {
+  const kind = s.partial ? "partial submission" : "submission";
+  const out = [`# interactive-artifact ${kind} ${s.seq} (${basename(s.page)}, ${s.at})`, ""];
+  const hasDelta = Boolean(s.note || s.items.length || s.withdrawn.length || s.picks.some((p) => p.changed));
+  if (!s.partial && !hasDelta) {
+    out.push("The user finished this pass with no further changes since the last partial submission.", "");
+  }
   if (s.note) out.push("## Note from the user", "", blockquote(s.note), "");
   if (s.picks.length) {
     out.push("## Picks", "");
@@ -409,14 +448,41 @@ export function formatSubmission(s: Submission, pagePath: string): string {
   if (s.withdrawn.length) {
     out.push("## Withdrawn", "", `The user removed these; stop acting on them: ${s.withdrawn.join(", ")}`, "");
   }
+  return out.join("\n").trimEnd();
+}
+
+/**
+ * Render one or more queued submissions as Markdown for the agent. Behavioral instructions and the reply command
+ * appear once at the end of the batch, governed by the last submission, so a `[partial, full]` batch never emits
+ * contradictory instructions.
+ */
+export function formatSubmissions(subs: Submission[], pagePath: string): string {
+  const out = subs.map((s) => formatSubmissionBody(s));
+  const last = subs[subs.length - 1];
+  const footer: string[] = [];
+  if (last?.partial) {
+    footer.push(
+      "Partial submission: the user is still working through this page and will send more. Start follow-up work on " +
+        "what is here, do not assume unanswered questions are skipped or defaulted, and do not mark the page done yet.",
+    );
+  } else if (subs.length > 1 && subs.some((s) => s.partial)) {
+    footer.push(
+      "The last submission in this batch closes the pass; later answers supersede earlier partial submissions.",
+    );
+  }
   // This footer is what agents read at the moment they reply, so it carries the safe form: text in a file written with
   // the agent's file tool, never in the command (see "Content never goes on a command line" in SPEC.md).
   const replyFile = join(dirname(pagePath), "reply.txt");
-  out.push(
+  footer.push(
     `Answer on the page: write the reply to ${replyFile} with your file tool, then run ` +
       `interactive-artifact reply ${pagePath} ID... --file ${replyFile} [--resolve]`,
   );
-  return out.join("\n");
+  return `${out.join("\n\n")}\n\n${footer.join("\n\n")}`;
+}
+
+/** Render a single submission as Markdown. Convenience wrapper around `formatSubmissions`. */
+export function formatSubmission(s: Submission, pagePath: string): string {
+  return formatSubmissions([s], pagePath);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -561,7 +627,7 @@ export function renderPage(
   assets = { css: "", js: "" },
   apiPath = API,
 ): string {
-  if (/^\s*<(!doctype|html|head|body)\b/i.test(fragment)) {
+  if (/^\s*<(!doctype|html|head|body)(?=[\s/>]|$)/i.test(fragment)) {
     throw new Error("page must be a body fragment, not a full HTML document; drop <!doctype>, <html>, <head>, <body>");
   }
   return `<!doctype html>
@@ -753,6 +819,12 @@ async function submissionNumbers(dir: string): Promise<number[]> {
   return out.sort((a, b) => a - b);
 }
 
+/** Submission sequence numbers on disk that `wait` has not yet consumed. */
+async function unconsumedNumbers(dir: string): Promise<number[]> {
+  const consumed = Number((await Deno.readTextFile(join(dir, "consumed")).catch(() => "0")).trim()) || 0;
+  return (await submissionNumbers(dir)).filter((n) => n > consumed);
+}
+
 /**
  * Whether an interactive-artifact process with this pid exists, on Linux where /proc says so; elsewhere this cannot
  * tell and answers false. Checking the command line, not just the pid, keeps a reused pid (common after a reboot, or in
@@ -831,11 +903,20 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
   const key = await importKey(rawKey);
   const state = { ...emptyState(), ...await readJson<State>(join(dir, "state.json")) };
   // A crash between writing a submission and saving the state leaves the counter behind the files on disk; going
-  // from the files keeps a new submission from overwriting one that `wait` has already consumed and would skip.
-  state.submissions = Math.max(state.submissions, ...await submissionNumbers(dir));
+  // from the files keeps a new submission from overwriting one that `wait` has already consumed and would skip,
+  // and recovers `partialOpen` from the newest submission file.
+  const diskNums = await submissionNumbers(dir);
+  const newest = diskNums.length ? diskNums[diskNums.length - 1] : 0;
+  if (newest > state.submissions) {
+    state.submissions = newest;
+    const lastSub = await readJson<Submission>(join(dir, "submissions", `${String(newest).padStart(6, "0")}.json`));
+    if (lastSub) state.partialOpen = lastSub.partial === true;
+  }
   // A status from an earlier server says nothing about this one: a stale "done" would tell the user to leave, and a
-  // stale "working" would never clear.
-  state.status = { state: "idle", message: "" };
+  // stale "working" would never clear. If unread submissions are already queued on disk, start in "sent".
+  state.status = (await unconsumedNumbers(dir)).length
+    ? { state: "sent", message: "" }
+    : { state: "idle", message: "" };
 
   // All file writes go through one chain so a slow write can never land after a newer one. Each caller gets its
   // own write's outcome, while the chain itself swallows failures; otherwise one failed write would reject every
@@ -912,18 +993,24 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
         return [200, { n }];
       }
       case "POST submit": {
+        // Refuse submissions after the agent marked the page done: during the shutdown grace period no `wait` is
+        // listening, so accepting one would strand user input on disk. Starting `wait` again flips `done` to `ready`.
+        if (state.status.state === "done") {
+          return [409, "the agent marked this page done; continue in the chat"];
+        }
         // Work on a copy and adopt it only once the submission is on disk. Marking items sent before the write
         // succeeded would lose them for good if it failed: they would show as sent and never reach the agent.
         const next = structuredClone(state);
+        const partial = body?.partial === true;
         const onPage = Array.isArray(body?.pickers) ? body.pickers.map((v) => str(v, 200)) : undefined;
-        const sub = takeSubmission(next, str(body?.note), pagePath, new Date(), onPage);
+        const sub = takeSubmission(next, str(body?.note), pagePath, new Date(), onPage, partial);
         if (!sub) return [409, "nothing to submit"];
         // Submission before state: if the process dies between the two, the user's words still reach the agent
         // and the worst case is the same items showing as unsent again.
         await enqueue(join(dir, "submissions", `${String(sub.seq).padStart(6, "0")}.json`), JSON.stringify(sub));
         Object.assign(state, next);
         state.status = { state: "sent", message: "" };
-        console.error(`interactive-artifact: submission ${sub.seq} received`);
+        console.error(`interactive-artifact: ${partial ? "partial " : ""}submission ${sub.seq} received`);
         // The submission reached the agent, so this answers success even if saving the state fails; an error here
         // would make the tab keep the note and send it again. The in-memory state is right and the next save
         // writes it.
@@ -943,8 +1030,19 @@ async function serve(pagePath: string, opts: { port: number; ttlMs: number; titl
       }
       case "POST status": {
         const report = str(body?.state, 20);
-        if (!["listening", "thinking", "working", "done"].includes(report)) return [400, `unknown status: ${report}`];
-        if (applyStatus(state, report, str(body?.message, 500))) await persist();
+        if (!["listening", "thinking", "working", "ready", "done"].includes(report)) {
+          return [400, `unknown status: ${report}`];
+        }
+        const unread = await unconsumedNumbers(dir);
+        if (report === "done" && unread.length) {
+          return [
+            409,
+            `${unread.length} unread ${
+              unread.length === 1 ? "submission is" : "submissions are"
+            } waiting; run wait first`,
+          ];
+        }
+        if (applyStatus(state, report, str(body?.message, 500), unread.length > 0)) await persist();
         return [200, { status: state.status }];
       }
       case "POST anchor": {
@@ -1154,16 +1252,13 @@ async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }
   // live server is found, not before the loop, so a `wait` started just ahead of its `serve` still gets it across.
   let reported = false;
   while (true) {
-    const consumed = Number((await Deno.readTextFile(join(dir, "consumed")).catch(() => "0")).trim()) || 0;
-    const fresh = (await submissionNumbers(dir)).filter((n) => n > consumed);
+    const fresh = await unconsumedNumbers(dir);
     if (fresh.length) {
       const subs: Submission[] = [];
       for (const n of fresh) {
         subs.push((await readJson<Submission>(join(dir, "submissions", `${String(n).padStart(6, "0")}.json`)))!);
       }
-      console.log(
-        opts.json ? JSON.stringify(subs, null, 2) : subs.map((s) => formatSubmission(s, pagePath)).join("\n\n"),
-      );
+      console.log(opts.json ? JSON.stringify(subs, null, 2) : formatSubmissions(subs, pagePath));
       await writeAtomic(join(dir, "consumed"), String(fresh[fresh.length - 1]));
       // The agent has the submission now; the page tells the user it is being read.
       await reportStatus(pagePath, "thinking");
@@ -1171,7 +1266,7 @@ async function wait(pagePath: string, opts: { json: boolean; timeoutMs: number }
     }
     if (!(await liveServer(dir))) {
       // The server may have written a last submission between the listing above and this check.
-      if ((await submissionNumbers(dir)).some((n) => n > consumed)) continue;
+      if ((await unconsumedNumbers(dir)).length) continue;
       const starting = Date.now() < graceUntil &&
         !(await Deno.stat(join(dir, "server.json")).then(() => true, () => false));
       if (starting && Date.now() <= deadline) {
@@ -1289,7 +1384,7 @@ const USAGE = `usage:
   interactive-artifact wait PAGE.html [--json] [--timeout 0]
   interactive-artifact reply PAGE.html ID... [--file PATH | --stdin | --text TEXT] [--resolve]
   interactive-artifact anchor PAGE.html ID --file PATH
-  interactive-artifact status PAGE.html working|done [--file PATH]`;
+  interactive-artifact status PAGE.html working|ready|done [--file PATH]`;
 
 /**
  * The command line. `skillDir` is the skill's directory when the caller knows better than `import.meta.url`: the
@@ -1345,7 +1440,7 @@ export async function runCli(skillDir?: URL): Promise<void> {
   } else if (cmd === "wait" && !rest.length) {
     Deno.exit(await wait(pagePath, { json: args.json, timeoutMs: duration("timeout", args.timeout) }));
   } else if (
-    cmd === "status" && rest.length === 1 && ["working", "done"].includes(rest[0]) &&
+    cmd === "status" && rest.length === 1 && ["working", "ready", "done"].includes(rest[0]) &&
     !args.text && !args.stdin && !args.resolve
   ) {
     // The optional message is agent text shown on the page, so it comes from a file like a reply does.
@@ -1443,6 +1538,7 @@ Deno.test("request session capacity never evicts replay protection for an existi
 Deno.test("renderPage wraps fragments and rejects full documents", () => {
   const html = renderPage("<p>hi</p>", "T");
   assertEquals(html.includes('<main class="ia-page">\n<p>hi</p>\n</main>'), true);
+  assertEquals(renderPage("<body-text>ok</body-text>", "T").includes("<body-text>"), true);
   assertThrows(() => renderPage("  <!DOCTYPE html><p>x</p>", "T"));
   assertThrows(() => renderPage("<html><body></body></html>", "T"));
   assertThrows(() => renderPage("<body><p>x</p></body>", "T"));
@@ -1641,13 +1737,13 @@ Deno.test("takeSubmission reports only pickers on the current page when the tab 
 /** The status is all the user sees of the agent between submits, so each step must land where it should. */
 Deno.test("applyStatus: listening means ready only after the agent was busy; reports set state and message", () => {
   const st = emptyState();
-  assertEquals([applyStatus(st, "listening", ""), st.status.state], [false, "idle"]);
-  assertEquals([applyStatus(st, "thinking", ""), st.status.state], [true, "thinking"]);
-  assertEquals([applyStatus(st, "working", "on it"), st.status], [true, { state: "working", message: "on it" }]);
-  assertEquals([applyStatus(st, "listening", ""), st.status.state], [true, "ready"]);
-  assertEquals(applyStatus(st, "listening", ""), false);
-  assertEquals([applyStatus(st, "done", "bye"), st.status.state], [true, "done"]);
-  assertEquals(applyStatus(st, "bogus", ""), false);
+  assertEquals([applyStatus(st, "listening", "", false), st.status.state], [false, "idle"]);
+  assertEquals([applyStatus(st, "thinking", "", false), st.status.state], [true, "thinking"]);
+  assertEquals([applyStatus(st, "working", "on it", false), st.status], [true, { state: "working", message: "on it" }]);
+  assertEquals([applyStatus(st, "listening", "", false), st.status.state], [true, "ready"]);
+  assertEquals(applyStatus(st, "listening", "", false), false);
+  assertEquals([applyStatus(st, "done", "bye", false), st.status.state], [true, "done"]);
+  assertEquals(applyStatus(st, "bogus", "", false), false);
 });
 
 /** Server-side ids are what keep two tabs from minting the same id and overwriting each other's annotation. */
@@ -1680,4 +1776,89 @@ Deno.test("a note alone submits, and the Markdown names every part the agent nee
   }
   assertEquals(md.includes("interactive-artifact reply /d/p.html ID... --file /d/reply.txt"), true);
   assertEquals(md.includes("--stdin"), false);
+});
+
+/**
+ * Partial submit opens a pass so the user can close it later with Finish even when they made no further edits, while
+ * empty partial submits and empty submits on a closed pass are still refused.
+ */
+Deno.test("partial submit: opens pass, allows one empty closing submit with unchanged picks, rejects empty partial", () => {
+  const st = emptyState();
+  const pick = { label: "Backend", multiple: false, values: [{ value: "sqlite", label: "SQLite" }], text: "" };
+  mergeBrowserState(st, { annotations: [], picks: { db: pick }, partialOpen: true });
+  // partialOpen is server-owned; a browser save must never open a pass on its own.
+  assertEquals(st.partialOpen, false);
+  assertEquals(takeSubmission(emptyState(), "", "/p.html", new Date(0), undefined, true), null);
+
+  const p1 = takeSubmission(st, "", "/p.html", new Date(0), ["db"], true)!;
+  assertEquals([p1.partial, st.partialOpen, p1.picks.map((p) => [p.id, p.changed])], [true, true, [["db", true]]]);
+  assertEquals(takeSubmission(st, "", "/p.html", new Date(0), ["db"], true), null);
+
+  const close = takeSubmission(st, "", "/p.html", new Date(0), ["db"], false)!;
+  assertEquals([close.partial, st.partialOpen, close.picks.map((p) => [p.id, p.changed])], [
+    false,
+    false,
+    [["db", false]],
+  ]);
+  assertEquals(takeSubmission(st, "", "/p.html", new Date(0), ["db"], false), null);
+});
+
+/**
+ * Status transitions during a partial pass keep background work visible while `wait` listens, treat reports while
+ * unread submissions sit on disk as no-ops, and clear `partialOpen` on `done`.
+ */
+Deno.test("applyStatus: partial pass preserves working on listening, ignores reports while unread, done clears pass", () => {
+  const st = emptyState();
+  st.partialOpen = true;
+  st.status = { state: "sent", message: "" };
+  assertEquals([applyStatus(st, "working", "stale", true), st.status.state], [false, "sent"]);
+  assertEquals([applyStatus(st, "ready", "stale", true), st.status.state], [false, "sent"]);
+  assertEquals([applyStatus(st, "done", "too soon", true), st.status.state], [false, "sent"]);
+
+  assertEquals([applyStatus(st, "thinking", "", false), st.status.state], [true, "thinking"]);
+  assertEquals([applyStatus(st, "working", "researching Q1", false), st.status], [
+    true,
+    { state: "working", message: "researching Q1" },
+  ]);
+  assertEquals([applyStatus(st, "thinking", "", false), st.status.state], [false, "working"]);
+  assertEquals([applyStatus(st, "listening", "", false), st.status], [
+    false,
+    { state: "working", message: "researching Q1" },
+  ]);
+
+  assertEquals([applyStatus(st, "ready", "Q1 answered", false), st.status], [true, {
+    state: "ready",
+    message: "Q1 answered",
+  }]);
+  assertEquals([applyStatus(st, "done", "all set", false), st.status.state, st.partialOpen], [true, "done", false]);
+  assertEquals([applyStatus(st, "working", "late", false), st.status.state], [false, "done"]);
+  assertEquals([applyStatus(st, "ready", "nope", false), st.status.state], [false, "done"]);
+  assertEquals([applyStatus(st, "listening", "", false), st.status.state], [true, "ready"]);
+});
+
+/** Queued batches emit one footer driven by the last submission so mixed batches never contradict themselves. */
+Deno.test("formatSubmissions: last submission governs the single batch footer and empty close is explained", () => {
+  const st = emptyState();
+  const pick = { label: "Backend", multiple: false, values: [{ value: "sqlite", label: "SQLite" }], text: "" };
+  mergeBrowserState(st, { annotations: [], picks: { db: pick } });
+  const p1 = takeSubmission(st, "start on db", "/d/p.html", new Date(0), ["db"], true)!;
+  const close = takeSubmission(st, "", "/d/p.html", new Date(0), ["db"], false)!;
+
+  const partialOnly = formatSubmissions([p1], "/d/p.html");
+  assertEquals(partialOnly.includes("# interactive-artifact partial submission 1"), true);
+  assertEquals(partialOnly.includes("Partial submission: the user is still working through this page"), true);
+
+  const mixedClose = formatSubmissions([p1, close], "/d/p.html");
+  assertEquals(mixedClose.includes("# interactive-artifact partial submission 1"), true);
+  assertEquals(mixedClose.includes("# interactive-artifact submission 2"), true);
+  assertEquals(mixedClose.includes("finished this pass with no further changes"), true);
+  assertEquals(mixedClose.includes("Partial submission: the user is still working through this page"), false);
+  assertEquals(mixedClose.includes("closes the pass; later answers supersede earlier partial submissions"), true);
+  assertEquals(mixedClose.split("Answer on the page:").length - 1, 1);
+
+  mergeBrowserState(st, { annotations: [ann("c1", { draft: "one more" })] });
+  const p3 = takeSubmission(st, "", "/d/p.html", new Date(0), ["db"], true)!;
+  const reopen = formatSubmissions([close, p3], "/d/p.html");
+  assertEquals(reopen.includes("Partial submission: the user is still working through this page"), true);
+  assertEquals(reopen.split("Answer on the page:").length - 1, 1);
 });

@@ -185,3 +185,25 @@ loaded document.
   file capability, and the port holder can replace the requested resource or read sibling files from the real server.
   Knowing the file capability alone does not authorize API calls or another delivery of the key. The skill's own
   executable shell is inline and never requested this way.
+
+## Submission semantics
+
+- **Submissions are incremental.** Each submit reports only pending deltas (unsent comment drafts, new suggestions,
+  withdrawals of sent annotations, changed picks, and the note) plus non-empty touched picks on the current page marked
+  `unchanged` so the agent still sees the current answer set.
+- **Partial submits open a pass; only the server authorizes an empty close.** A submission with `partial: true` requires
+  pending changes (409 when empty) and sets server-owned `partialOpen: true` in `state.json`. While `partialOpen` is
+  true, a non-partial submission with no new pending changes is accepted to close the pass (still carrying non-empty
+  touched picks as `unchanged`) and resets `partialOpen` to `false`.
+- **The last submission in a `wait` batch governs.** `wait` prints every unconsumed submission in order and emits one
+  batch footer driven by the last submission's `partial` flag, so a queued `[partial, full]` or `[full, partial]` batch
+  never contains contradictory behavioral instructions.
+- **Status during a partial pass and at `done`.** `wait`'s `listening` report preserves `working` while `partialOpen` is
+  true, so background follow-up work stays visible while `wait` stays armed; the agent clears it with `status ready`
+  (message via `--file` only, like `working` and `done`). Status updates while unconsumed submissions wait on disk leave
+  `sent` intact, `status done` refuses with 409 while unread submissions exist, and once the page is `done` `POST
+  submit` refuses with 409 (and the browser disables submit controls) until `wait` flips `done` back to `ready`.
+- **Live updates do not interrupt active text selections.** The browser defers replacing `main.ia-page` and defers
+  redrawing highlight marks while a non-collapsed selection overlaps `main.ia-page` or the selection toolbar is open
+  (and status-only state changes never redraw highlights at all), showing a toast if an edit has been deferred for
+  several seconds by a lingering selection. An unrelated page edit never clears a selection wholly inside the sidebar.

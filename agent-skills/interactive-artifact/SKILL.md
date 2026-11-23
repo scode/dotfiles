@@ -11,7 +11,8 @@ a draft to mark up, a comparison grid, a chart. It is the local alternative to p
 nothing leaves the machine.
 
 On every page the user can select text to comment on it, suggest a replacement, or copy it as Markdown; answer any
-pickers you put on the page; and write a note. Submit sends all of it to you at once. You reply to comments and
+pickers you put on the page; and write a note. Submit sends all of it to you at once, and Send partial lets the user
+send what they have so far so you can start follow-up work while they keep reading. You reply to comments and
 suggestions on the page and edit the page itself; the open tab follows along.
 
 ## Running a page
@@ -35,9 +36,10 @@ skill's `bin/` directory to go back to running from source.
    the token gets a 404. Only one server runs per page; `serve` refuses to start a second one while the first is alive,
    so keep using the first (or stop it before starting another).
 4. Start `interactive-artifact wait <dir>/page.html` in the background the same way. It exits when the user submits,
-   printing the submission as Markdown. Handle it (see below), and only then start `wait` again: starting it is what
-   tells the page you are ready for the next submission, so starting it early would say so while you are still working.
-   Run only one `wait` per page at a time.
+   printing the submission as Markdown. For a full submission, handle it and only then start `wait` again (starting
+   `wait` flips the page to ready). For a partial submission, move slow follow-up work to the background and start
+   `wait` again right away so you stay responsive; while a partial pass is open, `wait` preserves `status working` (see
+   "Partial submissions" below). Run only one `wait` per page at a time.
 5. To change the page, edit the file. The open tab updates by itself within about a second and keeps everything the user
    has entered, so never restart the server for an edit.
 6. When you are finished with the page, say so first (`status ... done`, below), wait about five seconds, then stop
@@ -76,23 +78,59 @@ encrypted with browser crypto that browsers offer only on `127.0.0.1` and `local
 ## Handling a submission
 
 The page tells the user what your side is doing, in a box at the bottom right. Right after they submit it says the
-submission is waiting for you; once `wait` hands it to you, it says you are reading it. Then decide, and say which:
+submission is waiting for you; once `wait` hands it to you, it says you are reading it.
+
+A submission is either a **full submission** (`# interactive-artifact submission N`, the user finished this pass) or a
+**partial submission** (`# interactive-artifact partial submission N`, the user sent what they have so far and is still
+working through the page). When `wait` returns several queued submissions at once, the last one in the batch governs.
+
+### Partial submissions
+
+When the latest submission is partial, the user wants you to get started on what arrived while they keep going through
+the rest of the page:
+
+- **Do not finish the page.** Never run `status done` on a partial submission.
+- **Do not treat unanswered questions as skipped or defaulted.** Untouched pickers simply have not been reached yet.
+- **Stay responsive for the next submission.** Start follow-up work on what arrived, and move anything slower than a few
+  seconds into the background (subagents, background commands) so you can start `wait` again right away. Submissions
+  always queue on disk even while you are busy, so nothing is lost if a short synchronous step overlaps, but re-arming
+  `wait` promptly is what lets you pick up the next partial or pass-closing submission without making the user wait.
+- **Keep the page steady while they read.** Prefer `reply` (which updates sidebar cards without touching the page text)
+  and background work over rewriting `page.html` mid-pass. Hold major page edits for the pass-closing submission unless
+  the user specifically asked for an in-place change.
+- **Use `status working` and `status ready` to report progress.** While a partial pass is open, starting `wait` leaves
+  `status working` intact so you can stay responsive without wiping your progress line. Keep updating `status working`
+  as steps move along, and run `interactive-artifact status <dir>/page.html ready` (optionally with
+  `--file <dir>/status.txt`) from the main session only once all follow-up work across received submissions has finished
+  — never from individual background jobs. If you answered a partial quickly without calling `status working`, starting
+  `wait` flips the box to ready on its own.
+- **Reconcile later answers.** A later pick supersedes an earlier one; cancel or redo in-flight work started for an
+  answer the user changed. A withdrawal may mean undoing work you already started; ask on the page or in chat if that is
+  unclear.
+
+### Full submissions
+
+When the latest submission closes the pass (including an empty Finish submission after earlier partials, which still
+includes every non-empty picker answer on the current page; cleared pickers were already reported when they changed),
+decide and say which:
 
 - **You will produce another version of the page.** Run `interactive-artifact status <dir>/page.html working` as soon as
   you decide; the page says you are working on the submission. Do whatever the submission needs (which may be a lot of
   work before the page itself changes), edit the page, reply on the page as below, then start `wait` again. Starting
-  `wait` tells the page you are ready for the next submission.
+  `wait` after a full submission tells the page you are ready for the next submission.
 - **You are done with the page**, and the user should go back to the chat. Run `interactive-artifact status
-  <dir>/page.html done` and continue in the conversation; the page tells the user to do the same. Then stop `wait` and
-  the server, but give the page about five seconds first: it checks for news once a second, and a page that sees the
-  server stop before it saw your "done" shows a warning instead of a calm "this page is finished".
+  <dir>/page.html done` and continue in the conversation; the page tells the user to do the same. (`status done` refuses
+  while unread submissions are waiting on disk; run `wait` first if that happens.) Then stop `wait` and the server, but
+  give the page about five seconds first: it checks for news once a second, and a page that sees the server stop before
+  it saw your "done" shows a warning instead of a calm "this page is finished".
 
-Either can carry a short line for the user (500 characters at most): write it to `<dir>/status.txt` with your file tool
-and pass `--file <dir>/status.txt`. With `working`, always include one when the work takes more than a moment, saying
-what you are actually doing, such as "Running the benchmarks you asked for, then updating the page". Otherwise the user
-sees only that you are busy and wonders why updating a page takes so long. Run `status working` again with a new line as
-the work moves from one step to the next. With `done`, say where things stand, such as "Going with option A; details in
-the chat".
+`working`, `ready`, and `done` can each carry a short line for the user (500 characters at most): write it to
+`<dir>/status.txt` with your file tool and pass `--file <dir>/status.txt`. With `working`, always include one when the
+work takes more than a moment, saying what you are actually doing, such as "Running the benchmarks you asked for, then
+updating the page". Otherwise the user sees only that you are busy and wonders why updating a page takes so long. Run
+`status working` again with a new line as the work moves from one step to the next. With `ready`, include a line when
+you want a short summary of finished background work to stay visible until the next submission (a bare `ready` fades
+after ten seconds). With `done`, say where things stand, such as "Going with option A; details in the chat".
 
 A submission lists, in this order: the user's note, the current answer of every picker on the current page they have
 touched (flagged `changed` or `unchanged` since their last submission), each new comment or suggestion with the text it

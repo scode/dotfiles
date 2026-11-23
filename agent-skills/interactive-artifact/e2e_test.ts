@@ -40,7 +40,18 @@ const testApiUrls = new WeakMap<CryptoKey, string>();
 
 /** The message key and matching API capability from server.json, the same way `reply` gets them. */
 async function testKey(stateDir: string): Promise<CryptoKey> {
-  const { key, apiUrl } = JSON.parse(await Deno.readTextFile(join(stateDir, "server.json")));
+  // `serve` prints its URL just before the first async heartbeat writes `server.json`, so retry briefly on startup.
+  let text = "";
+  for (let i = 0; i < 40; i++) {
+    try {
+      text = await Deno.readTextFile(join(stateDir, "server.json"));
+      break;
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound) || i === 39) throw e;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+  const { key, apiUrl } = JSON.parse(text);
   const raw = Uint8Array.from(atob(key), (c) => c.charCodeAt(0));
   const imported = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
   testApiUrls.set(imported, apiUrl);
@@ -700,7 +711,6 @@ Deno.test({
     }
   },
 });
-
 /**
  * Guard against pill choices collapsing into vertical text columns when they contain inline markup.
  *
@@ -764,6 +774,273 @@ Deno.test({
 
       await pill.click();
       assertEquals(await pill.getAttribute("aria-pressed"), "true");
+    } finally {
+      await browser.close();
+      server.kill("SIGTERM");
+      await server.status;
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
+/**
+ * Partial submit core flow: Ctrl+Shift+Enter sends a partial without firing Submit, the dock stays open with Finish,
+ * `wait` preserves `working` while the pass is open, `status ready --file` keeps its message visible past 10s,
+ * unread submissions block `status done` (while leaving `working` a non-fatal no-op), Ctrl+Enter on a focused picker
+ * finishes without toggling it, `done` blocks further submits until `wait` reopens, and restart recovers `partialOpen`.
+ */
+Deno.test({
+  name: "partial submit: shortcuts, dock/Finish flow, status guards, and restart recovery",
+  ignore: !chrome,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-partial-" });
+    const pagePath = join(dir, "page.html");
+    await Deno.copyFile(EXAMPLE, pagePath);
+    let { url, server } = await startServer(pagePath);
+    const browser = await chromium.launch({ executablePath: chrome });
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(url);
+      await page.locator('[data-value="sqlite"]').waitFor({ timeout: 5000 });
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+
+      const statePath = join(dir, ".interactive-artifact", "page.html");
+      let key = await testKey(statePath);
+      const pill = page.locator(".ia-agent");
+      const partialBtn = page.locator(".ia-partial");
+      const sendBtn = page.locator(".ia-send");
+
+      // Pick a choice and trigger partial submit via Ctrl+Shift+Enter from inside its textarea.
+      const sqlite = page.locator('[data-value="sqlite"]');
+      await sqlite.locator("h3").click();
+      const pickNote = page.locator('[data-pick="backend"] .ia-pick-text');
+      await pickNote.fill("investigate WAL sizing");
+      await pickNote.press("Control+Shift+Enter");
+
+      await pill.filter({ hasText: "Waiting for the agent" }).waitFor();
+      await page.locator(".ia-dock.open").waitFor();
+      assertEquals(await partialBtn.isDisabled(), true);
+      assertEquals(await sendBtn.isDisabled(), false);
+      assertEquals(await page.textContent(".ia-send-label"), "Finish");
+      assertEquals(await page.locator(".ia-count").isVisible(), false);
+
+      // While submission 1 is unread: `status done` refuses (exit 1), while `status working` is a silent no-op so
+      // ongoing agent progress updates do not fail when a new partial arrives.
+      assertEquals((await cli("status", pagePath, "done")).code, 1);
+      assertEquals((await cli("status", pagePath, "working")).code, 0);
+      assertEquals((await testCall(url, key, "GET", "state")).data.status, { state: "sent", message: "" });
+
+      const sub1 = await cli("wait", pagePath, "--timeout", "5s");
+      assertEquals(sub1.code, 0);
+      assertStringIncludes(sub1.out, "# interactive-artifact partial submission 1");
+      assertStringIncludes(sub1.out, "Partial submission: the user is still working through this page");
+      assertStringIncludes(sub1.out, "investigate WAL sizing");
+
+      // Report `working` with a file message, then re-arm `wait`: while partialOpen is true, `wait` preserves `working`.
+      const statusFile = join(dir, "status.txt");
+      await Deno.writeTextFile(statusFile, "Checking WAL overhead in background\n");
+      assertEquals((await cli("status", pagePath, "working", "--file", statusFile)).code, 0);
+      await pill.filter({ hasText: "Working on what you sent" }).filter({ hasText: "Checking WAL overhead" }).waitFor();
+      assertEquals((await cli("wait", pagePath, "--timeout", "1s")).code, 3);
+      assertEquals((await testCall(url, key, "GET", "state")).data.status, {
+        state: "working",
+        message: "Checking WAL overhead in background",
+      });
+
+      // Explicit `status ready --file` transitions working -> ready and stays visible past the 10s bare-ready timer.
+      await Deno.writeTextFile(statusFile, "WAL overhead is negligible.\n");
+      assertEquals((await cli("status", pagePath, "ready", "--file", statusFile)).code, 0);
+      await pill.filter({ hasText: "The agent caught up" }).filter({ hasText: "WAL overhead is negligible." })
+        .waitFor();
+      await page.waitForTimeout(10_500);
+      assertEquals(await pill.isVisible(), true);
+
+      // Pressing Ctrl+Enter while a picker choice is focused finishes the pass WITHOUT toggling that choice.
+      await sqlite.focus();
+      await sqlite.press("Control+Enter");
+      await page.locator(".ia-dock:not(.open)").waitFor();
+      assertEquals(await sqlite.getAttribute("aria-pressed"), "true");
+      const sub2 = await cli("wait", pagePath, "--timeout", "5s");
+      assertEquals(sub2.code, 0);
+      assertStringIncludes(sub2.out, "# interactive-artifact submission 2");
+      assertStringIncludes(sub2.out, "finished this pass with no further changes");
+      assertStringIncludes(sub2.out, "Queue backend (`backend`, unchanged): SQLite queue");
+      assertEquals(sub2.out.includes("Partial submission: the user is still working"), false);
+
+      // `done` closes any open pass and blocks further submits until `wait` flips `done` back to `ready`.
+      assertEquals((await cli("status", pagePath, "done")).code, 0);
+      await pill.filter({ hasText: "done with this page" }).waitFor();
+      assertEquals((await testCall(url, key, "POST", "submit", { note: "too late", partial: false })).status, 409);
+      assertEquals((await cli("wait", pagePath, "--timeout", "1s")).code, 3);
+
+      // Restart recovery: if `submissions/` is ahead of `state.json`, restart recovers `partialOpen` and `sent`.
+      const preSubmitState = await Deno.readTextFile(join(statePath, "state.json"));
+      assertEquals((await testCall(url, key, "POST", "submit", { note: "reopened", partial: true })).status, 200);
+      await Deno.writeTextFile(join(statePath, "state.json"), preSubmitState);
+      server.kill("SIGTERM");
+      await server.status;
+      ({ url, server } = await startServer(pagePath));
+      key = await testKey(statePath);
+      const recovered = (await testCall(url, key, "GET", "state")).data;
+      assertEquals(recovered.submissions, 3);
+      assertEquals(recovered.partialOpen, true);
+      assertEquals(recovered.status, { state: "sent", message: "" });
+
+      assertEquals(errors, []);
+    } finally {
+      await browser.close();
+      try {
+        server.kill("SIGTERM");
+      } catch {
+        // exited
+      }
+      await server.status;
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
+/**
+ * Live updates during an open pass must not wipe active text selections: status polls never unwrap highlights,
+ * mark-changing replies and live page edits defer until selection clears (with a toast if held back), and unrelated
+ * page edits leave sidebar selections intact.
+ */
+Deno.test({
+  name: "partial submit: live edits and status polls preserve active text selections",
+  ignore: !chrome,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-sel-" });
+    const pagePath = join(dir, "page.html");
+    await Deno.copyFile(EXAMPLE, pagePath);
+    const { url, server } = await startServer(pagePath);
+    const browser = await chromium.launch({ executablePath: chrome });
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(url);
+      await page.locator('[data-value="sqlite"]').waitFor({ timeout: 5000 });
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+
+      // Create and send a comment so we have a highlight and sidebar card to test against.
+      await select(page, "a Redis outage no longer stops job processing");
+      await page.click(".ia-toolbar button:has-text('Comment')");
+      await page.keyboard.type("checking highlight stability");
+      const commentId = (await page.locator(".ia-card.comment").getAttribute("data-id"))!;
+      await page.click(".ia-partial");
+      await page.locator(".ia-agent", { hasText: "Waiting for the agent" }).waitFor();
+      assertEquals((await cli("wait", pagePath, "--timeout", "5s")).code, 0);
+
+      // Active selection inside an existing highlight survives both a status poll and a mark-removing `reply --resolve`,
+      // deferring mark removal until the selection clears.
+      await select(page, "stops job processing");
+      const statusFile = join(dir, "status.txt");
+      await Deno.writeTextFile(statusFile, "Still watching\n");
+      const sawStatus = page.waitForResponse((r) => r.url().endsWith("/state"));
+      assertEquals((await cli("status", pagePath, "working", "--file", statusFile)).code, 0);
+      await sawStatus;
+      const sawResolve = page.waitForResponse((r) => r.url().endsWith("/state"));
+      assertEquals((await cli("reply", pagePath, commentId, "--text", "resolved mid-selection", "--resolve")).code, 0);
+      await sawResolve;
+      assertEquals(await page.locator(`mark.ia-anchor[data-ann="${commentId}"]`).count() > 0, true);
+      assertEquals(await page.evaluate(() => !getSelection()!.isCollapsed), true);
+
+      // A live page edit also defers while the selection stays active, shows a toast after ~4s, and applies once cleared.
+      await Deno.writeTextFile(pagePath, (await Deno.readTextFile(pagePath)) + "<p>Deferred edit marker.</p>");
+      await page.locator(".ia-toast", { hasText: "updated the page" }).waitFor({ timeout: 8000 });
+      assertEquals(await page.locator(".ia-page", { hasText: "Deferred edit marker." }).count(), 0);
+      await page.evaluate(() => getSelection()!.removeAllRanges());
+      await page.locator(".ia-page", { hasText: "Deferred edit marker." }).waitFor({ timeout: 5000 });
+      await page.waitForFunction(
+        (id) => document.querySelectorAll(`mark.ia-anchor[data-ann="${id}"]`).length === 0,
+        commentId,
+      );
+
+      // A selection wholly inside a sidebar message survives an unrelated live page edit.
+      const sidebarSelText = await page.evaluate(() => {
+        const msgP = document.querySelector(".ia-card .ia-msg p")!;
+        const r = document.createRange();
+        r.setStart(msgP.firstChild!, 0);
+        r.setEnd(msgP.firstChild!, msgP.firstChild!.textContent!.length);
+        getSelection()!.removeAllRanges();
+        getSelection()!.addRange(r);
+        return getSelection()!.toString();
+      });
+      await Deno.writeTextFile(pagePath, (await Deno.readTextFile(pagePath)) + "<p>Sidebar-safe edit.</p>");
+      await page.locator(".ia-page", { hasText: "Sidebar-safe edit." }).waitFor({ timeout: 5000 });
+      assertEquals(await page.evaluate(() => getSelection()!.toString()), sidebarSelText);
+
+      assertEquals(errors, []);
+    } finally {
+      await browser.close();
+      server.kill("SIGTERM");
+      await server.status;
+      await Deno.remove(dir, { recursive: true });
+    }
+  },
+});
+
+/**
+ * Adding Send partial widens the dock; on narrow viewports both buttons must stay inside the viewport and the bottom
+ * controls must scroll clear of the stacked fixed corner.
+ */
+Deno.test({
+  name: "partial submit: narrow viewport keeps dock buttons and bottom page controls reachable",
+  ignore: !chrome,
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const dir = await Deno.makeTempDir({ prefix: "interactive-artifact-narrow-" });
+    const pagePath = join(dir, "page.html");
+    await Deno.copyFile(EXAMPLE, pagePath);
+    const { url, server } = await startServer(pagePath);
+    const browser = await chromium.launch({ executablePath: chrome });
+    try {
+      const ctx = await browser.newContext({ viewport: { width: 380, height: 700 } });
+      const page = await ctx.newPage();
+      await page.goto(url);
+      await page.locator('[data-value="sqlite"]').waitFor({ timeout: 5000 });
+      await page.locator(".ia-reconnecting").waitFor({ state: "hidden" });
+
+      await page.locator('[data-value="sqlite"] h3').click();
+      await page.click(".ia-partial");
+      await page.locator(".ia-dock.open").waitFor();
+      assertEquals((await cli("wait", pagePath, "--timeout", "5s")).code, 0);
+      const statusFile = join(dir, "status.txt");
+      await Deno.writeTextFile(statusFile, "Checked WAL overhead; replied with p99 numbers and migration notes.\n");
+      assertEquals((await cli("status", pagePath, "ready", "--file", statusFile)).code, 0);
+      await page.locator(".ia-agent", { hasText: "The agent caught up" }).waitFor();
+      await page.waitForTimeout(200);
+
+      await page.evaluate(() => globalThis.scrollTo(0, document.documentElement.scrollHeight));
+      const layoutOk = await page.evaluate(() => {
+        const bar = document.querySelector(".ia-bar")!.getBoundingClientRect();
+        const p = document.querySelector(".ia-partial")!.getBoundingClientRect();
+        const s = document.querySelector(".ia-send")!.getBoundingClientRect();
+        const topAtSend = !!document.elementFromPoint(s.x + s.width / 2, s.y + s.height / 2)?.closest(".ia-send");
+        const controls = [...document.querySelectorAll(".ia-page [data-value], .ia-page .ia-pick-text")];
+        const lastEl = controls[controls.length - 1] as HTMLElement;
+        lastEl.scrollIntoView({ block: "center" });
+        const last = lastEl.getBoundingClientRect();
+        const topAtLast = !!document.elementFromPoint(last.x + last.width / 2, last.y + last.height / 2)
+          ?.closest(".ia-page");
+        return {
+          barFits: bar.right <= innerWidth,
+          partialFits: p.right <= innerWidth,
+          sendFits: s.right <= innerWidth,
+          topAtSend,
+          topAtLast,
+        };
+      });
+      assertEquals(layoutOk, { barFits: true, partialFits: true, sendFits: true, topAtSend: true, topAtLast: true });
     } finally {
       await browser.close();
       server.kill("SIGTERM");
