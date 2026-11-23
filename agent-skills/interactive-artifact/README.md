@@ -57,5 +57,6 @@ or how the CLI takes input need checking against it.
   additional data includes that same identity. A retry must keep its original identity and payload until it gets an
   answer. The browser serializes all calls so the server needs to retain only each client's last answer and sequence
   floor. Changing the identity on retry can duplicate a submission; evicting old clients can permit replayed writes.
-- The pending rules exist twice: `takeSubmission` in `interactive-artifact` decides, and `pendingCount` in
-  `interactive-artifact.js` only drives the Submit button. Keep them in step.
+- The pending and pass-open rules exist twice: `takeSubmission` in `interactive-artifact.ts` decides (including whether
+  `partialOpen` allows an empty pass-closing submit), and `pendingCount` / `updateDock` in `interactive-artifact.js`
+  drive the Send partial and Submit/Finish buttons. Keep them in step.

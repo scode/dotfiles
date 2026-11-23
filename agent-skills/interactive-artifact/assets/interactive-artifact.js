@@ -17,6 +17,7 @@
 (() => {
   "use strict";
 
+  const layout = document.querySelector(".ia-layout");
   const page = document.querySelector(".ia-page");
   const notes = document.querySelector(".ia-notes");
   /** Elements whose text is not part of the page as written: our own insertions and form fields. */
@@ -72,6 +73,8 @@
   // Null prototype, because picker ids come from page markup: `data-pick="constructor"` must not find Object's.
   let picks = Object.create(null);
   let picksSent = {};
+  /** Whether the latest submission was partial; server-owned and mirrored here to keep the dock and Finish active. */
+  let partialOpen = false;
   const dirtyPicks = new Set();
   /** Ids of annotations this tab created that the server has not yet echoed back in a state. */
   const createdHere = new Set();
@@ -387,6 +390,7 @@
     for (const a of local.values()) if (createdHere.has(a.id)) next.push(a);
     annotations = next;
     picksSent = s.picksSent;
+    partialOpen = s.partialOpen === true;
     serverRev = s.rev;
     showStatus(s.status);
     if (all) {
@@ -549,7 +553,8 @@
           toggleChoice(p, c);
         });
         c.addEventListener("keydown", (ev) => {
-          if (ev.target === c && (ev.key === "Enter" || ev.key === " ")) {
+          // Ignore modified Enter/Space so Ctrl/Cmd+Enter and Ctrl/Cmd+Shift+Enter submit without toggling a choice.
+          if (ev.target === c && !ev.metaKey && !ev.ctrlKey && !ev.altKey && (ev.key === "Enter" || ev.key === " ")) {
             ev.preventDefault();
             toggleChoice(p, c);
           }
@@ -590,6 +595,13 @@
   // -----------------------------------------------------------------------------------------------------------
 
   const visible = () => annotations.filter((a) => !a.removed);
+  /** Fingerprint of annotation fields that affect in-page marks, so status-only polls never disturb text selections. */
+  const marksSignature = () =>
+    JSON.stringify(
+      visible().map((a) => [a.id, a.kind, a.quote, a.prefix, a.suffix, a.offset, a.replacement, !!a.resolved]),
+    );
+  let lastMarksSig = "";
+  let marksDeferred = false;
 
   /** Remove all highlights and redraw them from state. Orphaned annotations are flagged instead of drawn. */
   const renderMarks = () => {
@@ -624,6 +636,8 @@
         last.after(ins);
       }
     }
+    lastMarksSig = marksSignature();
+    marksDeferred = false;
     markActive();
   };
 
@@ -697,9 +711,12 @@
         autoGrow(r);
         const ins = page.querySelector(`.ia-ins[data-ann="${a.id}"]`);
         // Toggling between "same as original" and "different" adds or removes the insertion, which only a
-        // redraw can do; otherwise update the inserted text in place so typing stays cheap.
-        if (ins && a.replacement !== a.quote) ins.textContent = a.replacement;
-        else renderMarks();
+        // redraw can do; otherwise update the inserted text in place and refresh lastMarksSig so a later status-only
+        // poll does not think marks changed and unwrap highlights.
+        if (ins && a.replacement !== a.quote) {
+          ins.textContent = a.replacement;
+          lastMarksSig = marksSignature();
+        } else renderMarks();
         changed(a);
       });
       c.append(el("div", "ia-label", "Replace with"), r);
@@ -715,7 +732,6 @@
       updateCard(a);
     });
     d.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) submit();
       if (ev.key === "Escape") d.blur();
     });
     // An empty comment that was never sent is an abandoned click, the same as cancelling in a docs editor.
@@ -738,25 +754,32 @@
     const c = cards.get(a.id) || createCard(a);
     const pending = a.draft.trim() || (a.kind === "suggestion" && !a.sentOnce && a.replacement !== a.quote);
     const status = a.resolved ? "Resolved" : !a.sentOnce ? "Draft" : pending ? "Unsent reply" : "Sent";
-    c.querySelector(".ia-status").textContent = status;
+    const statusEl = c.querySelector(".ia-status");
+    if (statusEl.textContent !== status) statusEl.textContent = status;
     c.classList.toggle("resolved", !!a.resolved);
     c.classList.toggle("orphan", !!a.orphan);
     c.classList.toggle("pending", !!pending);
-    c.querySelector(".ia-quote").textContent = truncate(collapse(a.quote), 180);
+    const quoteEl = c.querySelector(".ia-quote");
+    const nextQuote = truncate(collapse(a.quote), 180);
+    if (quoteEl.textContent !== nextQuote) quoteEl.textContent = nextQuote;
     const r = c.querySelector(".ia-repl");
     if (r) {
-      r.readOnly = a.sentOnce || !!locked || reconnecting;
+      r.readOnly = a.sentOnce || !!locked || reconnecting || submitting;
       if (document.activeElement !== r) r.value = a.replacement;
       autoGrow(r);
     }
     const thread = c.querySelector(".ia-thread");
-    thread.replaceChildren(...a.thread.map((m) => {
-      const msg = el("div", `ia-msg ${m.from}`);
-      msg.append(el("span", "ia-who", m.from === "agent" ? "Agent" : "You"), el("p", "", m.text));
-      return msg;
-    }));
+    const threadSig = JSON.stringify(a.thread);
+    if (thread.dataset.sig !== threadSig) {
+      thread.replaceChildren(...a.thread.map((m) => {
+        const msg = el("div", `ia-msg ${m.from}`);
+        msg.append(el("span", "ia-who", m.from === "agent" ? "Agent" : "You"), el("p", "", m.text));
+        return msg;
+      }));
+      thread.dataset.sig = threadSig;
+    }
     const d = c.querySelector(".ia-draft");
-    d.readOnly = !!locked || reconnecting;
+    d.readOnly = !!locked || reconnecting || submitting;
     d.placeholder = a.sentOnce
       ? (a.resolved ? "Reply to reopen" : "Reply")
       : a.kind === "comment"
@@ -849,6 +872,26 @@
 
   const renderAll = () => {
     renderMarks();
+    renderCards();
+    updateDock();
+  };
+  /** True while a non-collapsed text selection (outside form fields) overlaps `node`. */
+  const selectingIn = (node) => {
+    const sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    const anc = r.commonAncestorContainer;
+    const elAnc = anc.nodeType === Node.ELEMENT_NODE ? anc : anc.parentElement;
+    if (elAnc?.closest("textarea, input")) return false;
+    return r.intersectsNode(node);
+  };
+  /** Redraw cards and dock, and update in-page marks only when they changed and no active selection is in progress. */
+  const renderFromPoll = (allowMarks) => {
+    const needMarks = marksDeferred || marksSignature() !== lastMarksSig;
+    if (needMarks) {
+      if (allowMarks) renderMarks();
+      else marksDeferred = true;
+    }
     renderCards();
     updateDock();
   };
@@ -1121,14 +1164,23 @@
   launch.title = "Write a note to the agent";
   launch.setAttribute("aria-label", launch.title);
   const bar = el("div", "ia-bar");
+  const defaultNotePlaceholder = "Note for the agent (optional)";
+  const partialNotePlaceholder = "Partial sent — add a note or Finish when done";
   const noteInput = el("textarea", "ia-note");
   noteInput.rows = 1;
-  noteInput.placeholder = "Note for the agent (optional)";
+  noteInput.placeholder = defaultNotePlaceholder;
+  const partialButton = el("button", "ia-partial");
+  partialButton.type = "button";
+  partialButton.textContent = "Send partial";
+  partialButton.title = "Send what you have so far and keep going (Ctrl/Cmd+Shift+Enter)";
   const sendButton = el("button", "ia-send");
   sendButton.type = "button";
+  const sendLabel = el("span", "ia-send-label", "Submit");
   const sendCount = el("span", "ia-count");
-  sendButton.append(el("span", "ia-icon", ""), "Submit", sendCount);
-  bar.append(noteInput, sendButton);
+  sendButton.append(el("span", "ia-icon", ""), sendLabel, sendCount);
+  const actions = el("div", "ia-actions");
+  actions.append(partialButton, sendButton);
+  bar.append(noteInput, actions);
   dock.append(launch, bar);
   // The dock (left) and the agent status box (right) share one row along the bottom; when there is not room for both,
   // the status box wraps above the dock instead of covering it.
@@ -1151,10 +1203,8 @@
     noteOpen = false;
     setTimeout(updateDock, 150);
   });
-  noteInput.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) submit();
-  });
-  sendButton.addEventListener("click", () => submit());
+  partialButton.addEventListener("click", () => submit(true));
+  sendButton.addEventListener("click", () => submit(false));
 
   /** Mirrors the server's notion of pending (takeSubmission); the server stays authoritative and answers 409. */
   const pendingCount = () => {
@@ -1176,17 +1226,33 @@
   let submitting = false;
   const updateDock = () => {
     const n = pendingCount();
+    const blocked = loading || submitting || !!locked || reconnecting || agentState === "done";
+    // Mirrors takeSubmission: an empty pass-closing submit is valid only while a partial pass is open.
+    const finishing = !n && partialOpen;
+    sendLabel.textContent = finishing ? "Finish" : "Submit";
     sendCount.textContent = String(n);
-    sendButton.disabled = !n || loading || submitting || !!locked || reconnecting;
-    const open = n > 0 || noteOpen || document.activeElement === noteInput;
+    sendCount.hidden = !n;
+    sendButton.title = finishing
+      ? "Finish this pass with no further changes (Ctrl/Cmd+Enter)"
+      : "Submit everything and finish this pass (Ctrl/Cmd+Enter)";
+    partialButton.disabled = !n || blocked;
+    sendButton.disabled = (!n && !partialOpen) || blocked;
+    noteInput.placeholder = finishing ? partialNotePlaceholder : defaultNotePlaceholder;
+    const open = n > 0 ||
+      ((partialOpen || noteOpen || document.activeElement === noteInput) && !locked && agentState !== "done");
     if (open && !dock.classList.contains("open")) dock.classList.add("pop");
     dock.classList.toggle("open", open);
     if (open) autoGrow(noteInput);
   };
   dock.addEventListener("animationend", () => dock.classList.remove("pop"));
 
-  const submit = async () => {
-    if (loading || submitting || locked || reconnecting || !pendingCount()) return;
+  /** True while the user has a non-collapsed selection overlapping `main.ia-page` or the selection toolbar is open. */
+  const selecting = () => !toolbar.hidden || selectingIn(page);
+
+  const submit = async (partial = false) => {
+    const n = pendingCount();
+    if (loading || submitting || locked || reconnecting || agentState === "done") return;
+    if (partial ? !n : !n && !partialOpen) return;
     submitting = true;
     updateDock();
     // Nothing is editable while a submit is in flight: not the cards, the note, the pickers, or their text fields. Text
@@ -1199,28 +1265,48 @@
     try {
       if (!await flush()) throw new Error("Your changes could not be saved; nothing was submitted.");
       // The pickers on this page, so the submission leaves out answers to questions the agent has since removed.
-      const s = await api("submit", "POST", { note: noteInput.value, pickers: pickers.map((p) => p.dataset.pick) });
+      const s = await api("submit", "POST", {
+        note: noteInput.value,
+        pickers: pickers.map((p) => p.dataset.pick),
+        partial,
+      });
       adopt(s, true);
       noteOpen = false;
       noteInput.blur();
       applyPicks();
-      renderAll();
-      toast(`Sent to the agent (submission ${s.submissions})`);
+      renderFromPoll(!selecting());
+      toast(
+        partial
+          ? `Partial update sent (submission ${s.submissions}) — click Finish when done`
+          : `Sent to the agent (submission ${s.submissions})`,
+      );
     } catch (e) {
-      if (!locked) toast(e.status === 409 ? "Nothing to submit" : `Submit failed: ${e.message}`, true);
+      if (!locked) {
+        const msg = e.status === 409
+          ? (e.message === "nothing to submit" ? "Nothing to submit" : e.message)
+          : `Submit failed: ${e.message}`;
+        toast(msg, true);
+      }
     } finally {
       submitting = false;
       notes.inert = false;
-      // Failed verification during Submit must leave the tab read-only, as lock() made it.
-      if (!locked) {
+      // Failed verification during Submit must leave the tab read-only, as lock() made it; an active outage owns its
+      // own readOnly freeze until connectionRestored() runs.
+      if (!locked && !reconnecting) {
         noteInput.readOnly = false;
         for (const t of page.querySelectorAll(".ia-pick-text")) t.readOnly = false;
       }
+      renderCards();
       updateDock();
     }
   };
+  // One shortcut handler covers the whole page, including comment drafts, suggestions, picker notes, and the dock
+  // note, so Shift is always checked in one place and never fires a full Submit on Cmd/Ctrl+Shift+Enter.
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.target.closest?.("textarea")) submit();
+    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.isComposing) {
+      ev.preventDefault();
+      submit(ev.shiftKey);
+    }
     if (ev.key === "Escape") toolbar.hidden = true;
   });
 
@@ -1238,32 +1324,59 @@
     ["ready", ["ready", "The agent is ready for your next submission."]],
     ["done", ["done", "The agent is done with this page. Continue in the chat."]],
   ]);
+  const statusEntry = (state) => {
+    if (partialOpen && state === "working") {
+      return ["busy", "Working on what you sent. Keep going — you can send more anytime."];
+    }
+    if (partialOpen && state === "ready") {
+      return ["ready", "The agent caught up. Keep going, or Finish when you are done."];
+    }
+    return STATUS.get(state);
+  };
   let agentState = "idle";
   let statusTimer = null;
   const statusPill = el("div", "ia-agent ia-ui");
   statusPill.setAttribute("role", "status");
   statusPill.hidden = true;
+  const statusIcon = el("span", "ia-agent-icon");
+  const statusText = el("span", "ia-agent-text");
+  const statusMsg = el("span", "ia-agent-msg");
+  statusMsg.hidden = true;
+  statusPill.append(statusIcon, statusText, statusMsg);
   corner.append(statusPill);
-  /** Show the agent's status. "Ready" fades after a while; the others stay until the status changes. */
+  /** Keep the bottom of the page and sidebar scrollable past the fixed dock and status box at any viewport width. */
+  const syncCornerClearance = () => {
+    const h = Math.ceil(corner.getBoundingClientRect().height);
+    layout.style.paddingBottom = h ? `${h + 32}px` : "";
+    // Cap scroll-padding so scrollIntoView never collapses the scrollport to zero on very short viewports.
+    const scrollPad = h ? Math.min(h + 24, Math.floor(innerHeight * 0.65)) : 0;
+    root.style.scrollPaddingBottom = scrollPad ? `${scrollPad}px` : "";
+  };
+  new ResizeObserver(syncCornerClearance).observe(corner);
+  addEventListener("resize", syncCornerClearance);
+  syncCornerClearance();
+  /** Show the agent's status. Bare "ready" fades after a while; a "ready" with a message stays visible. */
   const showStatus = (st) => {
     const state = st?.state || "idle";
     const message = st?.message || "";
-    const shown = `${state}\n${message}`;
+    agentState = state;
+    const shown = `${state}\n${partialOpen}\n${message}`;
     if (statusPill.dataset.shown === shown) return;
     statusPill.dataset.shown = shown;
-    agentState = state;
     clearTimeout(statusTimer);
-    const entry = STATUS.get(state);
+    const entry = statusEntry(state);
     if (!entry || locked) {
       statusPill.hidden = true;
       return;
     }
     const [kind, text] = entry;
     statusPill.className = `ia-agent ia-ui ${kind}`;
-    statusPill.replaceChildren(el("span", "ia-agent-icon"), el("span", "ia-agent-text", text));
-    if (message) statusPill.append(el("span", "ia-agent-msg", message));
+    // Update child spans in place so changing only the custom message never recreates the status text node.
+    if (statusText.textContent !== text) statusText.textContent = text;
+    if (statusMsg.textContent !== message) statusMsg.textContent = message;
+    statusMsg.hidden = !message;
     statusPill.hidden = false;
-    if (state === "ready") statusTimer = setTimeout(() => (statusPill.hidden = true), 10_000);
+    if (state === "ready" && !message) statusTimer = setTimeout(() => (statusPill.hidden = true), 10_000);
   };
 
   const toaster = el("div", "ia-toast ia-ui");
@@ -1300,7 +1413,10 @@
       ? [focused.selectionStart, focused.selectionEnd, focused.selectionDirection]
       : null;
     toolbar.hidden = true;
-    getSelection().removeAllRanges();
+    // Clear selection only if it overlaps `page`, so an unrelated live page edit never wipes a selection wholly inside
+    // a sidebar comment thread or status box.
+    const sel = getSelection();
+    if (sel.rangeCount && !sel.isCollapsed && sel.getRangeAt(0).intersectsNode(page)) sel.removeAllRanges();
     page.innerHTML = view.fragment;
     // pageTitle returns HTML-safe text for the initial <title>; document.title takes decoded text instead.
     const title = el("textarea");
@@ -1318,21 +1434,45 @@
       }
     }
   };
+  let deferredEditSince = 0;
+  let deferredEditNotified = false;
   const poll = async () => {
     try {
       const v = await api("version");
       // An editor's delete-and-rename is not an edit worth showing. Submit owns the picker list until it finishes.
+      // Defer replacing page DOM while the user has an active selection on the page so a live edit never wipes text
+      // they are about to comment on; nudge with a toast if a stray selection holds an edit back for several seconds.
       if (!submitting && pageVersion !== undefined && v.page !== pageVersion && v.page !== "missing") {
-        const view = await api("page");
-        if (!locked && !submitting && view.page !== "missing") updatePage(view);
+        if (selecting()) {
+          if (!deferredEditSince) deferredEditSince = Date.now();
+          else if (!deferredEditNotified && Date.now() - deferredEditSince >= 4000) {
+            deferredEditNotified = true;
+            toast("The agent updated the page; click anywhere to see it");
+          }
+        } else {
+          deferredEditSince = 0;
+          deferredEditNotified = false;
+          const view = await api("page");
+          if (!locked && !submitting && !selecting() && view.page !== "missing") updatePage(view);
+        }
+      } else {
+        deferredEditSince = 0;
+        deferredEditNotified = false;
       }
       if (pageVersion === undefined) pageVersion = v.page;
       // serverRev is null only if the first state load failed; fetching now is how such a tab catches up.
-      if (serverRev === null || v.rev !== serverRev) {
-        const replies = adopt(await api("state"), false);
-        applyPicks();
-        renderAll();
-        if (replies > 0) toast(replies === 1 ? "The agent replied" : `The agent replied (${replies})`);
+      if (!submitting && (serverRev === null || v.rev !== serverRev)) {
+        const st = await api("state");
+        if (!locked && !submitting) {
+          const replies = adopt(st, false);
+          applyPicks();
+          renderFromPoll(!selecting());
+          if (replies > 0) toast(replies === 1 ? "The agent replied" : `The agent replied (${replies})`);
+        }
+      } else if (marksDeferred && !selecting()) {
+        renderMarks();
+        renderCards();
+        updateDock();
       }
       setTimeout(poll, 1000);
     } catch {
