@@ -5,7 +5,8 @@
 // calls. Judgment is left to the reader.
 //
 // It never touches a checkout: queue state comes from GitHub main, session state from the harness transcripts under
-// ~/.claude/projects and ~/.codex/sessions, and liveness from /proc. All times print in the host's local zone.
+// ~/.claude/projects and ~/.codex/sessions, and liveness from /proc. All times print in the host's local zone, and
+// every claim and monitor round carries its elapsed time, so the report does no clock arithmetic of its own.
 //
 // Usage: collect            full report input
 //        collect --states   one line per session with its state (no GitHub calls; for confirming a nudge took)
@@ -14,17 +15,20 @@ import $ from "jsr:@david/dax@0.50.1";
 
 const HOME = Deno.env.get("HOME")!;
 /**
- * The two checkout layouts in use, as [directory, name prefix]: executors are `<prefix>exec-N` and the landing monitor
- * is `<prefix>complete-monitor`, with the monitor's log `farhelm-plans-monitor-log.md` beside them. Both are searched.
+ * Where the checkouts live: executors are `~/git/farhelm-fh-exec-N`, and the landing (completion) monitor, which is not
+ * an executor, is `~/git/farhelm-fh-complete-monitor`, with its round log `farhelm-plans-monitor-log.md` beside them.
  */
-// deno-fmt-ignore
-const LAYOUTS: [string, string][] = [
-  [`${HOME}/git`, "farhelm-fh-"],
-  [HOME, "fh-"],
-];
+const CHECKOUT_DIR = `${HOME}/git`;
+const CHECKOUT_PREFIX = "farhelm-fh-";
 const REPO = "scode/farhelm";
 /** Only this much of a transcript's end is read; recent state is all the report needs. */
 const TAIL_BYTES = 4 << 20;
+/**
+ * How far back the queue history is paged: far enough for a day of landings and for claim commits that a busy day has
+ * pushed past the first page. One page is 100 commits, and a busy day writes about 200.
+ */
+const HISTORY_MS = 24 * 3600_000;
+const MAX_HISTORY_PAGES = 5;
 
 /** A harness session for one checkout. `live` means an interactive process of that harness runs in the checkout. */
 type Session = { harness: "claude" | "codex"; id: string; path: string; mtime: Date; live: boolean };
@@ -47,6 +51,15 @@ export function local(t: string | Date): string {
 const zone = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(new Date())
   .find((p) => p.type === "timeZoneName")?.value ?? "";
 const oneLine = (s: string, n: number) => s.replace(/\s+/g, " ").trim().slice(0, n);
+
+/** A duration as the report writes it: `13m`, `2h10m`, `1d3h`. Negative durations (clock skew) print as `0m`. */
+export function elapsed(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
+  return `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`;
+}
+const since = (t: string | Date) => `${local(t)} (${elapsed(Date.now() - new Date(t).getTime())} ago)`;
 
 // ---- Turn state and recent activity, per harness
 
@@ -315,24 +328,62 @@ export function activeClaims(index: string): Map<string, string> {
   return out;
 }
 
+/** A queue commit as GitHub's commit list returns it, reduced to what the report reads. */
+type QueueCommit = { commit: { message: string; committer: { date: string } } };
+
+/** The commit that claimed `plan` under claim id `id`, if the fetched history reaches back that far. */
+function claimCommit(commits: QueueCommit[], id: string, plan: string): QueueCommit | undefined {
+  return commits.find((c) => c.commit.message.includes(`claim ${plan}`) && c.commit.message.includes(id));
+}
+
+/**
+ * Landings recorded at or after `sinceMs`, newest first, read from the monitor's "record the landing of <plan>" queue
+ * commits. A plan counts when its landing is recorded, not when its PRs merge, which is what the queue shows too.
+ */
+export function landings(commits: QueueCommit[], sinceMs: number): { at: string; plan: string }[] {
+  return commits.flatMap((c) => {
+    const m = c.commit.message.match(/^chore\(plans\): record the landing of (\S+)/);
+    return m && new Date(c.commit.committer.date).getTime() >= sinceMs
+      ? [{ at: c.commit.committer.date, plan: m[1] }]
+      : [];
+  });
+}
+
 /** Prints the queue and its recent events; returns the active claims, or an empty map when GitHub is unreachable. */
 async function printQueue(): Promise<Map<string, string>> {
   try {
     const index = await $`gh api repos/${REPO}/contents/plans/queue/INDEX.md -H ${"Accept: application/vnd.github.raw"}`
       .text();
-    const commits = await $`gh api ${`repos/${REPO}/commits?path=plans/queue/INDEX.md&per_page=100`}`.json();
+    const claims = activeClaims(index);
+    // Page back until the history covers both the last day and every active claim's commit; a claim from a long-running
+    // plan can sit hundreds of commits deep on a busy day.
+    const cutoff = Date.now() - HISTORY_MS;
+    const commits: QueueCommit[] = [];
+    for (let page = 1; page <= MAX_HISTORY_PAGES; page++) {
+      const batch: QueueCommit[] =
+        await $`gh api ${`repos/${REPO}/commits?path=plans/queue/INDEX.md&per_page=100&page=${page}`}`.json();
+      commits.push(...batch);
+      const oldest = commits.at(-1);
+      const coversDay = !oldest || new Date(oldest.commit.committer.date).getTime() < cutoff;
+      if (batch.length < 100 || (coversDay && [...claims].every(([id, plan]) => claimCommit(commits, id, plan)))) break;
+    }
     console.log("== QUEUE (main)");
     for (const l of index.split("\n")) if (l.startsWith("- [")) console.log(oneLine(l, 220));
-    const claims = activeClaims(index);
     console.log("== ACTIVE CLAIMS (claim time)");
     for (const [id, plan] of claims) {
-      const c = commits.find((c: any) => c.commit.message.includes(`claim ${plan}`) && c.commit.message.includes(id));
-      console.log(`${id} ${plan} claimed ${c ? local(c.commit.committer.date) : "before the last 100 queue commits"}`);
+      const c = claimCommit(commits, id, plan);
+      console.log(`${id} ${plan} claimed ${c ? since(c.commit.committer.date) : "before the fetched queue history"}`);
     }
     console.log("== QUEUE EVENTS (newest first)");
     for (const c of commits.slice(0, 15)) {
       console.log(`${local(c.commit.committer.date)} ${c.commit.message.split("\n")[0]}`);
     }
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const day = landings(commits, cutoff);
+    const today = landings(commits, midnight.getTime()).length;
+    console.log(`== LANDINGS (last 24h: ${day.length}, since local midnight: ${today}; newest first)`);
+    for (const l of day) console.log(`${local(l.at)} ${l.plan}`);
     return claims;
   } catch (e) {
     console.log(`== QUEUE unavailable: ${oneLine(String(e), 300)}`);
@@ -346,32 +397,41 @@ async function printQueue(): Promise<Map<string, string>> {
 type Checkout = { label: string; cwd: string; log?: string };
 
 /**
- * Every monitor and executor checkout under the known layouts, monitors first. A layout that does not exist on this
- * host contributes nothing, and when both exist both are listed, each under its own path.
+ * The landing monitor's checkout, if there is one, then every executor checkout in number order. The monitor is
+ * reported first and labelled `landing`: it lands completed plans and never claims one, so it is not an executor.
  */
 async function checkouts(): Promise<Checkout[]> {
-  const monitors: Checkout[] = [], execs: (Checkout & { n: number })[] = [];
-  for (const [dir, prefix] of LAYOUTS) {
-    let names;
-    try {
-      names = (await Array.fromAsync(Deno.readDir(dir))).map((d) => d.name);
-    } catch (e) {
-      if (e instanceof Deno.errors.NotFound) continue;
-      throw e;
-    }
-    if (names.includes(`${prefix}complete-monitor`)) {
-      monitors.push({
-        label: "landing",
-        cwd: `${dir}/${prefix}complete-monitor`,
-        log: `${dir}/farhelm-plans-monitor-log.md`,
-      });
-    }
-    for (const name of names) {
-      const m = name.match(new RegExp(`^${prefix}exec-(\\d+)$`));
-      if (m) execs.push({ label: `exec-${m[1]}`, cwd: `${dir}/${name}`, n: Number(m[1]) });
-    }
+  let names: string[];
+  try {
+    names = (await Array.fromAsync(Deno.readDir(CHECKOUT_DIR))).map((d) => d.name);
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return [];
+    throw e;
   }
+  const monitors: Checkout[] = names.includes(`${CHECKOUT_PREFIX}complete-monitor`)
+    ? [{
+      label: "landing",
+      cwd: `${CHECKOUT_DIR}/${CHECKOUT_PREFIX}complete-monitor`,
+      log: `${CHECKOUT_DIR}/farhelm-plans-monitor-log.md`,
+    }]
+    : [];
+  const execs = names.flatMap((name) => {
+    const m = name.match(new RegExp(`^${CHECKOUT_PREFIX}exec-(\\d+)$`));
+    return m ? [{ label: `exec-${m[1]}`, cwd: `${CHECKOUT_DIR}/${name}`, n: Number(m[1]) }] : [];
+  });
   return [...monitors, ...execs.sort((a, b) => a.n - b.n)];
+}
+
+/**
+ * The landing monitor's current round from its log: the newest `rN start`/`rN started` or `rN end`/`rN done` entry.
+ * The log's wording has drifted between those forms, so both are accepted. A round whose newest entry is a start is
+ * still under way; otherwise the monitor is between rounds. Undefined when no round entry is in the log.
+ */
+export function monitorRound(lines: string[]): { round: number; underway: boolean; at: string } | undefined {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(/^- (\S+): (?:- )?r(\d+) (start|started|end|done)\b/);
+    if (m) return { round: Number(m[2]), underway: m[3].startsWith("start"), at: m[1] };
+  }
 }
 
 /** The sessions worth showing: every live one, else only the most recently written candidate (marked not live). */
@@ -390,7 +450,8 @@ if (import.meta.main) {
     const claude = await claudeSession(cwd, procs.claude.length > 0);
     const found = [...(claude ? [claude] : []), ...await codexSessions(cwd, procs, recentCodex)];
     if (!statesOnly) {
-      console.log(`\n######## ${label}  ${cwd.replace(HOME, "~")}`);
+      const role = monitorLog ? " (completion monitor, not an executor)" : "";
+      console.log(`\n######## ${label}${role}  ${cwd.replace(HOME, "~")}`);
       console.log(
         `live: claude pids ${procs.claude.join(" ") || "none"} | codex pids ${
           [...procs.codex.keys()].join(" ") || "none"
@@ -427,6 +488,8 @@ if (import.meta.main) {
     if (!statesOnly && monitorLog) {
       try {
         const log = (await Deno.readTextFile(monitorLog)).split("\n").filter((l) => l.startsWith("- "));
+        const r = monitorRound(log);
+        if (r) console.log(`round r${r.round} ${r.underway ? "started" : "ended"} ${since(r.at)}`);
         for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
       } catch (e) {
         if (!(e instanceof Deno.errors.NotFound)) throw e;
@@ -495,6 +558,43 @@ Deno.test("activeClaims reads in-flight and landing lines only", () => {
   const index = "- [in-flight 9648c5] `a.md` — x\n- [landing 036692] `b.md` — y\n- [pending] `c.md` — z\n";
   const got = JSON.stringify([...activeClaims(index)]);
   if (got !== '[["9648c5","a"],["036692","b"]]') throw new Error(got);
+});
+
+Deno.test("elapsed prints minutes, hours with padded minutes, and days", () => {
+  const cases: [number, string][] = [
+    [-5000, "0m"],
+    [13 * 60000, "13m"],
+    [130 * 60000, "2h10m"],
+    [125 * 60000, "2h05m"],
+    [27 * 3600_000, "1d3h"],
+  ];
+  for (const [ms, want] of cases) if (elapsed(ms) !== want) throw new Error(`${ms}: ${elapsed(ms)}`);
+});
+
+Deno.test("landings reads recorded landings at or after the cutoff only", () => {
+  const c = (date: string, message: string): QueueCommit => ({ commit: { message, committer: { date } } });
+  const commits = [
+    c("2026-01-02T10:00:00Z", "chore(plans): record the landing of b\n\nbody"),
+    c("2026-01-02T09:00:00Z", "chore(plans): start landing b"),
+    c("2026-01-02T08:00:00Z", "chore(plans): record the landing of a"),
+    c("2026-01-01T08:00:00Z", "chore(plans): record the landing of old"),
+  ];
+  const got = landings(commits, Date.parse("2026-01-02T00:00:00Z")).map((l) => l.plan).join(",");
+  if (got !== "b,a") throw new Error(got);
+});
+
+Deno.test("monitorRound takes the newest round entry in either wording", () => {
+  const log = [
+    "- 2026-01-01T07:27Z: - r313 started",
+    "- 2026-01-01T08:14Z: - r313 done",
+    "- 2026-01-01T13:18Z: r318 start",
+    "- 2026-01-01T13:20Z: tailscale merged #1",
+  ];
+  const underway = JSON.stringify(monitorRound(log));
+  if (underway !== '{"round":318,"underway":true,"at":"2026-01-01T13:18Z"}') throw new Error(underway);
+  const ended = monitorRound([...log, "- 2026-01-01T13:57Z: r318 end 2026-01-01: landed x"]);
+  if (ended?.underway !== false || ended.round !== 318) throw new Error(JSON.stringify(ended));
+  if (monitorRound(["- 2026-01-01T00:00Z: idle watcher restarted"]) !== undefined) throw new Error("no round");
 });
 
 Deno.test("driving prefers live sessions and otherwise shows only the newest", () => {
