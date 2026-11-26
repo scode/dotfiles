@@ -17,16 +17,21 @@ on one host. This skill assumes it runs on that host, with these checkouts:
   in the report all the same, so it is collected and reported as `landing`, apart from the executors.
 - Each checkout is driven by an interactive Claude Code or Codex session. Either harness can drive any checkout, and a
   checkout can switch between them.
-- The monitor logs each round to `~/git/farhelm-plans-monitor-log.md`.
-- Executors keep their own logs beside the checkouts too: `farhelm-plans-log-<checkout>.md`, and one per plan as
-  `farhelm-plan-<plan>-log.md`.
+- The executors' and the monitor's logs are records in Farhelm's `agent-records` repository, and on this host each
+  slot's clone of it, under `~/.fh-records/clones/<slot>/`, holds the live copy (Farhelm's `.agents/agent-records.md`
+  describes the layout; read it from main with `gh api repos/scode/farhelm/contents/.agents/agent-records.md -H 'Accept:
+  application/vnd.github.raw'`, never from a checkout). The slot is `exec-N` for `~/git/farhelm-fh-exec-N` and `landing`
+  for the monitor. The monitor logs each round to `farhelm/landing/log.md` in the `landing` clone; each executor keeps
+  its own log at `farhelm/executors/<slot>/log.md` in its clone, and a plan's log is `farhelm/plans/<plan>/log.md` in
+  the clone of whichever slot holds or last held it.
 
 ## Hard rule: hands off the checkouts
 
 Do not fetch, edit, or otherwise touch any executor or monitor checkout. That means no `git` or `jj` commands in them,
 no reading or writing files inside them, and no running their scripts. Everything this skill needs comes from places
-that are safe to read: the harness transcripts under `~/.claude/projects` and `~/.codex/sessions`, the logs beside the
-checkouts, `/proc`, and GitHub main through `gh api`. Do not message an executor or the monitor, and do not answer a
+that are safe to read: the harness transcripts under `~/.claude/projects` and `~/.codex/sessions`, the log files in the
+slot clones under `~/.fh-records/clones/` (read the files; never run `git` there, since those clones belong to the
+records tool), `/proc`, and GitHub main through `gh api`. Do not message an executor or the monitor, and do not answer a
 blocked plan, except for the nudge below.
 
 ## Collecting
@@ -87,8 +92,9 @@ converts what it prints. Write:
    - On plan for: that claim's time and elapsed time from the collector, for example `since 06:39 (2h10m)`.
    - The landing row's plan and stage come from the monitor's round line and log (round start, review, checks, merging),
      not from `INDEX.md`: a plan reads `[complete]` there until the monitor writes `landing` after its checks pass. Its
-     On plan for is the round's start. Between rounds the row reads `—` and says since when. The monitor's own turn
-     state says little, since it waits on background jobs between turns.
+     On plan for is the round's start. Between rounds the row reads `—` and says since when. When the collector prints
+     `monitor log not found`, the stage is unknown: say so rather than reporting the monitor as between rounds. The
+     monitor's own turn state says little, since it waits on background jobs between turns.
 3. A queue table with columns Status | Plan | Description, one row per `- [` line of `INDEX.md`, each description cut to
    about 60 characters.
 4. Short notes on what changed since the last report and on problems only: blocks and the decision being asked for,
