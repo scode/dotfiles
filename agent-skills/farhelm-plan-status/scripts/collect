@@ -16,11 +16,18 @@ import $ from "jsr:@david/dax@0.50.1";
 const HOME = Deno.env.get("HOME")!;
 /**
  * Where the checkouts live: executors are `~/git/farhelm-fh-exec-N`, and the landing (completion) monitor, which is not
- * an executor, is `~/git/farhelm-fh-complete-monitor`, with its round log `farhelm-plans-monitor-log.md` beside them.
+ * an executor, is `~/git/farhelm-fh-complete-monitor`.
  */
 const CHECKOUT_DIR = `${HOME}/git`;
 const CHECKOUT_PREFIX = "farhelm-fh-";
 const REPO = "scode/farhelm";
+/**
+ * The landing monitor's round log: its `landing` record in the monitor slot's clone of Farhelm's agent-records
+ * repository, which on this host is the live copy (Farhelm's `.agents/agent-records.md`). It used to sit beside the
+ * checkouts as `farhelm-plans-monitor-log.md`; only the file is read here, never git in the clone, which is the records
+ * tool's.
+ */
+const MONITOR_LOG = `${HOME}/.fh-records/clones/landing/farhelm/landing/log.md`;
 /** Only this much of a transcript's end is read; recent state is all the report needs. */
 const TAIL_BYTES = 4 << 20;
 /**
@@ -412,7 +419,7 @@ async function checkouts(): Promise<Checkout[]> {
     ? [{
       label: "landing",
       cwd: `${CHECKOUT_DIR}/${CHECKOUT_PREFIX}complete-monitor`,
-      log: `${CHECKOUT_DIR}/farhelm-plans-monitor-log.md`,
+      log: MONITOR_LOG,
     }]
     : [];
   const execs = names.flatMap((name) => {
@@ -423,13 +430,14 @@ async function checkouts(): Promise<Checkout[]> {
 }
 
 /**
- * The landing monitor's current round from its log: the newest `rN start`/`rN started` or `rN end`/`rN done` entry.
+ * The landing monitor's current round from its log: the newest `rN start`/`rN started` or `rN end`/`rN ended`/`rN done`
+ * entry. Farhelm's `landing.py` now writes `rN started, head <sha>` and `rN ended` itself.
  * The log's wording has drifted between those forms, so both are accepted. A round whose newest entry is a start is
  * still under way; otherwise the monitor is between rounds. Undefined when no round entry is in the log.
  */
 export function monitorRound(lines: string[]): { round: number; underway: boolean; at: string } | undefined {
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = lines[i].match(/^- (\S+): (?:- )?r(\d+) (start|started|end|done)\b/);
+    const m = lines[i].match(/^- (\S+): (?:- )?r(\d+) (start|started|end|ended|done)\b/);
     if (m) return { round: Number(m[2]), underway: m[3].startsWith("start"), at: m[1] };
   }
 }
@@ -493,6 +501,9 @@ if (import.meta.main) {
         for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
       } catch (e) {
         if (!(e instanceof Deno.errors.NotFound)) throw e;
+        // Said out loud rather than skipped: the landing clone exists only once the landing slot has used the records
+        // tool, and a silently missing round line would read as "between rounds".
+        console.log(`monitor log not found: ${monitorLog}`);
       }
     }
   }
@@ -594,6 +605,8 @@ Deno.test("monitorRound takes the newest round entry in either wording", () => {
   if (underway !== '{"round":318,"underway":true,"at":"2026-01-01T13:18Z"}') throw new Error(underway);
   const ended = monitorRound([...log, "- 2026-01-01T13:57Z: r318 end 2026-01-01: landed x"]);
   if (ended?.underway !== false || ended.round !== 318) throw new Error(JSON.stringify(ended));
+  const scripted = monitorRound([...log, "- 2026-01-01T14:00Z: r319 started, head 1234abcd", "- 2026-01-01T15:00Z: r319 ended"]);
+  if (scripted?.round !== 319 || scripted.underway) throw new Error(`scripted entries: ${JSON.stringify(scripted)}`);
   if (monitorRound(["- 2026-01-01T00:00Z: idle watcher restarted"]) !== undefined) throw new Error("no round");
 });
 
