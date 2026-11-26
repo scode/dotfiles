@@ -1,15 +1,17 @@
 ---
 name: farhelm-plan-status
 description: >
-  Report the status of the farhelm plan queue on this host: the plan executors, the landing monitor, and the queue on
-  GitHub main. Use when the user asks for "farhelm plan status", to "check status" or "check now" on the farhelm
-  executors, how the executors or a farhelm plan are doing, or similar wording about the farhelm plan queue.
+  Report the status of the farhelm plan queue: the plan executors (on this host and on other tailnet hosts), the
+  landing monitor, and the queue on GitHub main. Use when the user asks for "farhelm plan status", to "check status" or
+  "check now" on the farhelm executors, how the executors or a farhelm plan are doing, or similar wording about the
+  farhelm plan queue.
 ---
 
 # farhelm-plan-status
 
-[farhelm](https://github.com/scode/farhelm) drains its plan queue (`plans/queue/INDEX.md` on main) with agent sessions
-on one host. This skill assumes it runs on that host, with these checkouts:
+[farhelm](https://github.com/scode/farhelm) drains its plan queue (`plans/queue/INDEX.md` on main) with agent sessions,
+mostly on the maintainer's host, where this skill runs, and possibly on other hosts on the tailnet (VMs running one
+executor slot each). On this host the checkouts are:
 
 - Executors in `~/git/farhelm-fh-exec-N`. Each claims a plan from the queue, does it, and delivers it as `[complete]`.
 - The landing monitor, also called the completion monitor, in `~/git/farhelm-fh-complete-monitor`. It is not an executor
@@ -24,6 +26,11 @@ on one host. This skill assumes it runs on that host, with these checkouts:
   for the monitor. The monitor logs each round to `farhelm/landing/log.md` in the `landing` clone; each executor keeps
   its own log at `farhelm/executors/<slot>/log.md` in its clone, and a plan's log is `farhelm/plans/<plan>/log.md` in
   the clone of whichever slot holds or last held it.
+- An executor slot can also run on another host. Every records commit carries a `Slot:` trailer and, from a records tool
+  new enough, a `Host: <login>@<tailnet name>` trailer naming the machine it was pushed from; a slot's newest commit
+  says where it runs now. The collector reads these from its own fetch-only clone, `~/.fh-records/clones/status` (bare;
+  never a slot's clone), and collects a slot on another host by running itself there over ssh. On that host the slot's
+  live records clone and its transcripts are the remote machine's, so read them there.
 
 ## Hard rule: hands off the checkouts
 
@@ -33,6 +40,15 @@ that are safe to read: the harness transcripts under `~/.claude/projects` and `~
 slot clones under `~/.fh-records/clones/` (read the files; never run `git` there, since those clones belong to the
 records tool), `/proc`, and GitHub main through `gh api`. Do not message an executor or the monitor, and do not answer a
 blocked plan, except for the nudge below.
+
+The same holds on another host: read only those same kinds of places there, over ssh, and run nothing else. The
+collector prints a remote transcript as `<login>@<host>:<path>`, which is exactly the ssh target and the path:
+
+```sh
+ssh <login>@<host> tail -c 200000 <path>
+```
+
+`grep` and `cat` of the slot clone's log files work the same way.
 
 ## Collecting
 
@@ -54,6 +70,13 @@ Run `scripts/collect` from this skill's directory. It is a read-only Deno script
   nothing about ownership.
 - For the monitor only, a line `round rN started|ended <time> (<elapsed> ago)` from its log, and the log's newest
   entries.
+- For a slot on another host, the same section collected there, with its paths prefixed `<login>@<host>:` and a closing
+  line naming the host it runs on. If ssh or the remote run fails, the section says the remote collection failed and
+  why: report that slot as not checked, not as stalled.
+- A slot with no checkout here whose newest records commit names no host gets a line saying so: it was pushed by a
+  records tool from before the `Host:` trailer, and it shows up properly after its next push with a current tool.
+- A `RECORDS unavailable` line means the records clone could not be fetched, so slots on other hosts are missing from
+  the report: say so.
 
 Turn states are `running`, `idle`, `aborted at …`, `error=<kind> at …`, and `unknown` (nothing to decide from). An idle
 executor is normal; executors sleep on a queue watcher between plans. `NO LIVE PROCESS` means no interactive process of
@@ -75,6 +98,12 @@ PROCESS`: it is not the one working in that checkout.
 codex queue --thread <thread id> --message .
 ```
 
+For a session on another host, run the same command there over ssh:
+
+```sh
+ssh <login>@<host> codex queue --thread <thread id> --message .
+```
+
 Then run `scripts/collect --states` (a few seconds) and confirm that session shows `running`. Report the nudge and
 whether the new turn started. Any other error, an aborted turn, or a Claude Code API error goes to the user without a
 nudge.
@@ -86,7 +115,8 @@ converts what it prints. Write:
 
 1. A heading `## Executor status, HH:MM <zone>` and one bolded lead sentence with the most important news.
 2. A worker table with columns Worker | Plan | On plan for | State. The first row is always `landing`, the landing
-   monitor, then one row per executor. Use `—` for an idle worker's plan.
+   monitor, then one row per executor. Use `—` for an idle worker's plan. A slot on another host names it in the Worker
+   column by its short tailnet name, e.g. `exec-5 (boatworker-fh-exec-5)`.
    - Plan: the active claim the executor's session mentions far more often than the others do; when that is unclear,
      take the plan from its latest messages.
    - On plan for: that claim's time and elapsed time from the collector, for example `since 06:39 (2h10m)`.

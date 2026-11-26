@@ -1,15 +1,24 @@
 #!/usr/bin/env -S deno run -A
-// Read-only status collector for the farhelm plan queue on this host: the queue on GitHub main, its recent events and
-// claim times, and for the landing monitor and every executor checkout the agent session driving it (Claude Code or
-// Codex), whether a live process backs it, its turn state, the claims it mentions, and its latest messages and tool
-// calls. Judgment is left to the reader.
+// Read-only status collector for the farhelm plan queue: the queue on GitHub main, its recent events and claim times,
+// and for the landing monitor and every executor slot the agent session driving it (Claude Code or Codex), whether a
+// live process backs it, its turn state, the claims it mentions, and its latest messages and tool calls. Judgment is
+// left to the reader.
 //
 // It never touches a checkout: queue state comes from GitHub main, session state from the harness transcripts under
 // ~/.claude/projects and ~/.codex/sessions, and liveness from /proc. All times print in the host's local zone, and
 // every claim and monitor round carries its elapsed time, so the report does no clock arithmetic of its own.
 //
+// Slots on other hosts: every agent-records commit names the slot that pushed it and, in a `Host: <login>@<tailnet
+// name>` trailer, the machine it pushed from. The collector keeps a fetch-only clone of agent-records for itself, takes
+// each slot's newest Host, and for a slot on another machine runs this same script there over ssh in `--slot` mode,
+// printing that output as the slot's section. Its transcript paths then read `<login>@<host>:<path>`, so the reader
+// knows to read them over ssh.
+//
 // Usage: collect            full report input
 //        collect --states   one line per session with its state (no GitHub calls; for confirming a nudge took)
+//        collect --slot <slot> [--claims <id>=<plan>,...] [--states]
+//                           one slot's section only, for this host's own checkout of that slot (what the
+//                           orchestrating collector runs over ssh on a remote slot's host)
 
 import $ from "jsr:@david/dax@0.50.1";
 
@@ -28,6 +37,20 @@ const REPO = "scode/farhelm";
  * tool's.
  */
 const MONITOR_LOG = `${HOME}/.fh-records/clones/landing/farhelm/landing/log.md`;
+/**
+ * The records tool's host files (Farhelm's `.agents/agent-records.md`, "Host files"): `config` names the records
+ * remote, the repo token file and this host's slots and their checkouts.
+ */
+const RECORDS_CONFIG = `${HOME}/.fh-records/config`;
+/**
+ * This collector's own clone of agent-records: bare and fetch-only. Never a slot's clone, which belongs to the records
+ * tool, and never pushed from.
+ */
+const STATUS_CLONE = `${HOME}/.fh-records/clones/status`;
+/** A slot whose newest records commit is older than this is not looked for on another host (a retired VM, say). */
+const HOST_WINDOW_DAYS = 7;
+/** This script on a remote slot's host, where the dotfiles installer links the skill (expanded by the remote shell). */
+const REMOTE_COLLECT = "~/.claude/skills/farhelm-plan-status/scripts/collect";
 /** Only this much of a transcript's end is read; recent state is all the report needs. */
 const TAIL_BYTES = 4 << 20;
 /**
@@ -326,6 +349,137 @@ async function liveProcs(cwd: string): Promise<Procs> {
   return res;
 }
 
+// ---- Slots on other hosts
+
+/**
+ * The tailnet DNS name from `tailscale status --self --json` output, without its trailing dot, or undefined. This, not
+ * the OS hostname, is what ssh over the tailnet reaches (Tailscale may suffix `-1`, or the machine be renamed in the
+ * admin console), and it is what Farhelm's records tool writes into the `Host:` trailer.
+ */
+export function tailnetName(json: string): string | undefined {
+  try {
+    const name = JSON.parse(json)?.Self?.DNSName;
+    if (typeof name !== "string" || !/^[A-Za-z0-9._-]+\.?$/.test(name)) return undefined;
+    return name.replace(/\.$/, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** This machine as a `Host:` trailer names it (`<login>@<tailnet name>`), or undefined without a login or Tailscale. */
+async function localIdentity(): Promise<string | undefined> {
+  const login = Deno.env.get("USER") ?? Deno.env.get("LOGNAME");
+  if (!login) return undefined;
+  const out = await $`tailscale status --self --json`.stdout("piped").stderr("null").noThrow().timeout("5s");
+  const name = out.code === 0 ? tailnetName(out.stdout) : undefined;
+  return name ? `${login}@${name}` : undefined;
+}
+
+/** The `[[slot]]` entries of a records config, as slot name -> checkout path. Only the keys this script reads. */
+export function configSlots(config: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const block of config.split(/^\[\[slot\]\]\s*$/m).slice(1)) {
+    const name = block.match(/^name\s*=\s*"([^"]+)"/m)?.[1];
+    const checkout = block.match(/^checkout\s*=\s*"([^"]+)"/m)?.[1];
+    if (name && checkout) out.set(name, checkout);
+  }
+  return out;
+}
+
+/** Where a slot last pushed from: its newest commit's `Host:` trailer (undefined when that commit has none). */
+type SlotHost = { host?: string; at: string };
+
+/**
+ * Each slot's newest commit, from `git log` lines of `<Slot>\x1f<Host>\x1f<committer date>`, newest first. Only the
+ * newest commit counts: a slot moved to another machine names its new host on its first push there, and a slot whose
+ * newest commit has no Host (pushed by a records tool from before the trailer) has no known host.
+ */
+export function slotHosts(lines: string[]): Map<string, SlotHost> {
+  const out = new Map<string, SlotHost>();
+  for (const line of lines) {
+    const [slot, host, at] = line.split("\x1f");
+    if (!slot || !at || out.has(slot)) continue;
+    out.set(slot, { host: /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/.test(host) ? host : undefined, at });
+  }
+  return out;
+}
+
+/**
+ * Brings this collector's clone of agent-records up to date and returns each recently active slot's newest host, or an
+ * error line. The repo token goes to git as an `Authorization: Bearer` header in the child's environment, the way the
+ * records tool sends it, so it never reaches a command line or the clone's config; error text is cut short and has the
+ * account id (the remote URL's 32-hex label) redacted.
+ */
+async function recordHosts(): Promise<Map<string, SlotHost> | string> {
+  let config;
+  try {
+    config = await Deno.readTextFile(RECORDS_CONFIG);
+  } catch (e) {
+    if (e instanceof Deno.errors.NotFound) return `no ${RECORDS_CONFIG.replace(HOME, "~")}`;
+    throw e;
+  }
+  const remote = config.match(/^remote\s*=\s*"([^"]+)"/m)?.[1];
+  const tokenFile = config.match(/^token_file\s*=\s*"([^"]+)"/m)?.[1];
+  if (!remote || !tokenFile) return "records config has no remote or token_file";
+  const token = (await Deno.readTextFile(tokenFile)).trim();
+  const env = {
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: "http.extraHeader",
+    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  const redact = (s: string) =>
+    oneLine(s.replaceAll(remote, "<records remote>").replace(/[0-9a-f]{32}/g, "<acct>"), 200);
+  const exists = await Deno.stat(`${STATUS_CLONE}/HEAD`).then(() => true, () => false);
+  const sync = exists
+    ? $`git -C ${STATUS_CLONE} fetch -q ${remote} +refs/heads/main:refs/heads/main`
+    : $`git clone -q --bare ${remote} ${STATUS_CLONE}`;
+  const r = await sync.env(env).stdout("null").stderr("piped").noThrow().timeout("60s");
+  if (r.code !== 0) return `records fetch failed: ${redact(r.stderr)}`;
+  const log = await $`git -C ${STATUS_CLONE} log --since=${`${HOST_WINDOW_DAYS}.days`} ${
+    "--format=%(trailers:key=Slot,valueonly,separator=)%x1f%(trailers:key=Host,valueonly,separator=)%x1f%cI"
+  } main`.stdout("piped").stderr("piped").noThrow();
+  if (log.code !== 0) return `records log failed: ${redact(log.stderr)}`;
+  return slotHosts(log.stdout.split("\n"));
+}
+
+/**
+ * Runs this script on a remote slot's host for that slot alone and returns its output. ssh never prompts (BatchMode),
+ * so an unreachable or unauthorized host fails fast instead of hanging the report.
+ */
+async function collectRemote(
+  slot: string,
+  host: string,
+  claims: Map<string, string>,
+  statesOnly: boolean,
+): Promise<string> {
+  const claimArg = [...claims].map(([id, plan]) => `${id}=${plan}`).join(",");
+  const cmd = [
+    REMOTE_COLLECT,
+    "--slot",
+    slot,
+    ...(claimArg ? ["--claims", claimArg] : []),
+    ...(statesOnly ? ["--states"] : []),
+  ].join(" ");
+  const r = await $`ssh -o BatchMode=yes -o ConnectTimeout=10 ${host} ${cmd}`.stdout("piped").stderr("piped").noThrow()
+    .timeout("120s");
+  const out = r.stdout.trimEnd();
+  if (r.code === 0) return out;
+  const failed = `${slot} remote collection on ${host} failed (exit ${r.code}): ${oneLine(r.stderr, 300)}`;
+  return out ? `${out}\n${failed}` : statesOnly ? failed : `\n######## ${slot}\n${failed}`;
+}
+
+/** `--claims` as the orchestrating collector passes it; malformed pairs are dropped rather than trusted. */
+export function parseClaims(arg: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const pair of (arg ?? "").split(",")) {
+    const m = pair.match(/^([0-9a-f]{6,})=([A-Za-z0-9._-]+)$/);
+    if (m) out.set(m[1], m[2]);
+  }
+  return out;
+}
+
 // ---- Queue on GitHub main
 
 /** In-flight or landing claims from INDEX.md lines, as claim id -> plan name. */
@@ -448,62 +602,160 @@ export function driving(found: Session[]): Session[] {
   return live.length > 0 ? live : found.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, 1);
 }
 
+/** Where a slot is reported from: a checkout on this host, another host over ssh, or nowhere known. */
+export type Placement =
+  | { label: string; kind: "local"; checkout: Checkout }
+  | { label: string; kind: "remote"; host: string }
+  | { label: string; kind: "unknown"; at: string };
+
+/** Report order: the landing monitor, then executors by number, then anything else by name. */
+function slotOrder(label: string): [number, number, string] {
+  if (label === "landing") return [0, 0, label];
+  const m = label.match(/^exec-(\d+)$/);
+  return m ? [1, Number(m[1]), label] : [2, 0, label];
+}
+
+/**
+ * Decides where each slot is reported from. A slot's newest records commit names its current host. When that host is
+ * another machine, the slot is collected there, even if an old checkout of it is still here (the slot moved). A local
+ * checkout is otherwise reported locally, including when the records say nothing (no Host yet, records unavailable, or
+ * this host's own name unknown, which makes "another machine" undecidable). A slot recently active in the records with
+ * no local checkout and no Host is listed as unknown, so the report says so instead of leaving it out.
+ */
+export function placements(
+  local: Checkout[],
+  hosts: Map<string, SlotHost>,
+  me: string | undefined,
+): Placement[] {
+  const out = new Map<string, Placement>();
+  for (const c of local) out.set(c.label, { label: c.label, kind: "local", checkout: c });
+  for (const [label, { host, at }] of hosts) {
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(label)) continue; // a slot name goes into the remote shell command
+    const elsewhere = host !== undefined && host !== me && (me !== undefined || !out.has(label));
+    if (elsewhere) out.set(label, { label, kind: "remote", host });
+    else if (!out.has(label) && host === undefined) out.set(label, { label, kind: "unknown", at });
+  }
+  return [...out.values()].sort((a, b) => {
+    const [x, y] = [slotOrder(a.label), slotOrder(b.label)];
+    return x[0] - y[0] || x[1] - y[1] || x[2].localeCompare(y[2]);
+  });
+}
+
+/**
+ * Prints one checkout's section: its live processes, the sessions driving it with state, claim mentions and recent
+ * activity, and for the monitor its round. `where` is set when this runs on a slot's remote host for the orchestrating
+ * collector: transcript paths then print as `<where>:<absolute path>` so the reader reads them over ssh.
+ */
+async function report(
+  { label, cwd, log: monitorLog }: Checkout,
+  claims: Map<string, string>,
+  statesOnly: boolean,
+  recentCodex: Map<string, string>,
+  where?: string,
+) {
+  const procs = await liveProcs(cwd);
+  const claude = await claudeSession(cwd, procs.claude.length > 0);
+  const found = [...(claude ? [claude] : []), ...await codexSessions(cwd, procs, recentCodex)];
+  const shown = (p: string) => where ? `${where}:${p}` : p.replace(HOME, "~");
+  if (!statesOnly) {
+    const role = monitorLog ? " (completion monitor, not an executor)" : "";
+    console.log(`\n######## ${label}${role}  ${shown(cwd)}`);
+    console.log(
+      `live: claude pids ${procs.claude.join(" ") || "none"} | codex pids ${
+        [...procs.codex.keys()].join(" ") || "none"
+      }`,
+    );
+  }
+  if (found.length === 0) console.log(`${statesOnly ? `${label} ` : ""}no session found`);
+  for (const s of driving(found)) {
+    // A long turn can push its own start out of the default tail; read the whole file before calling it unknown.
+    const stateOf = (ev: any[]) => s.harness === "codex" ? codexState(ev) : claudeState(ev);
+    const tail = await readTail(s.path);
+    const events = parse(tail);
+    let state = stateOf(events);
+    if (state === "unknown") {
+      state = stateOf(parse(await readTail(s.path, Infinity)));
+    }
+    const ago = Math.round((Date.now() - s.mtime.getTime()) / 60000);
+    const liveness = s.live ? "live" : "NO LIVE PROCESS";
+    console.log(
+      `${statesOnly ? `${label} ` : ""}[${s.harness}] ${s.id} state=${state} ${liveness} last write ${ago}m ago`,
+    );
+    if (statesOnly) continue;
+    console.log(`transcript ${shown(s.path)}`);
+    // Other executors name a claim in passing ("another executor holds …"); its owner names it constantly. Counted over
+    // the same fixed tail for every session, so the counts compare.
+    const text = tail.join("\n");
+    const held = [...claims].map(([id, plan]) => [`${id} (${plan})`, text.split(id).length - 1] as const)
+      .filter(([, n]) => n > 0).map(([c, n]) => `${c} x${n}`);
+    if (held.length > 0) console.log(`mentions active claims: ${held.join(", ")}`);
+    const r = recent(s.harness, events);
+    for (const m of r.messages) console.log(`  msg ${m}`);
+    for (const t of r.tools) console.log(`  tool ${t}`);
+  }
+  if (!statesOnly && monitorLog) {
+    try {
+      const log = (await Deno.readTextFile(monitorLog)).split("\n").filter((l) => l.startsWith("- "));
+      const r = monitorRound(log);
+      if (r) console.log(`round r${r.round} ${r.underway ? "started" : "ended"} ${since(r.at)}`);
+      for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
+    } catch (e) {
+      if (!(e instanceof Deno.errors.NotFound)) throw e;
+      // Said out loud rather than skipped: the landing clone exists only once the landing slot has used the records
+      // tool, and a silently missing round line would read as "between rounds".
+      console.log(`monitor log not found: ${shown(monitorLog)}`);
+    }
+  }
+}
+
+/**
+ * `--slot` mode, run over ssh by the orchestrating collector: this host's checkout of one slot, found in the records
+ * config (or among the usual checkout names when the config does not list it).
+ */
+async function slotMode(slot: string, claims: Map<string, string>, statesOnly: boolean) {
+  const me = await localIdentity();
+  let cwd: string | undefined;
+  try {
+    cwd = configSlots(await Deno.readTextFile(RECORDS_CONFIG)).get(slot);
+  } catch (e) {
+    if (!(e instanceof Deno.errors.NotFound)) throw e;
+  }
+  cwd ??= (await checkouts()).find((c) => c.label === slot)?.cwd;
+  if (!cwd) {
+    const where = me ?? "this host";
+    const line = `no checkout for this slot on ${where}`;
+    console.log(statesOnly ? `${slot} ${line}` : `\n######## ${slot}\n${line}`);
+    return;
+  }
+  const checkout = { label: slot, cwd, ...(slot === "landing" ? { log: MONITOR_LOG } : {}) };
+  await report(checkout, claims, statesOnly, await recentCodexRollouts(), me ?? Deno.hostname());
+}
+
 if (import.meta.main) {
   const statesOnly = Deno.args.includes("--states");
-  console.log(`NOW ${local(new Date())} ${zone}`);
-  const claims = statesOnly ? new Map<string, string>() : await printQueue();
-  const recentCodex = await recentCodexRollouts();
-  for (const { label, cwd, log: monitorLog } of await checkouts()) {
-    const procs = await liveProcs(cwd);
-    const claude = await claudeSession(cwd, procs.claude.length > 0);
-    const found = [...(claude ? [claude] : []), ...await codexSessions(cwd, procs, recentCodex)];
-    if (!statesOnly) {
-      const role = monitorLog ? " (completion monitor, not an executor)" : "";
-      console.log(`\n######## ${label}${role}  ${cwd.replace(HOME, "~")}`);
-      console.log(
-        `live: claude pids ${procs.claude.join(" ") || "none"} | codex pids ${
-          [...procs.codex.keys()].join(" ") || "none"
-        }`,
-      );
-    }
-    if (found.length === 0) console.log(`${statesOnly ? `${label} ` : ""}no session found`);
-    for (const s of driving(found)) {
-      // A long turn can push its own start out of the default tail; read the whole file before calling it unknown.
-      const stateOf = (ev: any[]) => s.harness === "codex" ? codexState(ev) : claudeState(ev);
-      const tail = await readTail(s.path);
-      const events = parse(tail);
-      let state = stateOf(events);
-      if (state === "unknown") {
-        state = stateOf(parse(await readTail(s.path, Infinity)));
-      }
-      const ago = Math.round((Date.now() - s.mtime.getTime()) / 60000);
-      const liveness = s.live ? "live" : "NO LIVE PROCESS";
-      console.log(
-        `${statesOnly ? `${label} ` : ""}[${s.harness}] ${s.id} state=${state} ${liveness} last write ${ago}m ago`,
-      );
-      if (statesOnly) continue;
-      console.log(`transcript ${s.path.replace(HOME, "~")}`);
-      // Other executors name a claim in passing ("another executor holds …"); its owner names it constantly. Counted over
-      // the same fixed tail for every session, so the counts compare.
-      const text = tail.join("\n");
-      const held = [...claims].map(([id, plan]) => [`${id} (${plan})`, text.split(id).length - 1] as const)
-        .filter(([, n]) => n > 0).map(([c, n]) => `${c} x${n}`);
-      if (held.length > 0) console.log(`mentions active claims: ${held.join(", ")}`);
-      const r = recent(s.harness, events);
-      for (const m of r.messages) console.log(`  msg ${m}`);
-      for (const t of r.tools) console.log(`  tool ${t}`);
-    }
-    if (!statesOnly && monitorLog) {
-      try {
-        const log = (await Deno.readTextFile(monitorLog)).split("\n").filter((l) => l.startsWith("- "));
-        const r = monitorRound(log);
-        if (r) console.log(`round r${r.round} ${r.underway ? "started" : "ended"} ${since(r.at)}`);
-        for (const l of log.slice(-4)) console.log(`  log ${oneLine(l, 700)}`);
-      } catch (e) {
-        if (!(e instanceof Deno.errors.NotFound)) throw e;
-        // Said out loud rather than skipped: the landing clone exists only once the landing slot has used the records
-        // tool, and a silently missing round line would read as "between rounds".
-        console.log(`monitor log not found: ${monitorLog}`);
+  const argAfter = (flag: string) => {
+    const i = Deno.args.indexOf(flag);
+    return i >= 0 ? Deno.args[i + 1] : undefined;
+  };
+  const slot = argAfter("--slot");
+  if (slot !== undefined) {
+    await slotMode(slot, parseClaims(argAfter("--claims")), statesOnly);
+  } else {
+    console.log(`NOW ${local(new Date())} ${zone}`);
+    const claims = statesOnly ? new Map<string, string>() : await printQueue();
+    const [hosts, me, recentCodex] = await Promise.all([recordHosts(), localIdentity(), recentCodexRollouts()]);
+    if (typeof hosts === "string") console.log(`== RECORDS unavailable (slots on other hosts not shown): ${hosts}`);
+    for (const p of placements(await checkouts(), typeof hosts === "string" ? new Map() : hosts, me)) {
+      if (p.kind === "local") {
+        await report(p.checkout, claims, statesOnly, recentCodex);
+      } else if (p.kind === "remote") {
+        const out = await collectRemote(p.label, p.host, claims, statesOnly);
+        const lead = out.startsWith("\n") ? "" : "\n";
+        console.log(statesOnly ? out : `${lead}${out}\n(slot ${p.label} runs on ${p.host})`);
+      } else {
+        const line = `no checkout here, and its newest records commit (${since(p.at)}) names no host: ` +
+          "it was pushed by a records tool from before the Host trailer";
+        console.log(statesOnly ? `${p.label} ${line}` : `\n######## ${p.label}\n${line}`);
       }
     }
   }
@@ -621,4 +873,101 @@ Deno.test("driving prefers live sessions and otherwise shows only the newest", (
   const ids = (x: Session[]) => x.map((v) => v.id).join(",");
   if (ids(driving([s("old", false, 1), s("live", true, 0)])) !== "live") throw new Error("live first");
   if (ids(driving([s("old", false, 1), s("new", false, 2)])) !== "new") throw new Error("newest fallback");
+});
+
+/**
+ * The Host trailer and the ssh target both come from this: a wrong parse sends the collector to the wrong machine or
+ * makes it treat its own slots as remote. Tailscale prints the DNS name fully qualified with a trailing dot.
+ */
+Deno.test("tailnetName strips the trailing dot and rejects anything unusable", () => {
+  const cases: [string, string | undefined][] = [
+    ['{"Self":{"DNSName":"host-a.example.ts.net."}}', "host-a.example.ts.net"],
+    ['{"Self":{"DNSName":"host-a.example.ts.net"}}', "host-a.example.ts.net"],
+    ['{"Self":{"DNSName":""}}', undefined],
+    ['{"Self":{"DNSName":"."}}', undefined],
+    ['{"Self":{"DNSName":"bad name;rm"}}', undefined],
+    ['{"Self":{}}', undefined],
+    ["not json", undefined],
+  ];
+  for (const [json, want] of cases) if (tailnetName(json) !== want) throw new Error(`${json}: ${tailnetName(json)}`);
+});
+
+/** `--slot` mode finds a remote slot's checkout through the host's records config; only name and checkout matter. */
+Deno.test("configSlots reads each [[slot]]'s name and checkout and skips incomplete ones", () => {
+  const config = [
+    'remote = "https://example.invalid/git/records/agent-records.git"',
+    'token_file = "/home/agent/.fh-records/agent-records_token"',
+    "",
+    "[[slot]]",
+    'name = "exec-7"',
+    'checkout = "/home/agent/git/farhelm-fh-exec-7"',
+    "",
+    "[[slot]]",
+    'name = "exec-8"',
+    "",
+  ].join("\n");
+  const got = JSON.stringify([...configSlots(config)]);
+  if (got !== '[["exec-7","/home/agent/git/farhelm-fh-exec-7"]]') throw new Error(got);
+});
+
+/**
+ * Only a slot's newest commit names where it runs now; an older commit from another machine must not win, and a newest
+ * commit without a (valid) Host leaves the host unknown rather than falling back to an older one.
+ */
+Deno.test("slotHosts takes each slot's newest commit only", () => {
+  const l = (slot: string, host: string, at: string) => [slot, host, at].join("\x1f");
+  const got = slotHosts([
+    l("exec-7", "agent@host-b.example.ts.net", "2026-01-02T10:00:00Z"),
+    l("exec-7", "agent@host-a.example.ts.net", "2026-01-02T09:00:00Z"),
+    l("exec-8", "", "2026-01-02T08:00:00Z"),
+    l("exec-8", "agent@host-a.example.ts.net", "2026-01-01T08:00:00Z"),
+    l("exec-9", "agent@host-c.example.ts.net; rm -rf", "2026-01-01T07:00:00Z"),
+    "",
+  ]);
+  const want = JSON.stringify([
+    ["exec-7", { host: "agent@host-b.example.ts.net", at: "2026-01-02T10:00:00Z" }],
+    ["exec-8", { at: "2026-01-02T08:00:00Z" }],
+    ["exec-9", { at: "2026-01-01T07:00:00Z" }],
+  ]);
+  if (JSON.stringify([...got]) !== want) throw new Error(JSON.stringify([...got]));
+});
+
+/** Claims ride into the remote shell command, so anything but `<hex id>=<plan slug>` is dropped. */
+Deno.test("parseClaims keeps well-formed pairs only", () => {
+  const got = JSON.stringify([...parseClaims("9648c5=a-plan,zz=x,036692=b;rm,abcdef12=c.d_e")]);
+  if (got !== '[["9648c5","a-plan"],["abcdef12","c.d_e"]]') throw new Error(got);
+  if (parseClaims(undefined).size !== 0) throw new Error("undefined");
+});
+
+/**
+ * The placement rule decides which slots the report shows and where from; getting it wrong either hides a remote
+ * executor (the bug this exists for) or ssh-es to a machine for a slot that runs here.
+ */
+Deno.test("placements put each slot where its newest Host says, defaulting to local checkouts", () => {
+  const me = "agent@host-a.example.ts.net";
+  const c = (label: string): Checkout => ({ label, cwd: `/home/agent/git/farhelm-fh-${label}` });
+  const h = (host?: string): SlotHost => ({ host, at: "2026-01-02T10:00:00Z" });
+  const local = [c("exec-1"), c("exec-2"), c("exec-3"), { ...c("landing"), log: "x" }];
+  const hosts = new Map<string, SlotHost>([
+    ["exec-1", h(me)], // here, and the records agree
+    ["exec-2", h()], // here, pushed by an old records tool
+    ["exec-3", h("agent@host-b.example.ts.net")], // moved to another machine; the old checkout stays behind
+    ["exec-10", h("agent@host-c.example.ts.net")], // only on another machine
+    ["exec-11", h()], // no checkout here and no host on record
+    ["Bad Slot", h("agent@host-c.example.ts.net")], // not a slot name; never reaches a shell
+  ]);
+  const show = (ps: Placement[]) => ps.map((p) => `${p.label}:${p.kind}`).join(" ");
+  const got = show(placements(local, hosts, me));
+  if (got !== "landing:local exec-1:local exec-2:local exec-3:remote exec-10:remote exec-11:unknown") {
+    throw new Error(got);
+  }
+  // Without this host's own name, a local checkout cannot be told apart from a moved slot, so it stays local.
+  const blind = show(placements(local, hosts, undefined));
+  if (blind !== "landing:local exec-1:local exec-2:local exec-3:local exec-10:remote exec-11:unknown") {
+    throw new Error(`blind: ${blind}`);
+  }
+  // Records unavailable: exactly today's local-only report.
+  if (show(placements(local, new Map(), me)) !== "landing:local exec-1:local exec-2:local exec-3:local") {
+    throw new Error("no records");
+  }
 });
