@@ -34,6 +34,18 @@ the matching harness file before launching. Lack of native support is a reason t
 silently substitute a native model or claim the requested agent cannot be run. If the external path is unavailable too,
 report that limitation.
 
+A native delegation tool that inherits the current session's model and effort (and lacks explicit model-id or effort
+parameters) satisfies a direct request when you can confirm from your own session context that your active model matches
+the request and either no effort was requested or your active effort also matches — do not shell out to the current
+harness's own CLI just to pass explicit flags in that case (the explicit model and effort rules below are for external
+launches). For example, an Antigravity session whose `<USER_SETTINGS_CHANGE>` `Model Selection` shows `Gemini 4 Neon
+(High)` satisfies "a neon agent" or "a neon high agent" natively via `invoke_subagent` with `Model: "inherit"` (and
+resumes via `send_message`). Do not rely on opaque native tier aliases (`pro`, `flash`, `flash_lite`) to serve a
+requested named model — in Antigravity they map to internal tiers rather than named lines — and do not use `inherit`
+when your active model differs (including composite modes such as Orchestrator) or is not visible in context; fall
+through to Choosing the external mechanism in those cases, or whenever an explicit effort differs from your active
+effort.
+
 ## Choosing the external mechanism
 
 This applies when the caller supplies `external`, or when a direct request leaves the mechanism open and native
@@ -46,8 +58,9 @@ The candidates, in order:
 1. A harness the user names for this launch ("run it through opencode", "run it through antigravity"), or a harness or
    provider preference the user has stated in their standing instructions ("use opencode for GLM"), including one the
    caller passes on as a launch preference.
-2. The family's own harness: `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and `agy -p`
-   (Antigravity) for Gemini (including bare Gemini line names such as `neon`, `argon`, `hydrogen`, and `flash`).
+2. The family's own harness (for external launches, including from inside that harness when its native tool cannot
+   target the requested model or effort): `codex exec` for GPT, `claude -p` for Claude, `muse exec` for Muse, and `agy
+   -p` (Antigravity) for Gemini (including bare Gemini line names such as `neon`, `argon`, `hydrogen`, and `flash`).
 3. `omp -p`, for any model. It is the default for everything outside those four families (GLM, grok, mercury, and the
    rest), and the next candidate for a GPT, Claude, Muse, or Gemini model whose own harness is not installed.
 4. `opencode run`, when one of its providers serves the model.
