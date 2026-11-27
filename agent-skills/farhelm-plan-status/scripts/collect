@@ -126,9 +126,13 @@ export function codexState(events: any[]): string {
  * State of a Claude Code session from its newest user or assistant entry: `idle` after an end_turn reply,
  * `error=<kind> at …` after an API error reply, `aborted at …` after an Esc interrupt (Claude writes a user entry
  * "[Request interrupted by user…" and nothing more), `unknown` when the tail has no entry, and otherwise `running`.
+ *
+ * A compaction summary is not a turn boundary. Claude Code writes it as a user entry (`isCompactSummary`), and it also
+ * compacts sessions that sit idle ("Compacted while idle, before the prompt cache expired"), so an executor waiting on
+ * its queue watcher would otherwise read as `running` from then on. The state comes from the last entry before it.
  */
 export function claudeState(events: any[]): string {
-  const last = events.findLast((e) => e.type === "user" || e.type === "assistant");
+  const last = events.findLast((e) => (e.type === "user" && !e.isCompactSummary) || e.type === "assistant");
   if (!last) return "unknown";
   if (last.type === "user") {
     const c = last.message?.content;
@@ -782,7 +786,7 @@ Deno.test("codexState reads the newest turn boundary", () => {
   }
 });
 
-Deno.test("claudeState distinguishes idle, running, interrupts and API errors", () => {
+Deno.test("claudeState distinguishes idle, running, interrupts and API errors, and sees through compactions", () => {
   const a = (extra: object) => ({ type: "assistant", timestamp: T, ...extra });
   const u = (content: unknown) => ({ type: "user", timestamp: T, message: { content } });
   const cases: [any[], RegExp][] = [
@@ -792,6 +796,10 @@ Deno.test("claudeState distinguishes idle, running, interrupts and API errors", 
     [[u([{ type: "text", text: "[Request interrupted by user for tool use]" }])], /^aborted at /],
     [[u("[Request interrupted by user]")], /^aborted at /],
     [[a({ isApiErrorMessage: true, error: "server_error", message: {} })], /^error=server_error at /],
+    // Compacted while idle, and compacted mid-turn: the summary entry says nothing about the turn.
+    [[a({ message: { stop_reason: "end_turn" } }), { ...u("summary"), isCompactSummary: true }], /^idle$/],
+    [[a({ message: { stop_reason: "tool_use" } }), { ...u("summary"), isCompactSummary: true }], /^running$/],
+    [[{ ...u("summary"), isCompactSummary: true }], /^unknown$/],
     [[], /^unknown$/],
   ];
   for (const [events, want] of cases) {
