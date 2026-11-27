@@ -83,7 +83,7 @@ contracts, callers, and tests needed to understand it. Record each group's purpo
 other groups. Do not distribute arbitrary file counts or consecutive directory listings. Every mandatory range must
 belong to a group; necessary context may overlap.
 
-Default to at most 2,000 mandatory source lines and 64 KiB of source text per group, whichever is reached first,
+Default to at most 8,000 mandatory source lines and 256 KiB of source text per group, whichever is reached first,
 including required context. Split larger subsystems at meaningful behavior boundaries; use named phases within a large
 file when necessary. Do not pad a group to reach the ceilings, and do not split one behavior below them. If essential
 context cannot fit, explain the boundary issue and obtain a caller-approved adjustment rather than silently assigning an
@@ -94,7 +94,7 @@ whatever its size. Keep adjacent phases of one behavior in one group. Many small
 group when the group notes list each with its purpose.
 
 Before launching, report a launch plan to the caller in an interim message: group count against the minimum the ceilings
-imply (total mandatory lines divided by 2,000), the distribution of mandatory lines, the minimum turn count (three per
+imply (total mandatory lines divided by 8,000), the distribution of mandatory lines, the minimum turn count (three per
 group), concurrency, and any reading every reviewer must do besides its source, which is paid once per group. Give a
 reason when the group count is well above that minimum. Launch without waiting for a reply unless the caller asked to
 approve the plan.

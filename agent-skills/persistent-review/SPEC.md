@@ -110,13 +110,13 @@ declared dependency; review scope, evidence judgment, persistence, and completio
 - The orchestrator divides required scope by coherent behavior, subsystem, feature path, or lifecycle. Required
   contracts, callers and tests stay with the relevant behavior. Group notes name purposes and cross-group interfaces;
   arbitrary file counts or directory order are not partitioning rules. Every mandatory range is assigned; context may
-  overlap. Defaults cap groups at 2,000 source lines and 64 KiB including required context; larger behaviors split at
+  overlap. Defaults cap groups at 8,000 source lines and 256 KiB including required context; larger behaviors split at
   meaningful sub-boundaries, with caller approval required to exceed the ceilings. Groups are not padded to the
   ceilings, and one behavior is not split below them.
 - Each group costs at least three turns, setup reading, and an audit and parent decision per turn, independent of size.
   Adjacent phases of one behavior stay together; many small self-contained changes may share a group when the notes list
   each with its purpose. Before launch, an interim message reports the plan: group count against the minimum the
-  ceilings imply (total mandatory lines / 2,000), mandatory-line distribution, minimum turns, concurrency and
+  ceilings imply (total mandatory lines / 8,000), mandatory-line distribution, minimum turns, concurrency and
   per-reviewer reading besides source, with a reason when the count is well above that minimum. Launch does not wait for
   a reply unless the caller asked to approve the plan.
 - Independent ready groups run concurrently by default, up to actual harness/resource capacity, with explicit queued
