@@ -24,9 +24,13 @@ fix the skill or change this file in the same change, never leave them apart.
   The user need not name the skill; requiring that has repeatedly prevented the intended shell-out path from being
   discovered. Mere model mentions and questions about models do not authorize delegation. For a direct request with no
   selected launch mechanism, prefer native delegation when it supports the requested model, effort, and required resume
-  behavior. Otherwise choose the external mechanism by the rule below. Preserve a mechanism selected by the user or
-  caller, including an external mechanism when native delegation is available. Do not silently substitute a native model
-  or report native limitations as proof that the requested agent cannot run externally.
+  behavior. Inheriting the current session's active model and effort satisfies native delegation when the session can
+  confirm from its own context that its active model matches the request and either no effort was requested or its
+  active effort also matches; opaque native tier aliases (such as `pro` or `flash`) do not satisfy a named-model
+  request, and an unverified active model must not be assumed to match. Otherwise choose the external mechanism by the
+  rule below. Preserve a mechanism selected by the user or caller, including an external mechanism when native
+  delegation is available. Do not silently substitute a native model or report native limitations as proof that the
+  requested agent cannot run externally.
 - This skill is the one place that decides which CLI runs a model externally; callers that only know a route is external
   pass `external` and let it decide. The rule: a harness the user names for the launch, or a harness preference the user
   has stated, comes first; then the family's own harness for families that have one with a harness file here (GPT,

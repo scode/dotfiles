@@ -82,6 +82,15 @@ a delegation request and requiring a shell-out:
   support. Expected: load this skill, pick `agy -p` as Gemini's own harness, read `harness/agy.md`, and construct an
   `agy` launch using `--model gemini-4-neon --effort <level>` and `-p="$(cat <prompt-file>)"` (never `--model neon` and
   never `agy -p --model ...`).
+- "Start a neon agent to review this" (or "start a neon high agent") inside an Antigravity session whose
+  `<USER_SETTINGS_CHANGE>` `Model Selection` is `Gemini 4 Neon (High)`, with no external CLI requested. Expected: native
+  `invoke_subagent` with `Model: "inherit"`, not `agy -p`.
+- "Start a neon xhigh agent", "start an argon agent", or "start a neon agent" when the Antigravity session is running a
+  different model (such as `Claude Opus 5.5 (High)` or `Orchestrator (Neon)`) or has no visible active model. Expected:
+  `agy -p` via `harness/agy.md` with explicit `--model` and `--effort`, never `invoke_subagent` with `pro`/`flash` or an
+  unverified `inherit`.
+- "Run a neon agent through agy -p" inside an Antigravity session running `Gemini 4 Neon (High)`. Expected: honor the
+  explicit external mechanism, read `harness/agy.md`, and construct an `agy -p` launch.
 - A "neon" request when `agy` is missing from `PATH`. Expected: `omp -p` on `openrouter`, not a refusal.
 - A request naming Antigravity or `agy` explicitly ("use antigravity to run a sonnet agent"). Expected: load this skill
   and read `harness/agy.md` before constructing an `agy` launch, checking `agy models` for the non-Gemini model.

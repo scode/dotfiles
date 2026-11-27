@@ -2,6 +2,14 @@
 
 Read this file in full before the first `agy -p` launch of a session, after `SKILL.md`.
 
+Use `agy -p` for external launches: from another harness, when the user or caller explicitly requested `agy -p`, or from
+inside Antigravity when `invoke_subagent` cannot match the requested model or effort. Inside an Antigravity session
+whose `<USER_SETTINGS_CHANGE>` `Model Selection` already matches the requested model (and either no effort was requested
+or the effort matches too), use native `invoke_subagent` with `Model: "inherit"` instead of shelling out here. Do not
+use `invoke_subagent`'s tier aliases (`pro`, `flash`, `flash_lite`) for named models: on `agy` 1.5.18, `pro` ran
+`gemini-4-hydrogen-tiered-xhigh`, `flash` ran `gemini-4-hydrogen-tiered-high`, and `flash_lite` ran
+`gemini-3.5-flash-lite`, whereas `inherit` matched the parent session's exact model and effort.
+
 ```sh
 agy --model gemini-4-neon --effort high --dangerously-skip-permissions \
   -p="$(cat <prompt-file>)" < /dev/null > <result-file> 2> <log-file>
